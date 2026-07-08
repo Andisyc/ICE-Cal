@@ -246,7 +246,7 @@ class GaitConstraintConfig:
 @dataclass
 class RewardModeConfig:
     enabled: bool = False
-    standing_enabled: bool = True
+    standing_enabled: bool = False
     balance_common_terms: list[str] = field(default_factory=list)
     stand_terms: list[str] = field(default_factory=list)
     stand_recovery_terms: list[str] = field(default_factory=list)
@@ -667,6 +667,8 @@ class G1WalkEnv(G1BaseEnv):
 
     def _uses_height_command_observation(self) -> bool:
         command_cfg = getattr(self._cfg, "commands", None)
+        if isinstance(command_cfg, dict):
+            return bool(command_cfg.get("observe_height_command", False))
         return bool(getattr(command_cfg, "observe_height_command", False))
 
     def _command_observation(self, info: dict, num_obs: int) -> np.ndarray:
@@ -680,7 +682,10 @@ class G1WalkEnv(G1BaseEnv):
         target = info.get("height_commands")
         if target is None:
             command_cfg = self._cfg.commands
-            default_target = getattr(command_cfg, "default_height", None)
+            if isinstance(command_cfg, dict):
+                default_target = command_cfg.get("default_height")
+            else:
+                default_target = getattr(command_cfg, "default_height", None)
             if default_target is None:
                 default_target = getattr(getattr(self, "_reward_cfg", None), "base_height_target", 0.0)
             target = info.get("commands_height", default_target)

@@ -108,7 +108,7 @@ class G1SymmetryAugmentation(SymmetryAugmentation):
                 joint_map[idx : idx + dim] = self._joint_map + idx
                 joint_sign[idx : idx + dim] = self._sign_mask
             elif key == "command":
-                self._require_dim(key, dim, 3)
+                self._require_dim_any(key, dim, (3, 4))
                 flip_mask[idx + 1] = -1.0
                 flip_mask[idx + 2] = -1.0
             elif key == "gait_phase":
@@ -130,6 +130,13 @@ class G1SymmetryAugmentation(SymmetryAugmentation):
         if actual != expected:
             raise ValueError(
                 f"Symmetry group {group_name!r} must have dim {expected}, got {actual}"
+            )
+
+    @staticmethod
+    def _require_dim_any(group_name: str, actual: int, expected: tuple[int, ...]) -> None:
+        if actual not in expected:
+            raise ValueError(
+                f"Symmetry group {group_name!r} must have dim in {expected}, got {actual}"
             )
 
     def mirror_action(self, action: torch.Tensor) -> torch.Tensor:

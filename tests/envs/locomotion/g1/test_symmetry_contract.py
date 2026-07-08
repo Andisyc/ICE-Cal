@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import torch
+from hydra import compose, initialize_config_dir
 
 from unilab.base import registry
 from unilab.base.registry import ensure_registries
 from unilab.envs.locomotion.g1.joystick import G1WalkRewardConfig
+from unilab.training import BackendAdapter, create_env
 
 pytest.importorskip("mujoco", reason="mujoco is required for G1 symmetry contract tests")
+
+ROOT_DIR = Path(__file__).resolve().parents[4]
 
 
 def _reward_config() -> G1WalkRewardConfig:
@@ -80,5 +85,31 @@ def test_g1_walk_flat_symmetry_can_augment_critic_group():
         assert critic_aug.shape == (2, env.obs_groups_spec["critic"])
         assert action_aug.shape == (2, action_dim)
         assert critic_action_aug.shape == (2, action_dim)
+    finally:
+        env.close()
+
+
+def test_g1_walk_height_symmetry_keeps_height_command_scalar():
+    ensure_registries()
+    with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "offpolicy"), version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+    env_override = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name="sac").build_task_env_cfg_override()
+    env = create_env(cfg, num_envs=1, env_cfg_override=env_override, sim_backend="mujoco")
+
+    try:
+        augmentation = env.build_symmetry_augmentation(device="cpu")
+        assert augmentation is not None
+
+        command_start = 3 + 3 + env.action_space.shape[0] * 3
+        obs = torch.zeros((1, env.obs_groups_spec["obs"]))
+        obs[0, command_start : command_start + 4] = torch.tensor([0.2, 0.1, 0.3, 0.754])
+
+        mirrored = augmentation.mirror_obs(obs, obs_group="obs")
+
+        assert env.obs_groups_spec["obs"] == 100
+        torch.testing.assert_close(
+            mirrored[0, command_start : command_start + 4],
+            torch.tensor([0.2, -0.1, -0.3, 0.754]),
+        )
     finally:
         env.close()

@@ -738,6 +738,7 @@ def test_reward_mode_dispatch_separates_stand_and_walk_terms() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             balance_common_terms=["alive"],
             stand_terms=["stand_lin_vel_xy_l2"],
             walk_terms=["tracking_lin_vel"],
@@ -797,6 +798,7 @@ def test_zero_command_high_speed_routes_to_stand_recovery_terms() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             stand_terms=["stand_still"],
             stand_recovery_terms=["stand_lin_vel_xy_l2"],
             walk_terms=[],
@@ -1030,6 +1032,7 @@ def test_standing_reward_is_hard_gated_out_of_walking_samples() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             stand_terms=["stand_lin_vel_xy_l2"],
             walk_terms=[],
         ),
@@ -1076,6 +1079,7 @@ def test_common_base_height_reward_applies_to_stand_and_walk() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             balance_common_terms=["base_height"],
             stand_terms=[],
             walk_terms=[],
@@ -1125,6 +1129,7 @@ def test_mode_scale_overrides_allow_walking_specific_common_term_weight() -> Non
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             balance_common_terms=["base_height"],
             stand_terms=[],
             walk_terms=[],
@@ -1184,6 +1189,7 @@ def test_active_g1_common_base_height_reward_numeric_effect() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             balance_common_terms=["base_height"],
             stand_terms=[],
             walk_terms=[],
@@ -1248,6 +1254,7 @@ def test_active_g1_standing_reward_prefers_balanced_residual_over_quiet_fall() -
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             balance_common_terms=common_terms,
             stand_terms=stand_terms,
             walk_terms=[],
@@ -1306,6 +1313,7 @@ def test_mode_reward_logs_shared_terms_without_overwrite() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             stand_terms=["alive"],
             walk_terms=["alive"],
         ),
@@ -1355,6 +1363,7 @@ def test_reward_mode_logs_reward_prefixed_live_path_diagnostics() -> None:
         gait_constraint=GaitConstraintConfig(enabled=False),
         mode=RewardModeConfig(
             enabled=True,
+            standing_enabled=True,
             stand_terms=["stand_lin_vel_xy_l2"],
             walk_terms=["tracking_lin_vel"],
         ),

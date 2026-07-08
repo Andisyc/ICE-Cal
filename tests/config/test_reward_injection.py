@@ -61,6 +61,7 @@ def test_reward_config_loading_g1():
         assert cfg.interactive.action_mode == "policy"
         assert cfg.interactive.keyboard is True
         assert cfg.reward.mode.enabled is True
+        assert cfg.reward.mode.standing_enabled is False
         assert "penalty_orientation" in cfg.reward.mode.balance_common_terms
         assert "upright" in cfg.reward.mode.balance_common_terms
         assert "penalty_ang_vel_xy" in cfg.reward.mode.balance_common_terms
@@ -237,6 +238,21 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
     assert cfg.reward.mode.enabled is True
     assert cfg.reward.mode.standing_enabled is False
     assert override["reward_config"]["mode"]["standing_enabled"] is False
+
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        enabled_cfg = compose(
+            config_name="config",
+            overrides=[
+                "task=sac/g1_walk_flat/mujoco",
+                "reward.mode.standing_enabled=true",
+            ],
+        )
+
+    enabled_override = BackendAdapter(
+        enabled_cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
+    assert enabled_cfg.reward.mode.standing_enabled is True
+    assert enabled_override["reward_config"]["mode"]["standing_enabled"] is True
 
 
 @pytest.mark.parametrize(

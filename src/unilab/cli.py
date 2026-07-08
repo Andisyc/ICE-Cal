@@ -215,9 +215,15 @@ def build_command(
     profile: str | None = None,
     load_run: str | None = None,
     render_mode: str | None = None,
+    height_tracking: bool = False,
+    standing_reward: bool | None = None,
     root: Path | None = None,
 ) -> list[str]:
     selected_root = root or repo_root()
+    if height_tracking:
+        if algo != "sac" or sim != "mujoco" or task not in {"g1_walk_flat", "g1_walk_height"}:
+            raise SystemExit("--height-tracking is only supported for --algo sac --task g1_walk_flat --sim mujoco.")
+        task = "g1_walk_height"
     _check_private_checkout(selected_root)
     _check_task_name(task)
     _check_profile(profile)
@@ -238,6 +244,8 @@ def build_command(
     generated = list(route.generated_overrides)
     if render_mode is not None:
         generated.append(f"training.play_render_mode={render_mode}")
+    if standing_reward is not None:
+        generated.append(f"reward.mode.standing_enabled={str(standing_reward).lower()}")
     if mode == "eval":
         generated.append("training.play_only=true")
         if load_run is not None:
@@ -257,6 +265,11 @@ def _train_eval_parser(*, mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--sim", required=True, choices=SUPPORTED_SIMS)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--render-mode", choices=SUPPORTED_RENDER_MODES, default=None)
+    parser.add_argument("--height-tracking", action="store_true")
+    standing_reward = parser.add_mutually_exclusive_group()
+    standing_reward.add_argument("--standing-reward", dest="standing_reward", action="store_true")
+    standing_reward.add_argument("--no-standing-reward", dest="standing_reward", action="store_false")
+    parser.set_defaults(standing_reward=None)
     if mode == "eval":
         parser.add_argument("--load-run", default=None)
     return parser
@@ -283,6 +296,8 @@ def _run_train_eval(mode: str, argv: Sequence[str] | None = None) -> int:
         overrides=overrides,
         load_run=getattr(args, "load_run", None),
         render_mode=args.render_mode,
+        height_tracking=args.height_tracking,
+        standing_reward=args.standing_reward,
     )
     return subprocess.run(command, check=False).returncode
 
