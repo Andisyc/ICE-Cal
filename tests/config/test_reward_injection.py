@@ -49,8 +49,8 @@ def test_reward_config_loading_g1():
         assert cfg.env.commands.vel_limit[0] == [-0.3, -0.2, -0.4]
         assert cfg.env.commands.resampling_time == 2.0
         assert cfg.env.commands.small_xy_threshold == 0.0
-        assert cfg.env.commands.rel_standing_envs == 0.3
-        assert cfg.env.commands.rel_transition_envs == 0.2
+        assert cfg.env.commands.rel_standing_envs == 0.0
+        assert cfg.env.commands.rel_transition_envs == 0.0
         assert cfg.env.commands.transition_vel_limit == [
             [0.05, -0.05, -0.15],
             [0.25, 0.05, 0.15],
@@ -114,8 +114,8 @@ def test_offpolicy_g1_env_override_carries_standing_mode_contract():
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert override["commands"]["rel_standing_envs"] == 0.3
-    assert override["commands"]["rel_transition_envs"] == 0.2
+    assert override["commands"]["rel_standing_envs"] == 0.0
+    assert override["commands"]["rel_transition_envs"] == 0.0
     assert override["commands"]["resampling_time"] == 2.0
     assert override["commands"]["small_xy_threshold"] == 0.0
     assert override["mode_observation"] is True
