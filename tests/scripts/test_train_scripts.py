@@ -2971,6 +2971,48 @@ def test_play_interactive_treats_missing_g1_mode_observation_as_legacy_false(
     assert merged["commands"]["rel_standing_envs"] == 0.0
 
 
+def test_play_interactive_infers_missing_g1_mode_observation_from_checkpoint_dim(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    mod = _play_interactive()
+    checkpoint = tmp_path / "model_10.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    (tmp_path / "run_config.json").write_text(
+        json.dumps(
+            {
+                "config": {
+                    "env": {
+                        "commands": {"rel_standing_envs": 0.0},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        mod,
+        "resolve_task_checkpoint_path",
+        lambda *args, **kwargs: (checkpoint, tmp_path),
+    )
+    monkeypatch.setattr(mod, "_checkpoint_actor_input_dim", lambda args: 99)
+    args = types.SimpleNamespace(
+        algo="sac",
+        task="G1WalkFlat",
+        load_run="run",
+        checkpoint=None,
+        algo_log_name="fast_sac",
+        log_root=None,
+    )
+
+    merged = mod._apply_checkpoint_env_contract(
+        {"commands": {"rel_standing_envs": 1.0}},
+        args,
+    )
+
+    assert merged["mode_observation"] is True
+    assert merged["commands"]["rel_standing_envs"] == 0.0
+
+
 def test_play_interactive_infers_missing_g1_height_command_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

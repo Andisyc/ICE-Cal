@@ -1,0 +1,187 @@
+{
+  "title": "G1 SAC Locomotion Runtime Flow",
+  "subtitle": "Training and interactive playback route for G1WalkFlat / G1WalkHeight with explicit Walking, Standing, height, gait, and checkpoint boundaries.",
+  "layout": "flow_tree",
+  "concepts": {
+    "C-ENTRY": {
+      "name": "entry and feature flags",
+      "color": "#475569"
+    },
+    "C-CONFIG": {
+      "name": "Hydra owner configs",
+      "color": "#2563eb"
+    },
+    "C-COMMAND": {
+      "name": "command distribution",
+      "color": "#0891b2"
+    },
+    "C-OBS": {
+      "name": "policy observation contract",
+      "color": "#0f766e"
+    },
+    "C-REWARD": {
+      "name": "reward and mode dispatch",
+      "color": "#dc2626"
+    },
+    "C-GAIT": {
+      "name": "gait phase and constraint",
+      "color": "#d97706"
+    },
+    "C-STAND": {
+      "name": "standing branch",
+      "color": "#9333ea"
+    },
+    "C-ALGO": {
+      "name": "SAC learner / actor",
+      "color": "#7c3aed"
+    },
+    "C-PLAY": {
+      "name": "playback compatibility",
+      "color": "#64748b"
+    },
+    "C-DIAG": {
+      "name": "evidence and open risk",
+      "color": "#16a34a"
+    }
+  },
+  "nodes": [
+    {
+      "id": "G1LOC-E-002",
+      "title": "CLI selects feature flags",
+      "role": "训练入口只负责显式 feature flag 路由。",
+      "input": "uv run train --algo sac --task g1_walk_flat --sim mujoco plus optional --height-tracking or --standing-reward.",
+      "output": "task=sac/g1_walk_flat/mujoco by default; task=sac/g1_walk_height/mujoco for height; +g1_walk_stage=mixed_mode for Standing.",
+      "forbidden": "默认 Walking 不能隐式启用 Standing reward, mode_observation, height command, 或 gait_constraint bridge.",
+      "diagnostic": "code-confirmed: src/unilab/cli.py:208-267, 270-284; tests in tests/test_cli.py and tests/config/test_reward_injection.py.",
+      "concept": "C-ENTRY",
+      "children": [
+        {
+          "id": "G1LOC-C-001",
+          "title": "Default Walking owner config",
+          "role": "原版 Walking 训练 contract。",
+          "input": "conf/offpolicy/task/sac/g1_walk_flat/mujoco.yaml.",
+          "output": "98-dim actor observation, Walking scales, offset gait phase, curriculum, SAC symmetry.",
+          "forbidden": "不能包含 env.mode_observation, reward.mode, reward.gait_constraint, or height observe fields unless explicitly opted in elsewhere.",
+          "diagnostic": "code-confirmed: config lines 1-57. runtime-unconfirmed: current checkpoint still falls; needs live reward/termination sentinel before changing weights.",
+          "concept": "C-CONFIG",
+          "children": [
+            {
+              "id": "G1LOC-T-001",
+              "title": "SAC training builds env and actor dims",
+              "role": "训练维度和 symmetry owner。",
+              "input": "resolved cfg, BackendAdapter env override, task owner YAML.",
+              "output": "G1WalkEnv instance, obs_groups_spec, action_dim, symmetry augmentation, FastSACLearner.",
+              "forbidden": "learner 不能猜 observation 维度; 必须由 env.obs_groups_spec 决定。",
+              "diagnostic": "code-confirmed: scripts/train_offpolicy.py:142-260. runtime-unconfirmed: no live trace yet for the newly falling run.",
+              "concept": "C-ALGO",
+              "children": [
+                {
+                  "id": "G1LOC-CMD-002",
+                  "title": "Command sampler assigns mode distribution",
+                  "role": "命令分布和 gait_enabled 初始状态。",
+                  "input": "vel_limit, rel_standing_envs, rel_transition_envs, small_xy_threshold, transition_vel_limit.",
+                  "output": "info['commands'], info['gait_enabled'], info['gait_phase'], optional height_commands.",
+                  "forbidden": "Standing/transition rows must not appear in default Walking unless the profile explicitly sets their probability.",
+                  "diagnostic": "code-confirmed: joystick.py:70-95, 358-467. live-risk: must log command histogram at reset for falling run.",
+                  "concept": "C-COMMAND"
+                },
+                {
+                  "id": "G1LOC-OBS-001",
+                  "title": "Observation contract creates 98/99/100 dims",
+                  "role": "策略输入维度 owner。",
+                  "input": "gyro, gravity, joint diff, dof_vel, last action, command, gait phase, optional mode, optional height.",
+                  "output": "actor obs and critic obs dict entries consumed by SAC.",
+                  "forbidden": "Checkpoint/playback cannot silently use a different optional observation set than training.",
+                  "diagnostic": "code-confirmed: joystick.py:520-526, 610-666, 668-919. tested: playback 98/99/100 fallback contract in tests/scripts/test_train_scripts.py.",
+                  "concept": "C-OBS"
+                },
+                {
+                  "id": "G1LOC-RWD-002",
+                  "title": "Reward dispatch chooses vanilla or mode reward",
+                  "role": "Walking reward purity boundary。",
+                  "input": "G1RewardConfig.scales and optional RewardModeConfig.",
+                  "output": "vanilla run_reward_dispatch when reward.mode.enabled=false; masked walk/stand/recovery dispatch when enabled.",
+                  "forbidden": "Default Walking reward should not execute Standing masks or overrides.",
+                  "diagnostic": "code-confirmed: joystick.py:949-1010. live-risk: falling run needs per-term reward and termination probe.",
+                  "concept": "C-REWARD",
+                  "children": [
+                    {
+                      "id": "G1LOC-GAIT-003",
+                      "title": "Walking gait reward terms",
+                      "role": "步态相位 reward owner。",
+                      "input": "gait_phase, feet positions, contacts, linvel, swing height.",
+                      "output": "feet_phase, contrast, contact, double stance, air-time reward components.",
+                      "forbidden": "Standing reward must not require foot lifting; Walking reward must not be suppressed by stand-only terms.",
+                      "diagnostic": "code-confirmed: joystick.py:1181-1268. live-risk: current direct fall may occur before gait reward matters.",
+                      "concept": "C-GAIT"
+                    },
+                    {
+                      "id": "G1LOC-STAND-001",
+                      "title": "Optional Standing branch",
+                      "role": "站立和恢复站立 owner。",
+                      "input": "mode_observation, gait_enabled, stand recovery speed/tilt thresholds, stand terms and scale overrides.",
+                      "output": "standing reward, recovery reward, optional action authority, frozen stand phase.",
+                      "forbidden": "Default Walking path must not pay Standing losses or freeze phase.",
+                      "diagnostic": "code-confirmed: mixed_mode.yaml:1-126 and joystick.py:764-859, 1270-1386. runtime-unconfirmed: no successful stable Standing checkpoint yet.",
+                      "concept": "C-STAND"
+                    }
+                  ]
+                },
+                {
+                  "id": "G1LOC-ACT-001",
+                  "title": "Action execution advances gait phase",
+                  "role": "policy action to PD target boundary。",
+                  "input": "policy action, current gait_phase, optional stand_action_authority.",
+                  "output": "executed_actions, updated gait_phase, control target = action * action_scale + default_angles.",
+                  "forbidden": "Action execution must not decide reward weights or command distribution.",
+                  "diagnostic": "code-confirmed: joystick.py:1407-1483. live-risk: direct falling requires action/action_scale/default pose probe.",
+                  "concept": "C-GAIT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "G1LOC-C-002",
+          "title": "Optional Standing mixed profile",
+          "role": "Standing must be explicit.",
+          "input": "+g1_walk_stage=mixed_mode.",
+          "output": "mode_observation=true, command mixture, standing reward mode, gait_constraint freeze settings.",
+          "forbidden": "This profile must not become the default Walking config.",
+          "diagnostic": "code-confirmed: mixed_mode.yaml:1-126. design-risk: current monolithic env makes accidental cross-contamination easy.",
+          "concept": "C-STAND"
+        },
+        {
+          "id": "G1LOC-C-003",
+          "title": "Optional height tracking profile",
+          "role": "Height command must be explicit.",
+          "input": "--height-tracking or task=sac/g1_walk_height/mujoco.",
+          "output": "observe_height_command=true, random_height_during_walking=true, actor obs +1 height dimension, height reward scale.",
+          "forbidden": "Height command cannot silently change G1WalkFlat actor dimension.",
+          "diagnostic": "code-confirmed: g1_walk_height/mujoco.yaml:1-17 and joystick.py:668-700.",
+          "concept": "C-OBS"
+        },
+        {
+          "id": "G1LOC-P-001",
+          "title": "Interactive playback restores checkpoint contract",
+          "role": "本地 macOS 仿真回放兼容层。",
+          "input": "start.sh -> play_interactive.py, selected checkpoint, sibling run_config.json.",
+          "output": "env_cfg_override compatible with actor input dim before create_sac_playback_session.",
+          "forbidden": "Playback compatibility fixes must not alter training defaults or checkpoint files.",
+          "diagnostic": "code-confirmed: play_interactive.py:268-354, 1236-1305; interactive_playback.py:695-815. tested: 5 playback contract tests passed in latest run.",
+          "concept": "C-PLAY"
+        },
+        {
+          "id": "G1LOC-D-001",
+          "title": "Open live failure boundary",
+          "role": "机器人直接倒地目前仍未定位。",
+          "input": "newly trained SAC checkpoint that loads but falls immediately.",
+          "output": "next probe must print reset pose, obs dim, command histogram, reward mode flags, first-step action stats, base height/tilt termination reason.",
+          "forbidden": "Do not tune reward weights again without this live sentinel; do not claim playback fix implies policy quality fix.",
+          "diagnostic": "runtime-unconfirmed. Needs a no-viewer short rollout probe near G1WalkEnv.update_state/apply_action and SAC actor output.",
+          "concept": "C-DIAG"
+        }
+      ]
+    }
+  ]
+}

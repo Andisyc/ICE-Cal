@@ -15,6 +15,8 @@ same Code Block ID
 
 - `architecture/01_unilab_repo_architecture.data.json`: editable source data for the UniLab repo ownership map.
 - `runtime/02_unilab_runtime_flow.data.json`: editable source data for the UniLab runtime contract map.
+- `architecture/02_g1_locomotion_modularization.data.json`: editable source data for the G1 SAC locomotion modularization owner map.
+- `runtime/03_g1_sac_locomotion_flow.data.json`: editable source data for the G1 SAC locomotion training/playback flow map.
 - `auxiliary/atlas_app/`: helper viewer, local server, static renderer, checks, and JS dependencies.
 
 ## Folder Contract
@@ -49,6 +51,8 @@ Open one of these URLs on the right side of VSCode:
 http://127.0.0.1:8765/
 http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/01_unilab_repo_architecture.data.json
 http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/02_unilab_runtime_flow.data.json
+http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_locomotion_modularization.data.json
+http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/03_g1_sac_locomotion_flow.data.json
 ```
 
 Open the matching `*.data.json` on the left. Saving the JSON refreshes the graph

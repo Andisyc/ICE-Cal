@@ -1,0 +1,261 @@
+{
+  "title": "G1 Locomotion Modularization Atlas",
+  "subtitle": "Owner map for separating upstream Walking, optional Standing, optional height tracking, gait constraints, and playback contract recovery.",
+  "layout": "repo_tree",
+  "root": "G1 SAC Locomotion",
+  "concepts": {
+    "C-ENTRY": {
+      "name": "entry and feature flags",
+      "color": "#475569"
+    },
+    "C-CONFIG": {
+      "name": "Hydra owner configs",
+      "color": "#2563eb"
+    },
+    "C-COMMAND": {
+      "name": "command distribution",
+      "color": "#0891b2"
+    },
+    "C-OBS": {
+      "name": "policy observation contract",
+      "color": "#0f766e"
+    },
+    "C-REWARD": {
+      "name": "reward dispatch and term ownership",
+      "color": "#dc2626"
+    },
+    "C-GAIT": {
+      "name": "gait phase and constraints",
+      "color": "#d97706"
+    },
+    "C-STAND": {
+      "name": "standing mode behavior",
+      "color": "#9333ea"
+    },
+    "C-PLAY": {
+      "name": "checkpoint playback compatibility",
+      "color": "#64748b"
+    },
+    "C-VERIFY": {
+      "name": "contract tests and probes",
+      "color": "#16a34a"
+    }
+  },
+  "files": [
+    {
+      "group": "Entry",
+      "path": "start.sh",
+      "color": "#475569",
+      "blocks": [
+        {
+          "id": "G1LOC-E-001",
+          "role": "macOS/Linux playback wrapper. It launches scripts/play_interactive.py with SAC, G1WalkFlat, MuJoCo, policy action mode, keyboard control, and optional load_run folder shorthand.",
+          "lines": "1-43",
+          "concept": "C-ENTRY"
+        }
+      ]
+    },
+    {
+      "group": "Entry",
+      "path": "src/unilab/cli.py",
+      "color": "#475569",
+      "blocks": [
+        {
+          "id": "G1LOC-E-002",
+          "role": "CLI feature flag owner. --height-tracking switches task to g1_walk_height. --standing-reward explicitly appends +g1_walk_stage=mixed_mode. Default path leaves Standing off.",
+          "lines": "build_command:208-267; parser:270-284",
+          "concept": "C-ENTRY"
+        }
+      ]
+    },
+    {
+      "group": "Config",
+      "path": "conf/offpolicy/task/sac/g1_walk_flat/mujoco.yaml",
+      "color": "#2563eb",
+      "blocks": [
+        {
+          "id": "G1LOC-C-001",
+          "role": "Default upstream-style Walking owner config. Should remain clean: no mode_observation, no Standing reward mode, no height command observation, no gait_constraint bridge.",
+          "lines": "1-57",
+          "concept": "C-CONFIG"
+        }
+      ]
+    },
+    {
+      "group": "Config",
+      "path": "conf/offpolicy/g1_walk_stage/mixed_mode.yaml",
+      "color": "#2563eb",
+      "blocks": [
+        {
+          "id": "G1LOC-C-002",
+          "role": "Optional Standing+Walking mixed profile. Owns mode_observation, rel_standing_envs, rel_transition_envs, reward.mode, stand terms, and gait_constraint freeze behavior.",
+          "lines": "1-126",
+          "concept": "C-CONFIG"
+        }
+      ]
+    },
+    {
+      "group": "Config",
+      "path": "conf/offpolicy/task/sac/g1_walk_height/mujoco.yaml",
+      "color": "#2563eb",
+      "blocks": [
+        {
+          "id": "G1LOC-C-003",
+          "role": "Optional height-tracking profile. Extends G1WalkFlat and only adds height command observation, random height sampling, track_base_height_exp_smooth, and G1WalkHeight task name.",
+          "lines": "1-17",
+          "concept": "C-CONFIG"
+        }
+      ]
+    },
+    {
+      "group": "Commands",
+      "path": "src/unilab/envs/locomotion/common/commands.py",
+      "color": "#0891b2",
+      "blocks": [
+        {
+          "id": "G1LOC-CMD-001",
+          "role": "Shared command data contract. Defines velocity limits, standing/transition fractions, height command fields, and pure samplers used by locomotion tasks.",
+          "lines": "Commands:12-36; sample_velocity_commands:39-44; sample_height_commands:47-63",
+          "concept": "C-COMMAND"
+        }
+      ]
+    },
+    {
+      "group": "G1 Env Monolith",
+      "path": "src/unilab/envs/locomotion/g1/joystick.py",
+      "color": "#d97706",
+      "blocks": [
+        {
+          "id": "G1LOC-GAIT-001",
+          "role": "Current gait math owner, planned split to g1/walk_gait.py. Owns phase pair sampling, swing-foot height targets, contact targets, forward-speed gate, and gait violation helpers.",
+          "lines": "sample_gait_phase_pairs:50-63; compute_feet_phase_height_targets:104-126; compute_*_mask/violation:155-226",
+          "concept": "C-GAIT"
+        },
+        {
+          "id": "G1LOC-RWD-001",
+          "role": "Current reward config owner, planned split to g1/walk_reward_config.py. Contains GaitConstraintConfig, RewardModeConfig, G1RewardConfig, pose weights, and Standing target parameters.",
+          "lines": "GaitConstraintConfig:229-244; RewardModeConfig:246-257; G1RewardConfig:259-320",
+          "concept": "C-REWARD"
+        },
+        {
+          "id": "G1LOC-CMD-002",
+          "role": "Current G1 command distribution owner, planned split to g1/walk_commands.py. Samples walking, transition, and zero-command Standing rows and derives gait_enabled at reset.",
+          "lines": "sample_g1_walk_commands:70-95; G1WalkDomainRandomizationProvider:358-467",
+          "concept": "C-COMMAND"
+        },
+        {
+          "id": "G1LOC-ENV-001",
+          "role": "Current env lifecycle owner. Builds backend, validates reward config, initializes gait delta, pose weights, curriculum, reward registry, and DR provider.",
+          "lines": "G1WalkEnv:469-519",
+          "concept": "C-OBS"
+        },
+        {
+          "id": "G1LOC-OBS-001",
+          "role": "Policy observation owner, planned split to g1/walk_observation.py. Defines 98/99/100 dim contract, command column, height column, gait phase observation, mode observation, and symmetry layout.",
+          "lines": "obs_groups_spec:520-526; _compute_obs:610-666; height/mode/symmetry helpers:668-919",
+          "concept": "C-OBS"
+        },
+        {
+          "id": "G1LOC-RWD-002",
+          "role": "Reward dispatch owner, planned split to g1/walk_reward_dispatch.py. Chooses vanilla Walking dispatch when reward.mode.enabled=false and masked Standing/Walking dispatch when enabled.",
+          "lines": "_compute_reward:949-955; _compute_mode_reward:957-1010; masked dispatch/log:1012-1092",
+          "concept": "C-REWARD"
+        },
+        {
+          "id": "G1LOC-GAIT-002",
+          "role": "Gait constraint bridge, planned split to g1/walk_gait_constraint.py. Computes phase/contact penalties and gates them by gait_enabled or stand-mode policy.",
+          "lines": "_apply_gait_constraint_bridge:1094-1108; _compute_gait_constraint_components:1110-1162; _log_gait_constraint:1164-1179",
+          "concept": "C-GAIT"
+        },
+        {
+          "id": "G1LOC-GAIT-003",
+          "role": "Walking gait reward terms, planned split to g1/walk_gait_rewards.py. Owns feet_phase, feet_phase_contrast, feet_phase_contact, double stance, feet air time, and forward-speed gate.",
+          "lines": "_reward_feet_phase:1181-1196; _reward_feet_phase_contrast:1202-1215; _reward_feet_phase_contact:1217-1230; feet_*:1232-1268",
+          "concept": "C-GAIT"
+        },
+        {
+          "id": "G1LOC-STAND-001",
+          "role": "Standing behavior owner, planned split to g1/standing_rewards.py and g1/mode_switching.py. Owns stand/recovery masks, action authority, static standing penalties, feet alignment, and base-over-feet terms.",
+          "lines": "_stand_recovery_mask:764-776; _actions_for_execution:797-808; standing rewards:1270-1386",
+          "concept": "C-STAND"
+        },
+        {
+          "id": "G1LOC-ACT-001",
+          "role": "Action and phase execution owner, planned split to g1/walk_action.py. Advances gait phase, freezes phase in stand mode, applies optional stand_action_authority, and converts policy action to PD target.",
+          "lines": "_update_commands:1407-1447; apply_action:1456-1483",
+          "concept": "C-GAIT"
+        },
+        {
+          "id": "G1LOC-REG-001",
+          "role": "Registry owner for G1WalkFlat, G1WalkHeight, and G1WalkRough. Keeps env variants bound to the same G1WalkEnv implementation.",
+          "lines": "G1WalkFlatCfg:1509-1519; G1WalkHeightCfg:1522-1525; register_env:1538-1542",
+          "concept": "C-CONFIG"
+        }
+      ]
+    },
+    {
+      "group": "Training",
+      "path": "scripts/train_offpolicy.py",
+      "color": "#dc2626",
+      "blocks": [
+        {
+          "id": "G1LOC-T-001",
+          "role": "Off-policy env override and dimension owner for training. Builds env via BackendAdapter, reads obs_groups_spec/action_space, builds symmetry augmentation, and constructs SAC learner dims.",
+          "lines": "build_offpolicy_env_cfg_override:142-147; build_runner:150-260",
+          "concept": "C-OBS"
+        },
+        {
+          "id": "G1LOC-T-002",
+          "role": "Non-interactive play owner. Uses sim2sim config recovery before env creation, then checks checkpoint load dimensions through policy_load_dim_guard.",
+          "lines": "play_offpolicy:387-520",
+          "concept": "C-PLAY"
+        }
+      ]
+    },
+    {
+      "group": "Playback",
+      "path": "scripts/play_interactive.py",
+      "color": "#64748b",
+      "blocks": [
+        {
+          "id": "G1LOC-P-001",
+          "role": "Interactive playback contract recovery owner. Restores env/reward contract from run_config and falls back to checkpoint actor input dim for legacy 99/100-dim G1 checkpoints.",
+          "lines": "_checkpoint_actor_input_dim:268-280; _apply_missing_g1_height_command_contract:283-304; _apply_missing_g1_mode_observation_contract:307-319; _apply_checkpoint_env_contract:322-354",
+          "concept": "C-PLAY"
+        },
+        {
+          "id": "G1LOC-P-002",
+          "role": "Interactive playback env creation owner. Calls build_offpolicy_env_cfg_override, applies checkpoint env contract before create_env, and then delegates SAC session creation.",
+          "lines": "play_interactive:1236-1305",
+          "concept": "C-PLAY"
+        }
+      ]
+    },
+    {
+      "group": "Playback",
+      "path": "src/unilab/visualization/interactive_playback.py",
+      "color": "#64748b",
+      "blocks": [
+        {
+          "id": "G1LOC-P-003",
+          "role": "SAC actor/env dimension guard. Creates env first, computes obs_dim from obs_groups_spec, loads checkpoint, and fails fast if actor input dim mismatches playback env obs.",
+          "lines": "create_sac_playback_session:695-815",
+          "concept": "C-PLAY"
+        }
+      ]
+    },
+    {
+      "group": "Tests",
+      "path": "tests/config/test_reward_injection.py; tests/envs/locomotion/g1/test_gait_constraint.py; tests/scripts/test_train_scripts.py",
+      "color": "#16a34a",
+      "blocks": [
+        {
+          "id": "G1LOC-V-001",
+          "role": "Current contract tests. Cover CLI reward injection, gait constraint pure helpers and env behavior, checkpoint playback contract fallback, and config route assumptions. They do not prove live policy quality.",
+          "lines": "test_reward_injection.py; test_gait_constraint.py; test_train_scripts.py:play_interactive and CLI sections",
+          "concept": "C-VERIFY"
+        }
+      ]
+    }
+  ]
+}

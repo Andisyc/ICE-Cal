@@ -361,6 +361,18 @@ def test_common_small_xy_threshold_zeroes_low_speed_xy_commands() -> None:
     np.testing.assert_allclose(commands[1], np.asarray([0.1, 0.0, 0.0], dtype=np.float32))
 
 
+def test_default_g1_walking_config_keeps_keyboard_step_speed() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
+
+    assert cfg.env.commands.small_xy_threshold == 0.0
+
+    commands = np.asarray([[0.1, 0.0, 0.0]], dtype=np.float32)
+    zero_small_xy_commands(commands, threshold=float(cfg.env.commands.small_xy_threshold))
+
+    np.testing.assert_allclose(commands, np.asarray([[0.1, 0.0, 0.0]], dtype=np.float32))
+
+
 def test_g1_low_speed_nonzero_command_stays_transition_stand_mode() -> None:
     provider = G1WalkDomainRandomizationProvider()
     env = SimpleNamespace(

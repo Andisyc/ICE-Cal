@@ -7,7 +7,7 @@ training:
   sim_backend: mujoco
 env:
   commands:
-    height_range: [0.2, 0.754]
+    height_range: [0.3, 0.754]
     default_height: 0.754
     random_height_during_walking: true
     observe_height_command: true

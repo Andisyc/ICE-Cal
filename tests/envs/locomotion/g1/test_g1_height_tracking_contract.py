@@ -3,10 +3,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+from hydra import compose, initialize
+from omegaconf import OmegaConf
 
 from unilab.dtype_config import get_global_dtype
 from unilab.envs.locomotion.common.commands import Commands, sample_height_commands
-from unilab.envs.locomotion.common.rewards import RewardContext, track_base_height_exp_smooth
+from unilab.envs.locomotion.common.rewards import (
+    RewardContext,
+    track_base_height_exp_smooth,
+    tracking_lin_vel,
+)
 from unilab.envs.locomotion.g1.joystick import G1WalkEnv
 
 
@@ -256,3 +262,71 @@ def test_height_obs_appends_target_height_after_velocity_command() -> None:
     np.testing.assert_allclose(
         obs["critic"][:, command_start : command_start + 4], expected_command_block
     )
+
+
+def test_height_tracking_config_keeps_original_walking_reward_boundary() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+
+    scales = OmegaConf.to_container(cfg.reward.scales, resolve=True)
+
+    assert cfg.training.task_name == "G1WalkHeight"
+    assert "mode_observation" not in cfg.env
+    assert "mode" not in cfg.reward
+    assert "gait_constraint" not in cfg.reward
+    assert cfg.env.commands.small_xy_threshold == 0.0
+    assert "rel_standing_envs" not in cfg.env.commands
+    assert "rel_transition_envs" not in cfg.env.commands
+    assert scales["tracking_lin_vel"] == 2.0
+    assert scales["tracking_ang_vel"] == 1.5
+    assert scales["feet_phase"] == 5.0
+    assert scales["track_base_height_exp_smooth"] == 4.0
+
+
+def test_height_command_range_stays_inside_walking_survival_height() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+
+    height_low, height_high = cfg.env.commands.height_range
+
+    assert height_low >= cfg.reward.min_base_height
+    assert cfg.reward.min_base_height <= cfg.env.commands.default_height <= height_high
+
+
+def test_height_tracking_reward_does_not_change_velocity_ranking_at_same_height() -> None:
+    command = np.asarray([[0.3, 0.0, 0.0], [0.3, 0.0, 0.0]], dtype=get_global_dtype())
+    ctx = RewardContext(
+        info={"commands": command},
+        linvel=np.asarray([[0.3, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=get_global_dtype()),
+        gyro=np.zeros((2, 3), dtype=get_global_dtype()),
+        dof_pos=np.zeros((2, 0), dtype=get_global_dtype()),
+        num_envs=2,
+        tracking_sigma=0.25,
+        base_height_target=np.asarray([0.7, 0.7], dtype=get_global_dtype()),
+        base_height=np.asarray([0.7, 0.7], dtype=get_global_dtype()),
+    )
+
+    lin = 2.0 * tracking_lin_vel(ctx)
+    height = 4.0 * track_base_height_exp_smooth(ctx)
+    total = lin + height
+
+    assert height[0] == height[1]
+    assert lin[0] > lin[1]
+    assert total[0] > total[1]
+
+
+def test_height_tracking_scale_stays_below_walking_positive_reward_budget() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+
+    scales = OmegaConf.to_container(cfg.reward.scales, resolve=True)
+    walking_positive = (
+        scales["tracking_lin_vel"]
+        + scales["tracking_ang_vel"]
+        + scales["feet_phase"]
+        + scales["alive"]
+    )
+    height_scale = scales["track_base_height_exp_smooth"]
+
+    assert height_scale < walking_positive
+    assert height_scale / walking_positive < 0.25

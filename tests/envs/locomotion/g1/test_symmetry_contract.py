@@ -93,6 +93,7 @@ def test_g1_walk_height_symmetry_keeps_height_command_scalar():
     ensure_registries()
     with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "offpolicy"), version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+    assert "mode_observation" not in cfg.env
     env_override = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name="sac").build_task_env_cfg_override()
     env = create_env(cfg, num_envs=1, env_cfg_override=env_override, sim_backend="mujoco")
 
@@ -106,7 +107,7 @@ def test_g1_walk_height_symmetry_keeps_height_command_scalar():
 
         mirrored = augmentation.mirror_obs(obs, obs_group="obs")
 
-        assert env.obs_groups_spec["obs"] == 100
+        assert env.obs_groups_spec["obs"] == 99
         torch.testing.assert_close(
             mirrored[0, command_start : command_start + 4],
             torch.tensor([0.2, -0.1, -0.3, 0.754]),

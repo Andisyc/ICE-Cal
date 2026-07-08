@@ -304,6 +304,21 @@ def _apply_missing_g1_height_command_contract(
     return merged
 
 
+def _apply_missing_g1_mode_observation_contract(
+    merged: dict[str, Any],
+    args: PlayInteractiveArgs,
+) -> dict[str, Any]:
+    if getattr(args, "task", None) not in {"g1_walk_flat", "G1WalkFlat"}:
+        return merged
+    if getattr(args, "algo", None) not in _OFFPOLICY_INTERACTIVE_ALGOS:
+        return merged
+    if _checkpoint_actor_input_dim(args) != 99:
+        return merged
+
+    merged["mode_observation"] = True
+    return merged
+
+
 def _apply_checkpoint_env_contract(
     env_cfg_override: dict[str, Any] | None,
     args: PlayInteractiveArgs,
@@ -312,10 +327,12 @@ def _apply_checkpoint_env_contract(
     merged = dict(env_cfg_override or {})
     run_config = _load_checkpoint_run_config(args)
     if run_config is None:
+        merged = _apply_missing_g1_mode_observation_contract(merged, args)
         return _apply_missing_g1_height_command_contract(merged, args)
     run_cfg = run_config.get("config")
     if not isinstance(run_cfg, Mapping):
-        return merged
+        merged = _apply_missing_g1_mode_observation_contract(merged, args)
+        return _apply_missing_g1_height_command_contract(merged, args)
 
     run_env = run_cfg.get("env")
     if isinstance(run_env, Mapping):
@@ -326,6 +343,11 @@ def _apply_checkpoint_env_contract(
             and "mode_observation" in merged
         ):
             merged["mode_observation"] = False
+        elif (
+            args.task in {"g1_walk_flat", "G1WalkFlat"}
+            and "mode_observation" not in run_env
+        ):
+            merged = _apply_missing_g1_mode_observation_contract(merged, args)
     run_reward = run_cfg.get("reward")
     if isinstance(run_reward, Mapping):
         merged["reward_config"] = dict(run_reward)

@@ -32,7 +32,7 @@ def test_reward_config_loading_g1():
         assert cfg.reward.base_height_target == 0.754
         assert "gait_constraint" not in cfg.reward
         assert "mode" not in cfg.reward
-        assert "commands" not in cfg.env
+        assert cfg.env.commands.small_xy_threshold == 0.0
         assert "mode_observation" not in cfg.env
         assert cfg.interactive.action_mode == "policy"
         assert cfg.interactive.keyboard is True
@@ -51,7 +51,7 @@ def test_offpolicy_g1_env_override_preserves_upstream_walking_contract():
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert "commands" not in override
+    assert override["commands"] == {"small_xy_threshold": 0.0}
     assert "mode_observation" not in override
     assert "standing_reset_base_qvel_limit" not in override
     assert "mode" not in override["reward_config"]
@@ -77,7 +77,8 @@ def test_g1_height_sac_config_preserves_g1_walk_flat_checkpoint_contract():
     assert cfg.training.task_name == "G1WalkFlat"
     assert cfg.training.sim_backend == "mujoco"
     assert "mode_observation" not in cfg.env
-    assert "commands" not in cfg.env
+    assert cfg.env.commands.small_xy_threshold == 0.0
+    assert "observe_height_command" not in cfg.env.commands
     assert "track_base_height_exp_smooth" not in cfg.reward.scales
 
 
@@ -93,7 +94,7 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert cfg.training.task_name == "G1WalkHeight"
     assert cfg.training.sim_backend == "mujoco"
     assert "mode_observation" not in cfg.env
-    assert cfg.env.commands.height_range == [0.2, 0.754]
+    assert cfg.env.commands.height_range == [0.3, 0.754]
     assert cfg.env.commands.default_height == 0.754
     assert cfg.env.commands.random_height_during_walking is True
     assert cfg.env.commands.observe_height_command is True
@@ -101,7 +102,7 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert cfg.reward.base_height_target == 0.754
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
-    assert override["commands"]["height_range"] == [0.2, 0.754]
+    assert override["commands"]["height_range"] == [0.3, 0.754]
     assert override["commands"]["default_height"] == 0.754
     assert override["commands"]["random_height_during_walking"] is True
     assert override["commands"]["observe_height_command"] is True
