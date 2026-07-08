@@ -32,6 +32,31 @@ def _actor_input_dim_from_state_dict(state_dict: Mapping[str, Any]) -> int | Non
     return None
 
 
+_LEGACY_TAR_WEIGHTS_ONLY_ERROR = (
+    "Cannot use ``weights_only=True`` with files saved in the legacy .tar format"
+)
+
+
+def _load_playback_checkpoint(checkpoint_path: str, *, device_name: str, log: LogFn) -> Any:
+    try:
+        return torch.load(checkpoint_path, map_location=device_name, weights_only=True)
+    except RuntimeError as exc:
+        if _LEGACY_TAR_WEIGHTS_ONLY_ERROR not in str(exc):
+            raise
+        log(
+            "WARNING: checkpoint uses legacy PyTorch .tar serialization; "
+            "reloading with weights_only=False. Only use trusted local checkpoints."
+        )
+        try:
+            return torch.load(checkpoint_path, map_location=device_name, weights_only=False)
+        except Exception as legacy_exc:
+            raise RuntimeError(
+                "Failed to load checkpoint after PyTorch legacy .tar fallback: "
+                f"{checkpoint_path}. The file may be corrupted, incomplete, or not a "
+                "PyTorch checkpoint; re-copy or re-download the checkpoint before playback."
+            ) from legacy_exc
+
+
 @dataclass(frozen=True)
 class RslRlPlaybackConfig:
     """Configuration needed to bootstrap an RSL-RL interactive playback session."""
@@ -643,7 +668,11 @@ def create_appo_playback_session(
                 device=device_name,
                 is_hora=is_hora,
             )
-            checkpoint = torch.load(checkpoint_path, map_location=device_name, weights_only=True)
+            checkpoint = _load_playback_checkpoint(
+                checkpoint_path,
+                device_name=device_name,
+                log=log,
+            )
             actor.load_state_dict(checkpoint["actor"])
             policy = actor
             log(f"Loading APPO checkpoint: {checkpoint_path}")
@@ -746,7 +775,11 @@ def create_sac_playback_session(
             )
             actor = None
         else:
-            checkpoint = torch.load(checkpoint_path, map_location=device_name, weights_only=True)
+            checkpoint = _load_playback_checkpoint(
+                checkpoint_path,
+                device_name=device_name,
+                log=log,
+            )
             checkpoint_actor = checkpoint["actor"]
             checkpoint_obs_dim = _actor_input_dim_from_state_dict(checkpoint_actor)
             if checkpoint_obs_dim is not None and checkpoint_obs_dim != obs_dim:

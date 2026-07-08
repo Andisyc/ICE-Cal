@@ -78,7 +78,7 @@ reward:
     feet_phase_contrast: 0.8
     feet_phase_contact: 0.5
     alive: 10.0
-  tracking_sigma: 0.12
+  tracking_sigma: 0.25
   base_height_target: 0.754
   min_base_height: 0.3
   max_tilt_deg: 65.0
@@ -90,12 +90,13 @@ reward:
   stand_base_feet_center_y_target: 0.0
   gait_frequency: 1.5
   feet_phase_swing_height: 0.09
-  feet_phase_tracking_sigma: 0.004
+  feet_phase_tracking_sigma: 0.04
   close_feet_threshold: 0.15
   mode:
     enabled: true
     standing_enabled: false
-    balance_common_terms:
+    balance_common_terms: []
+    stand_terms:
       - penalty_orientation
       - upright
       - penalty_ang_vel_xy
@@ -104,7 +105,6 @@ reward:
       - pose
       - penalty_feet_ori
       - alive
-    stand_terms:
       - stand_still
       - stand_action_l2
       - stand_dof_vel_l2
@@ -119,6 +119,14 @@ reward:
       - stand_base_feet_center_x_l2
       - stand_base_feet_center_y_l2
     stand_recovery_terms:
+      - penalty_orientation
+      - upright
+      - penalty_ang_vel_xy
+      - penalty_action_rate
+      - base_height
+      - pose
+      - penalty_feet_ori
+      - alive
       - stand_dof_vel_l2
       - stand_lin_vel_xy_l2
       - stand_yaw_vel_l2
@@ -141,17 +149,14 @@ reward:
     walk_terms:
       - tracking_lin_vel
       - tracking_ang_vel
+      - penalty_ang_vel_xy
+      - penalty_orientation
+      - penalty_action_rate
+      - pose
+      - penalty_feet_ori
       - feet_phase
-    walk_scale_overrides:
-      tracking_ang_vel: 0.3
-      pose: 0.0
-      penalty_action_rate: -0.5
-      upright: 0.25
-      penalty_orientation: -0.5
-      penalty_ang_vel_xy: -0.05
-      base_height: -5.0
-      penalty_feet_ori: -1.0
-      feet_phase: 12.0
+      - alive
+    walk_scale_overrides: {}
   gait_constraint:
     enabled: true
     command_xy_threshold: 0.05
@@ -165,4 +170,4 @@ reward:
     apply_when_tracking: false
     freeze_phase_in_stand_mode: true
     stand_phase: [3.141592653589793, 3.141592653589793]
-  pose_weights: [0.01, 1.0, 0.05, 0.01, 5.0, 5.0, 0.01, 1.0, 0.05, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

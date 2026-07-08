@@ -1168,13 +1168,14 @@ def test_mode_scale_overrides_allow_walking_specific_common_term_weight() -> Non
     assert abs(reward[1]) < abs(reward[0])
 
 
-def test_active_g1_common_base_height_reward_numeric_effect() -> None:
+def test_active_g1_standing_base_height_reward_does_not_pollute_walking() -> None:
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
 
     assert cfg.reward.scales.base_height == -80.0
-    assert "base_height" in cfg.reward.mode.balance_common_terms
-    assert "base_height" not in cfg.reward.mode.stand_terms
+    assert "base_height" not in cfg.reward.mode.balance_common_terms
+    assert "base_height" in cfg.reward.mode.stand_terms
+    assert "base_height" in cfg.reward.mode.stand_recovery_terms
     assert "base_height" not in cfg.reward.mode.walk_terms
 
     reward_cfg = G1WalkRewardConfig(
@@ -1190,8 +1191,8 @@ def test_active_g1_common_base_height_reward_numeric_effect() -> None:
         mode=RewardModeConfig(
             enabled=True,
             standing_enabled=True,
-            balance_common_terms=["base_height"],
-            stand_terms=[],
+            balance_common_terms=[],
+            stand_terms=["base_height"],
             walk_terms=[],
         ),
         pose_weights=list(OmegaConf.to_container(cfg.reward.pose_weights, resolve=True)),
@@ -1223,21 +1224,19 @@ def test_active_g1_common_base_height_reward_numeric_effect() -> None:
 
     reward = env._compute_mode_reward(ctx, reward_cfg)
 
-    np.testing.assert_allclose(
-        reward, np.asarray([expected_step, expected_step]), rtol=1e-6
-    )
-    np.testing.assert_allclose(ctx.info["log"]["reward/base_height"], expected_raw, rtol=1e-6)
+    np.testing.assert_allclose(reward, np.asarray([expected_step, 0.0]), rtol=1e-6)
+    np.testing.assert_allclose(ctx.info["log"]["reward/base_height"], expected_raw / 2.0, rtol=1e-6)
     np.testing.assert_allclose(ctx.info["log"]["reward/stand_total"], expected_step / 2.0, rtol=1e-6)
-    np.testing.assert_allclose(ctx.info["log"]["reward/walk_total"], expected_step / 2.0, rtol=1e-6)
+    np.testing.assert_allclose(ctx.info["log"]["reward/walk_total"], 0.0, rtol=1e-6)
 
 
 def test_active_g1_standing_reward_prefers_balanced_residual_over_quiet_fall() -> None:
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
 
-    common_terms = list(OmegaConf.to_container(cfg.reward.mode.balance_common_terms, resolve=True))
     stand_terms = list(OmegaConf.to_container(cfg.reward.mode.stand_terms, resolve=True))
-    assert "upright" in common_terms
+    assert "upright" in stand_terms
+    assert "upright" not in cfg.reward.mode.walk_terms
     assert "stand_action_l2" in stand_terms
     assert cfg.reward.scales.upright > 0.0
     assert abs(float(cfg.reward.scales.stand_action_l2)) < 0.1
@@ -1255,8 +1254,9 @@ def test_active_g1_standing_reward_prefers_balanced_residual_over_quiet_fall() -
         mode=RewardModeConfig(
             enabled=True,
             standing_enabled=True,
-            balance_common_terms=common_terms,
+            balance_common_terms=[],
             stand_terms=stand_terms,
+            stand_recovery_terms=stand_terms,
             walk_terms=[],
         ),
         pose_weights=list(OmegaConf.to_container(cfg.reward.pose_weights, resolve=True)),

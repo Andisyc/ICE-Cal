@@ -765,6 +765,126 @@ def test_sac_playback_rejects_checkpoint_obs_dim_mismatch(
         )
 
 
+def test_sac_playback_loads_legacy_tar_checkpoint_with_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import train_offpolicy
+    from omegaconf import OmegaConf
+
+    import unilab.algos.torch.common.actor_factory as actor_factory
+    import unilab.visualization.interactive_playback as playback
+
+    checkpoint = tmp_path / "model_10.pt"
+    checkpoint.write_bytes(b"legacy-tar-placeholder")
+    captured: dict[str, Any] = {"logs": [], "load_calls": []}
+
+    class FakeEnv:
+        num_envs = 1
+        obs_groups_spec = {"obs": 3}
+        action_space = SimpleNamespace(shape=(2,))
+        state = SimpleNamespace(info={})
+
+    class FakeActor:
+        def eval(self):
+            return self
+
+        def load_state_dict(self, state_dict):
+            captured["loaded_actor"] = state_dict
+
+    cfg = OmegaConf.create(
+        {
+            "training": {"task_name": "Task", "device": None},
+            "algo": {
+                "algo_log_name": "fast_sac",
+                "load_run": "run",
+                "actor_hidden_dim": 16,
+                "use_layer_norm": False,
+                "runtime_impl": "sac",
+                "obs_normalization": False,
+            },
+        }
+    )
+
+    def fake_torch_load(path, *, map_location=None, weights_only=True):
+        captured["load_calls"].append(
+            {
+                "path": str(path),
+                "map_location": map_location,
+                "weights_only": weights_only,
+            }
+        )
+        if weights_only:
+            raise RuntimeError(
+                "Cannot use ``weights_only=True`` with files saved in the legacy .tar format."
+            )
+        return {"actor": {"net.0.weight": torch.zeros((4, 3))}}
+
+    monkeypatch.setattr(train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu")
+    monkeypatch.setattr(train_offpolicy, "resolve_play_obs_dims", lambda spec: (3, 3))
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_play_actor_spec",
+        lambda algo_name, cfg, *, obs_dim, critic_obs_dim: ("sac", {}),
+    )
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_checkpoint_path",
+        lambda *args, **kwargs: (str(checkpoint), str(tmp_path)),
+    )
+    monkeypatch.setattr(actor_factory, "build_actor", lambda *args, **kwargs: FakeActor())
+    monkeypatch.setattr(playback.torch, "load", fake_torch_load)
+
+    session, policy_obs_mode, resolved_checkpoint = create_sac_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="Task",
+            load_run="run",
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="fast_sac",
+            log_root=None,
+        ),
+        cfg=cfg,
+        env_factory=lambda num_envs: FakeEnv(),
+        root_dir=tmp_path,
+        device="cpu",
+        log=lambda message: captured["logs"].append(message),
+    )
+
+    assert session.actor is not None
+    assert policy_obs_mode == "actor"
+    assert resolved_checkpoint == str(checkpoint)
+    assert [call["weights_only"] for call in captured["load_calls"]] == [True, False]
+    assert captured["loaded_actor"]["net.0.weight"].shape == (4, 3)
+    assert any("legacy PyTorch .tar serialization" in message for message in captured["logs"])
+
+
+def test_sac_playback_reports_corrupt_legacy_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import unilab.visualization.interactive_playback as playback
+
+    checkpoint = tmp_path / "model_10.pt"
+    checkpoint.write_bytes(b"corrupt")
+    captured: dict[str, Any] = {"load_calls": []}
+
+    def fake_torch_load(path, *, map_location=None, weights_only=True):
+        captured["load_calls"].append(weights_only)
+        if weights_only:
+            raise RuntimeError(
+                "Cannot use ``weights_only=True`` with files saved in the legacy .tar format."
+            )
+        raise KeyError("storages")
+
+    monkeypatch.setattr(playback.torch, "load", fake_torch_load)
+
+    with pytest.raises(RuntimeError, match="corrupted, incomplete, or not a PyTorch checkpoint"):
+        playback._load_playback_checkpoint(str(checkpoint), device_name="cpu", log=lambda message: None)
+    assert captured["load_calls"] == [True, False]
+
+
 def test_hora_distill_playback_session_loads_stage2_checkpoint_and_student_policy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

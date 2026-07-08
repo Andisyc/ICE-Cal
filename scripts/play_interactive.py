@@ -65,6 +65,8 @@ from unilab.visualization.interactive_playback import (
     KeyboardCommander,
     PlaybackControls,
     RslRlPlaybackConfig,
+    _actor_input_dim_from_state_dict,
+    _load_playback_checkpoint,
     create_appo_playback_session,
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
@@ -263,19 +265,58 @@ def _load_checkpoint_run_config(args: PlayInteractiveArgs) -> Mapping[str, Any] 
     return run_config if isinstance(run_config, Mapping) else None
 
 
+def _checkpoint_actor_input_dim(args: PlayInteractiveArgs) -> int | None:
+    checkpoint_path = _resolve_play_checkpoint_path(args)
+    if checkpoint_path is None or not checkpoint_path.is_file():
+        return None
+    checkpoint = _load_playback_checkpoint(
+        str(checkpoint_path),
+        device_name="cpu",
+        log=lambda message: None,
+    )
+    actor = checkpoint.get("actor") if isinstance(checkpoint, Mapping) else None
+    if not isinstance(actor, Mapping):
+        return None
+    return _actor_input_dim_from_state_dict(actor)
+
+
+def _apply_missing_g1_height_command_contract(
+    merged: dict[str, Any],
+    args: PlayInteractiveArgs,
+) -> dict[str, Any]:
+    if getattr(args, "task", None) not in {"g1_walk_flat", "G1WalkFlat"}:
+        return merged
+    if getattr(args, "algo", None) not in _OFFPOLICY_INTERACTIVE_ALGOS:
+        return merged
+    commands = merged.get("commands")
+    if not isinstance(commands, dict):
+        return merged
+    if commands.get("observe_height_command") is True:
+        return merged
+    if bool(merged.get("mode_observation", False)) is not True:
+        return merged
+    if _checkpoint_actor_input_dim(args) != 100:
+        return merged
+
+    updated_commands = dict(commands)
+    updated_commands["observe_height_command"] = True
+    merged["commands"] = updated_commands
+    return merged
+
+
 def _apply_checkpoint_env_contract(
     env_cfg_override: dict[str, Any] | None,
     args: PlayInteractiveArgs,
 ) -> dict[str, Any] | None:
     """Replay env/reward owner contract from the selected checkpoint run_config."""
+    merged = dict(env_cfg_override or {})
     run_config = _load_checkpoint_run_config(args)
     if run_config is None:
-        return env_cfg_override
+        return _apply_missing_g1_height_command_contract(merged, args)
     run_cfg = run_config.get("config")
     if not isinstance(run_cfg, Mapping):
-        return env_cfg_override
+        return merged
 
-    merged = dict(env_cfg_override or {})
     run_env = run_cfg.get("env")
     if isinstance(run_env, Mapping):
         merged.update(dict(run_env))
