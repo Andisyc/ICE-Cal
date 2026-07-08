@@ -35,7 +35,7 @@ class RewardContext:
     num_envs: int = 0
     default_angles: np.ndarray = field(default_factory=lambda: np.empty(0))
     tracking_sigma: float = 0.25
-    base_height_target: float = 0.0
+    base_height_target: float | np.ndarray = 0.0
     base_height: np.ndarray = field(default_factory=lambda: np.empty(0))  # pre-fetched
 
     # ── G1-only (None for quadrupeds) ───────────────────────────────
@@ -125,6 +125,17 @@ def upright(ctx: RewardContext) -> np.ndarray:
 def base_height(ctx: RewardContext) -> np.ndarray:
     """Penalty for base height deviation from target."""
     return np.square(ctx.base_height - ctx.base_height_target)  # type: ignore[no-any-return]
+
+
+def track_base_height_exp_smooth(ctx: RewardContext) -> np.ndarray:
+    """Positive exponential reward for tracking target base height."""
+    target = np.asarray(ctx.base_height_target, dtype=get_global_dtype())
+    if target.ndim == 0:
+        target = np.full((ctx.num_envs,), float(target), dtype=get_global_dtype())
+    elif target.ndim == 2 and target.shape[1] == 1:
+        target = target[:, 0]
+    height_error = np.square(np.asarray(ctx.base_height, dtype=get_global_dtype()) - target)
+    return np.asarray(np.exp(-height_error / ctx.tracking_sigma), dtype=get_global_dtype())
 
 
 def similar_to_default(ctx: RewardContext) -> np.ndarray:

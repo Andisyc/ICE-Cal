@@ -30,6 +30,10 @@ class Commands:
         ]
     )
     small_xy_threshold: float = 0.2
+    height_range: list[float] = field(default_factory=lambda: [0.2, 0.754])
+    default_height: float = 0.754
+    random_height_during_walking: bool = False
+    observe_height_command: bool = False
 
 
 def sample_velocity_commands(
@@ -38,6 +42,25 @@ def sample_velocity_commands(
     return np.asarray(
         rng.uniform(low=low, high=high, size=(num_samples, 3)), dtype=get_global_dtype()
     )
+
+
+def sample_height_commands(
+    rng: np.random.Generator,
+    num_samples: int,
+    height_range: list[float] | tuple[float, float] | np.ndarray,
+    *,
+    default_height: float,
+    random_height: bool,
+) -> np.ndarray:
+    height_range_arr = np.asarray(height_range, dtype=get_global_dtype())
+    if height_range_arr.shape != (2,):
+        raise ValueError(f"commands.height_range must have shape (2,), got {height_range_arr.shape}")
+    low, high = float(np.min(height_range_arr)), float(np.max(height_range_arr))
+    if random_height:
+        values = rng.uniform(low=low, high=high, size=(num_samples, 1))
+    else:
+        values = np.full((num_samples, 1), default_height)
+    return np.asarray(values, dtype=get_global_dtype())
 
 
 def zero_small_xy_commands(commands: np.ndarray, *, threshold: float = 0.2) -> None:

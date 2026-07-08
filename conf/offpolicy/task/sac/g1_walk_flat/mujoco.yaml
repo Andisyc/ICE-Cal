@@ -94,6 +94,7 @@ reward:
   close_feet_threshold: 0.15
   mode:
     enabled: true
+    standing_enabled: true
     balance_common_terms:
       - penalty_orientation
       - upright

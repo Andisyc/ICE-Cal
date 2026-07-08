@@ -150,6 +150,50 @@ def test_offpolicy_g1_env_override_carries_standing_mode_contract():
     assert "stand_lin_vel_xy_l2" in override["reward_config"]["mode"]["stand_recovery_terms"]
 
 
+def test_g1_height_sac_config_preserves_g1_walk_flat_checkpoint_contract():
+    """Old SAC G1WalkFlat config must not gain height-conditioned fields."""
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
+
+    assert cfg.training.task_name == "G1WalkFlat"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.env.mode_observation is True
+    assert "height_range" not in cfg.env.commands
+    assert "default_height" not in cfg.env.commands
+    assert "random_height_during_walking" not in cfg.env.commands
+    assert "observe_height_command" not in cfg.env.commands
+    assert "track_base_height_exp_smooth" not in cfg.reward.scales
+
+
+def test_g1_height_sac_config_exposes_explicit_height_fields():
+    """New SAC G1 height config is the explicit config boundary for height tracking."""
+    from pathlib import Path
+
+    from unilab.training import BackendAdapter
+
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
+
+    assert cfg.training.task_name == "G1WalkHeight"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.env.mode_observation is True
+    assert cfg.env.commands.height_range == [0.2, 0.754]
+    assert cfg.env.commands.default_height == 0.754
+    assert cfg.env.commands.random_height_during_walking is True
+    assert cfg.env.commands.observe_height_command is True
+    assert cfg.reward.scales.track_base_height_exp_smooth == 4.0
+    assert "track_base_height_exp_smooth" in cfg.reward.mode.balance_common_terms
+    assert cfg.reward.base_height_target == 0.754
+
+    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    assert override["commands"]["height_range"] == [0.2, 0.754]
+    assert override["commands"]["default_height"] == 0.754
+    assert override["commands"]["random_height_during_walking"] is True
+    assert override["commands"]["observe_height_command"] is True
+    assert override["reward_config"]["scales"]["track_base_height_exp_smooth"] == 4.0
+    assert "track_base_height_exp_smooth" in override["reward_config"]["mode"]["balance_common_terms"]
+
+
 def test_offpolicy_g1_action_authority_ablation_is_independently_configurable():
     """Mode observation stays enabled when disabling standing action authority."""
     from pathlib import Path
@@ -171,6 +215,28 @@ def test_offpolicy_g1_action_authority_ablation_is_independently_configurable():
     assert cfg.env.stand_action_authority is False
     assert override["mode_observation"] is True
     assert override["stand_action_authority"] is False
+
+
+def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
+    """Standing reward ablation should not require editing the owner YAML."""
+    from pathlib import Path
+
+    from unilab.training import BackendAdapter
+
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                "task=sac/g1_walk_flat/mujoco",
+                "reward.mode.standing_enabled=false",
+            ],
+        )
+
+    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+
+    assert cfg.reward.mode.enabled is True
+    assert cfg.reward.mode.standing_enabled is False
+    assert override["reward_config"]["mode"]["standing_enabled"] is False
 
 
 @pytest.mark.parametrize(

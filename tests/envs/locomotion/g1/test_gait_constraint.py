@@ -835,6 +835,62 @@ def test_zero_command_high_speed_routes_to_stand_recovery_terms() -> None:
     assert ctx.info["log"]["reward/stand_recovery_total"] < 0.0
 
 
+def test_standing_reward_disabled_keeps_walking_reward_active() -> None:
+    reward_cfg = G1WalkRewardConfig(
+        scales={
+            "stand_still": -100.0,
+            "stand_lin_vel_xy_l2": -10.0,
+            "tracking_lin_vel": 2.0,
+        },
+        tracking_sigma=0.12,
+        gait_frequency=1.5,
+        feet_phase_swing_height=0.09,
+        feet_phase_tracking_sigma=0.04,
+        base_height_target=0.754,
+        min_base_height=0.3,
+        max_tilt_deg=65.0,
+        stand_recovery_lin_vel_xy_threshold=0.2,
+        gait_constraint=GaitConstraintConfig(enabled=False),
+        mode=RewardModeConfig(
+            enabled=True,
+            standing_enabled=False,
+            stand_terms=["stand_still"],
+            stand_recovery_terms=["stand_lin_vel_xy_l2"],
+            walk_terms=["tracking_lin_vel"],
+        ),
+        pose_weights=[0.01] * 29,
+    )
+    env = _fake_env(reward_cfg, num_envs=3)
+    env._enable_reward_log = True
+    ctx = RewardContext(
+        info={
+            "commands": np.asarray(
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=np.float32
+            ),
+            "steps": np.zeros((3,), dtype=np.uint32),
+        },
+        linvel=np.asarray([[0.1, 0.0, 0.0], [0.35, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=np.float32),
+        gyro=np.zeros((3, 3), dtype=np.float32),
+        dof_pos=np.ones((3, 29), dtype=np.float32),
+        dof_vel=np.zeros((3, 29), dtype=np.float32),
+        num_envs=3,
+        default_angles=np.zeros((29,), dtype=np.float32),
+        tracking_sigma=reward_cfg.tracking_sigma,
+        base_height_target=reward_cfg.base_height_target,
+        base_height=np.full((3,), reward_cfg.base_height_target, dtype=np.float32),
+        gravity=np.asarray([[0.0, 0.0, 1.0]] * 3, dtype=np.float32),
+        pose_weights=np.ones((29,), dtype=np.float32),
+    )
+
+    reward = env._compute_mode_reward(ctx, reward_cfg)
+
+    np.testing.assert_allclose(reward[:2], np.zeros((2,), dtype=np.float32))
+    assert reward[2] > 0.0
+    assert ctx.info["log"]["reward/stand_total"] == 0.0
+    assert ctx.info["log"]["reward/stand_recovery_total"] == 0.0
+    assert ctx.info["log"]["reward/walk_total"] > 0.0
+
+
 def test_stand_recovery_mode_observation_keeps_dynamic_phase_profile() -> None:
     reward_cfg = _reward_config(
         freeze_phase_in_stand_mode=True,

@@ -23,6 +23,7 @@ from unilab.envs.locomotion.common.commands import (
     Commands,
     apply_heading_yaw_feedback,
     sample_heading_commands,
+    sample_height_commands,
     sample_velocity_commands,
     zero_small_xy_commands,
 )
@@ -245,6 +246,7 @@ class GaitConstraintConfig:
 @dataclass
 class RewardModeConfig:
     enabled: bool = False
+    standing_enabled: bool = True
     balance_common_terms: list[str] = field(default_factory=list)
     stand_terms: list[str] = field(default_factory=list)
     stand_recovery_terms: list[str] = field(default_factory=list)
@@ -388,6 +390,16 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         updates = {"gait_phase": gait_phase, "gait_enabled": gait_enabled}
         if getattr(env.cfg.commands, "heading_command", False):
             updates["heading_commands"] = sample_heading_commands(env, num_reset)
+        if getattr(env.cfg.commands, "observe_height_command", False) or getattr(
+            env.cfg.commands, "random_height_during_walking", False
+        ):
+            updates["height_commands"] = sample_height_commands(
+                np.random.default_rng(),
+                num_reset,
+                env.cfg.commands.height_range,
+                default_height=float(env.cfg.commands.default_height),
+                random_height=bool(env.cfg.commands.random_height_during_walking),
+            )
         return updates
 
     def _command_gait_mask(self, env: Any, commands: np.ndarray) -> np.ndarray:
@@ -510,7 +522,8 @@ class G1WalkEnv(G1BaseEnv):
         # gyro(3) + gravity(3) + diff(29) + dof_vel(29) + action(29) + cmd(3)
         # + phase(2) [+ mode(1)] = 98/99; critic additionally sees linvel(3).
         mode_dim = 1 if self._cfg.mode_observation else 0
-        return {"obs": 98 + mode_dim, "critic": 101 + mode_dim}
+        height_dim = 1 if self._uses_height_command_observation() else 0
+        return {"obs": 98 + mode_dim + height_dim, "critic": 101 + mode_dim + height_dim}
 
     def _init_reward_functions(self):
         self._reward_fns: dict[str, Any] = {
@@ -527,6 +540,7 @@ class G1WalkEnv(G1BaseEnv):
             "action_rate": rewards.action_rate,
             "penalty_action_rate": rewards.action_rate,
             "base_height": rewards.base_height,
+            "track_base_height_exp_smooth": rewards.track_base_height_exp_smooth,
             "pose": rewards.weighted_pose,
             "upper_body_pose": self._reward_upper_body_pose,
             "penalty_close_feet_xy": self._reward_close_feet_xy,
@@ -599,6 +613,7 @@ class G1WalkEnv(G1BaseEnv):
         noise_cfg = self._cfg.noise_config
         diff = dof_pos - self.default_angles
         command = info["commands"]
+        command_obs = self._command_observation(info, command.shape[0])
         last_actions = info.get("current_actions", np.zeros_like(diff))
         gait_phase = self._gait_phase_for_observation(info)
         mode_obs = self._mode_observation(info)
@@ -617,7 +632,7 @@ class G1WalkEnv(G1BaseEnv):
             noisy_diff,
             noisy_dof_vel * actor_dof_vel_scale,
             last_actions,
-            command,
+            command_obs,
             gait_phase,
         ]
         if self._cfg.mode_observation:
@@ -633,7 +648,7 @@ class G1WalkEnv(G1BaseEnv):
             diff,
             dof_vel * critic_dof_vel_scale,
             last_actions,
-            command,
+            command_obs,
             gait_phase,
         ]
         if self._cfg.mode_observation:
@@ -649,6 +664,35 @@ class G1WalkEnv(G1BaseEnv):
         )
 
         return {"obs": actor, "critic": critic}
+
+    def _uses_height_command_observation(self) -> bool:
+        command_cfg = getattr(self._cfg, "commands", None)
+        return bool(getattr(command_cfg, "observe_height_command", False))
+
+    def _command_observation(self, info: dict, num_obs: int) -> np.ndarray:
+        command = np.asarray(info["commands"], dtype=get_global_dtype())
+        if not self._uses_height_command_observation():
+            return command
+        height = self._height_command_column(info, num_obs)
+        return np.concatenate([command, height], axis=1, dtype=get_global_dtype())
+
+    def _height_command_column(self, info: dict, num_obs: int) -> np.ndarray:
+        target = info.get("height_commands")
+        if target is None:
+            command_cfg = self._cfg.commands
+            default_target = getattr(command_cfg, "default_height", None)
+            if default_target is None:
+                default_target = getattr(getattr(self, "_reward_cfg", None), "base_height_target", 0.0)
+            target = info.get("commands_height", default_target)
+
+        target_arr = np.asarray(target, dtype=get_global_dtype())
+        if target_arr.ndim == 0:
+            return np.full((num_obs, 1), float(target_arr), dtype=get_global_dtype())
+        if target_arr.ndim == 1:
+            target_arr = target_arr.reshape(-1, 1)
+        if target_arr.shape != (num_obs, 1):
+            raise ValueError(f"height command must have shape ({num_obs}, 1), got {target_arr.shape}")
+        return np.asarray(target_arr, dtype=get_global_dtype())
 
     def _gait_constraint_cfg(self) -> GaitConstraintConfig:
         cfg = self._reward_cfg.gait_constraint
@@ -837,13 +881,14 @@ class G1WalkEnv(G1BaseEnv):
         return bool(curriculum is not None and curriculum.enabled)
 
     def _actor_symmetry_obs_layout(self) -> SymmetryObsLayout:
+        command_dim = 4 if self._uses_height_command_observation() else 3
         layout = [
             ("gyro", 3),
             ("gravity", 3),
             ("dof_pos", self._num_action),
             ("dof_vel", self._num_action),
             ("actions", self._num_action),
-            ("command", 3),
+            ("command", command_dim),
             ("gait_phase", 2),
         ]
         if self._cfg.mode_observation:
@@ -871,6 +916,16 @@ class G1WalkEnv(G1BaseEnv):
     def _build_reward_context(
         self, info: dict, linvel, gyro, gravity, dof_pos, dof_vel
     ) -> RewardContext:
+        height_target: float | np.ndarray | None = info.get("height_commands")
+        if height_target is None:
+            height_target = info.get("commands_height", self._reward_cfg.base_height_target)
+        height_target_arr = np.asarray(height_target, dtype=get_global_dtype())
+        if height_target_arr.ndim == 0:
+            height_target = float(height_target_arr)
+        elif height_target_arr.ndim == 2 and height_target_arr.shape[1] == 1:
+            height_target = height_target_arr[:, 0]
+        else:
+            height_target = height_target_arr
         return RewardContext(
             info=info,
             linvel=linvel,
@@ -879,8 +934,8 @@ class G1WalkEnv(G1BaseEnv):
             num_envs=self._num_envs,
             default_angles=self.default_angles,
             tracking_sigma=self._reward_cfg.tracking_sigma,
-            base_height_target=self._reward_cfg.base_height_target,
-            base_height=self._backend.get_base_pos()[:, 2],
+            base_height_target=height_target,
+            base_height=self._terrain_relative_base_height(),
             gravity=gravity,
             dof_vel=dof_vel,
             pose_weights=self._pose_weights,
@@ -911,25 +966,29 @@ class G1WalkEnv(G1BaseEnv):
         stand_recovery_mask = self._stand_recovery_mask(ctx, stand_mask)
         stand_static_mask = np.asarray(stand_mask - stand_recovery_mask, dtype=get_global_dtype())
         self._reset_mode_reward_log(ctx.info)
-        stand_terms = self._combine_mode_terms(
-            mode_cfg.balance_common_terms, mode_cfg.stand_terms
-        )
-        stand_recovery_terms = self._combine_mode_terms(
-            mode_cfg.balance_common_terms, mode_cfg.stand_recovery_terms
-        )
         walk_terms = self._combine_mode_terms(
             mode_cfg.balance_common_terms, mode_cfg.walk_terms
         )
-        stand_reward = self._run_masked_mode_reward_dispatch(
-            ctx, cfg, stand_terms, stand_static_mask, mode_cfg.stand_scale_overrides
-        )
-        stand_recovery_reward = self._run_masked_mode_reward_dispatch(
-            ctx,
-            cfg,
-            stand_recovery_terms,
-            stand_recovery_mask,
-            mode_cfg.stand_recovery_scale_overrides,
-        )
+        if mode_cfg.standing_enabled:
+            stand_terms = self._combine_mode_terms(
+                mode_cfg.balance_common_terms, mode_cfg.stand_terms
+            )
+            stand_recovery_terms = self._combine_mode_terms(
+                mode_cfg.balance_common_terms, mode_cfg.stand_recovery_terms
+            )
+            stand_reward = self._run_masked_mode_reward_dispatch(
+                ctx, cfg, stand_terms, stand_static_mask, mode_cfg.stand_scale_overrides
+            )
+            stand_recovery_reward = self._run_masked_mode_reward_dispatch(
+                ctx,
+                cfg,
+                stand_recovery_terms,
+                stand_recovery_mask,
+                mode_cfg.stand_recovery_scale_overrides,
+            )
+        else:
+            stand_reward = np.zeros((ctx.num_envs,), dtype=get_global_dtype())
+            stand_recovery_reward = np.zeros((ctx.num_envs,), dtype=get_global_dtype())
         walk_reward = self._run_masked_mode_reward_dispatch(
             ctx, cfg, walk_terms, walk_mask, mode_cfg.walk_scale_overrides
         )
@@ -1455,6 +1514,12 @@ class G1WalkFlatCfg(G1WalkEnvCfg):
     curriculum: CurriculumConfig = field(default_factory=_walk_curriculum)
 
 
+@registry.envcfg("G1WalkHeight")
+@dataclass
+class G1WalkHeightCfg(G1WalkFlatCfg):
+    pass
+
+
 @registry.envcfg("G1WalkRough")
 @dataclass
 class G1WalkRoughCfg(G1WalkFlatCfg):
@@ -1467,5 +1532,6 @@ class G1WalkRoughCfg(G1WalkFlatCfg):
 
 registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="motrix")
+registry.register_env("G1WalkHeight", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="motrix")
