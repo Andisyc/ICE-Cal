@@ -239,9 +239,7 @@ def test_offpolicy_g1_height_and_standing_reward_flags_generate_owner_overrides(
         str(tmp_path / "scripts" / "train_offpolicy.py"),
         "algo=sac",
         "task=sac/g1_walk_height/mujoco",
-        "reward.mode.standing_enabled=true",
-        "env.commands.rel_standing_envs=0.3",
-        "env.commands.rel_transition_envs=0.2",
+        "+g1_walk_stage=mixed_mode",
     ]
 
 

@@ -1,5 +1,6 @@
 # @package _global_
 env:
+  mode_observation: true
   commands:
     vel_limit:
       - [-0.3, -0.2, -0.4]
@@ -19,3 +20,107 @@ env:
     initial_scale: 0.5
     min_scale: 0.5
     max_scale: 1.0
+reward:
+  scales:
+    under_speed: 0.0
+    upright: 4.0
+    stand_still: -0.2
+    stand_action_l2: -0.01
+    stand_dof_vel_l2: -0.05
+    stand_lin_vel_xy_l2: -20.0
+    stand_yaw_vel_l2: -5.0
+    stand_tilt_l2: -40.0
+    stand_tilt_margin_l2: -120.0
+    stand_fall_l2: -500.0
+    stand_feet_x_l2: -20.0
+    stand_feet_y_width_l2: -10.0
+    stand_feet_yaw_l2: -8.0
+    stand_base_feet_center_x_l2: -30.0
+    stand_base_feet_center_y_l2: -10.0
+    base_height: -80.0
+    feet_phase_contrast: 0.8
+    feet_phase_contact: 0.5
+  stand_recovery_lin_vel_xy_threshold: 0.2
+  stand_recovery_tilt_deg_threshold: 8.0
+  stand_feet_x_target: 0.0
+  stand_feet_y_width_target: 0.21
+  stand_base_feet_center_x_target: 0.0
+  stand_base_feet_center_y_target: 0.0
+  mode:
+    enabled: true
+    standing_enabled: true
+    balance_common_terms: []
+    stand_terms:
+      - penalty_orientation
+      - upright
+      - penalty_ang_vel_xy
+      - penalty_action_rate
+      - base_height
+      - pose
+      - penalty_feet_ori
+      - alive
+      - stand_still
+      - stand_action_l2
+      - stand_dof_vel_l2
+      - stand_lin_vel_xy_l2
+      - stand_yaw_vel_l2
+      - stand_tilt_l2
+      - stand_tilt_margin_l2
+      - stand_fall_l2
+      - stand_feet_x_l2
+      - stand_feet_y_width_l2
+      - stand_feet_yaw_l2
+      - stand_base_feet_center_x_l2
+      - stand_base_feet_center_y_l2
+    stand_recovery_terms:
+      - penalty_orientation
+      - upright
+      - penalty_ang_vel_xy
+      - penalty_action_rate
+      - base_height
+      - pose
+      - penalty_feet_ori
+      - alive
+      - stand_dof_vel_l2
+      - stand_lin_vel_xy_l2
+      - stand_yaw_vel_l2
+      - stand_tilt_l2
+      - stand_tilt_margin_l2
+      - stand_fall_l2
+      - stand_feet_x_l2
+      - stand_feet_y_width_l2
+      - stand_feet_yaw_l2
+      - stand_base_feet_center_x_l2
+      - stand_base_feet_center_y_l2
+    stand_recovery_scale_overrides:
+      stand_lin_vel_xy_l2: -6.0
+      stand_yaw_vel_l2: -2.0
+      base_height: -35.0
+      pose: -0.25
+      penalty_feet_ori: -8.0
+      stand_tilt_l2: -55.0
+      stand_tilt_margin_l2: -160.0
+    walk_terms:
+      - tracking_lin_vel
+      - tracking_ang_vel
+      - penalty_ang_vel_xy
+      - penalty_orientation
+      - penalty_action_rate
+      - pose
+      - penalty_feet_ori
+      - feet_phase
+      - alive
+    walk_scale_overrides: {}
+  gait_constraint:
+    enabled: true
+    command_xy_threshold: 0.05
+    command_yaw_threshold: 0.05
+    height_weight: 1.0
+    contrast_weight: 2.0
+    contact_weight: 1.0
+    epsilon: 0.0
+    penalty_scale: 0.5
+    apply_in_stand_mode: true
+    apply_when_tracking: false
+    freeze_phase_in_stand_mode: true
+    stand_phase: [3.141592653589793, 3.141592653589793]

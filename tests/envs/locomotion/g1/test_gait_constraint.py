@@ -1170,7 +1170,10 @@ def test_mode_scale_overrides_allow_walking_specific_common_term_weight() -> Non
 
 def test_active_g1_standing_base_height_reward_does_not_pollute_walking() -> None:
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
-        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
+        cfg = compose(
+            config_name="config",
+            overrides=["task=sac/g1_walk_flat/mujoco", "+g1_walk_stage=mixed_mode"],
+        )
 
     assert cfg.reward.scales.base_height == -80.0
     assert "base_height" not in cfg.reward.mode.balance_common_terms
@@ -1232,7 +1235,10 @@ def test_active_g1_standing_base_height_reward_does_not_pollute_walking() -> Non
 
 def test_active_g1_standing_reward_prefers_balanced_residual_over_quiet_fall() -> None:
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
-        cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
+        cfg = compose(
+            config_name="config",
+            overrides=["task=sac/g1_walk_flat/mujoco", "+g1_walk_stage=mixed_mode"],
+        )
 
     stand_terms = list(OmegaConf.to_container(cfg.reward.mode.stand_terms, resolve=True))
     assert "upright" in stand_terms

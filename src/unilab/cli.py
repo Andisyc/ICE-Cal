@@ -245,15 +245,9 @@ def build_command(
     if render_mode is not None:
         generated.append(f"training.play_render_mode={render_mode}")
     if standing_reward is not None:
-        generated.append(f"reward.mode.standing_enabled={str(standing_reward).lower()}")
         if algo == "sac" and task in {"g1_walk_flat", "g1_walk_height"} and sim == "mujoco":
             if standing_reward:
-                generated.extend(
-                    [
-                        "env.commands.rel_standing_envs=0.3",
-                        "env.commands.rel_transition_envs=0.2",
-                    ]
-                )
+                generated.append("+g1_walk_stage=mixed_mode")
             else:
                 generated.extend(
                     [

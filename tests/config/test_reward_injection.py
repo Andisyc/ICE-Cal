@@ -14,80 +14,10 @@ def test_reward_config_loading_g1():
         assert hasattr(cfg, "reward")
         assert cfg.reward.scales.tracking_lin_vel == 2.0
         assert cfg.reward.scales.feet_phase == 5.0
-        assert cfg.reward.scales.feet_phase_contrast == 0.8
-        assert cfg.reward.scales.feet_phase_contact == 0.5
         assert cfg.reward.scales.alive == 10.0
-        assert cfg.reward.scales.upright == 4.0
-        assert cfg.reward.scales.stand_still == -0.2
-        assert cfg.reward.scales.stand_action_l2 == -0.01
-        assert cfg.reward.scales.stand_dof_vel_l2 == -0.05
-        assert cfg.reward.scales.stand_lin_vel_xy_l2 == -20.0
-        assert cfg.reward.scales.stand_yaw_vel_l2 == -5.0
-        assert cfg.reward.scales.stand_tilt_l2 == -40.0
-        assert cfg.reward.scales.stand_tilt_margin_l2 == -120.0
-        assert cfg.reward.scales.stand_fall_l2 == -500.0
-        assert cfg.reward.scales.stand_base_feet_center_x_l2 == -30.0
-        assert cfg.reward.scales.stand_base_feet_center_y_l2 == -10.0
-        assert cfg.reward.scales.base_height == -80.0
         assert cfg.reward.scales.pose == -0.5
         assert cfg.reward.scales.penalty_action_rate == -4.0
-        assert cfg.reward.tracking_sigma == 0.25
-        assert cfg.reward.base_height_target == 0.754
-        assert cfg.reward.stand_recovery_lin_vel_xy_threshold == 0.2
-        assert cfg.reward.stand_recovery_tilt_deg_threshold == 8.0
-        assert cfg.reward.gait_constraint.enabled is True
-        assert cfg.reward.gait_constraint.freeze_phase_in_stand_mode is True
-        assert cfg.reward.gait_constraint.apply_in_stand_mode is True
-        assert cfg.reward.gait_constraint.contrast_weight == 2.0
-        assert cfg.reward.gait_constraint.contact_weight == 1.0
-        assert cfg.reward.gait_constraint.epsilon == 0.0
-        assert cfg.reward.gait_constraint.penalty_scale == 0.5
-        assert cfg.reward.gait_constraint.stand_phase == [
-            3.141592653589793,
-            3.141592653589793,
-        ]
-        assert cfg.env.commands.vel_limit[0] == [-0.3, -0.2, -0.4]
-        assert cfg.env.commands.resampling_time == 2.0
-        assert cfg.env.commands.small_xy_threshold == 0.0
-        assert cfg.env.commands.rel_standing_envs == 0.0
-        assert cfg.env.commands.rel_transition_envs == 0.0
-        assert cfg.env.commands.transition_vel_limit == [
-            [0.05, -0.05, -0.15],
-            [0.25, 0.05, 0.15],
-        ]
-        assert cfg.env.mode_observation is True
-        assert cfg.env.stand_action_authority is False
-        assert cfg.env.standing_reset_base_qvel_limit == 0.5
-        assert cfg.interactive.action_mode == "policy"
-        assert cfg.interactive.keyboard is True
-        assert cfg.reward.mode.enabled is True
-        assert cfg.reward.mode.standing_enabled is False
-        assert list(cfg.reward.mode.balance_common_terms) == []
-        assert dict(cfg.reward.mode.walk_scale_overrides) == {}
-        assert cfg.reward.mode.stand_recovery_scale_overrides.stand_lin_vel_xy_l2 == -6.0
-        assert cfg.reward.mode.stand_recovery_scale_overrides.stand_tilt_margin_l2 == -160.0
-        assert "tracking_lin_vel" not in cfg.reward.mode.stand_terms
-        assert "tracking_lin_vel" not in cfg.reward.mode.balance_common_terms
-        assert "stand_lin_vel_xy_l2" in cfg.reward.mode.stand_terms
-        assert "stand_lin_vel_xy_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_yaw_vel_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_dof_vel_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_tilt_l2" in cfg.reward.mode.stand_terms
-        assert "stand_tilt_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_tilt_margin_l2" in cfg.reward.mode.stand_terms
-        assert "stand_tilt_margin_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_fall_l2" in cfg.reward.mode.stand_terms
-        assert "stand_fall_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_base_feet_center_x_l2" in cfg.reward.mode.stand_terms
-        assert "stand_base_feet_center_x_l2" in cfg.reward.mode.stand_recovery_terms
-        assert "stand_still" not in cfg.reward.mode.stand_recovery_terms
-        assert "stand_action_l2" not in cfg.reward.mode.stand_recovery_terms
-        assert "base_height" in cfg.reward.mode.stand_terms
-        assert "feet_phase" not in cfg.reward.mode.stand_terms
-        assert "feet_phase_contrast" not in cfg.reward.mode.stand_terms
-        assert "feet_phase_contact" not in cfg.reward.mode.stand_terms
-        assert "stand_lin_vel_xy_l2" not in cfg.reward.mode.walk_terms
-        assert list(cfg.reward.mode.walk_terms) == [
+        assert list(cfg.reward.scales.keys()) == [
             "tracking_lin_vel",
             "tracking_ang_vel",
             "penalty_ang_vel_xy",
@@ -98,13 +28,20 @@ def test_reward_config_loading_g1():
             "feet_phase",
             "alive",
         ]
-        assert "stand_action_l2" not in cfg.reward.mode.walk_terms
+        assert cfg.reward.tracking_sigma == 0.25
+        assert cfg.reward.base_height_target == 0.754
+        assert "gait_constraint" not in cfg.reward
+        assert "mode" not in cfg.reward
+        assert "commands" not in cfg.env
+        assert "mode_observation" not in cfg.env
+        assert cfg.interactive.action_mode == "policy"
+        assert cfg.interactive.keyboard is True
         assert cfg.reward.pose_weights[2] == 5.0
         assert cfg.reward.pose_weights[8] == 5.0
 
 
-def test_offpolicy_g1_env_override_carries_standing_mode_contract():
-    """BackendAdapter should pass standing-mode config into registry.make."""
+def test_offpolicy_g1_env_override_preserves_upstream_walking_contract():
+    """Default G1WalkFlat should stay on the upstream walking reward contract."""
     from pathlib import Path
 
     from unilab.training import BackendAdapter
@@ -114,24 +51,22 @@ def test_offpolicy_g1_env_override_carries_standing_mode_contract():
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert override["commands"]["rel_standing_envs"] == 0.0
-    assert override["commands"]["rel_transition_envs"] == 0.0
-    assert override["commands"]["resampling_time"] == 2.0
-    assert override["commands"]["small_xy_threshold"] == 0.0
-    assert override["mode_observation"] is True
-    assert override["stand_action_authority"] is False
-    assert override["standing_reset_base_qvel_limit"] == 0.5
-    assert override["reward_config"]["mode"]["enabled"] is True
-    assert override["reward_config"]["stand_recovery_lin_vel_xy_threshold"] == 0.2
-    assert override["reward_config"]["stand_recovery_tilt_deg_threshold"] == 8.0
-    assert override["reward_config"]["mode"]["balance_common_terms"] == []
-    assert override["reward_config"]["mode"]["walk_scale_overrides"] == {}
-    assert override["reward_config"]["gait_constraint"]["penalty_scale"] == 0.5
-    assert override["reward_config"]["mode"]["stand_recovery_scale_overrides"]["stand_lin_vel_xy_l2"] == -6.0
-    assert override["reward_config"]["mode"]["stand_recovery_scale_overrides"]["stand_tilt_margin_l2"] == -160.0
-    assert "tracking_lin_vel" not in override["reward_config"]["mode"]["balance_common_terms"]
-    assert "stand_lin_vel_xy_l2" in override["reward_config"]["mode"]["stand_terms"]
-    assert "stand_lin_vel_xy_l2" in override["reward_config"]["mode"]["stand_recovery_terms"]
+    assert "commands" not in override
+    assert "mode_observation" not in override
+    assert "standing_reset_base_qvel_limit" not in override
+    assert "mode" not in override["reward_config"]
+    assert "gait_constraint" not in override["reward_config"]
+    assert list(override["reward_config"]["scales"].keys()) == [
+        "tracking_lin_vel",
+        "tracking_ang_vel",
+        "penalty_ang_vel_xy",
+        "penalty_orientation",
+        "penalty_action_rate",
+        "pose",
+        "penalty_feet_ori",
+        "feet_phase",
+        "alive",
+    ]
 
 
 def test_g1_height_sac_config_preserves_g1_walk_flat_checkpoint_contract():
@@ -141,11 +76,8 @@ def test_g1_height_sac_config_preserves_g1_walk_flat_checkpoint_contract():
 
     assert cfg.training.task_name == "G1WalkFlat"
     assert cfg.training.sim_backend == "mujoco"
-    assert cfg.env.mode_observation is True
-    assert "height_range" not in cfg.env.commands
-    assert "default_height" not in cfg.env.commands
-    assert "random_height_during_walking" not in cfg.env.commands
-    assert "observe_height_command" not in cfg.env.commands
+    assert "mode_observation" not in cfg.env
+    assert "commands" not in cfg.env
     assert "track_base_height_exp_smooth" not in cfg.reward.scales
 
 
@@ -160,13 +92,12 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
 
     assert cfg.training.task_name == "G1WalkHeight"
     assert cfg.training.sim_backend == "mujoco"
-    assert cfg.env.mode_observation is True
+    assert "mode_observation" not in cfg.env
     assert cfg.env.commands.height_range == [0.2, 0.754]
     assert cfg.env.commands.default_height == 0.754
     assert cfg.env.commands.random_height_during_walking is True
     assert cfg.env.commands.observe_height_command is True
     assert cfg.reward.scales.track_base_height_exp_smooth == 4.0
-    assert "track_base_height_exp_smooth" in cfg.reward.mode.balance_common_terms
     assert cfg.reward.base_height_target == 0.754
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
@@ -175,11 +106,10 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert override["commands"]["random_height_during_walking"] is True
     assert override["commands"]["observe_height_command"] is True
     assert override["reward_config"]["scales"]["track_base_height_exp_smooth"] == 4.0
-    assert "track_base_height_exp_smooth" in override["reward_config"]["mode"]["balance_common_terms"]
 
 
-def test_offpolicy_g1_action_authority_ablation_is_independently_configurable():
-    """Mode observation stays enabled when disabling standing action authority."""
+def test_offpolicy_g1_action_authority_ablation_does_not_enable_standing_path():
+    """A standing-only ablation must not turn on mode observation by default."""
     from pathlib import Path
 
     from unilab.training import BackendAdapter
@@ -189,20 +119,20 @@ def test_offpolicy_g1_action_authority_ablation_is_independently_configurable():
             config_name="config",
             overrides=[
                 "task=sac/g1_walk_flat/mujoco",
-                "env.stand_action_authority=false",
+                "+env.stand_action_authority=false",
             ],
         )
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert cfg.env.mode_observation is True
     assert cfg.env.stand_action_authority is False
-    assert override["mode_observation"] is True
+    assert "mode_observation" not in cfg.env
+    assert "mode_observation" not in override
     assert override["stand_action_authority"] is False
 
 
-def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
-    """Standing reward ablation should not require editing the owner YAML."""
+def test_offpolicy_g1_standing_reward_is_explicit_stage_contract():
+    """Standing reward belongs to the explicit mixed-mode stage, not default Walking."""
     from pathlib import Path
 
     from unilab.training import BackendAdapter
@@ -212,30 +142,33 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
             config_name="config",
             overrides=[
                 "task=sac/g1_walk_flat/mujoco",
-                "reward.mode.standing_enabled=false",
             ],
         )
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert cfg.reward.mode.enabled is True
-    assert cfg.reward.mode.standing_enabled is False
-    assert override["reward_config"]["mode"]["standing_enabled"] is False
+    assert "mode" not in cfg.reward
+    assert "mode" not in override["reward_config"]
 
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
         enabled_cfg = compose(
             config_name="config",
             overrides=[
                 "task=sac/g1_walk_flat/mujoco",
-                "reward.mode.standing_enabled=true",
+                "+g1_walk_stage=mixed_mode",
             ],
         )
 
     enabled_override = BackendAdapter(
         enabled_cfg, root_dir=Path.cwd(), algo_name="sac"
     ).build_task_env_cfg_override()
+    assert enabled_cfg.env.mode_observation is True
     assert enabled_cfg.reward.mode.standing_enabled is True
+    assert enabled_cfg.reward.gait_constraint.enabled is True
+    assert enabled_cfg.env.commands.rel_standing_envs == 0.3
+    assert enabled_cfg.env.commands.rel_transition_envs == 0.2
     assert enabled_override["reward_config"]["mode"]["standing_enabled"] is True
+    assert enabled_override["reward_config"]["gait_constraint"]["enabled"] is True
 
 
 @pytest.mark.parametrize(
@@ -249,6 +182,7 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
         "standing_reset_qvel",
         "resampling_time",
         "curriculum_enabled",
+        "mode_enabled",
     ),
     [
         (
@@ -261,6 +195,7 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
             0.0,
             2.0,
             False,
+            True,
         ),
         (
             "walking_sanity",
@@ -272,6 +207,7 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
             0.0,
             2.0,
             True,
+            False,
         ),
         (
             "mixed_mode",
@@ -282,6 +218,7 @@ def test_offpolicy_g1_standing_reward_can_be_disabled_independently():
             0.5,
             0.5,
             2.0,
+            True,
             True,
         ),
     ],
@@ -296,6 +233,7 @@ def test_offpolicy_g1_training_stage_configs_reach_env_override(
     standing_reset_qvel: float,
     resampling_time: float,
     curriculum_enabled: bool,
+    mode_enabled: bool,
 ):
     """G1 standing/walking curriculum stages are env-owner config fragments."""
     from pathlib import Path
@@ -313,7 +251,14 @@ def test_offpolicy_g1_training_stage_configs_reach_env_override(
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
 
-    assert override["mode_observation"] is True
+    if mode_enabled:
+        assert override["mode_observation"] is True
+        assert override["reward_config"]["mode"]["enabled"] is True
+        assert override["reward_config"]["gait_constraint"]["enabled"] is True
+    else:
+        assert "mode_observation" not in override
+        assert "mode" not in override["reward_config"]
+        assert "gait_constraint" not in override["reward_config"]
     assert override["stand_action_authority"] is False
     assert override["standing_reset_base_qvel_limit"] == standing_reset_qvel
     assert override["reset_base_qvel_limit"] == reset_qvel
