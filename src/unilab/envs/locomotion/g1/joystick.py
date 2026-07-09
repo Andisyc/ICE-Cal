@@ -602,6 +602,7 @@ class G1WalkEnv(G1BaseEnv):
             "stand_tilt_l2": self._reward_stand_tilt_l2,
             "stand_tilt_margin_l2": self._reward_stand_tilt_margin_l2,
             "stand_fall_l2": self._reward_stand_fall_l2,
+            "stand_base_height_deficit_l1": self._reward_stand_base_height_deficit_l1,
             "stand_support_height_margin_l2": self._reward_stand_support_height_margin_l2,
             "stand_both_feet_contact": self._reward_stand_both_feet_contact,
             "stand_foot_contact_balance": self._reward_stand_foot_contact_balance,
@@ -1553,6 +1554,16 @@ class G1WalkEnv(G1BaseEnv):
             np.square(low_deficit) * self._stand_mode_mask(ctx),
             dtype=get_global_dtype(),
         )
+
+    def _reward_stand_base_height_deficit_l1(self, ctx: RewardContext):
+        target = float(self._reward_cfg.base_height_target)
+        margin = float(self._reward_cfg.stand_support_height_margin)
+        if ctx.base_height is None:
+            base_height = self._terrain_relative_base_height()
+        else:
+            base_height = np.asarray(ctx.base_height, dtype=get_global_dtype())
+        low_deficit = np.maximum(target - margin - base_height, 0.0)
+        return np.asarray(low_deficit * self._stand_mode_mask(ctx), dtype=get_global_dtype())
 
     def _reward_stand_both_feet_contact(self, ctx: RewardContext):
         left_contact = compute_aggregated_foot_contact(self._backend, LEFT_FOOT_CONTACT_SENSORS)

@@ -63,6 +63,7 @@ reward:
     stand_tilt_l2: -40.0
     stand_tilt_margin_l2: -120.0
     stand_fall_l2: -500.0
+    stand_base_height_deficit_l1: -240.0
     stand_support_height_margin_l2: -1500.0
     stand_both_feet_contact: -5.0
     stand_foot_contact_balance: -2.0

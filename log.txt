@@ -1,16 +1,16 @@
-(base) chengyuxuan@ChengYuxuandeMacBook-Air UniLab % UNILAB_G1_ACTION_TRACE=1 UNILAB_G1_ACTION_TRACE_INTERVAL=20 ./start.sh g1_stand_still 2026-07-09_22-02-36_mujoco
+(base) chengyuxuan@ChengYuxuandeMacBook-Air UniLab % UNILAB_G1_ACTION_TRACE=1 UNILAB_G1_ACTION_TRACE_INTERVAL=20 ./start.sh g1_stand_still 2026-07-09_22-24-14_mujoco
 [start.sh] task=g1_stand_still sim=mujoco algo=sac keyboard=false
 [start.sh] action_trace=1 interval=20
-[start.sh] command: scripts/play_interactive.py --algo sac --task g1_stand_still --sim mujoco interactive.action_mode=policy interactive.keyboard=false algo.load_run=2026-07-09_22-02-36_mujoco +algo.checkpoint=model_5000.pt
+[start.sh] command: scripts/play_interactive.py --algo sac --task g1_stand_still --sim mujoco interactive.action_mode=policy interactive.keyboard=false algo.load_run=2026-07-09_22-24-14_mujoco +algo.checkpoint=model_5000.pt
 🍏 检测到 macOS，正在使用 mjpython 启动仿真...
 [play_interactive] Device: mps
 /Users/chengyuxuan/ArtiIntComVis/UniLab/.venv/lib/python3.13/site-packages/gymnasium/spaces/box.py:226: RuntimeWarning: overflow encountered in cast
   elif low.dtype != self.dtype and np.any(low < dtype_min):
 /Users/chengyuxuan/ArtiIntComVis/UniLab/.venv/lib/python3.13/site-packages/gymnasium/spaces/box.py:296: RuntimeWarning: overflow encountered in cast
   elif high.dtype != self.dtype and np.any(dtype_max < high):
-[play_interactive] Loading sac checkpoint: /Users/chengyuxuan/ArtiIntComVis/UniLab/logs/fast_sac/G1StandStill/2026-07-09_22-02-36_mujoco/model_5000.pt
+[play_interactive] Loading sac checkpoint: /Users/chengyuxuan/ArtiIntComVis/UniLab/logs/fast_sac/G1StandStill/2026-07-09_22-24-14_mujoco/model_5000.pt
 [play_interactive] Action mode: policy
-[play_interactive] Using resolved visual playback model for viewer: /var/folders/k_/ww1gp77d2sn65rmlrpq6kwtr0000gn/T/unilab-interactive-viewer-tmihognh/model_0.mjb
+[play_interactive] Using resolved visual playback model for viewer: /var/folders/k_/ww1gp77d2sn65rmlrpq6kwtr0000gn/T/unilab-interactive-viewer-_pos0ocj/model_0.mjb
 [G1ActionTrace] begin
 [G1ActionTrace] step=0 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.279993 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0.11 min=-0.23 max=0.37 l1_mean=0.79 max_abs=0.37
@@ -34,7 +34,7 @@
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0194019 min=-0.0388038 max=-1.49012e-08 l1_mean=0.0388038 max_abs=0.0388038
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0194019 min=-0.0388038 max=-1.72295e-08 l1_mean=0.0388038 max_abs=0.0388038
 [G1ActionTrace] reward/alive=10
 [G1ActionTrace] reward/base_height=0
 [G1ActionTrace] reward/penalty_action_rate=0
@@ -73,8 +73,8 @@
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0 min=-0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0 min=-0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] base_height_target=0.754
 [G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.754 min=0.754 max=0.754 l1_mean=0.754 max_abs=0.754
 [G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
@@ -83,7 +83,7 @@
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0194019 min=-0.0388038 max=6.51926e-09 l1_mean=0.0388038 max_abs=0.0388038
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0194019 min=-0.0388038 max=2.93367e-08 l1_mean=0.0388038 max_abs=0.0388038
 [G1ActionTrace] reward/alive=10
 [G1ActionTrace] reward/base_height=0
 [G1ActionTrace] reward/penalty_action_rate=0
@@ -92,12 +92,12 @@
 [G1ActionTrace] reward/penalty_orientation=0
 [G1ActionTrace] reward/pose=0
 [G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.045172
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-4.25007e-16
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-8.6064e-15
 [G1ActionTrace] reward/stand_both_feet_contact=0
 [G1ActionTrace] reward/stand_dof_vel_l2=0
 [G1ActionTrace] reward/stand_fall_l2=0
 [G1ActionTrace] reward/stand_feet_slide_l2=0
-[G1ActionTrace] reward/stand_feet_x_l2=-4.44089e-15
+[G1ActionTrace] reward/stand_feet_x_l2=-2.498e-15
 [G1ActionTrace] reward/stand_feet_y_width_l2=-0.00729698
 [G1ActionTrace] reward/stand_feet_yaw_l2=0
 [G1ActionTrace] reward/stand_foot_contact_balance=0
@@ -113,497 +113,903 @@
 [play_interactive] Opening viewer — close the window or press Esc to quit.
 [play_interactive] Controls: Space=pause/resume, N=single-step, +/-=speed
 [G1ActionTrace] begin
-[G1ActionTrace] step=0 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.272228 terminated_frac=0
+[G1ActionTrace] step=0 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.265682 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00148455 min=-0.0957867 max=0.070902 l1_mean=0.765323 max_abs=0.0957867
-[G1ActionTrace] current_actions[0,:8]: [ 0.0066  0.0201 -0.0477  0.0182  0.0709  0.0307  0.0007 -0.021 ]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00148455 min=-0.0957867 max=0.070902 l1_mean=0.765323 max_abs=0.0957867
-[G1ActionTrace] executed_actions[0,:8]: [ 0.0066  0.0201 -0.0477  0.0182  0.0709  0.0307  0.0007 -0.021 ]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00433181 min=-0.16908 max=0.110692 l1_mean=0.71633 max_abs=0.16908
+[G1ActionTrace] current_actions[0,:8]: [-0.026   0.0116 -0.0079  0.1002  0.0194  0.0189  0.0323 -0.0035]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00433181 min=-0.16908 max=0.110692 l1_mean=0.71633 max_abs=0.16908
+[G1ActionTrace] executed_actions[0,:8]: [-0.026   0.0116 -0.0079  0.1002  0.0194  0.0189  0.0323 -0.0035]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0562432 min=-0.31126 max=0.716075 l1_mean=5.07695 max_abs=0.716075
-[G1ActionTrace] ctrl[0,:8]: [-0.3054  0.0201 -0.0477  0.6872 -0.2921  0.0307 -0.3113 -0.021 ]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00148455 min=-0.0957867 max=0.070902 l1_mean=0.765323 max_abs=0.0957867
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=0.00150395 min=-0.0952924 max=0.0753123 l1_mean=0.76274 max_abs=0.0952924
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=-1.94012e-05 min=-0.0102819 max=0.0164954 l1_mean=0.0688065 max_abs=0.0164954
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.0058599 min=-0.612098 max=1.14355 l1_mean=4.5579 max_abs=1.14355
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-0.145892 min=-6.12393 max=2.75163 l1_mean=35.626 max_abs=6.12393
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ 2.0847  2.4492 -2.0079 -6.1239  2.7516  0.8517  2.0086 -1.5387]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.0272961 min=-0.0656122 max=0.000738388 l1_mean=0.083365 max_abs=0.0656122
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00138314 min=-0.0264123 max=0.0232077 l1_mean=0.056974 max_abs=0.0264123
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0590904 min=-0.343595 max=0.779692 l1_mean=5.13353 max_abs=0.779692
+[G1ActionTrace] ctrl[0,:8]: [-0.338   0.0116 -0.0079  0.7692 -0.3436  0.0189 -0.2797 -0.0035]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00433181 min=-0.16908 max=0.110692 l1_mean=0.71633 max_abs=0.16908
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=0.00457532 min=-0.164187 max=0.0889574 l1_mean=0.682117 max_abs=0.164187
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=-0.000243509 min=-0.0164835 max=0.0218523 l1_mean=0.101153 max_abs=0.0218523
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00425524 min=-0.99222 max=1.54424 l1_mean=6.72691 max_abs=1.54424
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=0.158592 min=-4.2692 max=4.45682 l1_mean=22.7908 max_abs=4.45682
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ 2.1574  1.0611 -0.345  -1.9741  1.7792  0.5185  4.4568 -0.2971]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.0483888 min=-0.118731 max=0.000113211 l1_mean=0.145393 max_abs=0.118731
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0233994 min=-0.0796231 max=0.0152028 l1_mean=0.100604 max_abs=0.0796231
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.752768 min=0.752768 max=0.752768 l1_mean=0.752768 max_abs=0.752768
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0012325 min=0.0012325 max=0.0012325 l1_mean=0.0012325 max_abs=0.0012325
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=0.0197823 min=0.0197823 max=0.0197823 l1_mean=0.0197823 max_abs=0.0197823
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.751884 min=0.751884 max=0.751884 l1_mean=0.751884 max_abs=0.751884
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.00211596 min=0.00211596 max=0.00211596 l1_mean=0.00211596 max_abs=0.00211596
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=0.0523392 min=0.0523392 max=0.0523392 l1_mean=0.0523392 max_abs=0.0523392
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0198622 min=-0.0396469 max=-7.75112e-05 l1_mean=0.0397245 max_abs=0.0396469
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0198722 min=-0.0397576 max=1.32183e-05 l1_mean=0.0397708 max_abs=0.0397576
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-0.000303814
-[G1ActionTrace] reward/executed_action_l1=0.765323
-[G1ActionTrace] reward/penalty_action_rate=-0.134829
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000751689
-[G1ActionTrace] reward/penalty_feet_ori=-0.000286199
-[G1ActionTrace] reward/penalty_orientation=-8.08741e-07
-[G1ActionTrace] reward/pose=-0.000101841
-[G1ActionTrace] reward/raw_action_l1=0.765323
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0471564
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-6.00798e-08
+[G1ActionTrace] reward/base_height=-0.000895461
+[G1ActionTrace] reward/executed_action_l1=0.71633
+[G1ActionTrace] reward/penalty_action_rate=-0.233697
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00637322
+[G1ActionTrace] reward/penalty_feet_ori=-0.000304097
+[G1ActionTrace] reward/penalty_orientation=-8.08549e-06
+[G1ActionTrace] reward/pose=-0.000672578
+[G1ActionTrace] reward/raw_action_l1=0.71633
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0474199
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.74722e-09
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.167056
-[G1ActionTrace] reward/stand_executed_action_l1=0.765323
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.368208
+[G1ActionTrace] reward/stand_executed_action_l1=0.71633
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-0.00856226
-[G1ActionTrace] reward/stand_feet_x_l2=-7.07881e-08
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.0072888
-[G1ActionTrace] reward/stand_feet_yaw_l2=-7.544e-07
+[G1ActionTrace] reward/stand_feet_slide_l2=-0.0155052
+[G1ActionTrace] reward/stand_feet_x_l2=-1.78138e-07
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00729139
+[G1ActionTrace] reward/stand_feet_yaw_l2=-1.46847e-06
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00580071
-[G1ActionTrace] reward/stand_raw_action_l1=0.765323
-[G1ActionTrace] reward/stand_still=-0.0137613
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.0140964
+[G1ActionTrace] reward/stand_raw_action_l1=0.71633
+[G1ActionTrace] reward/stand_still=-0.0202307
+[G1ActionTrace] reward/stand_support_height_margin_l2=0
+[G1ActionTrace] reward/stand_tilt_l2=-3.2342e-05
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00115562
+[G1ActionTrace] reward/upright=3.99999
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=20 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.217658 terminated_frac=0
+[G1ActionTrace] step=20 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.245522 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00745688 min=-0.197786 max=0.288081 l1_mean=1.98076 max_abs=0.288081
-[G1ActionTrace] current_actions[0,:8]: [-0.1978  0.0707 -0.0975  0.2815 -0.12    0.0016 -0.1868 -0.0672]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00745688 min=-0.197786 max=0.288081 l1_mean=1.98076 max_abs=0.288081
-[G1ActionTrace] executed_actions[0,:8]: [-0.1978  0.0707 -0.0975  0.2815 -0.12    0.0016 -0.1868 -0.0672]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.0109951 min=-0.145346 max=0.175402 l1_mean=1.23424 max_abs=0.175402
+[G1ActionTrace] current_actions[0,:8]: [-0.1137 -0.0125 -0.0025  0.1754  0.053   0.0127 -0.1453  0.0079]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.0109951 min=-0.145346 max=0.175402 l1_mean=1.23424 max_abs=0.175402
+[G1ActionTrace] executed_actions[0,:8]: [-0.1137 -0.0125 -0.0025  0.1754  0.053   0.0127 -0.1453  0.0079]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0622155 min=-0.509786 max=0.957081 l1_mean=6.51778 max_abs=0.957081
-[G1ActionTrace] ctrl[0,:8]: [-0.5098  0.0707 -0.0975  0.9505 -0.483   0.0016 -0.4988 -0.0672]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00745688 min=-0.197786 max=0.288081 l1_mean=1.98076 max_abs=0.288081
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00728876 min=-0.187778 max=0.159377 l1_mean=1.42513 max_abs=0.187778
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0147456 min=-0.24024 max=0.469231 l1_mean=2.22158 max_abs=0.469231
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.0360876 min=-0.292172 max=0.488175 l1_mean=3.53097 max_abs=0.488175
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.2488 min=-21.6883 max=6.44016 l1_mean=80.6395 max_abs=21.6883
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.9783   6.4402  -3.8804 -21.6883   3.958    0.1135  -0.4919  -6.6015]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.0320889 min=-0.0843678 max=-0.00224838 l1_mean=0.0962667 max_abs=0.0843678
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0332698 min=-0.043057 max=-0.0144054 l1_mean=0.0998094 max_abs=0.043057
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0657537 min=-0.457346 max=0.844402 l1_mean=5.57992 max_abs=0.844402
+[G1ActionTrace] ctrl[0,:8]: [-0.4257 -0.0125 -0.0025  0.8444 -0.31    0.0127 -0.4573  0.0079]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.0109951 min=-0.145346 max=0.175402 l1_mean=1.23424 max_abs=0.175402
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=0.000124909 min=-0.169736 max=0.235636 l1_mean=1.30044 max_abs=0.235636
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0108702 min=-0.176845 max=0.34403 l1_mean=1.59061 max_abs=0.34403
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00292451 min=-0.102704 max=0.08489 l1_mean=0.710226 max_abs=0.102704
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-0.785149 min=-17.1556 max=6.70847 l1_mean=59.6894 max_abs=17.1556
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.3554  -0.7554   0.3223 -17.1556   6.5392   0.3554  -1.7664   1.0921]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00729504 min=-0.0176916 max=0.00301209 l1_mean=0.0279093 max_abs=0.0176916
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0249563 min=-0.0795468 max=0.00456975 l1_mean=0.0842247 max_abs=0.0795468
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.692034 min=0.692034 max=0.692034 l1_mean=0.692034 max_abs=0.692034
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.061966 min=0.061966 max=0.061966 l1_mean=0.061966 max_abs=0.061966
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=0.935027 min=0.935027 max=0.935027 l1_mean=0.935027 max_abs=0.935027
-[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
-[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
-[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=2 min=2 max=2 l1_mean=2 max_abs=2
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0239536 min=-0.0484405 max=0.000533219 l1_mean=0.0489737 max_abs=0.0484405
-[G1ActionTrace] reward/action_authority_stand_frac=1
-[G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-0.767957
-[G1ActionTrace] reward/executed_action_l1=1.98076
-[G1ActionTrace] reward/penalty_action_rate=-0.0514491
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00364718
-[G1ActionTrace] reward/penalty_feet_ori=-2.12727e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00266262
-[G1ActionTrace] reward/pose=-0.561033
-[G1ActionTrace] reward/raw_action_l1=1.98076
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0703944
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-2.84323e-06
-[G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.0451614
-[G1ActionTrace] reward/stand_executed_action_l1=1.98076
-[G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-1.04378e-05
-[G1ActionTrace] reward/stand_feet_x_l2=-4.26399e-05
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00780927
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000132212
-[G1ActionTrace] reward/stand_foot_contact_balance=-0.666667
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00196377
-[G1ActionTrace] reward/stand_raw_action_l1=1.98076
-[G1ActionTrace] reward/stand_still=-0.444316
-[G1ActionTrace] end
-[G1ActionTrace] begin
-[G1ActionTrace] step=40 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.210349 terminated_frac=0
-[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
-[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.0165583 min=-0.244127 max=0.334868 l1_mean=2.55218 max_abs=0.334868
-[G1ActionTrace] current_actions[0,:8]: [-0.2005  0.1057 -0.149   0.3327 -0.1078  0.0157 -0.2441 -0.0877]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.0165583 min=-0.244127 max=0.334868 l1_mean=2.55218 max_abs=0.334868
-[G1ActionTrace] executed_actions[0,:8]: [-0.2005  0.1057 -0.149   0.3327 -0.1078  0.0157 -0.2441 -0.0877]
-[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0713169 min=-0.556127 max=1.00387 l1_mean=7.0191 max_abs=1.00387
-[G1ActionTrace] ctrl[0,:8]: [-0.5125  0.1057 -0.149   1.0017 -0.4708  0.0157 -0.5561 -0.0877]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.0165583 min=-0.244127 max=0.334867 l1_mean=2.55218 max_abs=0.334867
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=0.000888048 min=-0.213752 max=0.205534 l1_mean=1.73502 max_abs=0.213752
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0156702 min=-0.276022 max=0.546481 l1_mean=2.6037 max_abs=0.546481
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.000620877 min=-0.0497754 max=0.0823181 l1_mean=0.489421 max_abs=0.0823181
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.08568 min=-21.6285 max=9.32038 l1_mean=93.0418 max_abs=21.6285
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.3226   9.3204  -6.1884 -21.6285   4.7875   0.4726  -1.9414  -8.8512]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.0136924 min=-0.0239846 max=-0.00604763 l1_mean=0.0410772 max_abs=0.0239846
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.0146669 min=-0.00818395 max=0.0452239 l1_mean=0.0603686 max_abs=0.0452239
-[G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.67842 min=0.67842 max=0.67842 l1_mean=0.67842 max_abs=0.67842
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0755799 min=0.0755799 max=0.0755799 l1_mean=0.0755799 max_abs=0.0755799
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.20723 min=1.20723 max=1.20723 l1_mean=1.20723 max_abs=1.20723
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.712084 min=0.712084 max=0.712084 l1_mean=0.712084 max_abs=0.712084
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0419163 min=0.0419163 max=0.0419163 l1_mean=0.0419163 max_abs=0.0419163
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.43313 min=1.43313 max=1.43313 l1_mean=1.43313 max_abs=1.43313
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0262655 min=-0.0539123 max=0.00138126 l1_mean=0.0552936 max_abs=0.0539123
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0225892 min=-0.0451434 max=-3.49316e-05 l1_mean=0.0451783 max_abs=0.0451434
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.14246
-[G1ActionTrace] reward/executed_action_l1=2.55218
-[G1ActionTrace] reward/penalty_action_rate=-0.0758986
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00209366
-[G1ActionTrace] reward/penalty_feet_ori=-3.41193e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00443904
-[G1ActionTrace] reward/pose=-0.744784
-[G1ActionTrace] reward/raw_action_l1=2.55218
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0871961
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.90788e-05
+[G1ActionTrace] reward/base_height=-0.351394
+[G1ActionTrace] reward/executed_action_l1=1.23424
+[G1ActionTrace] reward/penalty_action_rate=-0.0629764
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.0063277
+[G1ActionTrace] reward/penalty_feet_ori=-1.12228e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00625564
+[G1ActionTrace] reward/pose=-0.277623
+[G1ActionTrace] reward/raw_action_l1=1.23424
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0611378
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.22022e-08
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.00103759
-[G1ActionTrace] reward/stand_executed_action_l1=2.55218
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00176239
+[G1ActionTrace] reward/stand_executed_action_l1=1.23424
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-5.84883e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000172647
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00824836
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000778402
+[G1ActionTrace] reward/stand_feet_slide_l2=-6.84578e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-1.45575e-05
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00734689
+[G1ActionTrace] reward/stand_feet_yaw_l2=-5.8221e-05
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.0122367
-[G1ActionTrace] reward/stand_raw_action_l1=2.55218
-[G1ActionTrace] reward/stand_still=-0.520739
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00644131
+[G1ActionTrace] reward/stand_raw_action_l1=1.23424
+[G1ActionTrace] reward/stand_still=-0.318122
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.589286
+[G1ActionTrace] reward/stand_tilt_l2=-0.0250226
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.000104413
+[G1ActionTrace] reward/upright=3.99
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=60 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.209341 terminated_frac=0
+[G1ActionTrace] step=40 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.235769 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.0137607 min=-0.231781 max=0.36604 l1_mean=2.44433 max_abs=0.36604
-[G1ActionTrace] current_actions[0,:8]: [-0.2318  0.1122 -0.1764  0.3165 -0.037   0.0285 -0.2312 -0.0731]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.0137607 min=-0.231781 max=0.36604 l1_mean=2.44433 max_abs=0.36604
-[G1ActionTrace] executed_actions[0,:8]: [-0.2318  0.1122 -0.1764  0.3165 -0.037   0.0285 -0.2312 -0.0731]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00765761 min=-0.155019 max=0.184203 l1_mean=1.23379 max_abs=0.184203
+[G1ActionTrace] current_actions[0,:8]: [-0.155  -0.0028 -0.0324  0.1664  0.0214  0.0045 -0.1292  0.0009]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00765761 min=-0.155019 max=0.184203 l1_mean=1.23379 max_abs=0.184203
+[G1ActionTrace] executed_actions[0,:8]: [-0.155  -0.0028 -0.0324  0.1664  0.0214  0.0045 -0.1292  0.0009]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0685193 min=-0.543781 max=1.03504 l1_mean=6.95479 max_abs=1.03504
-[G1ActionTrace] ctrl[0,:8]: [-0.5438  0.1122 -0.1764  0.9855 -0.4     0.0285 -0.5432 -0.0731]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.0137607 min=-0.231781 max=0.36604 l1_mean=2.44433 max_abs=0.36604
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00213655 min=-0.235956 max=0.235929 l1_mean=1.78872 max_abs=0.235956
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0158972 min=-0.272907 max=0.552502 l1_mean=2.63565 max_abs=0.552502
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00156022 min=-0.0259968 max=0.0268723 l1_mean=0.22123 max_abs=0.0268723
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.04196 min=-23.4422 max=9.78791 l1_mean=92.8431 max_abs=23.4422
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.273    9.7879  -7.4667 -23.4422   6.6843   0.7194  -1.1142  -7.1918]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00305283 min=-0.0127638 max=0.00365619 l1_mean=0.0164709 max_abs=0.0127638
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.00911058 min=-0.0151372 max=-0.00259951 l1_mean=0.0273317 max_abs=0.0151372
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0624162 min=-0.467019 max=0.853203 l1_mean=5.74224 max_abs=0.853203
+[G1ActionTrace] ctrl[0,:8]: [-0.467  -0.0028 -0.0324  0.8354 -0.3416  0.0045 -0.4412  0.0009]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00765761 min=-0.155019 max=0.184203 l1_mean=1.23379 max_abs=0.184203
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00638791 min=-0.19825 max=0.203048 l1_mean=1.29019 max_abs=0.203048
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0140455 min=-0.175135 max=0.364682 l1_mean=1.74122 max_abs=0.364682
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00639144 min=-0.0857833 max=0.0984959 l1_mean=0.72617 max_abs=0.0984959
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.06238 min=-19.5977 max=5.77491 l1_mean=60.3641 max_abs=19.5977
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.8263   0.3732  -0.9072 -19.5977   5.5243   0.0507  -0.983    0.5028]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00348584 min=-0.0156965 max=0.00499126 l1_mean=0.0209355 max_abs=0.0156965
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.0174792 min=-0.0296091 max=0.0486487 l1_mean=0.111656 max_abs=0.0486487
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.67741 min=0.67741 max=0.67741 l1_mean=0.67741 max_abs=0.67741
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0765902 min=0.0765902 max=0.0765902 l1_mean=0.0765902 max_abs=0.0765902
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.50766 min=1.50766 max=1.50766 l1_mean=1.50766 max_abs=1.50766
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.709225 min=0.709225 max=0.709225 l1_mean=0.709225 max_abs=0.709225
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0447751 min=0.0447751 max=0.0447751 l1_mean=0.0447751 max_abs=0.0447751
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.69697 min=1.69697 max=1.69697 l1_mean=1.69697 max_abs=1.69697
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0271518 min=-0.0575477 max=0.00324404 l1_mean=0.0607918 max_abs=0.0575477
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0259219 min=-0.0539088 max=0.00206505 l1_mean=0.0559738 max_abs=0.0539088
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.17321
-[G1ActionTrace] reward/executed_action_l1=2.44433
-[G1ActionTrace] reward/penalty_action_rate=-0.0498457
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000235893
-[G1ActionTrace] reward/penalty_feet_ori=-2.01682e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00692281
-[G1ActionTrace] reward/pose=-0.732787
-[G1ActionTrace] reward/raw_action_l1=2.44433
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0993523
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000105238
+[G1ActionTrace] reward/base_height=-0.400962
+[G1ActionTrace] reward/executed_action_l1=1.23379
+[G1ActionTrace] reward/penalty_action_rate=-0.0750785
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.0032434
+[G1ActionTrace] reward/penalty_feet_ori=-2.00285e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00877009
+[G1ActionTrace] reward/pose=-0.449576
+[G1ActionTrace] reward/raw_action_l1=1.23379
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0871847
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-4.26444e-05
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.000172694
-[G1ActionTrace] reward/stand_executed_action_l1=2.44433
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00192006
+[G1ActionTrace] reward/stand_executed_action_l1=1.23379
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-4.97954e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000252889
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00871751
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00172512
+[G1ActionTrace] reward/stand_feet_slide_l2=-7.21123e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-1.15326e-05
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00737073
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000123235
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00352562
-[G1ActionTrace] reward/stand_raw_action_l1=2.44433
-[G1ActionTrace] reward/stand_still=-0.527131
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00542587
+[G1ActionTrace] reward/stand_raw_action_l1=1.23379
+[G1ActionTrace] reward/stand_still=-0.348244
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.768927
+[G1ActionTrace] reward/stand_tilt_l2=-0.0350804
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.0055771
+[G1ActionTrace] reward/upright=3.98599
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=80 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.209082 terminated_frac=0
+[G1ActionTrace] step=60 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.232205 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00740811 min=-0.261217 max=0.340861 l1_mean=2.69402 max_abs=0.340861
-[G1ActionTrace] current_actions[0,:8]: [-0.2612  0.0974 -0.1751  0.2888 -0.1964  0.0043 -0.2247 -0.0887]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00740811 min=-0.261217 max=0.340861 l1_mean=2.69402 max_abs=0.340861
-[G1ActionTrace] executed_actions[0,:8]: [-0.2612  0.0974 -0.1751  0.2888 -0.1964  0.0043 -0.2247 -0.0887]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00653793 min=-0.166348 max=0.164509 l1_mean=1.30392 max_abs=0.166348
+[G1ActionTrace] current_actions[0,:8]: [-0.1663  0.0013 -0.0417  0.1645 -0.0946 -0.0003 -0.127  -0.0087]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00653793 min=-0.166348 max=0.164509 l1_mean=1.30392 max_abs=0.166348
+[G1ActionTrace] executed_actions[0,:8]: [-0.1663  0.0013 -0.0417  0.1645 -0.0946 -0.0003 -0.127  -0.0087]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0621667 min=-0.573217 max=1.00986 l1_mean=7.13759 max_abs=1.00986
-[G1ActionTrace] ctrl[0,:8]: [-0.5732  0.0974 -0.1751  0.9578 -0.5594  0.0043 -0.5367 -0.0887]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00740811 min=-0.261217 max=0.340861 l1_mean=2.69402 max_abs=0.340861
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00854627 min=-0.264829 max=0.132768 l1_mean=1.57685 max_abs=0.264829
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0159544 min=-0.267534 max=0.553674 l1_mean=2.63253 max_abs=0.553674
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00260622 min=-0.0534331 max=0.0467483 l1_mean=0.35332 max_abs=0.0534331
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.4978 min=-26.1977 max=8.59637 l1_mean=90.5212 max_abs=26.1977
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.4517   8.5964  -7.336  -26.1977   2.0676   0.0595  -0.93    -8.1296]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.0047053 min=-0.00178216 max=0.0133973 l1_mean=0.0176802 max_abs=0.0133973
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.000282795 min=-0.0201925 max=0.0327466 l1_mean=0.0646448 max_abs=0.0327466
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0482207 min=-0.503582 max=0.833509 l1_mean=5.86062 max_abs=0.833509
+[G1ActionTrace] ctrl[0,:8]: [-4.7835e-01  1.2709e-03 -4.1655e-02  8.3351e-01 -4.5760e-01 -3.2289e-04
+ -4.3902e-01 -8.6635e-03]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00653793 min=-0.166348 max=0.164509 l1_mean=1.30392 max_abs=0.166348
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0218552 min=-0.206431 max=0.068966 l1_mean=1.05285 max_abs=0.206431
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0153173 min=-0.159016 max=0.366312 l1_mean=1.80085 max_abs=0.366312
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00152653 min=-0.195848 max=0.133818 l1_mean=1.05448 max_abs=0.195848
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.55371 min=-20.4694 max=1.85087 l1_mean=55.9459 max_abs=20.4694
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.6277   0.5858  -1.0362 -20.4694   1.8509  -0.1149  -0.5023  -0.7512]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00514421 min=-0.0193104 max=0.0108728 l1_mean=0.0371782 max_abs=0.0193104
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00618991 min=-0.10043 max=0.0958334 l1_mean=0.219429 max_abs=0.10043
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.67712 min=0.67712 max=0.67712 l1_mean=0.67712 max_abs=0.67712
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0768803 min=0.0768803 max=0.0768803 l1_mean=0.0768803 max_abs=0.0768803
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.49789 min=1.49789 max=1.49789 l1_mean=1.49789 max_abs=1.49789
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.709002 min=0.709002 max=0.709002 l1_mean=0.709002 max_abs=0.709002
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0449978 min=0.0449978 max=0.0449978 l1_mean=0.0449978 max_abs=0.0449978
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.65682 min=1.65682 max=1.65682 l1_mean=1.65682 max_abs=1.65682
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0285492 min=-0.0609258 max=0.00382741 l1_mean=0.0647532 max_abs=0.0609258
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0301096 min=-0.0635579 max=0.00333873 l1_mean=0.0668966 max_abs=0.0635579
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.18212
-[G1ActionTrace] reward/executed_action_l1=2.69402
-[G1ActionTrace] reward/penalty_action_rate=-0.0354473
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000544761
-[G1ActionTrace] reward/penalty_feet_ori=-3.26801e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00683252
-[G1ActionTrace] reward/pose=-0.723563
-[G1ActionTrace] reward/raw_action_l1=2.69402
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.111358
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.00014649
+[G1ActionTrace] reward/base_height=-0.40496
+[G1ActionTrace] reward/executed_action_l1=1.30392
+[G1ActionTrace] reward/penalty_action_rate=-0.0596326
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.0192701
+[G1ActionTrace] reward/penalty_feet_ori=-2.41628e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00835915
+[G1ActionTrace] reward/pose=-0.56034
+[G1ActionTrace] reward/raw_action_l1=1.30392
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.121188
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000111471
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.000514025
-[G1ActionTrace] reward/stand_executed_action_l1=2.69402
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00504987
+[G1ActionTrace] reward/stand_executed_action_l1=1.30392
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-6.63044e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000153135
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00921946
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00257278
+[G1ActionTrace] reward/stand_feet_slide_l2=-1.06536e-05
+[G1ActionTrace] reward/stand_feet_x_l2=-7.33442e-05
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00736392
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00026467
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00371483
-[G1ActionTrace] reward/stand_raw_action_l1=2.69402
-[G1ActionTrace] reward/stand_still=-0.526506
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00982219
+[G1ActionTrace] reward/stand_raw_action_l1=1.30392
+[G1ActionTrace] reward/stand_still=-0.36017
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.783636
+[G1ActionTrace] reward/stand_tilt_l2=-0.0334366
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.0026833
+[G1ActionTrace] reward/upright=3.98665
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=100 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.209426 terminated_frac=0
+[G1ActionTrace] step=80 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.226594 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.0152377 min=-0.248041 max=0.341274 l1_mean=2.41015 max_abs=0.341274
-[G1ActionTrace] current_actions[0,:8]: [-0.2148  0.1003 -0.1292  0.3307 -0.0671  0.0285 -0.248  -0.0712]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.0152377 min=-0.248041 max=0.341274 l1_mean=2.41015 max_abs=0.341274
-[G1ActionTrace] executed_actions[0,:8]: [-0.2148  0.1003 -0.1292  0.3307 -0.0671  0.0285 -0.248  -0.0712]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00174964 min=-0.196447 max=0.168288 l1_mean=1.38009 max_abs=0.196447
+[G1ActionTrace] current_actions[0,:8]: [-0.1964 -0.0059 -0.037   0.1448 -0.087   0.0046 -0.1362 -0.005 ]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00174964 min=-0.196447 max=0.168288 l1_mean=1.38009 max_abs=0.196447
+[G1ActionTrace] executed_actions[0,:8]: [-0.1964 -0.0059 -0.037   0.1448 -0.087   0.0046 -0.1362 -0.005 ]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0699963 min=-0.560041 max=1.01027 l1_mean=6.89141 max_abs=1.01027
-[G1ActionTrace] ctrl[0,:8]: [-0.5268  0.1003 -0.1292  0.9997 -0.4301  0.0285 -0.56   -0.0712]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.0152377 min=-0.248041 max=0.341274 l1_mean=2.41015 max_abs=0.341274
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.000782125 min=-0.222467 max=0.230288 l1_mean=1.73523 max_abs=0.230288
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0160198 min=-0.270916 max=0.553135 l1_mean=2.64669 max_abs=0.553135
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00454079 min=-0.0637049 max=0.111435 l1_mean=0.504076 max_abs=0.111435
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.03334 min=-22.0409 max=8.13206 l1_mean=90.342 max_abs=22.0409
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.6327   8.1321  -5.6546 -22.0409   5.777    0.7796  -1.7834  -6.8561]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00489808 min=-0.0128778 max=0.00121152 l1_mean=0.0171173 max_abs=0.0128778
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.0170563 min=-0.0403704 max=0.0660043 l1_mean=0.13191 max_abs=0.0660043
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.053009 min=-0.508447 max=0.837288 l1_mean=5.94229 max_abs=0.837288
+[G1ActionTrace] ctrl[0,:8]: [-0.5084 -0.0059 -0.037   0.8138 -0.45    0.0046 -0.4482 -0.005 ]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00174964 min=-0.196447 max=0.168288 l1_mean=1.38009 max_abs=0.196447
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0174599 min=-0.221036 max=0.0812841 l1_mean=1.15142 max_abs=0.221036
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0157103 min=-0.153373 max=0.365816 l1_mean=1.87277 max_abs=0.365816
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00257583 min=-0.0455812 max=0.0457728 l1_mean=0.386227 max_abs=0.0457728
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.41647 min=-21.8124 max=2.34288 l1_mean=58.211 max_abs=21.8124
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.9338   0.4338  -0.6948 -21.8124   1.8942   0.0649  -0.9467   0.132 ]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.00479492 min=-0.00028938 max=0.0121521 l1_mean=0.0149635 max_abs=0.0121521
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.01393 min=-0.00317815 max=0.0329204 l1_mean=0.0481462 max_abs=0.0329204
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.677337 min=0.677337 max=0.677337 l1_mean=0.677337 max_abs=0.677337
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0766628 min=0.0766628 max=0.0766628 l1_mean=0.0766628 max_abs=0.0766628
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.46072 min=1.46072 max=1.46072 l1_mean=1.46072 max_abs=1.46072
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708821 min=0.708821 max=0.708821 l1_mean=0.708821 max_abs=0.708821
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0451794 min=0.0451794 max=0.0451794 l1_mean=0.0451794 max_abs=0.0451794
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.57657 min=1.57657 max=1.57657 l1_mean=1.57657 max_abs=1.57657
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0278774 min=-0.0589519 max=0.0031972 l1_mean=0.0621491 max_abs=0.0589519
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0315742 min=-0.0659135 max=0.00276498 l1_mean=0.0686785 max_abs=0.0659135
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.17544
-[G1ActionTrace] reward/executed_action_l1=2.41015
-[G1ActionTrace] reward/penalty_action_rate=-0.0290069
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.0050086
-[G1ActionTrace] reward/penalty_feet_ori=-4.94825e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00649784
-[G1ActionTrace] reward/pose=-0.724035
-[G1ActionTrace] reward/raw_action_l1=2.41015
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.10426
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000102221
+[G1ActionTrace] reward/base_height=-0.408235
+[G1ActionTrace] reward/executed_action_l1=1.38009
+[G1ActionTrace] reward/penalty_action_rate=-0.212866
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000155246
+[G1ActionTrace] reward/penalty_feet_ori=-4.33919e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00756916
+[G1ActionTrace] reward/pose=-0.679671
+[G1ActionTrace] reward/raw_action_l1=1.38009
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.130338
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-7.64513e-05
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.00115775
-[G1ActionTrace] reward/stand_executed_action_l1=2.41015
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.000487949
+[G1ActionTrace] reward/stand_executed_action_l1=1.38009
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-5.38575e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.00027038
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00969823
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00350031
+[G1ActionTrace] reward/stand_feet_slide_l2=-7.91059e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000190182
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00741486
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000361505
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00350014
-[G1ActionTrace] reward/stand_raw_action_l1=2.41015
-[G1ActionTrace] reward/stand_still=-0.529337
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00295517
+[G1ActionTrace] reward/stand_raw_action_l1=1.38009
+[G1ActionTrace] reward/stand_still=-0.374555
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.797618
+[G1ActionTrace] reward/stand_tilt_l2=-0.0302766
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00541877
+[G1ActionTrace] reward/upright=3.98791
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=120 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.208427 terminated_frac=0
+[G1ActionTrace] step=100 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.22925 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.015773 min=-0.253322 max=0.338256 l1_mean=2.74277 max_abs=0.338256
-[G1ActionTrace] current_actions[0,:8]: [-0.2533  0.087  -0.121   0.3383 -0.1744  0.0175 -0.2387 -0.0889]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.015773 min=-0.253322 max=0.338256 l1_mean=2.74277 max_abs=0.338256
-[G1ActionTrace] executed_actions[0,:8]: [-0.2533  0.087  -0.121   0.3383 -0.1744  0.0175 -0.2387 -0.0889]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00311958 min=-0.150107 max=0.175028 l1_mean=1.33452 max_abs=0.175028
+[G1ActionTrace] current_actions[0,:8]: [-0.1355 -0.0061 -0.0198  0.175  -0.0555  0.0036 -0.1501 -0.0094]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00311958 min=-0.150107 max=0.175028 l1_mean=1.33452 max_abs=0.175028
+[G1ActionTrace] executed_actions[0,:8]: [-0.1355 -0.0061 -0.0198  0.175  -0.0555  0.0036 -0.1501 -0.0094]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0705316 min=-0.565323 max=1.00726 l1_mean=7.16581 max_abs=1.00726
-[G1ActionTrace] ctrl[0,:8]: [-0.5653  0.087  -0.121   1.0073 -0.5374  0.0175 -0.5507 -0.0889]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.015773 min=-0.253323 max=0.338256 l1_mean=2.74277 max_abs=0.338256
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=0.000219427 min=-0.239667 max=0.162672 l1_mean=1.68215 max_abs=0.239667
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0155536 min=-0.269278 max=0.554295 l1_mean=2.66408 max_abs=0.554295
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00567566 min=-0.0564989 max=0.198299 l1_mean=0.739771 max_abs=0.198299
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.23613 min=-23.8032 max=7.05091 l1_mean=91.6052 max_abs=23.8032
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.2446   7.0509  -5.2247 -21.5092   2.7227   0.558   -1.4872  -8.1107]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.000616692 min=0.000375361 max=0.0010977 l1_mean=0.00185007 max_abs=0.0010977
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.030616 min=-0.0260672 max=0.0887769 l1_mean=0.143982 max_abs=0.0887769
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.051639 min=-0.484727 max=0.844028 l1_mean=5.84369 max_abs=0.844028
+[G1ActionTrace] ctrl[0,:8]: [-0.4475 -0.0061 -0.0198  0.844  -0.4185  0.0036 -0.4621 -0.0094]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00311958 min=-0.150107 max=0.175028 l1_mean=1.33452 max_abs=0.175028
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0179302 min=-0.204428 max=0.103565 l1_mean=1.15841 max_abs=0.204428
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0148106 min=-0.16033 max=0.367932 l1_mean=1.90893 max_abs=0.367932
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.000509176 min=-0.0429829 max=0.0588454 l1_mean=0.408867 max_abs=0.0588454
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.34337 min=-20.2853 max=3.02967 l1_mean=56.386 max_abs=20.2853
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.4616   0.4569   0.1254 -19.2435   3.0297   0.0218  -1.5904  -0.3074]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.00701236 min=-0.00158571 max=0.0167188 l1_mean=0.0242085 max_abs=0.0167188
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.010455 min=-0.030356 max=3.13532e-05 l1_mean=0.0314276 max_abs=0.030356
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.676658 min=0.676658 max=0.676658 l1_mean=0.676658 max_abs=0.676658
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0773417 min=0.0773417 max=0.0773417 l1_mean=0.0773417 max_abs=0.0773417
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.68818 min=1.68818 max=1.68818 l1_mean=1.68818 max_abs=1.68818
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708825 min=0.708825 max=0.708825 l1_mean=0.708825 max_abs=0.708825
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0451754 min=0.0451754 max=0.0451754 l1_mean=0.0451754 max_abs=0.0451754
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.50506 min=1.50506 max=1.50506 l1_mean=1.50506 max_abs=1.50506
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0292722 min=-0.0600661 max=0.00152168 l1_mean=0.0615878 max_abs=0.0600661
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0294523 min=-0.0618794 max=0.00297472 l1_mean=0.0648541 max_abs=0.0618794
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.19635
-[G1ActionTrace] reward/executed_action_l1=2.74277
-[G1ActionTrace] reward/penalty_action_rate=-0.0183815
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00873038
-[G1ActionTrace] reward/penalty_feet_ori=-4.80998e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00867868
-[G1ActionTrace] reward/pose=-0.720695
-[G1ActionTrace] reward/raw_action_l1=2.74277
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.108238
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-2.31551e-05
+[G1ActionTrace] reward/base_height=-0.408164
+[G1ActionTrace] reward/executed_action_l1=1.33452
+[G1ActionTrace] reward/penalty_action_rate=-0.0896042
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000921487
+[G1ActionTrace] reward/penalty_feet_ori=-1.29274e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00689903
+[G1ActionTrace] reward/pose=-0.684554
+[G1ActionTrace] reward/raw_action_l1=1.33452
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.114872
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-8.84898e-05
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.00319494
-[G1ActionTrace] reward/stand_executed_action_l1=2.74277
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00069836
+[G1ActionTrace] reward/stand_executed_action_l1=1.33452
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-5.49903e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000215539
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.0101954
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00438167
+[G1ActionTrace] reward/stand_feet_slide_l2=-2.62725e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000379229
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00742912
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000464585
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-5.66073e-06
-[G1ActionTrace] reward/stand_raw_action_l1=2.74277
-[G1ActionTrace] reward/stand_still=-0.532816
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00628752
+[G1ActionTrace] reward/stand_raw_action_l1=1.33452
+[G1ActionTrace] reward/stand_still=-0.381785
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.796732
+[G1ActionTrace] reward/stand_tilt_l2=-0.0275961
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-5.41047e-06
+[G1ActionTrace] reward/upright=3.98898
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=140 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.208633 terminated_frac=0
+[G1ActionTrace] step=120 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.230442 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.0128371 min=-0.234746 max=0.352091 l1_mean=2.46286 max_abs=0.352091
-[G1ActionTrace] current_actions[0,:8]: [-0.2347  0.0941 -0.1632  0.309  -0.1131  0.0047 -0.2306 -0.0771]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.0128371 min=-0.234746 max=0.352091 l1_mean=2.46286 max_abs=0.352091
-[G1ActionTrace] executed_actions[0,:8]: [-0.2347  0.0941 -0.1632  0.309  -0.1131  0.0047 -0.2306 -0.0771]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00517026 min=-0.182561 max=0.15973 l1_mean=1.39297 max_abs=0.182561
+[G1ActionTrace] current_actions[0,:8]: [-0.1826 -0.0186 -0.0509  0.1439 -0.1133  0.0084 -0.1291 -0.019 ]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00517026 min=-0.182561 max=0.15973 l1_mean=1.39297 max_abs=0.182561
+[G1ActionTrace] executed_actions[0,:8]: [-0.1826 -0.0186 -0.0509  0.1439 -0.1133  0.0084 -0.1291 -0.019 ]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0675957 min=-0.546746 max=1.02109 l1_mean=6.9301 max_abs=1.02109
-[G1ActionTrace] ctrl[0,:8]: [-0.5467  0.0941 -0.1632  0.978  -0.4761  0.0047 -0.5426 -0.0771]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.0128371 min=-0.234746 max=0.352091 l1_mean=2.46286 max_abs=0.352091
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00298476 min=-0.242323 max=0.18657 l1_mean=1.72038 max_abs=0.242323
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0158218 min=-0.272347 max=0.551278 l1_mean=2.66413 max_abs=0.551278
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.0143521 min=-0.278775 max=0.101834 l1_mean=1.07524 max_abs=0.278775
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.21782 min=-24.0058 max=7.68308 l1_mean=87.7657 max_abs=24.0058
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.8613   7.6831  -7.0376 -24.0058   4.5411   0.1323  -0.5052  -6.8573]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.000540621 min=-0.00623446 max=0.00476053 l1_mean=0.0140908 max_abs=0.00623446
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0279014 min=-0.0811973 max=0.0347296 l1_mean=0.153163 max_abs=0.0811973
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0495884 min=-0.494561 max=0.82873 l1_mean=5.94824 max_abs=0.82873
+[G1ActionTrace] ctrl[0,:8]: [-0.4946 -0.0186 -0.0509  0.8129 -0.4763  0.0084 -0.4411 -0.019 ]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00517026 min=-0.182561 max=0.15973 l1_mean=1.39297 max_abs=0.182561
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.019928 min=-0.219273 max=0.066954 l1_mean=1.12726 max_abs=0.219273
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0147577 min=-0.159543 max=0.363135 l1_mean=1.88573 max_abs=0.363135
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00517116 min=-0.0479028 max=0.0300476 l1_mean=0.299726 max_abs=0.0479028
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.52792 min=-21.7339 max=1.92645 l1_mean=57.5813 max_abs=21.7339
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.4216  -0.1947  -1.1208 -21.7339   1.2035   0.134   -0.7765  -0.7284]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.000438123 min=-0.00124496 max=0.00161731 l1_mean=0.0038043 max_abs=0.00161731
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0164888 min=-0.0804321 max=0.0444662 l1_mean=0.138399 max_abs=0.0804321
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.677474 min=0.677474 max=0.677474 l1_mean=0.677474 max_abs=0.677474
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0765256 min=0.0765256 max=0.0765256 l1_mean=0.0765256 max_abs=0.0765256
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.37629 min=1.37629 max=1.37629 l1_mean=1.37629 max_abs=1.37629
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.709156 min=0.709156 max=0.709156 l1_mean=0.709156 max_abs=0.709156
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0448436 min=0.0448436 max=0.0448436 l1_mean=0.0448436 max_abs=0.0448436
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=2.00291 min=2.00291 max=2.00291 l1_mean=2.00291 max_abs=2.00291
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.026989 min=-0.0573704 max=0.00339242 l1_mean=0.0607628 max_abs=0.0573704
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0296613 min=-0.0626794 max=0.00335674 l1_mean=0.0660361 max_abs=0.0626794
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.17123
-[G1ActionTrace] reward/executed_action_l1=2.46286
-[G1ActionTrace] reward/penalty_action_rate=-0.0824659
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00797956
-[G1ActionTrace] reward/penalty_feet_ori=-1.77516e-06
-[G1ActionTrace] reward/penalty_orientation=-0.0057688
-[G1ActionTrace] reward/pose=-0.719166
-[G1ActionTrace] reward/raw_action_l1=2.46286
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0987408
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000115085
+[G1ActionTrace] reward/base_height=-0.402189
+[G1ActionTrace] reward/executed_action_l1=1.39297
+[G1ActionTrace] reward/penalty_action_rate=-0.0354787
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00665159
+[G1ActionTrace] reward/penalty_feet_ori=-2.50346e-06
+[G1ActionTrace] reward/penalty_orientation=-0.0122147
+[G1ActionTrace] reward/pose=-0.66565
+[G1ActionTrace] reward/raw_action_l1=1.39297
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.117861
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000112677
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.00758952
-[G1ActionTrace] reward/stand_executed_action_l1=2.46286
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00040118
+[G1ActionTrace] reward/stand_executed_action_l1=1.39297
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-6.82441e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000381513
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.0106824
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00473797
+[G1ActionTrace] reward/stand_feet_slide_l2=-1.62507e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000396185
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.0074516
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000588502
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.000644931
-[G1ActionTrace] reward/stand_raw_action_l1=2.46286
-[G1ActionTrace] reward/stand_still=-0.532826
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-8.33123e-05
+[G1ActionTrace] reward/stand_raw_action_l1=1.39297
+[G1ActionTrace] reward/stand_still=-0.377147
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.773451
+[G1ActionTrace] reward/stand_tilt_l2=-0.0488588
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00988621
+[G1ActionTrace] reward/upright=3.9805
 [G1ActionTrace] end
 [G1ActionTrace] begin
-[G1ActionTrace] step=160 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.209689 terminated_frac=0
+[G1ActionTrace] step=140 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.227526 terminated_frac=0
 [G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] commands[0,:3]: [0. 0. 0.]
 [G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
 [G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00781291 min=-0.246332 max=0.333023 l1_mean=2.47402 max_abs=0.333023
-[G1ActionTrace] current_actions[0,:8]: [-0.2256  0.092  -0.1288  0.333  -0.1428  0.0332 -0.2463 -0.0754]
-[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00781291 min=-0.246332 max=0.333023 l1_mean=2.47402 max_abs=0.333023
-[G1ActionTrace] executed_actions[0,:8]: [-0.2256  0.092  -0.1288  0.333  -0.1428  0.0332 -0.2463 -0.0754]
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00920404 min=-0.182975 max=0.170555 l1_mean=1.48316 max_abs=0.182975
+[G1ActionTrace] current_actions[0,:8]: [-0.183  -0.0136 -0.0304  0.1415 -0.1379 -0.0018 -0.1514  0.0079]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00920404 min=-0.182975 max=0.170555 l1_mean=1.48316 max_abs=0.182975
+[G1ActionTrace] executed_actions[0,:8]: [-0.183  -0.0136 -0.0304  0.1415 -0.1379 -0.0018 -0.1514  0.0079]
 [G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
-[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0625715 min=-0.558332 max=1.00202 l1_mean=6.93869 max_abs=1.00202
-[G1ActionTrace] ctrl[0,:8]: [-0.5376  0.092  -0.1288  1.002  -0.5058  0.0332 -0.5583 -0.0754]
-[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00781291 min=-0.246332 max=0.333023 l1_mean=2.47402 max_abs=0.333023
-[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.00835117 min=-0.232971 max=0.169646 l1_mean=1.56931 max_abs=0.232971
-[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0161641 min=-0.281221 max=0.556558 l1_mean=2.67929 max_abs=0.556558
-[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00163302 min=-0.020072 max=0.029435 l1_mean=0.247653 max_abs=0.029435
-[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.33684 min=-22.9736 max=6.80945 l1_mean=87.5592 max_abs=22.9736
-[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.0831   6.8094  -5.7003 -22.1422   3.9826   0.9145  -1.7351  -7.1253]
-[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.0034907 min=0.000279855 max=0.00630654 l1_mean=0.0104721 max_abs=0.00630654
-[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.00289219 min=-0.0242939 max=0.0118963 l1_mean=0.0399113 max_abs=0.0242939
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0455546 min=-0.500924 max=0.839555 l1_mean=6.04341 max_abs=0.839555
+[G1ActionTrace] ctrl[0,:8]: [-0.495  -0.0136 -0.0304  0.8105 -0.5009 -0.0018 -0.4634  0.0079]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00920404 min=-0.182975 max=0.170555 l1_mean=1.48316 max_abs=0.182975
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0253253 min=-0.227004 max=0.05496 l1_mean=1.10903 max_abs=0.227004
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0161212 min=-0.152379 max=0.368469 l1_mean=1.88473 max_abs=0.368469
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00171825 min=-0.101112 max=0.0221727 l1_mean=0.27277 max_abs=0.101112
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.63062 min=-22.5505 max=1.56422 l1_mean=58.0458 max_abs=22.5505
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.3673  -0.32    -0.5009 -22.5505   0.4079  -0.1505  -1.5355   1.315 ]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00137332 min=-0.00614513 max=0.00326199 l1_mean=0.0106439 max_abs=0.00614513
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00334448 min=-0.0409456 max=0.0279914 l1_mean=0.0919246 max_abs=0.0409456
 [G1ActionTrace] base_height_target=0.754
-[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.67698 min=0.67698 max=0.67698 l1_mean=0.67698 max_abs=0.67698
-[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0770199 min=0.0770199 max=0.0770199 l1_mean=0.0770199 max_abs=0.0770199
-[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.18118 min=1.18118 max=1.18118 l1_mean=1.18118 max_abs=1.18118
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708435 min=0.708435 max=0.708435 l1_mean=0.708435 max_abs=0.708435
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0455654 min=0.0455654 max=0.0455654 l1_mean=0.0455654 max_abs=0.0455654
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.93624 min=1.93624 max=1.93624 l1_mean=1.93624 max_abs=1.93624
 [G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
 [G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
 [G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
-[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0251856 min=-0.0544626 max=0.00409148 l1_mean=0.0585541 max_abs=0.0544626
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0320654 min=-0.0676379 max=0.00350708 l1_mean=0.071145 max_abs=0.0676379
 [G1ActionTrace] reward/action_authority_stand_frac=1
 [G1ActionTrace] reward/alive=10
-[G1ActionTrace] reward/base_height=-1.18641
-[G1ActionTrace] reward/executed_action_l1=2.47402
-[G1ActionTrace] reward/penalty_action_rate=-0.0288533
-[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000155369
-[G1ActionTrace] reward/penalty_feet_ori=-3.02105e-06
-[G1ActionTrace] reward/penalty_orientation=-0.00424892
-[G1ActionTrace] reward/pose=-0.721536
-[G1ActionTrace] reward/raw_action_l1=2.47402
-[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.0889852
-[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000167402
+[G1ActionTrace] reward/base_height=-0.41524
+[G1ActionTrace] reward/executed_action_l1=1.48316
+[G1ActionTrace] reward/penalty_action_rate=-0.0679245
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00246006
+[G1ActionTrace] reward/penalty_feet_ori=-3.37759e-06
+[G1ActionTrace] reward/penalty_orientation=-0.0114153
+[G1ActionTrace] reward/pose=-0.713465
+[G1ActionTrace] reward/raw_action_l1=1.48316
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.137247
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-0.000122996
 [G1ActionTrace] reward/stand_both_feet_contact=0
-[G1ActionTrace] reward/stand_dof_vel_l2=-0.000181279
-[G1ActionTrace] reward/stand_executed_action_l1=2.47402
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.000623707
+[G1ActionTrace] reward/stand_executed_action_l1=1.48316
 [G1ActionTrace] reward/stand_fall_l2=0
-[G1ActionTrace] reward/stand_feet_slide_l2=-5.33593e-06
-[G1ActionTrace] reward/stand_feet_x_l2=-0.000457651
-[G1ActionTrace] reward/stand_feet_y_width_l2=-0.0111824
-[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00550194
+[G1ActionTrace] reward/stand_feet_slide_l2=-1.43575e-05
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000209946
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00748576
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.00062393
 [G1ActionTrace] reward/stand_foot_contact_balance=0
-[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00109742
-[G1ActionTrace] reward/stand_raw_action_l1=2.47402
-[G1ActionTrace] reward/stand_still=-0.535858
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.000968063
+[G1ActionTrace] reward/stand_raw_action_l1=1.48316
+[G1ActionTrace] reward/stand_still=-0.376946
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.822441
+[G1ActionTrace] reward/stand_tilt_l2=-0.0456614
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00264215
+[G1ActionTrace] reward/upright=3.98178
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=160 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.22754 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.0115421 min=-0.187817 max=0.175572 l1_mean=1.52836 max_abs=0.187817
+[G1ActionTrace] current_actions[0,:8]: [-0.1878  0.011  -0.0569  0.1249 -0.1326 -0.0168 -0.1436  0.014 ]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.0115421 min=-0.187817 max=0.175572 l1_mean=1.52836 max_abs=0.187817
+[G1ActionTrace] executed_actions[0,:8]: [-0.1878  0.011  -0.0569  0.1249 -0.1326 -0.0168 -0.1436  0.014 ]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0432166 min=-0.527544 max=0.844572 l1_mean=6.07682 max_abs=0.844572
+[G1ActionTrace] ctrl[0,:8]: [-0.4998  0.011  -0.0569  0.7939 -0.4956 -0.0168 -0.4556  0.014 ]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.0115421 min=-0.187817 max=0.175572 l1_mean=1.52836 max_abs=0.187817
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.027125 min=-0.243051 max=0.0566105 l1_mean=1.12481 max_abs=0.243051
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0155829 min=-0.148521 max=0.367981 l1_mean=1.91576 max_abs=0.367981
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.000274096 min=-0.0390473 max=0.066418 l1_mean=0.444816 max_abs=0.066418
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.64074 min=-24.0958 max=2.11821 l1_mean=60.8468 max_abs=24.0958
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -2.196    2.1182  -1.2898 -24.0958   0.4059  -0.4469  -0.9146   1.8533]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00242421 min=-0.00842627 max=0.00527514 l1_mean=0.0178229 max_abs=0.00842627
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00602195 min=-0.0095935 max=0.0249912 l1_mean=0.0372528 max_abs=0.0249912
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708413 min=0.708413 max=0.708413 l1_mean=0.708413 max_abs=0.708413
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0455868 min=0.0455868 max=0.0455868 l1_mean=0.0455868 max_abs=0.0455868
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.59348 min=1.59348 max=1.59348 l1_mean=1.59348 max_abs=1.59348
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.034024 min=-0.0701902 max=0.00214216 l1_mean=0.0723324 max_abs=0.0701902
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.415631
+[G1ActionTrace] reward/executed_action_l1=1.52836
+[G1ActionTrace] reward/penalty_action_rate=-0.0499771
+[G1ActionTrace] reward/penalty_ang_vel_xy=-9.91544e-05
+[G1ActionTrace] reward/penalty_feet_ori=-5.88141e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00773236
+[G1ActionTrace] reward/pose=-0.734687
+[G1ActionTrace] reward/raw_action_l1=1.52836
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.1478
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-4.58883e-05
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.000702345
+[G1ActionTrace] reward/stand_executed_action_l1=1.52836
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-2.26658e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000472041
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00750818
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000808835
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00197658
+[G1ActionTrace] reward/stand_raw_action_l1=1.52836
+[G1ActionTrace] reward/stand_still=-0.383151
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.826
+[G1ActionTrace] reward/stand_tilt_l2=-0.0309294
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00312279
+[G1ActionTrace] reward/upright=3.98765
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=180 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.230286 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00329299 min=-0.157931 max=0.16897 l1_mean=1.28796 max_abs=0.16897
+[G1ActionTrace] current_actions[0,:8]: [-0.1579 -0.0133 -0.037   0.169  -0.0313  0.0011 -0.1336 -0.0136]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00329299 min=-0.157931 max=0.16897 l1_mean=1.28796 max_abs=0.16897
+[G1ActionTrace] executed_actions[0,:8]: [-0.1579 -0.0133 -0.037   0.169  -0.0313  0.0011 -0.1336 -0.0136]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0580516 min=-0.469931 max=0.83797 l1_mean=5.85969 max_abs=0.83797
+[G1ActionTrace] ctrl[0,:8]: [-0.4699 -0.0133 -0.037   0.838  -0.3943  0.0011 -0.4456 -0.0136]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00329299 min=-0.157931 max=0.16897 l1_mean=1.28796 max_abs=0.16897
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0113082 min=-0.194163 max=0.120637 l1_mean=1.20606 max_abs=0.194163
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0146012 min=-0.157063 max=0.363133 l1_mean=1.89841 max_abs=0.363133
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00467602 min=-0.0496918 max=0.152613 l1_mean=0.598288 max_abs=0.152613
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.22888 min=-19.2941 max=3.4357 l1_mean=57.1442 max_abs=19.2941
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.4677  -0.064   -0.4256 -19.2941   3.4357   0.0709  -1.0071  -0.6462]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00191755 min=-0.00781084 max=0.00218466 l1_mean=0.010122 max_abs=0.00781084
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00915748 min=-0.033309 max=0.0399875 l1_mean=0.0940904 max_abs=0.0399875
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.709091 min=0.709091 max=0.709091 l1_mean=0.709091 max_abs=0.709091
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0449086 min=0.0449086 max=0.0449086 l1_mean=0.0449086 max_abs=0.0449086
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.82649 min=1.82649 max=1.82649 l1_mean=1.82649 max_abs=1.82649
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0317099 min=-0.0645833 max=0.00116357 l1_mean=0.0657469 max_abs=0.0645833
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.403356
+[G1ActionTrace] reward/executed_action_l1=1.28796
+[G1ActionTrace] reward/penalty_action_rate=-0.0244823
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00270849
+[G1ActionTrace] reward/penalty_feet_ori=-4.17995e-06
+[G1ActionTrace] reward/penalty_orientation=-0.0101587
+[G1ActionTrace] reward/pose=-0.69028
+[G1ActionTrace] reward/raw_action_l1=1.28796
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.12513
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.35388e-05
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00219288
+[G1ActionTrace] reward/stand_executed_action_l1=1.28796
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-5.71155e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000531182
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00753844
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000816948
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.0012205
+[G1ActionTrace] reward/stand_raw_action_l1=1.28796
+[G1ActionTrace] reward/stand_still=-0.379682
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.778568
+[G1ActionTrace] reward/stand_tilt_l2=-0.0406346
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00216195
+[G1ActionTrace] reward/upright=3.98378
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=200 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.228165 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00559727 min=-0.172233 max=0.163136 l1_mean=1.39766 max_abs=0.172233
+[G1ActionTrace] current_actions[0,:8]: [-0.1722 -0.0105 -0.0089  0.1631 -0.1185 -0.0041 -0.1501 -0.0117]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00559727 min=-0.172233 max=0.163136 l1_mean=1.39766 max_abs=0.172233
+[G1ActionTrace] executed_actions[0,:8]: [-0.1722 -0.0105 -0.0089  0.1631 -0.1185 -0.0041 -0.1501 -0.0117]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0491614 min=-0.505127 max=0.832136 l1_mean=5.94851 max_abs=0.832136
+[G1ActionTrace] ctrl[0,:8]: [-0.4842 -0.0105 -0.0089  0.8321 -0.4815 -0.0041 -0.4621 -0.0117]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00559727 min=-0.172233 max=0.163136 l1_mean=1.39766 max_abs=0.172233
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0204456 min=-0.216312 max=0.0495515 l1_mean=1.04031 max_abs=0.216312
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0148484 min=-0.15656 max=0.366154 l1_mean=1.91528 max_abs=0.366154
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.000401104 min=-0.0288758 max=0.0148585 l1_mean=0.197743 max_abs=0.0288758
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.51174 min=-21.4623 max=1.01702 l1_mean=56.1188 max_abs=21.4623
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.8331   0.1921   0.6862 -20.1742   0.9334  -0.0798  -1.4818  -0.4769]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.00187304 min=-0.00141737 max=0.0049815 l1_mean=0.00845386 max_abs=0.0049815
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0139342 min=-0.0302296 max=0.00723637 l1_mean=0.0562755 max_abs=0.0302296
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708556 min=0.708556 max=0.708556 l1_mean=0.708556 max_abs=0.708556
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0454443 min=0.0454443 max=0.0454443 l1_mean=0.0454443 max_abs=0.0454443
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.90937 min=1.90937 max=1.90937 l1_mean=1.90937 max_abs=1.90937
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0328395 min=-0.0666212 max=0.000942162 l1_mean=0.0675634 max_abs=0.0666212
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.413037
+[G1ActionTrace] reward/executed_action_l1=1.39766
+[G1ActionTrace] reward/penalty_action_rate=-0.0403455
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000966194
+[G1ActionTrace] reward/penalty_feet_ori=-6.63032e-06
+[G1ActionTrace] reward/penalty_orientation=-0.0111008
+[G1ActionTrace] reward/pose=-0.720766
+[G1ActionTrace] reward/raw_action_l1=1.39766
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.133152
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-8.8767e-06
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.000124491
+[G1ActionTrace] reward/stand_executed_action_l1=1.39766
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-2.27691e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000694031
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00753173
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000848118
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.000580767
+[G1ActionTrace] reward/stand_raw_action_l1=1.39766
+[G1ActionTrace] reward/stand_still=-0.383057
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.815635
+[G1ActionTrace] reward/stand_tilt_l2=-0.0444031
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00176899
+[G1ActionTrace] reward/upright=3.98228
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=220 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.227114 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=0.00235406 min=-0.14715 max=0.180191 l1_mean=1.29917 max_abs=0.180191
+[G1ActionTrace] current_actions[0,:8]: [-0.1471 -0.0192 -0.0436  0.1802 -0.0312  0.0183 -0.12   -0.0297]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=0.00235406 min=-0.14715 max=0.180191 l1_mean=1.29917 max_abs=0.180191
+[G1ActionTrace] executed_actions[0,:8]: [-0.1471 -0.0192 -0.0436  0.1802 -0.0312  0.0183 -0.12   -0.0297]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0571127 min=-0.45915 max=0.849191 l1_mean=5.86558 max_abs=0.849191
+[G1ActionTrace] ctrl[0,:8]: [-0.4591 -0.0192 -0.0436  0.8492 -0.3942  0.0183 -0.432  -0.0297]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=0.00235406 min=-0.14715 max=0.180191 l1_mean=1.29917 max_abs=0.180191
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.012538 min=-0.211465 max=0.115322 l1_mean=1.28352 max_abs=0.211465
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.014892 min=-0.153862 max=0.364187 l1_mean=1.90778 max_abs=0.364187
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.00213736 min=-0.0943297 max=0.100068 l1_mean=0.602536 max_abs=0.100068
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.25218 min=-20.6842 max=3.23534 l1_mean=60.5862 max_abs=20.6842
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.8965  -0.3763  -0.4133 -18.241    3.2353   0.5211  -0.5651  -2.0136]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00244622 min=-0.0112646 max=0.00478584 l1_mean=0.0169103 max_abs=0.0112646
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.0130774 min=-0.0258706 max=0.0330521 l1_mean=0.0909736 max_abs=0.0330521
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708925 min=0.708925 max=0.708925 l1_mean=0.708925 max_abs=0.708925
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.045075 min=0.045075 max=0.045075 l1_mean=0.045075 max_abs=0.045075
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.739 min=1.739 max=1.739 l1_mean=1.739 max_abs=1.739
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0330426 min=-0.0678097 max=0.00172445 l1_mean=0.0695342 max_abs=0.0678097
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.406351
+[G1ActionTrace] reward/executed_action_l1=1.29917
+[G1ActionTrace] reward/penalty_action_rate=-0.125924
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00169655
+[G1ActionTrace] reward/penalty_feet_ori=-5.03154e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00920908
+[G1ActionTrace] reward/pose=-0.720361
+[G1ActionTrace] reward/raw_action_l1=1.29917
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.137945
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-2.97374e-05
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00167784
+[G1ActionTrace] reward/stand_executed_action_l1=1.29917
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-1.11879e-05
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000968583
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00754379
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000885119
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00255261
+[G1ActionTrace] reward/stand_raw_action_l1=1.29917
+[G1ActionTrace] reward/stand_still=-0.381556
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.790587
+[G1ActionTrace] reward/stand_tilt_l2=-0.0368363
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00546221
+[G1ActionTrace] reward/upright=3.98529
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=240 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.228612 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.000959541 min=-0.152124 max=0.191159 l1_mean=1.23545 max_abs=0.191159
+[G1ActionTrace] current_actions[0,:8]: [-0.1123 -0.0179 -0.002   0.1912 -0.0627  0.016  -0.1521 -0.0017]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.000959541 min=-0.152124 max=0.191159 l1_mean=1.23545 max_abs=0.191159
+[G1ActionTrace] executed_actions[0,:8]: [-0.1123 -0.0179 -0.002   0.1912 -0.0627  0.016  -0.1521 -0.0017]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0537991 min=-0.464124 max=0.860159 l1_mean=5.83128 max_abs=0.860159
+[G1ActionTrace] ctrl[0,:8]: [-0.4243 -0.0179 -0.002   0.8602 -0.4257  0.016  -0.4641 -0.0017]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00095954 min=-0.152124 max=0.191159 l1_mean=1.23545 max_abs=0.191159
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.015823 min=-0.214313 max=0.0842695 l1_mean=1.23201 max_abs=0.214313
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0148634 min=-0.153204 max=0.36271 l1_mean=1.922 max_abs=0.36271
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=-0.000534516 min=-0.123097 max=0.0945884 l1_mean=0.470538 max_abs=0.123097
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.28484 min=-21.0214 max=2.44621 l1_mean=58.2013 max_abs=21.0214
+[G1ActionTrace] virtual_pd_tau[0,:8]: [  0.8022  -0.7256   0.9807 -16.9918   2.4462   0.4886  -1.3833   0.2875]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=0.00768432 min=0.000347584 max=0.0154867 l1_mean=0.023053 max_abs=0.0154867
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=0.00398386 min=-0.0446252 max=0.0790036 l1_mean=0.146056 max_abs=0.0790036
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.70918 min=0.70918 max=0.70918 l1_mean=0.70918 max_abs=0.70918
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0448201 min=0.0448201 max=0.0448201 l1_mean=0.0448201 max_abs=0.0448201
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.14449 min=1.14449 max=1.14449 l1_mean=1.14449 max_abs=1.14449
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0331088 min=-0.0666079 max=0.000390196 l1_mean=0.0669981 max_abs=0.0666079
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.401769
+[G1ActionTrace] reward/executed_action_l1=1.23545
+[G1ActionTrace] reward/penalty_action_rate=-0.070008
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.00823297
+[G1ActionTrace] reward/penalty_feet_ori=-4.14356e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00398961
+[G1ActionTrace] reward/pose=-0.753891
+[G1ActionTrace] reward/raw_action_l1=1.23545
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.133098
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.52253e-06
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00141317
+[G1ActionTrace] reward/stand_executed_action_l1=1.23545
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-6.8208e-07
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000714287
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00759016
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000916122
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00583896
+[G1ActionTrace] reward/stand_raw_action_l1=1.23545
+[G1ActionTrace] reward/stand_still=-0.3844
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.7727
+[G1ActionTrace] reward/stand_tilt_l2=-0.0159585
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00251481
+[G1ActionTrace] reward/upright=3.99362
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=260 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.228816 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00328673 min=-0.135064 max=0.175696 l1_mean=1.23031 max_abs=0.175696
+[G1ActionTrace] current_actions[0,:8]: [-0.1319 -0.0048 -0.0104  0.1757 -0.039  -0.0068 -0.1351  0.0054]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00328673 min=-0.135064 max=0.175696 l1_mean=1.23031 max_abs=0.175696
+[G1ActionTrace] executed_actions[0,:8]: [-0.1319 -0.0048 -0.0104  0.1757 -0.039  -0.0068 -0.1351  0.0054]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0514719 min=-0.480589 max=0.844696 l1_mean=5.76562 max_abs=0.844696
+[G1ActionTrace] ctrl[0,:8]: [-0.4439 -0.0048 -0.0104  0.8447 -0.402  -0.0068 -0.4471  0.0054]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00328672 min=-0.135064 max=0.175696 l1_mean=1.23031 max_abs=0.175696
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0180704 min=-0.197363 max=0.115256 l1_mean=1.14906 max_abs=0.197363
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0147837 min=-0.159965 max=0.364958 l1_mean=1.91104 max_abs=0.364958
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00392043 min=-0.0241133 max=0.0655647 l1_mean=0.386201 max_abs=0.0655647
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.31299 min=-19.5741 max=3.32264 l1_mean=55.6812 max_abs=19.5741
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -0.1771   0.3785   0.5992 -19.0841   3.3226  -0.1546  -0.8961   0.8004]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.0020582 min=-0.00682833 max=0.00385318 l1_mean=0.0138809 max_abs=0.00682833
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.0128066 min=-0.0272642 max=0.0148756 l1_mean=0.0681709 max_abs=0.0272642
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708966 min=0.708966 max=0.708966 l1_mean=0.708966 max_abs=0.708966
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0450344 min=0.0450344 max=0.0450344 l1_mean=0.0450344 max_abs=0.0450344
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.3962 min=1.3962 max=1.3962 l1_mean=1.3962 max_abs=1.3962
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0311579 min=-0.0633216 max=0.00100578 l1_mean=0.0643274 max_abs=0.0633216
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.40562
+[G1ActionTrace] reward/executed_action_l1=1.23031
+[G1ActionTrace] reward/penalty_action_rate=-0.087322
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000964622
+[G1ActionTrace] reward/penalty_feet_ori=-2.39671e-06
+[G1ActionTrace] reward/penalty_orientation=-0.0059373
+[G1ActionTrace] reward/pose=-0.721119
+[G1ActionTrace] reward/raw_action_l1=1.23031
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.120289
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.0116e-05
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.000640345
+[G1ActionTrace] reward/stand_executed_action_l1=1.23031
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-4.01543e-06
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000661012
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00760158
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000981249
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00122946
+[G1ActionTrace] reward/stand_raw_action_l1=1.23031
+[G1ActionTrace] reward/stand_still=-0.382207
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.787986
+[G1ActionTrace] reward/stand_tilt_l2=-0.0237492
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.00338809
+[G1ActionTrace] reward/upright=3.99051
+[G1ActionTrace] end
+[G1ActionTrace] begin
+[G1ActionTrace] step=280 task=G1StandStillCfg action_scale=1 stand_action_authority=False mode_observation=False reward_mean=0.228768 terminated_frac=0
+[G1ActionTrace] commands: shape=(1, 3) finite=3/3 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] commands[0,:3]: [0. 0. 0.]
+[G1ActionTrace] gait_enabled: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] dynamic_mode: shape=(1,) finite=1/1 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] current_actions: shape=(1, 29) finite=29/29 mean=-0.00546937 min=-0.162854 max=0.161086 l1_mean=1.39328 max_abs=0.162854
+[G1ActionTrace] current_actions[0,:8]: [-0.1629 -0.0151 -0.0285  0.1611 -0.1069  0.0061 -0.1582 -0.0121]
+[G1ActionTrace] executed_actions: shape=(1, 29) finite=29/29 mean=-0.00546937 min=-0.162854 max=0.161086 l1_mean=1.39328 max_abs=0.162854
+[G1ActionTrace] executed_actions[0,:8]: [-0.1629 -0.0151 -0.0285  0.1611 -0.1069  0.0061 -0.1582 -0.0121]
+[G1ActionTrace] executed_minus_current: shape=(1, 29) finite=29/29 mean=0 min=0 max=0 l1_mean=0 max_abs=0
+[G1ActionTrace] ctrl: shape=(1, 29) finite=29/29 mean=0.0492893 min=-0.485981 max=0.830086 l1_mean=5.93658 max_abs=0.830086
+[G1ActionTrace] ctrl[0,:8]: [-0.4749 -0.0151 -0.0285  0.8301 -0.4699  0.0061 -0.4702 -0.0121]
+[G1ActionTrace] ctrl_minus_default: shape=(1, 29) finite=29/29 mean=-0.00546937 min=-0.162854 max=0.161086 l1_mean=1.39328 max_abs=0.162854
+[G1ActionTrace] ctrl_minus_dof_pos: shape=(1, 29) finite=29/29 mean=-0.0214255 min=-0.213226 max=0.0714566 l1_mean=1.10574 max_abs=0.213226
+[G1ActionTrace] dof_pos_minus_default: shape=(1, 29) finite=29/29 mean=0.0159561 min=-0.156371 max=0.365135 l1_mean=1.90182 max_abs=0.365135
+[G1ActionTrace] dof_vel: shape=(1, 29) finite=29/29 mean=0.00132133 min=-0.0199704 max=0.0203327 l1_mean=0.174144 max_abs=0.0203327
+[G1ActionTrace] virtual_pd_tau: shape=(1, 29) finite=29/29 mean=-1.57678 min=-21.1503 max=1.21913 l1_mean=56.6073 max_abs=21.1503
+[G1ActionTrace] virtual_pd_tau[0,:8]: [ -1.6131  -0.3743  -0.2315 -20.2245   1.2191   0.1837  -1.9437  -0.6394]
+[G1ActionTrace] linvel: shape=(1, 3) finite=3/3 mean=-0.00342503 min=-0.015283 max=0.00306396 l1_mean=0.020291 max_abs=0.015283
+[G1ActionTrace] gyro: shape=(1, 3) finite=3/3 mean=-0.000888994 min=-0.0169212 max=0.00850713 l1_mean=0.0311754 max_abs=0.0169212
+[G1ActionTrace] base_height_target=0.754
+[G1ActionTrace] base_height: shape=(1,) finite=1/1 mean=0.708713 min=0.708713 max=0.708713 l1_mean=0.708713 max_abs=0.708713
+[G1ActionTrace] base_height_deficit: shape=(1,) finite=1/1 mean=0.0452873 min=0.0452873 max=0.0452873 l1_mean=0.0452873 max_abs=0.0452873
+[G1ActionTrace] tilt_deg: shape=(1,) finite=1/1 mean=1.59152 min=1.59152 max=1.59152 l1_mean=1.59152 max_abs=1.59152
+[G1ActionTrace] left_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] right_contact: shape=(1,) finite=1/1 mean=1 min=1 max=1 l1_mean=1 max_abs=1
+[G1ActionTrace] left_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] right_contact_count: shape=(1,) finite=1/1 mean=4 min=4 max=4 l1_mean=4 max_abs=4
+[G1ActionTrace] base_minus_feet_center_xy: shape=(1, 2) finite=2/2 mean=-0.0325238 min=-0.0662454 max=0.00119768 l1_mean=0.067443 max_abs=0.0662454
+[G1ActionTrace] reward/action_authority_stand_frac=1
+[G1ActionTrace] reward/alive=10
+[G1ActionTrace] reward/base_height=-0.410188
+[G1ActionTrace] reward/executed_action_l1=1.39328
+[G1ActionTrace] reward/penalty_action_rate=-0.0277261
+[G1ActionTrace] reward/penalty_ang_vel_xy=-0.000358698
+[G1ActionTrace] reward/penalty_feet_ori=-3.46428e-06
+[G1ActionTrace] reward/penalty_orientation=-0.00771327
+[G1ActionTrace] reward/pose=-0.74224
+[G1ActionTrace] reward/raw_action_l1=1.39328
+[G1ActionTrace] reward/stand_base_feet_center_x_l2=-0.131653
+[G1ActionTrace] reward/stand_base_feet_center_y_l2=-1.43444e-05
+[G1ActionTrace] reward/stand_both_feet_contact=0
+[G1ActionTrace] reward/stand_dof_vel_l2=-0.00010337
+[G1ActionTrace] reward/stand_executed_action_l1=1.39328
+[G1ActionTrace] reward/stand_fall_l2=0
+[G1ActionTrace] reward/stand_feet_slide_l2=-2.64288e-07
+[G1ActionTrace] reward/stand_feet_x_l2=-0.000578297
+[G1ActionTrace] reward/stand_feet_y_width_l2=-0.00763829
+[G1ActionTrace] reward/stand_feet_yaw_l2=-0.000897844
+[G1ActionTrace] reward/stand_foot_contact_balance=0
+[G1ActionTrace] reward/stand_lin_vel_xy_l2=-0.00485918
+[G1ActionTrace] reward/stand_raw_action_l1=1.39328
+[G1ActionTrace] reward/stand_still=-0.380364
+[G1ActionTrace] reward/stand_support_height_margin_l2=-0.803902
+[G1ActionTrace] reward/stand_tilt_l2=-0.0308531
+[G1ActionTrace] reward/stand_tilt_margin_l2=0
+[G1ActionTrace] reward/stand_yaw_vel_l2=-0.000165145
+[G1ActionTrace] reward/upright=3.98768
 [G1ActionTrace] end

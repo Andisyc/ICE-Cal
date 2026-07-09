@@ -141,6 +141,7 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert cfg.env.reset_base_qvel_limit == 0.0
     assert cfg.env.standing_reset_base_qvel_limit == 0.0
     assert cfg.reward.scales.base_height == -200.0
+    assert cfg.reward.scales.stand_base_height_deficit_l1 == -240.0
     assert cfg.reward.scales.stand_support_height_margin_l2 == -1500.0
     assert cfg.reward.stand_support_height_margin == 0.02
 
@@ -161,6 +162,7 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
         "stand_tilt_l2",
         "stand_tilt_margin_l2",
         "stand_fall_l2",
+        "stand_base_height_deficit_l1",
         "stand_support_height_margin_l2",
         "stand_both_feet_contact",
         "stand_foot_contact_balance",
@@ -189,6 +191,7 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert "mode" not in override["reward_config"]
     assert "gait_constraint" not in override["reward_config"]
     assert forbidden.isdisjoint(override["reward_config"]["scales"])
+    assert override["reward_config"]["scales"]["stand_base_height_deficit_l1"] == -240.0
     assert override["reward_config"]["scales"]["stand_support_height_margin_l2"] == -1500.0
     assert override["reward_config"]["stand_support_height_margin"] == 0.02
 

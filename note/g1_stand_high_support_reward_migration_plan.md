@@ -429,6 +429,43 @@ Live caveat:
 - A 64-step live summary with the old checkpoint and new reward shows `current_trained_policy_action` still around `0.674-0.678`, but now receives `stand_support_height_margin_l2=-0.0628` per step, while `searched_support_action` near `0.722` receives only `-0.00037`.
 - Therefore the next meaningful evidence is retraining or short resume under the strengthened reward, then playback.
 
+Second post-log regression, 2026-07-09:
+
+- User playback log `log.txt` showed retraining improved the policy height to around `base_height=0.708-0.709`, but the stance remained visibly lower than the Walking-compatible target `0.754`.
+- Runtime log fact:
+  - `height min/mean/max = 0.708413 / 0.716899 / 0.754`.
+  - post-reset settled steps around `0.709` show `height_deficit≈0.045`.
+- Reward-lab probe before the fix:
+  - `clean=0.280000`, `trained_0709=0.245936`, ratio `0.878`.
+  - `base_height` contribution was only `-0.008100`.
+  - `stand_support_height_margin_l2` contribution was only `-0.018750` when feet are at terrain height in the offline oracle.
+- Root cause in reward ordering: the support-relative term was necessary, but it did not directly make a visible `0.709m` base-height equilibrium unattractive enough.
+- Added a Standing-only visible low-height hinge:
+  - `stand_base_height_deficit_l1: -240.0`.
+  - formula path: `base_height -> max(base_height_target - stand_support_height_margin - base_height, 0) -> stand mask`.
+  - This stays in `G1StandStill`; `G1WalkFlat` and `G1WalkHeight` remain isolated by config tests.
+- Added `test_g1_stand_still_height_bundle_rejects_trained_0709_equilibrium`.
+- Reward-lab probe after the fix:
+  - `clean=0.280000`, `trained_0709=0.125936`, ratio `0.450`.
+  - `stand_base_height_deficit_l1` contribution is `-0.120000` on the `0.709m` row.
+
+Fresh verification after the 0.709m fix:
+
+```text
+uv run pytest tests/envs/locomotion/g1/test_gait_constraint.py::test_g1_stand_still_height_bundle_rejects_trained_0709_equilibrium -q
+-> 1 passed
+
+uv run pytest tests/envs/locomotion/g1/test_gait_constraint.py -q
+-> 61 passed
+
+uv run pytest tests/config/test_reward_injection.py -q
+-> 14 passed, 2 warnings
+```
+
+Remaining gap:
+
+- This is S1/S2 reward-ordering evidence and S0/S2 config-route evidence. It still requires retraining or resume training before the actor behavior can be expected to change in playback.
+
 ### Step 6: Short Training And Playback Gate
 
 Scope:
