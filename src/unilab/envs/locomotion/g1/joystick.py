@@ -322,6 +322,7 @@ class G1RewardConfig:
     stand_base_feet_center_x_target: float = 0.0
     stand_base_feet_center_y_target: float = 0.0
     stand_foot_contact_balance_epsilon: float = 1.0e-6
+    stand_support_height_margin: float = 0.02
     gait_constraint: GaitConstraintConfig | dict[str, Any] = field(
         default_factory=GaitConstraintConfig
     )
@@ -601,6 +602,7 @@ class G1WalkEnv(G1BaseEnv):
             "stand_tilt_l2": self._reward_stand_tilt_l2,
             "stand_tilt_margin_l2": self._reward_stand_tilt_margin_l2,
             "stand_fall_l2": self._reward_stand_fall_l2,
+            "stand_support_height_margin_l2": self._reward_stand_support_height_margin_l2,
             "stand_both_feet_contact": self._reward_stand_both_feet_contact,
             "stand_foot_contact_balance": self._reward_stand_foot_contact_balance,
             "stand_feet_slide_l2": self._reward_stand_feet_slide_l2,
@@ -1519,6 +1521,37 @@ class G1WalkEnv(G1BaseEnv):
         return (
             compute_aggregated_foot_contact_count(self._backend, LEFT_FOOT_CONTACT_SENSORS),
             compute_aggregated_foot_contact_count(self._backend, RIGHT_FOOT_CONTACT_SENSORS),
+        )
+
+    def _stand_support_relative_height(self) -> np.ndarray:
+        dtype = get_global_dtype()
+        base_z = np.asarray(self._backend.get_base_pos()[:, 2], dtype=dtype)
+        left_foot = np.asarray(self._backend.get_sensor_data("left_foot_pos"), dtype=dtype)
+        right_foot = np.asarray(self._backend.get_sensor_data("right_foot_pos"), dtype=dtype)
+        left_contact = compute_aggregated_foot_contact(
+            self._backend, LEFT_FOOT_CONTACT_SENSORS
+        ).astype(dtype)
+        right_contact = compute_aggregated_foot_contact(
+            self._backend, RIGHT_FOOT_CONTACT_SENSORS
+        ).astype(dtype)
+        contact_count = left_contact + right_contact
+        eps = float(self._reward_cfg.stand_foot_contact_balance_epsilon)
+        contacted_foot_z = np.where(
+            contact_count > eps,
+            (left_foot[:, 2] * left_contact + right_foot[:, 2] * right_contact)
+            / np.maximum(contact_count, eps),
+            0.5 * (left_foot[:, 2] + right_foot[:, 2]),
+        )
+        return np.asarray(base_z - contacted_foot_z, dtype=dtype)
+
+    def _reward_stand_support_height_margin_l2(self, ctx: RewardContext):
+        target = float(self._reward_cfg.base_height_target)
+        margin = float(self._reward_cfg.stand_support_height_margin)
+        support_height = self._stand_support_relative_height()
+        low_deficit = np.maximum(target - margin - support_height, 0.0)
+        return np.asarray(
+            np.square(low_deficit) * self._stand_mode_mask(ctx),
+            dtype=get_global_dtype(),
         )
 
     def _reward_stand_both_feet_contact(self, ctx: RewardContext):

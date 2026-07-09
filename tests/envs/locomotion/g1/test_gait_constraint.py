@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
@@ -1484,6 +1485,96 @@ def test_g1_stand_still_reward_lab_prefers_clean_stand_over_pose_failures() -> N
     assert contributions["stand_both_feet_contact"][labels["missing_left_contact"]] < 0.0
     assert contributions["stand_foot_contact_balance"][labels["unbalanced_contact"]] < 0.0
     assert contributions["stand_feet_slide_l2"][labels["sliding_feet"]] < 0.0
+
+
+def test_g1_stand_still_high_support_bundle_prefers_loaded_high_stand_over_low_crouch() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
+
+    reward_cfg = G1WalkRewardConfig(**OmegaConf.to_container(cfg.reward, resolve=True))
+    env_count = 2
+    env = _fake_env(reward_cfg, num_envs=env_count)
+    labels = {"clean_high_support": 0, "loaded_low_crouch": 1}
+
+    left = np.tile(np.asarray([[0.0, 0.105, 0.0]], dtype=np.float32), (env_count, 1))
+    right = np.tile(np.asarray([[0.0, -0.105, 0.0]], dtype=np.float32), (env_count, 1))
+    base = np.asarray(
+        [
+            [0.0, 0.0, float(reward_cfg.base_height_target)],
+            [0.0, 0.0, 0.625],
+        ],
+        dtype=np.float32,
+    )
+    env._backend._values["left_foot_pos"] = left
+    env._backend._values["right_foot_pos"] = right
+    env._backend._values["base_pos"] = base
+    env._backend._values["left_foot_quat"] = np.tile(_yaw_quat(0.0)[None, :], (env_count, 1))
+    env._backend._values["right_foot_quat"] = np.tile(_yaw_quat(0.0)[None, :], (env_count, 1))
+    env._backend._values["left_foot_linvel"] = np.zeros((env_count, 3), dtype=np.float32)
+    env._backend._values["right_foot_linvel"] = np.zeros((env_count, 3), dtype=np.float32)
+    for i in range(4):
+        env._backend._values[f"left_foot_contact_{i}"] = np.ones(
+            (env_count,), dtype=np.float32
+        )
+        env._backend._values[f"right_foot_contact_{i}"] = np.ones(
+            (env_count,), dtype=np.float32
+        )
+
+    current_actions = np.zeros((env_count, 29), dtype=np.float32)
+    current_actions[labels["loaded_low_crouch"], :8] = np.asarray(
+        [-0.3370, 0.1133, -0.1895, 0.4851, -0.1638, 0.0131, -0.3504, -0.0656],
+        dtype=np.float32,
+    )
+    ctx = RewardContext(
+        info={
+            "commands": np.zeros((env_count, 3), dtype=np.float32),
+            "current_actions": current_actions,
+            "last_actions": np.zeros((env_count, 29), dtype=np.float32),
+            "steps": np.zeros((env_count,), dtype=np.uint32),
+        },
+        linvel=np.zeros((env_count, 3), dtype=np.float32),
+        gyro=np.zeros((env_count, 3), dtype=np.float32),
+        dof_pos=np.zeros((env_count, 29), dtype=np.float32),
+        dof_vel=np.zeros((env_count, 29), dtype=np.float32),
+        num_envs=env_count,
+        default_angles=np.zeros((29,), dtype=np.float32),
+        tracking_sigma=reward_cfg.tracking_sigma,
+        base_height_target=reward_cfg.base_height_target,
+        base_height=base[:, 2],
+        gravity=np.tile(np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32), (env_count, 1)),
+        pose_weights=np.asarray(reward_cfg.pose_weights, dtype=np.float32),
+    )
+
+    total = env._compute_mode_reward(ctx, reward_cfg)
+    contributions = {
+        name: env._reward_fns[name](ctx) * scale * env._cfg.ctrl_dt
+        for name, scale in reward_cfg.scales.items()
+        if name in env._reward_fns
+    }
+    clean = float(total[labels["clean_high_support"]])
+    loaded_low = float(total[labels["loaded_low_crouch"]])
+    support_terms = {
+        name for name in reward_cfg.scales if name.startswith("stand_support_height")
+    }
+
+    if not support_terms:
+        pytest.xfail(
+            "G1StandStill currently lacks a Standing-specific high-support height "
+            f"bundle: clean={clean:.6f}, loaded_low={loaded_low:.6f}, "
+            f"ratio={loaded_low / clean:.3f}. Step 3 should add stand_support_height_*."
+        )
+
+    assert support_terms.issubset(contributions), support_terms - set(contributions)
+    assert clean > 0.0
+    assert loaded_low <= clean * 0.5
+    support_gap = sum(
+        float(
+            contributions[name][labels["clean_high_support"]]
+            - contributions[name][labels["loaded_low_crouch"]]
+        )
+        for name in support_terms
+    )
+    assert support_gap >= 0.05
 
 
 def test_mode_reward_logs_shared_terms_without_overwrite() -> None:

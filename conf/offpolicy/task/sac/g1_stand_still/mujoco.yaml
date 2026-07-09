@@ -63,6 +63,7 @@ reward:
     stand_tilt_l2: -40.0
     stand_tilt_margin_l2: -120.0
     stand_fall_l2: -500.0
+    stand_support_height_margin_l2: -300.0
     stand_both_feet_contact: -5.0
     stand_foot_contact_balance: -2.0
     stand_feet_slide_l2: -2.0
@@ -86,4 +87,5 @@ reward:
   stand_base_feet_center_x_target: 0.0
   stand_base_feet_center_y_target: 0.0
   stand_foot_contact_balance_epsilon: 1.0e-6
+  stand_support_height_margin: 0.02
   pose_weights: [0.001, 0.1, 0.5, 0.001, 0.5, 0.5, 0.001, 0.1, 0.5, 0.001, 0.5, 0.5, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

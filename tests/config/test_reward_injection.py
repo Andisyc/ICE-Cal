@@ -56,6 +56,7 @@ def test_offpolicy_g1_env_override_preserves_upstream_walking_contract():
     assert "standing_reset_base_qvel_limit" not in override
     assert "mode" not in override["reward_config"]
     assert "gait_constraint" not in override["reward_config"]
+    assert "stand_support_height_margin_l2" not in override["reward_config"]["scales"]
     assert list(override["reward_config"]["scales"].keys()) == [
         "tracking_lin_vel",
         "tracking_ang_vel",
@@ -80,6 +81,8 @@ def test_g1_height_sac_config_preserves_g1_walk_flat_checkpoint_contract():
     assert cfg.env.commands.small_xy_threshold == 0.0
     assert "observe_height_command" not in cfg.env.commands
     assert "track_base_height_exp_smooth" not in cfg.reward.scales
+    assert "stand_support_height_margin_l2" not in cfg.reward.scales
+    assert "stand_support_height_margin" not in cfg.reward
 
 
 def test_g1_height_sac_config_exposes_explicit_height_fields():
@@ -99,6 +102,8 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert cfg.env.commands.random_height_during_walking is True
     assert cfg.env.commands.observe_height_command is True
     assert cfg.reward.scales.track_base_height_exp_smooth == 4.0
+    assert "stand_support_height_margin_l2" not in cfg.reward.scales
+    assert "stand_support_height_margin" not in cfg.reward
     assert cfg.reward.base_height_target == 0.754
 
     override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
@@ -107,6 +112,7 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert override["commands"]["random_height_during_walking"] is True
     assert override["commands"]["observe_height_command"] is True
     assert override["reward_config"]["scales"]["track_base_height_exp_smooth"] == 4.0
+    assert "stand_support_height_margin_l2" not in override["reward_config"]["scales"]
 
 
 def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
@@ -135,6 +141,8 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert cfg.env.reset_base_qvel_limit == 0.0
     assert cfg.env.standing_reset_base_qvel_limit == 0.0
     assert cfg.reward.scales.base_height == -200.0
+    assert cfg.reward.scales.stand_support_height_margin_l2 == -300.0
+    assert cfg.reward.stand_support_height_margin == 0.02
 
     stand_scales = list(cfg.reward.scales.keys())
     assert stand_scales == [
@@ -153,6 +161,7 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
         "stand_tilt_l2",
         "stand_tilt_margin_l2",
         "stand_fall_l2",
+        "stand_support_height_margin_l2",
         "stand_both_feet_contact",
         "stand_foot_contact_balance",
         "stand_feet_slide_l2",
@@ -180,6 +189,8 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert "mode" not in override["reward_config"]
     assert "gait_constraint" not in override["reward_config"]
     assert forbidden.isdisjoint(override["reward_config"]["scales"])
+    assert override["reward_config"]["scales"]["stand_support_height_margin_l2"] == -300.0
+    assert override["reward_config"]["stand_support_height_margin"] == 0.02
 
 
 def test_offpolicy_g1_stand_still_pose_anchor_relaxes_loaded_leg_support():

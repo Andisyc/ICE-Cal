@@ -61,6 +61,24 @@
 7. Add live failure sentinel before reward tuning.
    - Probe: reset pose, obs dim, command histogram, reward mode flags, actor action mean/std/min/max, base height, tilt, termination bit, per-term reward.
 
+## Standing High-Support Reward Migration
+
+Reference plan: `note/g1_stand_high_support_reward_migration_plan.md`.
+
+Design update:
+
+- `G1StandStill` should migrate toward a Standing-specific high-support bundle, not an isolated low-height penalty.
+- The target owner is still planned `standing_rewards.py`; until extraction, the active owner remains `src/unilab/envs/locomotion/g1/joystick.py`.
+- The bundle should adapt mature humanoid reward concepts: support-relative height, upright torso, both-feet contact, contacted-foot no-slip, support footprint geometry, weak posture regularization, and smooth/nonzero support action.
+- `G1WalkFlat` must remain free of Standing high-support terms.
+- `G1WalkHeight` remains a separate height-command Walking task and must not become the Standing solution.
+
+Design-code alignment status:
+
+- Current code already has `stand_tilt_*`, `stand_both_feet_contact`, `stand_feet_slide_l2`, `stand_feet_*`, and `stand_base_feet_center_*` terms.
+- Current code now also has `stand_support_height_margin_l2` enabled only for `G1StandStill`.
+- Offline reward lab now proves loaded low crouch is ranked well below clean high-support stand; the live MuJoCo sentinel remains the next required boundary before training claims.
+
 ## Stop Rule
 
 Do not adjust reward weights again until Step 7 reports the first failing boundary. The next bugfix should target the owner module named by that probe, not the whole monolithic env.
