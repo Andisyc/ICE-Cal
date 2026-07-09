@@ -747,7 +747,7 @@ class G1WalkEnv(G1BaseEnv):
         print("[G1ActionTrace] " + _debug_stats("base_minus_feet_center_xy", base_feet_delta))
         reward_log = info.get("log", {})
         if isinstance(reward_log, dict) and reward_log:
-            keys = sorted(k for k in reward_log if k.startswith("reward/"))[:24]
+            keys = sorted(k for k in reward_log if k.startswith("reward/"))
             for key in keys:
                 print(f"[G1ActionTrace] {key}={float(reward_log[key]):.6g}")
         print("[G1ActionTrace] end")

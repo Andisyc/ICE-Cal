@@ -41,6 +41,7 @@ This file maps test commands to S tiers and T kinds. It is intentionally module-
 | Proposed test | S tiers | T kinds | Main modules | Status |
 | --- | --- | --- | --- | --- |
 | `test_g1_stand_still_high_support_bundle_prefers_loaded_high_stand_over_low_crouch` | S1, S2 | T-value, T-role, T-diff, T-oracle | G1LOC-STAND-002, G1LOC-RWD-002 | implemented and passing after `stand_support_height_margin_l2`; `clean=0.280000`, `loaded_low=0.098012`, ratio `0.350` |
+| `test_g1_stand_still_high_support_bundle_rejects_trained_low_equilibrium` | S1, S2 | T-value, T-role, T-diff, T-scale, T-oracle | G1LOC-STAND-002, G1LOC-RWD-002 | implemented after `log.txt` showed trained policy at `base_height≈0.677`; guards against this low equilibrium scoring above 50% of clean high support |
 
 ## Inventory Rule
 

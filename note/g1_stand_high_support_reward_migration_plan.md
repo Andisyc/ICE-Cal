@@ -287,7 +287,7 @@ Stop condition:
 Status, 2026-07-09:
 
 - Added explicit config isolation assertions to `tests/config/test_reward_injection.py`.
-- `G1StandStill` now asserts both the active scale `stand_support_height_margin_l2: -300.0` and parameter `stand_support_height_margin: 0.02` through the composed config and `BackendAdapter` override.
+- `G1StandStill` now asserts both the active scale `stand_support_height_margin_l2: -1500.0` and parameter `stand_support_height_margin: 0.02` through the composed config and `BackendAdapter` override.
 - `G1WalkFlat` asserts no `stand_support_height_margin_l2` in the backend reward scales.
 - `G1WalkHeight` asserts the height-tracking path keeps `track_base_height_exp_smooth` but does not inherit `stand_support_height_margin_l2` or `stand_support_height_margin`.
 
@@ -393,6 +393,41 @@ Evidence ledger:
 Remaining gap:
 
 - Step 5 does not yet justify a long training claim. It proves the reward/live route and short-horizon high-support feasibility, but Step 6 must judge whether learning can turn that short-horizon support into a durable policy.
+
+Post-log regression, 2026-07-09:
+
+- User playback log `log.txt` showed the policy still settles around `base_height=0.676-0.677`, with low tilt and both feet in contact.
+- Root cause in reward ordering: the earlier reward lab checked severe low crouches (`0.625` and below), but not the actual trained low equilibrium around `0.677`.
+- Added `test_g1_stand_still_high_support_bundle_rejects_trained_low_equilibrium`.
+- Before the fix, the `0.677` low equilibrium scored `0.2148` versus clean `0.2800`, ratio `0.767`, so it could remain attractive.
+- Increased only the standalone `G1StandStill` high-support scale:
+  - `stand_support_height_margin_l2: -300.0 -> -1500.0`.
+- Also changed `G1ActionTrace` to print all `reward/*` keys, because the previous first-24-key truncation hid `reward/stand_support_height_margin_l2` from the log.
+
+Fresh verification after the post-log fix:
+
+```text
+uv run pytest tests/envs/locomotion/g1/test_gait_constraint.py::test_g1_stand_still_high_support_bundle_rejects_trained_low_equilibrium -q
+-> 1 passed
+
+uv run pytest tests/envs/locomotion/g1/test_gait_constraint.py -q
+-> 60 passed
+
+uv run pytest tests/config/test_reward_injection.py -q
+-> 14 passed, 2 warnings
+
+uv run ruff check src/unilab/envs/locomotion/g1/joystick.py tests/envs/locomotion/g1/test_gait_constraint.py tests/config/test_reward_injection.py
+-> All checks passed
+
+uv run python -m py_compile src/unilab/envs/locomotion/g1/joystick.py tests/envs/locomotion/g1/test_gait_constraint.py tests/config/test_reward_injection.py
+-> pass
+```
+
+Live caveat:
+
+- Existing checkpoints will not stand higher automatically, because their actor was trained under the weaker reward.
+- A 64-step live summary with the old checkpoint and new reward shows `current_trained_policy_action` still around `0.674-0.678`, but now receives `stand_support_height_margin_l2=-0.0628` per step, while `searched_support_action` near `0.722` receives only `-0.00037`.
+- Therefore the next meaningful evidence is retraining or short resume under the strengthened reward, then playback.
 
 ### Step 6: Short Training And Playback Gate
 
