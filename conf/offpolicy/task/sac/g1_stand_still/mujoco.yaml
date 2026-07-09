@@ -55,7 +55,7 @@ reward:
     penalty_feet_ori: -20.0
     alive: 10.0
     upright: 4.0
-    base_height: -80.0
+    base_height: -200.0
     stand_still: -0.2
     stand_dof_vel_l2: -0.05
     stand_lin_vel_xy_l2: -20.0

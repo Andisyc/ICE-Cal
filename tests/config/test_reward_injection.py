@@ -134,6 +134,7 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert cfg.env.stand_action_authority is False
     assert cfg.env.reset_base_qvel_limit == 0.0
     assert cfg.env.standing_reset_base_qvel_limit == 0.0
+    assert cfg.reward.scales.base_height == -200.0
 
     stand_scales = list(cfg.reward.scales.keys())
     assert stand_scales == [

@@ -1844,6 +1844,45 @@ def test_reward_logging_preserves_action_authority_after_dispatch() -> None:
     assert log["reward/stand_executed_action_l1"] == 0.0
 
 
+def test_g1_action_trace_prints_action_ctrl_and_support_boundaries(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("UNILAB_G1_ACTION_TRACE", "1")
+    monkeypatch.setenv("UNILAB_G1_ACTION_TRACE_INTERVAL", "1")
+    reward_cfg = _reward_config()
+    env = _fake_env(reward_cfg, num_envs=1)
+    actions = np.full((1, 29), 0.25, dtype=np.float32)
+    state = NpEnvState(
+        obs={},
+        reward=np.zeros((1,), dtype=np.float32),
+        terminated=np.zeros((1,), dtype=bool),
+        truncated=np.zeros((1,), dtype=bool),
+        info={
+            "commands": np.zeros((1, 3), dtype=np.float32),
+            "current_actions": np.zeros((1, 29), dtype=np.float32),
+            "last_actions": np.zeros((1, 29), dtype=np.float32),
+            "steps": np.zeros((1,), dtype=np.uint32),
+        },
+    )
+
+    env.apply_action(actions, state)
+    env._debug_action_trace(
+        state.info,
+        reward=np.asarray([0.1], dtype=np.float32),
+        terminated=np.zeros((1,), dtype=bool),
+        linvel=np.zeros((1, 3), dtype=np.float32),
+        gyro=np.zeros((1, 3), dtype=np.float32),
+        gravity=np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32),
+        dof_pos=np.zeros((1, 29), dtype=np.float32),
+        dof_vel=np.zeros((1, 29), dtype=np.float32),
+    )
+
+    out = capsys.readouterr().out
+    assert "[G1ActionTrace] begin" in out
+    assert "current_actions" in out
+    assert "executed_actions" in out
+    assert "ctrl_minus_default" in out
+    assert "base_minus_feet_center_xy" in out
+
+
 def test_stand_rewards_only_apply_when_command_inactive() -> None:
     reward_cfg = _reward_config()
     env = _fake_env(reward_cfg, num_envs=2)

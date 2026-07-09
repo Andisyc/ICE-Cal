@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -128,6 +129,47 @@ def compute_feet_phase_height_targets(
 
 LEFT_FOOT_CONTACT_SENSORS = [f"left_foot_contact_{i}" for i in range(4)]
 RIGHT_FOOT_CONTACT_SENSORS = [f"right_foot_contact_{i}" for i in range(4)]
+
+
+def _debug_env_flag(name: str, *, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _debug_env_int(name: str, *, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
+
+
+def _debug_stats(name: str, value: Any) -> str:
+    arr = np.asarray(value)
+    if arr.size == 0:
+        return f"{name}: empty"
+    finite = np.isfinite(arr)
+    finite_arr = arr[finite]
+    if finite_arr.size == 0:
+        return f"{name}: shape={arr.shape} finite=0/{arr.size}"
+    return (
+        f"{name}: shape={arr.shape} finite={finite_arr.size}/{arr.size} "
+        f"mean={float(np.mean(finite_arr)):.6g} "
+        f"min={float(np.min(finite_arr)):.6g} "
+        f"max={float(np.max(finite_arr)):.6g} "
+        f"l1_mean={float(np.mean(np.sum(np.abs(np.atleast_2d(arr)), axis=1))):.6g} "
+        f"max_abs={float(np.max(np.abs(finite_arr))):.6g}"
+    )
+
+
+def _debug_head(name: str, value: Any, *, count: int = 8) -> str:
+    arr = np.asarray(value)
+    if arr.ndim == 0:
+        return f"{name}: {float(arr):.6g}"
+    row = arr[0] if arr.ndim > 1 else arr
+    head = np.asarray(row[:count], dtype=np.float64)
+    return f"{name}[0,:{count}]: {np.array2string(head, precision=4, suppress_small=False)}"
 
 
 def _scalarize_sensor_values(sensor_values: np.ndarray) -> np.ndarray:
@@ -578,6 +620,132 @@ class G1WalkEnv(G1BaseEnv):
     def _terrain_relative_base_height(self) -> np.ndarray:
         return np.asarray(self._backend.get_base_pos()[:, 2], dtype=get_global_dtype())
 
+    def _debug_action_trace_enabled(self) -> bool:
+        return _debug_env_flag("UNILAB_G1_ACTION_TRACE")
+
+    def _debug_action_trace_step(self, info: dict) -> int:
+        steps = info.get("steps")
+        if steps is not None:
+            steps_arr = np.asarray(steps)
+            if steps_arr.size > 0:
+                return int(steps_arr.reshape(-1)[0])
+        step = int(info.get("_g1_action_trace_step", 0))
+        info["_g1_action_trace_step"] = step + 1
+        return step
+
+    def _debug_virtual_pd_torque(
+        self, ctrl: np.ndarray | None, dof_pos: np.ndarray, dof_vel: np.ndarray
+    ) -> np.ndarray | None:
+        if ctrl is None:
+            return None
+        try:
+            kp, kd = self._backend.get_actuator_gains()
+        except (AttributeError, NotImplementedError, RuntimeError):
+            return None
+        kp_arr = np.asarray(kp, dtype=get_global_dtype())
+        kd_arr = np.asarray(kd, dtype=get_global_dtype())
+        if kp_arr.shape[0] != ctrl.shape[1] or kd_arr.shape[0] != ctrl.shape[1]:
+            return None
+        return np.asarray(kp_arr[None, :] * (ctrl - dof_pos) - kd_arr[None, :] * dof_vel)
+
+    def _debug_action_trace(
+        self,
+        info: dict,
+        *,
+        reward: np.ndarray,
+        terminated: np.ndarray,
+        linvel: np.ndarray,
+        gyro: np.ndarray,
+        gravity: np.ndarray,
+        dof_pos: np.ndarray,
+        dof_vel: np.ndarray,
+    ) -> None:
+        if not self._debug_action_trace_enabled():
+            return
+        step = self._debug_action_trace_step(info)
+        interval = _debug_env_int("UNILAB_G1_ACTION_TRACE_INTERVAL", default=20)
+        if step % interval != 0:
+            return
+
+        current_actions = np.asarray(
+            info.get("current_actions", np.zeros((self._num_envs, self._num_action))),
+            dtype=get_global_dtype(),
+        )
+        executed_actions = np.asarray(
+            info.get("executed_actions", np.zeros_like(current_actions)),
+            dtype=get_global_dtype(),
+        )
+        ctrl = info.get("_g1_action_trace_ctrl")
+        ctrl_arr = None if ctrl is None else np.asarray(ctrl, dtype=get_global_dtype())
+        default = np.broadcast_to(self.default_angles, current_actions.shape).astype(
+            get_global_dtype(),
+            copy=False,
+        )
+        ctrl_delta = None if ctrl_arr is None else ctrl_arr - default
+        ctrl_error = None if ctrl_arr is None else ctrl_arr - dof_pos
+        virtual_pd_tau = self._debug_virtual_pd_torque(ctrl_arr, dof_pos, dof_vel)
+        torques = info.get("torques")
+
+        commands = np.asarray(info.get("commands", np.zeros((self._num_envs, 3))))
+        gait_enabled = self._gait_enabled_mask(info)
+        dynamic_mode = self._dynamic_mode_mask(info)
+        base_height = self._terrain_relative_base_height()
+        tilt_deg = np.rad2deg(np.arccos(np.clip(gravity[:, 2], -1.0, 1.0)))
+        left_contact = compute_aggregated_foot_contact(self._backend, LEFT_FOOT_CONTACT_SENSORS)
+        right_contact = compute_aggregated_foot_contact(self._backend, RIGHT_FOOT_CONTACT_SENSORS)
+        left_count, right_count = self._foot_contact_counts()
+        base_feet_delta = self._base_delta_from_feet_center_in_base_yaw_frame()
+
+        print("[G1ActionTrace] begin")
+        print(
+            "[G1ActionTrace] "
+            f"step={step} task={type(self._cfg).__name__} "
+            f"action_scale={float(self._cfg.control_config.action_scale):.6g} "
+            f"stand_action_authority={bool(self._cfg.stand_action_authority)} "
+            f"mode_observation={bool(self._cfg.mode_observation)} "
+            f"reward_mean={float(np.mean(reward)):.6g} "
+            f"terminated_frac={float(np.mean(terminated.astype(get_global_dtype()))):.6g}"
+        )
+        print("[G1ActionTrace] " + _debug_stats("commands", commands))
+        print("[G1ActionTrace] " + _debug_head("commands", commands, count=3))
+        print("[G1ActionTrace] " + _debug_stats("gait_enabled", gait_enabled))
+        print("[G1ActionTrace] " + _debug_stats("dynamic_mode", dynamic_mode))
+        print("[G1ActionTrace] " + _debug_stats("current_actions", current_actions))
+        print("[G1ActionTrace] " + _debug_head("current_actions", current_actions))
+        print("[G1ActionTrace] " + _debug_stats("executed_actions", executed_actions))
+        print("[G1ActionTrace] " + _debug_head("executed_actions", executed_actions))
+        print(
+            "[G1ActionTrace] "
+            + _debug_stats("executed_minus_current", executed_actions - current_actions)
+        )
+        if ctrl_arr is not None:
+            print("[G1ActionTrace] " + _debug_stats("ctrl", ctrl_arr))
+            print("[G1ActionTrace] " + _debug_head("ctrl", ctrl_arr))
+            print("[G1ActionTrace] " + _debug_stats("ctrl_minus_default", ctrl_delta))
+            print("[G1ActionTrace] " + _debug_stats("ctrl_minus_dof_pos", ctrl_error))
+        print("[G1ActionTrace] " + _debug_stats("dof_pos_minus_default", dof_pos - default))
+        print("[G1ActionTrace] " + _debug_stats("dof_vel", dof_vel))
+        if virtual_pd_tau is not None:
+            print("[G1ActionTrace] " + _debug_stats("virtual_pd_tau", virtual_pd_tau))
+            print("[G1ActionTrace] " + _debug_head("virtual_pd_tau", virtual_pd_tau))
+        if torques is not None:
+            print("[G1ActionTrace] " + _debug_stats("info_torques", torques))
+        print("[G1ActionTrace] " + _debug_stats("linvel", linvel))
+        print("[G1ActionTrace] " + _debug_stats("gyro", gyro))
+        print("[G1ActionTrace] " + _debug_stats("base_height", base_height))
+        print("[G1ActionTrace] " + _debug_stats("tilt_deg", tilt_deg))
+        print("[G1ActionTrace] " + _debug_stats("left_contact", left_contact.astype(float)))
+        print("[G1ActionTrace] " + _debug_stats("right_contact", right_contact.astype(float)))
+        print("[G1ActionTrace] " + _debug_stats("left_contact_count", left_count))
+        print("[G1ActionTrace] " + _debug_stats("right_contact_count", right_count))
+        print("[G1ActionTrace] " + _debug_stats("base_minus_feet_center_xy", base_feet_delta))
+        reward_log = info.get("log", {})
+        if isinstance(reward_log, dict) and reward_log:
+            keys = sorted(k for k in reward_log if k.startswith("reward/"))[:24]
+            for key in keys:
+                print(f"[G1ActionTrace] {key}={float(reward_log[key]):.6g}")
+        print("[G1ActionTrace] end")
+
     def update_state(self, state: NpEnvState) -> NpEnvState:
         self._update_commands(state.info)
         linvel = self.get_local_linvel()
@@ -594,6 +762,16 @@ class G1WalkEnv(G1BaseEnv):
         )
 
         reward = self._compute_reward(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
+        self._debug_action_trace(
+            state.info,
+            reward=reward,
+            terminated=terminated,
+            linvel=linvel,
+            gyro=gyro,
+            gravity=gravity,
+            dof_pos=dof_pos,
+            dof_vel=dof_vel,
+        )
         obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 
@@ -1529,6 +1707,8 @@ class G1WalkEnv(G1BaseEnv):
         ctrl: np.ndarray = (
             exec_actions * self._cfg.control_config.action_scale + self.default_angles
         )
+        if self._debug_action_trace_enabled():
+            state.info["_g1_action_trace_ctrl"] = ctrl
         return ctrl
 
 
