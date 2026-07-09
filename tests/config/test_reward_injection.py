@@ -182,8 +182,8 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert forbidden.isdisjoint(override["reward_config"]["scales"])
 
 
-def test_offpolicy_g1_stand_still_pose_anchor_matches_upstream_walking_reward():
-    """The stand-still posture anchor must reuse upstream G1WalkFlat shaping."""
+def test_offpolicy_g1_stand_still_pose_anchor_relaxes_loaded_leg_support():
+    """Standing keeps upstream upper-body posture but relaxes loaded leg support."""
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
         walk_cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
@@ -202,7 +202,10 @@ def test_offpolicy_g1_stand_still_pose_anchor_matches_upstream_walking_reward():
     assert stand_cfg.reward.base_height_target == walk_cfg.reward.base_height_target
     assert stand_cfg.reward.min_base_height == walk_cfg.reward.min_base_height
     assert stand_cfg.reward.max_tilt_deg == walk_cfg.reward.max_tilt_deg
-    assert list(stand_cfg.reward.pose_weights) == list(walk_cfg.reward.pose_weights)
+    assert list(stand_cfg.reward.pose_weights[:12]) == [
+        pytest.approx(float(value) * 0.1) for value in walk_cfg.reward.pose_weights[:12]
+    ]
+    assert list(stand_cfg.reward.pose_weights[12:]) == list(walk_cfg.reward.pose_weights[12:])
 
 
 def test_offpolicy_g1_action_authority_ablation_does_not_enable_standing_path():

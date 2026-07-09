@@ -3187,6 +3187,55 @@ def test_play_interactive_command_obs_probe_refreshes_stale_reset_command() -> N
     assert env.cfg.commands.vel_limit == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
 
 
+def test_play_interactive_command_obs_probe_restores_live_state_when_reset_is_external() -> None:
+    mod = _play_interactive()
+    probe = np.asarray(mod._COMMAND_OBS_VERIFY_COMMAND, dtype=np.float32)
+    original_command = np.zeros(3, dtype=np.float32)
+    original_obs = np.concatenate([np.zeros(5, dtype=np.float32), original_command])[None, :]
+
+    class Cfg:
+        commands = types.SimpleNamespace(
+            vel_limit=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            rel_standing_envs=1.0,
+        )
+
+    class State:
+        info: dict[str, Any]
+        obs: dict[str, np.ndarray]
+
+    class Env:
+        cfg = Cfg()
+        state = State()
+
+        def update_state(self, state: State) -> State:
+            command = state.info["commands"][0, :3]
+            state.info["gait_enabled"] = np.asarray(
+                [float(np.linalg.norm(command) > 1.0e-9)], dtype=np.float32
+            )
+            state.obs = {
+                "obs": np.concatenate([np.zeros(5, dtype=np.float32), command])[None, :]
+            }
+            return state
+
+    env = Env()
+    env.state.info = {"commands": original_command[None, :].copy(), "gait_enabled": np.zeros(1)}
+    env.state.obs = {"obs": original_obs.copy()}
+    reset_count = 0
+
+    def reset_fn() -> None:
+        nonlocal reset_count
+        reset_count += 1
+
+    assert mod._policy_obs_contains_command(env, reset_fn=reset_fn) is True
+    assert reset_count == 2
+    assert np.allclose(env.state.info["commands"], original_command[None, :])
+    assert np.allclose(env.state.info["gait_enabled"], np.zeros(1))
+    assert np.allclose(env.state.obs["obs"], original_obs)
+    assert not np.allclose(env.state.info["commands"][0, :3], probe)
+    assert env.cfg.commands.rel_standing_envs == 1.0
+    assert env.cfg.commands.vel_limit == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+
+
 def test_play_interactive_runner_log_dir_uses_algo_log_name(monkeypatch: pytest.MonkeyPatch):
     import types
 

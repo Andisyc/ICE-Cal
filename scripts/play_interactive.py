@@ -1183,6 +1183,47 @@ def _force_policy_command_probe_obs(env: Any, command: np.ndarray) -> None:
         setattr(env, "_state", refreshed_state)
 
 
+def _snapshot_policy_command_probe_state(env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    obs = getattr(state, "obs", None)
+    commands = info.get("commands") if isinstance(info, dict) else None
+    actor_obs = obs.get("obs") if isinstance(obs, dict) else None
+    return (
+        np.array(commands, copy=True) if isinstance(commands, np.ndarray) else None,
+        np.array(actor_obs, copy=True) if isinstance(actor_obs, np.ndarray) else None,
+    )
+
+
+def _restore_policy_command_probe_state(
+    env: Any,
+    commands: np.ndarray | None,
+    actor_obs: np.ndarray | None,
+) -> None:
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    obs = getattr(state, "obs", None)
+    if commands is not None and isinstance(info, dict):
+        current_commands = info.get("commands")
+        if isinstance(current_commands, np.ndarray) and current_commands.shape == commands.shape:
+            current_commands[...] = commands
+        else:
+            info["commands"] = commands.copy()
+        update_state = getattr(env, "update_state", None)
+        if callable(update_state):
+            refreshed_state = update_state(state)
+            if refreshed_state is not None and refreshed_state is not state:
+                setattr(env, "_state", refreshed_state)
+                state = refreshed_state
+                obs = getattr(state, "obs", None)
+    if actor_obs is not None and isinstance(obs, dict):
+        current_actor_obs = obs.get("obs")
+        if isinstance(current_actor_obs, np.ndarray) and current_actor_obs.shape == actor_obs.shape:
+            current_actor_obs[...] = actor_obs
+        else:
+            obs["obs"] = actor_obs.copy()
+
+
 def _policy_obs_contains_command(env: Any, *, reset_fn) -> bool:
     if _state_policy_obs_contains_command(env):
         return True
@@ -1193,6 +1234,7 @@ def _policy_obs_contains_command(env: Any, *, reset_fn) -> bool:
 
     original_vel_limit = cmds_cfg.vel_limit
     original_rel_standing_envs = getattr(cmds_cfg, "rel_standing_envs", None)
+    original_commands, original_actor_obs = _snapshot_policy_command_probe_state(env)
     probe = _COMMAND_OBS_VERIFY_COMMAND.tolist()
     try:
         cmds_cfg.vel_limit = [probe, probe]
@@ -1206,6 +1248,7 @@ def _policy_obs_contains_command(env: Any, *, reset_fn) -> bool:
         if original_rel_standing_envs is not None:
             cmds_cfg.rel_standing_envs = original_rel_standing_envs
         reset_fn()
+        _restore_policy_command_probe_state(env, original_commands, original_actor_obs)
 
 
 def _handle_command_key(commander: KeyboardCommander, keycode: int) -> None:

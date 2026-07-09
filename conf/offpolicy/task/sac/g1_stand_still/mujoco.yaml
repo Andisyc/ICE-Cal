@@ -44,10 +44,10 @@ env:
     scale_linvel: 0.0
 reward:
   scales:
-    # Upstream G1WalkFlat posture anchor. Keep these values aligned with
-    # `conf/offpolicy/task/sac/g1_walk_flat/mujoco.yaml`; stand-specific terms
-    # below may add static-balance pressure, but they must not redefine the
-    # default posture manifold.
+    # Keep upstream orientation/action/upper-body posture anchors, but relax the
+    # lower-body pose anchor for Standing. A loaded high stand needs nonzero leg
+    # support action, and the Walking leg pose weights otherwise dominate the
+    # base-height objective.
     penalty_orientation: -10.0
     penalty_ang_vel_xy: -1.0
     penalty_action_rate: -4.0
@@ -86,4 +86,4 @@ reward:
   stand_base_feet_center_x_target: 0.0
   stand_base_feet_center_y_target: 0.0
   stand_foot_contact_balance_epsilon: 1.0e-6
-  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+  pose_weights: [0.001, 0.1, 0.5, 0.001, 0.5, 0.5, 0.001, 0.1, 0.5, 0.001, 0.5, 0.5, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

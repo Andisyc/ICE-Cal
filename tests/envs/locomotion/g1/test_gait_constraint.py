@@ -1880,6 +1880,8 @@ def test_g1_action_trace_prints_action_ctrl_and_support_boundaries(monkeypatch, 
     assert "current_actions" in out
     assert "executed_actions" in out
     assert "ctrl_minus_default" in out
+    assert "base_height_target" in out
+    assert "base_height_deficit" in out
     assert "base_minus_feet_center_xy" in out
 
 
