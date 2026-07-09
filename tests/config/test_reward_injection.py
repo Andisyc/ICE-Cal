@@ -109,6 +109,101 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert override["reward_config"]["scales"]["track_base_height_exp_smooth"] == 4.0
 
 
+def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
+    """G1StandStill is a standalone zero-command expert, not a walking stage."""
+    from pathlib import Path
+
+    from unilab.training import BackendAdapter
+
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
+
+    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+
+    assert cfg.training.task_name == "G1StandStill"
+    assert cfg.training.sim_backend == "mujoco"
+    assert "mode_observation" not in cfg.env
+    assert "observe_height_command" not in cfg.env.commands
+    assert "track_base_height_exp_smooth" not in cfg.reward.scales
+    assert "mode" not in cfg.reward
+    assert "gait_constraint" not in cfg.reward
+    assert cfg.env.commands.vel_limit == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    assert cfg.env.commands.rel_standing_envs == 1.0
+    assert cfg.env.commands.rel_transition_envs == 0.0
+    assert cfg.env.commands.small_xy_threshold == 0.0
+    assert cfg.env.stand_action_authority is False
+    assert cfg.env.reset_base_qvel_limit == 0.0
+    assert cfg.env.standing_reset_base_qvel_limit == 0.0
+
+    stand_scales = list(cfg.reward.scales.keys())
+    assert stand_scales == [
+        "penalty_orientation",
+        "penalty_ang_vel_xy",
+        "penalty_action_rate",
+        "pose",
+        "penalty_feet_ori",
+        "alive",
+        "upright",
+        "base_height",
+        "stand_still",
+        "stand_dof_vel_l2",
+        "stand_lin_vel_xy_l2",
+        "stand_yaw_vel_l2",
+        "stand_tilt_l2",
+        "stand_tilt_margin_l2",
+        "stand_fall_l2",
+        "stand_both_feet_contact",
+        "stand_foot_contact_balance",
+        "stand_feet_slide_l2",
+        "stand_feet_x_l2",
+        "stand_feet_y_width_l2",
+        "stand_feet_yaw_l2",
+        "stand_base_feet_center_x_l2",
+        "stand_base_feet_center_y_l2",
+    ]
+    forbidden = {
+        "tracking_lin_vel",
+        "tracking_ang_vel",
+        "feet_phase",
+        "feet_phase_contrast",
+        "feet_phase_contact",
+        "track_base_height_exp_smooth",
+    }
+    assert forbidden.isdisjoint(stand_scales)
+
+    assert override["commands"]["vel_limit"] == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    assert override["commands"]["rel_standing_envs"] == 1.0
+    assert override["commands"]["rel_transition_envs"] == 0.0
+    assert override["stand_action_authority"] is False
+    assert "mode_observation" not in override
+    assert "mode" not in override["reward_config"]
+    assert "gait_constraint" not in override["reward_config"]
+    assert forbidden.isdisjoint(override["reward_config"]["scales"])
+
+
+def test_offpolicy_g1_stand_still_pose_anchor_matches_upstream_walking_reward():
+    """The stand-still posture anchor must reuse upstream G1WalkFlat shaping."""
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        walk_cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        stand_cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
+
+    upstream_anchor_terms = [
+        "penalty_orientation",
+        "penalty_ang_vel_xy",
+        "penalty_action_rate",
+        "pose",
+        "penalty_feet_ori",
+        "alive",
+    ]
+    for name in upstream_anchor_terms:
+        assert stand_cfg.reward.scales[name] == walk_cfg.reward.scales[name]
+    assert stand_cfg.reward.base_height_target == walk_cfg.reward.base_height_target
+    assert stand_cfg.reward.min_base_height == walk_cfg.reward.min_base_height
+    assert stand_cfg.reward.max_tilt_deg == walk_cfg.reward.max_tilt_deg
+    assert list(stand_cfg.reward.pose_weights) == list(walk_cfg.reward.pose_weights)
+
+
 def test_offpolicy_g1_action_authority_ablation_does_not_enable_standing_path():
     """A standing-only ablation must not turn on mode observation by default."""
     from pathlib import Path

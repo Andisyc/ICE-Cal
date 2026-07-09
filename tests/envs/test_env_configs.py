@@ -132,6 +132,18 @@ def test_g1_walk_flat_cfg_defaults_match_walk_profile():
     assert cfg.curriculum.enabled is True
 
 
+def test_g1_stand_still_cfg_adds_support_sensor_fragment_without_polluting_walk():
+    from unilab.envs.locomotion.g1.joystick import G1StandStillCfg, G1WalkFlatCfg
+
+    walk_cfg = G1WalkFlatCfg()
+    stand_cfg = G1StandStillCfg()
+
+    assert walk_cfg.scene.fragment_files == []
+    assert stand_cfg.scene.model_file.endswith("robots/g1/scene_flat.xml")
+    assert len(stand_cfg.scene.fragment_files) == 1
+    assert stand_cfg.scene.fragment_files[0].endswith("robots/g1/stand_support_task.xml")
+
+
 def test_g1_walk_tasks_register_to_algorithm_agnostic_env_base():
     from unilab.base import registry
     from unilab.envs.locomotion.g1.joystick import G1WalkEnv, G1WalkRewardConfig
@@ -165,7 +177,7 @@ def test_g1_walk_tasks_register_to_algorithm_agnostic_env_base():
 
 
 def test_g1_walk_flat_observation_construction_is_hardcoded_for_legacy_and_walk_modes():
-    from unilab.envs.locomotion.g1.joystick import G1WalkEnv
+    from unilab.envs.locomotion.g1.joystick import G1WalkEnv, GaitConstraintConfig
 
     class NoiseCfg:
         level = 0.0
@@ -185,7 +197,13 @@ def test_g1_walk_flat_observation_construction_is_hardcoded_for_legacy_and_walk_
             {
                 "noise_config": NoiseCfg(),
                 "curriculum": type("Curriculum", (), {"enabled": curriculum_enabled})(),
+                "mode_observation": False,
             },
+        )()
+        env._reward_cfg = type(
+            "RewardCfg",
+            (),
+            {"gait_constraint": GaitConstraintConfig()},
         )()
         env._obs_noise = lambda data, scale: data + 100.0
         info = {
@@ -230,8 +248,12 @@ def test_g1_walk_env_obs_groups_spec_dims():
     """
     from unilab.envs.locomotion.g1.joystick import G1WalkEnv
 
-    # obs_groups_spec is a @property; access via descriptor protocol
-    spec = G1WalkEnv.obs_groups_spec.fget(None)  # type: ignore[union-attr]
+    env = cast(Any, object.__new__(G1WalkEnv))
+    env._cfg = SimpleNamespace(
+        mode_observation=False,
+        commands=SimpleNamespace(observe_height_command=False),
+    )
+    spec = env.obs_groups_spec
     assert spec is not None
     assert spec["obs"] == 98
     assert spec["critic"] == 101

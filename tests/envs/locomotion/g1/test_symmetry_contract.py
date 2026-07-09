@@ -114,3 +114,32 @@ def test_g1_walk_height_symmetry_keeps_height_command_scalar():
         )
     finally:
         env.close()
+
+
+def test_g1_stand_still_symmetry_keeps_walking_actor_obs_dim():
+    ensure_registries()
+    with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "offpolicy"), version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
+    assert "mode_observation" not in cfg.env
+    assert "observe_height_command" not in cfg.env.commands
+    env_override = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name="sac").build_task_env_cfg_override()
+    env = create_env(cfg, num_envs=1, env_cfg_override=env_override, sim_backend="mujoco")
+
+    try:
+        augmentation = env.build_symmetry_augmentation(device="cpu")
+        assert augmentation is not None
+
+        command_start = 3 + 3 + env.action_space.shape[0] * 3
+        obs = torch.zeros((1, env.obs_groups_spec["obs"]))
+        obs[0, command_start : command_start + 3] = torch.tensor([0.0, 0.0, 0.0])
+
+        mirrored = augmentation.mirror_obs(obs, obs_group="obs")
+
+        assert env.obs_groups_spec["obs"] == 98
+        assert env.obs_groups_spec["critic"] == 101
+        torch.testing.assert_close(
+            mirrored[0, command_start : command_start + 3],
+            torch.tensor([0.0, -0.0, -0.0]),
+        )
+    finally:
+        env.close()

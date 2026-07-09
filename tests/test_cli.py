@@ -243,6 +243,32 @@ def test_offpolicy_g1_height_and_standing_reward_flags_generate_owner_overrides(
     ]
 
 
+def test_offpolicy_g1_stand_still_task_routes_to_owner_config(tmp_path: Path) -> None:
+    (tmp_path / "scripts").mkdir(parents=True)
+    (tmp_path / "scripts" / "train_offpolicy.py").write_text("", encoding="utf-8")
+    owner_dir = tmp_path / "conf" / "offpolicy" / "task" / "sac" / "g1_stand_still"
+    owner_dir.mkdir(parents=True)
+    (owner_dir / "mujoco.yaml").write_text(
+        "training:\n  task_name: G1StandStill\n  sim_backend: mujoco\n",
+        encoding="utf-8",
+    )
+
+    command = cli.build_command(
+        mode="train",
+        algo="sac",
+        task="g1_stand_still",
+        sim="mujoco",
+        overrides=[],
+        root=tmp_path,
+    )
+
+    assert command[1:] == [
+        str(tmp_path / "scripts" / "train_offpolicy.py"),
+        "algo=sac",
+        "task=sac/g1_stand_still/mujoco",
+    ]
+
+
 def test_macos_motrix_eval_requires_mxpython(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

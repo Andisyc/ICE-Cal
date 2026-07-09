@@ -8,6 +8,7 @@
 
 - Default Walking: `conf/offpolicy/task/sac/g1_walk_flat/mujoco.yaml`, expected clean 98-dim upstream-style Walking.
 - Optional Standing: `+g1_walk_stage=mixed_mode`, expected explicit 99-dim mode-conditioned path.
+- Stand-still Expert: `conf/offpolicy/task/sac/g1_stand_still/mujoco.yaml`, expected clean 98-dim zero-command standing policy path without mode routing, height command, or walking gait rewards.
 - Optional height: `task=sac/g1_walk_height/mujoco` or `--height-tracking`, expected explicit 99/100-dim height-command path depending mode.
 - Interactive playback: `scripts/play_interactive.py` restores checkpoint env contract before `create_sac_playback_session`.
 
@@ -25,6 +26,7 @@
 
 - `G1WalkFlat` default config currently has no `env.mode_observation`, no `reward.mode`, no `reward.gait_constraint`, and no height command observation.
 - `mixed_mode.yaml` is the explicit Standing profile and enables mode observation, command mixture, reward.mode, and gait_constraint freezing.
+- `g1_stand_still/mujoco.yaml` is the explicit standalone Standing expert profile and keeps actor observation 98-dim by not enabling mode observation or height command observation.
 - `g1_walk_height/mujoco.yaml` is the explicit height profile and enables `commands.observe_height_command`.
 - `G1WalkEnv.obs_groups_spec` defines actor obs as `98 + mode_dim + height_dim`.
 - `G1WalkEnv._compute_mode_reward` falls back to vanilla reward dispatch when `reward.mode.enabled=false`.

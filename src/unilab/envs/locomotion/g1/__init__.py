@@ -1,4 +1,5 @@
 from .joystick import (
+    G1StandStillCfg,
     G1WalkControlConfig,
     G1WalkEnv,
     G1WalkEnvCfg,

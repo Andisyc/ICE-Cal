@@ -144,6 +144,11 @@ def compute_aggregated_foot_contact(backend: Any, sensor_names: list[str]) -> np
     return np.asarray(np.any(np.stack(contacts, axis=1) > 0.5, axis=1), dtype=np.bool_)
 
 
+def compute_aggregated_foot_contact_count(backend: Any, sensor_names: list[str]) -> np.ndarray:
+    contacts = [_scalarize_sensor_values(backend.get_sensor_data(name)) for name in sensor_names]
+    return np.sum(np.stack(contacts, axis=1) > 0.5, axis=1).astype(get_global_dtype())
+
+
 def compute_feet_phase_contact_targets(
     gait_phase: np.ndarray, swing_height: float
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -274,6 +279,7 @@ class G1RewardConfig:
     stand_feet_y_width_target: float = 0.21
     stand_base_feet_center_x_target: float = 0.0
     stand_base_feet_center_y_target: float = 0.0
+    stand_foot_contact_balance_epsilon: float = 1.0e-6
     gait_constraint: GaitConstraintConfig | dict[str, Any] = field(
         default_factory=GaitConstraintConfig
     )
@@ -553,6 +559,9 @@ class G1WalkEnv(G1BaseEnv):
             "stand_tilt_l2": self._reward_stand_tilt_l2,
             "stand_tilt_margin_l2": self._reward_stand_tilt_margin_l2,
             "stand_fall_l2": self._reward_stand_fall_l2,
+            "stand_both_feet_contact": self._reward_stand_both_feet_contact,
+            "stand_foot_contact_balance": self._reward_stand_foot_contact_balance,
+            "stand_feet_slide_l2": self._reward_stand_feet_slide_l2,
             "stand_feet_x_l2": self._reward_stand_feet_x_l2,
             "stand_feet_y_width_l2": self._reward_stand_feet_y_width_l2,
             "stand_feet_yaw_l2": self._reward_stand_feet_yaw_l2,
@@ -1324,6 +1333,46 @@ class G1WalkEnv(G1BaseEnv):
         )
         return np.asarray(fallen.astype(get_global_dtype()) * self._stand_mode_mask(ctx), dtype=get_global_dtype())
 
+    def _foot_contact_counts(self) -> tuple[np.ndarray, np.ndarray]:
+        return (
+            compute_aggregated_foot_contact_count(self._backend, LEFT_FOOT_CONTACT_SENSORS),
+            compute_aggregated_foot_contact_count(self._backend, RIGHT_FOOT_CONTACT_SENSORS),
+        )
+
+    def _reward_stand_both_feet_contact(self, ctx: RewardContext):
+        left_contact = compute_aggregated_foot_contact(self._backend, LEFT_FOOT_CONTACT_SENSORS)
+        right_contact = compute_aggregated_foot_contact(self._backend, RIGHT_FOOT_CONTACT_SENSORS)
+        missing = 2.0 - left_contact.astype(get_global_dtype()) - right_contact.astype(
+            get_global_dtype()
+        )
+        return np.asarray(missing * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+
+    def _reward_stand_foot_contact_balance(self, ctx: RewardContext):
+        left_count, right_count = self._foot_contact_counts()
+        total = left_count + right_count
+        eps = float(self._reward_cfg.stand_foot_contact_balance_epsilon)
+        imbalance = np.where(
+            total > eps,
+            np.abs(left_count - right_count) / np.maximum(total, eps),
+            1.0,
+        )
+        return np.asarray(imbalance * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+
+    def _reward_stand_feet_slide_l2(self, ctx: RewardContext):
+        left_vel = self._backend.get_sensor_data("left_foot_linvel")
+        right_vel = self._backend.get_sensor_data("right_foot_linvel")
+        left_contact = compute_aggregated_foot_contact(
+            self._backend, LEFT_FOOT_CONTACT_SENSORS
+        ).astype(get_global_dtype())
+        right_contact = compute_aggregated_foot_contact(
+            self._backend, RIGHT_FOOT_CONTACT_SENSORS
+        ).astype(get_global_dtype())
+        slide = (
+            np.sum(np.square(left_vel[:, :2]), axis=1) * left_contact
+            + np.sum(np.square(right_vel[:, :2]), axis=1) * right_contact
+        )
+        return np.asarray(slide * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+
     def _reward_stand_feet_x_l2(self, ctx: RewardContext):
         left_foot = self._backend.get_sensor_data("left_foot_pos")
         right_foot = self._backend.get_sensor_data("right_foot_pos")
@@ -1525,6 +1574,19 @@ class G1WalkHeightCfg(G1WalkFlatCfg):
     pass
 
 
+@registry.envcfg("G1StandStill")
+@dataclass
+class G1StandStillCfg(G1WalkFlatCfg):
+    scene: SceneCfg = field(
+        default_factory=lambda: SceneCfg(
+            model_file=str(ASSETS_ROOT_PATH / "robots" / "g1" / "scene_flat.xml"),
+            fragment_files=[
+                str(ASSETS_ROOT_PATH / "robots" / "g1" / "stand_support_task.xml")
+            ],
+        )
+    )
+
+
 @registry.envcfg("G1WalkRough")
 @dataclass
 class G1WalkRoughCfg(G1WalkFlatCfg):
@@ -1538,5 +1600,6 @@ class G1WalkRoughCfg(G1WalkFlatCfg):
 registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="motrix")
 registry.register_env("G1WalkHeight", G1WalkEnv, sim_backend="mujoco")
+registry.register_env("G1StandStill", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="motrix")

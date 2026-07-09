@@ -1,0 +1,89 @@
+# @package _global_
+training:
+  task_name: G1StandStill
+  sim_backend: mujoco
+interactive:
+  action_mode: policy
+  keyboard: false
+algo:
+  num_envs: 2048
+  learning_starts: 10
+  max_iterations: 5000
+  save_interval: 1000
+  updates_per_step: 8
+  use_symmetry: true
+  algo_params:
+    alpha_init: 0.001
+    target_entropy_ratio: 0.0
+env:
+  commands:
+    vel_limit:
+      - [0.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+    resampling_time: 2.0
+    rel_standing_envs: 1.0
+    rel_transition_envs: 0.0
+    transition_vel_limit:
+      - [0.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+    small_xy_threshold: 0.0
+  control_config:
+    action_scale: 1.0
+  gait_phase_init_mode: "offset_phase"
+  reset_base_qvel_limit: 0.0
+  standing_reset_base_qvel_limit: 0.0
+  stand_action_authority: false
+  curriculum:
+    enabled: false
+  noise_config:
+    level: 1.0
+    scale_gyro: 0.0
+    scale_gravity: 0.0
+    scale_joint_angle: 0.01
+    scale_joint_vel: 0.1
+    scale_linvel: 0.0
+reward:
+  scales:
+    # Upstream G1WalkFlat posture anchor. Keep these values aligned with
+    # `conf/offpolicy/task/sac/g1_walk_flat/mujoco.yaml`; stand-specific terms
+    # below may add static-balance pressure, but they must not redefine the
+    # default posture manifold.
+    penalty_orientation: -10.0
+    penalty_ang_vel_xy: -1.0
+    penalty_action_rate: -4.0
+    pose: -0.5
+    penalty_feet_ori: -20.0
+    alive: 10.0
+    upright: 4.0
+    base_height: -80.0
+    stand_still: -0.2
+    stand_dof_vel_l2: -0.05
+    stand_lin_vel_xy_l2: -20.0
+    stand_yaw_vel_l2: -5.0
+    stand_tilt_l2: -40.0
+    stand_tilt_margin_l2: -120.0
+    stand_fall_l2: -500.0
+    stand_both_feet_contact: -5.0
+    stand_foot_contact_balance: -2.0
+    stand_feet_slide_l2: -2.0
+    stand_feet_x_l2: -20.0
+    stand_feet_y_width_l2: -10.0
+    stand_feet_yaw_l2: -8.0
+    stand_base_feet_center_x_l2: -30.0
+    stand_base_feet_center_y_l2: -10.0
+  tracking_sigma: 0.25
+  base_height_target: 0.754
+  min_base_height: 0.3
+  max_tilt_deg: 65.0
+  gait_frequency: 1.5
+  feet_phase_swing_height: 0.09
+  feet_phase_tracking_sigma: 0.04
+  close_feet_threshold: 0.15
+  stand_recovery_lin_vel_xy_threshold: 0.2
+  stand_recovery_tilt_deg_threshold: 8.0
+  stand_feet_x_target: 0.0
+  stand_feet_y_width_target: 0.21
+  stand_base_feet_center_x_target: 0.0
+  stand_base_feet_center_y_target: 0.0
+  stand_foot_contact_balance_epsilon: 1.0e-6
+  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

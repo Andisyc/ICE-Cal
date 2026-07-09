@@ -1,0 +1,6 @@
+<mujoco model="g1 stand support task">
+  <sensor>
+    <framelinvel objtype="site" objname="left_foot" name="left_foot_linvel"/>
+    <framelinvel objtype="site" objname="right_foot" name="right_foot_linvel"/>
+  </sensor>
+</mujoco>

@@ -92,6 +92,8 @@ def _fake_env(reward_cfg: G1WalkRewardConfig, *, num_envs: int = 1) -> G1WalkEnv
             "right_foot_quat": np.tile(
                 np.asarray([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (num_envs, 1)
             ),
+            "left_foot_linvel": np.zeros((num_envs, 3), dtype=np.float32),
+            "right_foot_linvel": np.zeros((num_envs, 3), dtype=np.float32),
             "left_foot_contact_0": np.zeros((num_envs,), dtype=np.float32),
             "left_foot_contact_1": np.zeros((num_envs,), dtype=np.float32),
             "left_foot_contact_2": np.zeros((num_envs,), dtype=np.float32),
@@ -312,6 +314,55 @@ def test_stand_fall_reward_only_applies_in_stand_mode() -> None:
     )
 
     np.testing.assert_allclose(env._reward_stand_fall_l2(ctx), np.asarray([0.0, 1.0, 0.0]))
+
+
+def test_stand_static_support_rewards_penalize_missing_unbalanced_and_sliding_feet() -> None:
+    reward_cfg = _reward_config()
+    env = _fake_env(reward_cfg, num_envs=5)
+    for i in range(4):
+        env._backend._values[f"left_foot_contact_{i}"] = np.ones((5,), dtype=np.float32)
+        env._backend._values[f"right_foot_contact_{i}"] = np.ones((5,), dtype=np.float32)
+    for i in range(4):
+        env._backend._values[f"left_foot_contact_{i}"][1] = 0.0
+    for i in range(1, 4):
+        env._backend._values[f"left_foot_contact_{i}"][2] = 0.0
+    env._backend._values["left_foot_linvel"][3, 0] = 0.3
+    env._backend._values["right_foot_linvel"][3, 1] = -0.4
+    env._backend._values["left_foot_linvel"][4, 0] = 0.3
+    env._backend._values["right_foot_linvel"][4, 1] = -0.4
+    ctx = RewardContext(
+        info={
+            "commands": np.asarray(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.2, 0.0, 0.0],
+                ],
+                dtype=np.float32,
+            )
+        },
+        linvel=np.zeros((5, 3), dtype=np.float32),
+        gyro=np.zeros((5, 3), dtype=np.float32),
+        dof_pos=np.zeros((5, 29), dtype=np.float32),
+        num_envs=5,
+    )
+
+    np.testing.assert_allclose(
+        env._reward_stand_both_feet_contact(ctx),
+        np.asarray([0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        env._reward_stand_foot_contact_balance(ctx),
+        np.asarray([0.0, 1.0, 3.0 / 5.0, 0.0, 0.0], dtype=np.float32),
+        rtol=1.0e-6,
+    )
+    np.testing.assert_allclose(
+        env._reward_stand_feet_slide_l2(ctx),
+        np.asarray([0.0, 0.0, 0.0, 0.25, 0.0], dtype=np.float32),
+        rtol=1.0e-6,
+    )
 
 
 def test_feet_phase_reward_rejects_flat_swing_foot_with_sharp_sigma() -> None:
@@ -1316,6 +1367,123 @@ def test_active_g1_standing_reward_prefers_balanced_residual_over_quiet_fall() -
     assert reward[0] > reward[1]
     assert ctx.info["log"]["reward/upright"] > 0.0
     assert ctx.info["log"]["reward/stand_action_l2"] > -0.01
+
+
+def test_g1_stand_still_reward_lab_prefers_clean_stand_over_pose_failures() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
+
+    reward_cfg = G1WalkRewardConfig(**OmegaConf.to_container(cfg.reward, resolve=True))
+    env_count = 10
+    env = _fake_env(reward_cfg, num_envs=env_count)
+    labels = {
+        "clean": 0,
+        "rear_lean": 1,
+        "wide_feet": 2,
+        "staggered_x": 3,
+        "moving_base": 4,
+        "toe_in": 5,
+        "low_crouch": 6,
+        "missing_left_contact": 7,
+        "unbalanced_contact": 8,
+        "sliding_feet": 9,
+    }
+    left = np.tile(np.asarray([[0.0, 0.105, 0.0]], dtype=np.float32), (env_count, 1))
+    right = np.tile(np.asarray([[0.0, -0.105, 0.0]], dtype=np.float32), (env_count, 1))
+    base = np.tile(
+        np.asarray([[0.0, 0.0, float(cfg.reward.base_height_target)]], dtype=np.float32),
+        (env_count, 1),
+    )
+    left_quat = np.tile(_yaw_quat(0.0)[None, :], (env_count, 1))
+    right_quat = np.tile(_yaw_quat(0.0)[None, :], (env_count, 1))
+    gravity = np.tile(np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32), (env_count, 1))
+    linvel = np.zeros((env_count, 3), dtype=np.float32)
+    left_foot_linvel = np.zeros((env_count, 3), dtype=np.float32)
+    right_foot_linvel = np.zeros((env_count, 3), dtype=np.float32)
+
+    rear_tilt = np.deg2rad(18.0)
+    gravity[labels["rear_lean"]] = np.asarray(
+        [np.sin(rear_tilt), 0.0, np.cos(rear_tilt)], dtype=np.float32
+    )
+    base[labels["rear_lean"], 0] = -0.15
+    left[labels["wide_feet"], 1] = 0.25
+    right[labels["wide_feet"], 1] = -0.25
+    left[labels["staggered_x"], 0] = 0.12
+    right[labels["staggered_x"], 0] = -0.08
+    linvel[labels["moving_base"], 0] = 0.25
+    left_quat[labels["toe_in"]] = _yaw_quat(18.0)
+    right_quat[labels["toe_in"]] = _yaw_quat(-18.0)
+    base[labels["low_crouch"], 2] = 0.55
+    left_foot_linvel[labels["sliding_feet"], 0] = 0.3
+    right_foot_linvel[labels["sliding_feet"], 1] = -0.4
+
+    env._backend._values["left_foot_pos"] = left
+    env._backend._values["right_foot_pos"] = right
+    env._backend._values["base_pos"] = base
+    env._backend._values["left_foot_quat"] = left_quat
+    env._backend._values["right_foot_quat"] = right_quat
+    env._backend._values["left_foot_linvel"] = left_foot_linvel
+    env._backend._values["right_foot_linvel"] = right_foot_linvel
+    for i in range(4):
+        env._backend._values[f"left_foot_contact_{i}"] = np.ones(
+            (env_count,), dtype=np.float32
+        )
+        env._backend._values[f"right_foot_contact_{i}"] = np.ones(
+            (env_count,), dtype=np.float32
+        )
+        env._backend._values[f"left_foot_contact_{i}"][labels["missing_left_contact"]] = 0.0
+    for i in range(1, 4):
+        env._backend._values[f"left_foot_contact_{i}"][labels["unbalanced_contact"]] = 0.0
+    ctx = RewardContext(
+        info={
+            "commands": np.zeros((env_count, 3), dtype=np.float32),
+            "current_actions": np.zeros((env_count, 29), dtype=np.float32),
+            "last_actions": np.zeros((env_count, 29), dtype=np.float32),
+            "steps": np.zeros((env_count,), dtype=np.uint32),
+        },
+        linvel=linvel,
+        gyro=np.zeros((env_count, 3), dtype=np.float32),
+        dof_pos=np.zeros((env_count, 29), dtype=np.float32),
+        dof_vel=np.zeros((env_count, 29), dtype=np.float32),
+        num_envs=env_count,
+        default_angles=np.zeros((29,), dtype=np.float32),
+        tracking_sigma=reward_cfg.tracking_sigma,
+        base_height_target=reward_cfg.base_height_target,
+        base_height=base[:, 2],
+        gravity=gravity,
+        pose_weights=np.ones((29,), dtype=np.float32),
+    )
+    forbidden = {
+        "tracking_lin_vel",
+        "tracking_ang_vel",
+        "feet_phase",
+        "feet_phase_contrast",
+        "feet_phase_contact",
+        "track_base_height_exp_smooth",
+    }
+
+    assert forbidden.isdisjoint(reward_cfg.scales)
+    total = env._compute_mode_reward(ctx, reward_cfg)
+    contributions = {
+        name: env._reward_fns[name](ctx) * scale * env._cfg.ctrl_dt
+        for name, scale in reward_cfg.scales.items()
+        if name in env._reward_fns
+    }
+    clean = total[labels["clean"]]
+
+    for label, row in labels.items():
+        if label == "clean":
+            continue
+        assert clean > total[row], f"{label} should score below clean stand"
+    assert contributions["stand_base_feet_center_x_l2"][labels["rear_lean"]] < 0.0
+    assert contributions["stand_feet_y_width_l2"][labels["wide_feet"]] < 0.0
+    assert contributions["stand_feet_x_l2"][labels["staggered_x"]] < 0.0
+    assert contributions["stand_lin_vel_xy_l2"][labels["moving_base"]] < 0.0
+    assert contributions["stand_feet_yaw_l2"][labels["toe_in"]] < 0.0
+    assert contributions["base_height"][labels["low_crouch"]] < 0.0
+    assert contributions["stand_both_feet_contact"][labels["missing_left_contact"]] < 0.0
+    assert contributions["stand_foot_contact_balance"][labels["unbalanced_contact"]] < 0.0
+    assert contributions["stand_feet_slide_l2"][labels["sliding_feet"]] < 0.0
 
 
 def test_mode_reward_logs_shared_terms_without_overwrite() -> None:
