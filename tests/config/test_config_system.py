@@ -164,6 +164,9 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.formal_run_dir is None
     assert cfg.training.multitask_dataset_path is None
     assert cfg.training.multitask_sources == []
+    assert cfg.training.multitask_expected_student_obs_dim is None
+    assert cfg.training.multitask_expected_teacher_obs_dim is None
+    assert cfg.training.multitask_expected_teacher_action_dim is None
     assert cfg.training.collect_dataset_path is None
     assert cfg.training.collect_num_samples == 1024
     assert cfg.training.collect_num_envs == 1

@@ -69,6 +69,9 @@ training:
   formal_run_dir: null
   multitask_dataset_path: null
   multitask_sources: []
+  multitask_expected_student_obs_dim: null
+  multitask_expected_teacher_obs_dim: null
+  multitask_expected_teacher_action_dim: null
   collect_dataset_path: null
   collect_num_samples: 1024
   collect_num_envs: 1

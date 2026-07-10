@@ -220,6 +220,9 @@ def build_multitask_distillation_dataset(
     source_paths: list[str] = []
     source_sample_counts: list[int] = []
     source_metadata: list[dict[str, Any]] = []
+    source_student_obs_dim: int | None = None
+    source_teacher_obs_dim: int | None = None
+    source_teacher_action_dim: int | None = None
     for source in sources:
         path = Path(_source_value(source, "path"))
         role = str(_source_value(source, "role"))
@@ -233,6 +236,27 @@ def build_multitask_distillation_dataset(
         if dataset.teacher_actions is None:
             raise ValueError(
                 f"multitask source {path} must contain cached teacher_actions"
+            )
+        if source_student_obs_dim is None:
+            source_student_obs_dim = dataset.student_obs_dim
+        elif dataset.student_obs_dim != source_student_obs_dim:
+            raise ValueError(
+                f"multitask source {path} role={role!r} student_obs dim mismatch: "
+                f"expected {source_student_obs_dim}, got {dataset.student_obs_dim}"
+            )
+        if source_teacher_obs_dim is None:
+            source_teacher_obs_dim = dataset.teacher_obs_dim
+        elif dataset.teacher_obs_dim != source_teacher_obs_dim:
+            raise ValueError(
+                f"multitask source {path} role={role!r} teacher_obs dim mismatch: "
+                f"expected {source_teacher_obs_dim}, got {dataset.teacher_obs_dim}"
+            )
+        if source_teacher_action_dim is None:
+            source_teacher_action_dim = dataset.teacher_action_dim
+        elif dataset.teacher_action_dim != source_teacher_action_dim:
+            raise ValueError(
+                f"multitask source {path} role={role!r} teacher_actions dim mismatch: "
+                f"expected {source_teacher_action_dim}, got {dataset.teacher_action_dim}"
             )
         datasets.append(dataset)
         source_roles.append(role)

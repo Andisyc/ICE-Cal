@@ -807,6 +807,18 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
             teacher_actions=torch.zeros(2, 3),
         ),
     )
+    matching_path = tmp_path / "matching.pt"
+    save_distillation_dataset(
+        matching_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 5),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+            teacher_actions=torch.zeros(2, 3),
+        ),
+    )
 
     with pytest.raises(ValueError, match="at least one source"):
         build_multitask_distillation_dataset([])
@@ -825,6 +837,13 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
             expected_student_obs_dim=5,
             expected_teacher_obs_dim=5,
             expected_teacher_action_dim=3,
+        )
+    with pytest.raises(ValueError, match="multitask source .* student_obs dim mismatch"):
+        build_multitask_distillation_dataset(
+            [
+                {"path": matching_path, "role": "stand"},
+                {"path": bad_dim_path, "role": "walk_height"},
+            ],
         )
 
 

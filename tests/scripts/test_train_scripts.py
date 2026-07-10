@@ -1554,6 +1554,75 @@ def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Pa
     assert torch.allclose(restored.teacher_actions[2:], torch.full((3, 29), -0.2))
 
 
+def test_distill_script_multitask_dataset_infers_source_dims(tmp_path: Path):
+    import pytest
+    import torch
+
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    mod = _train_distill()
+    stand_path = tmp_path / "stand_98.pt"
+    walk_path = tmp_path / "walk_98.pt"
+    merged_path = tmp_path / "merged_98.pt"
+    save_distillation_dataset(
+        stand_path,
+        build_distillation_dataset(
+            torch.full((2, 98), 1.0),
+            torch.full((2, 98), 2.0),
+            expected_student_obs_dim=98,
+            expected_teacher_obs_dim=98,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.full((2, 29), 0.1),
+        ),
+    )
+    save_distillation_dataset(
+        walk_path,
+        build_distillation_dataset(
+            torch.full((3, 98), 3.0),
+            torch.full((3, 98), 4.0),
+            expected_student_obs_dim=98,
+            expected_teacher_obs_dim=98,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.full((3, 29), -0.2),
+        ),
+    )
+    cfg = _distill_cfg(
+        [
+            f"training.multitask_dataset_path={merged_path}",
+            f"+training.multitask_sources=[{{path:{stand_path},role:stand}},{{path:{walk_path},role:walk_flat}}]",
+        ]
+    )
+
+    probe = mod.run_multitask_dataset_assembly(cfg, dataset_path=merged_path)
+
+    assert probe["dataset_student_obs_dim"] == 98
+    assert probe["dataset_teacher_obs_dim"] == 98
+    assert probe["dataset_teacher_action_dim"] == 29
+    restored = load_distillation_dataset(
+        merged_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        expected_teacher_action_dim=29,
+    )
+    assert restored.role_labels == ("stand", "stand", "walk_flat", "walk_flat", "walk_flat")
+
+    strict_cfg = _distill_cfg(
+        [
+            f"training.multitask_dataset_path={tmp_path / 'strict_merged.pt'}",
+            f"+training.multitask_sources=[{{path:{stand_path},role:stand}},{{path:{walk_path},role:walk_flat}}]",
+            "training.multitask_expected_student_obs_dim=99",
+            "training.multitask_expected_teacher_obs_dim=99",
+            "training.multitask_expected_teacher_action_dim=29",
+        ]
+    )
+    with pytest.raises(ValueError, match="student_obs dim mismatch"):
+        mod.run_multitask_dataset_assembly(strict_cfg)
+
+
 def test_g1_distill_multitask_runtime_probe_runs_cached_moe_update(tmp_path: Path, capsys):
     mod = _load_deploy_script("check_unilab_g1_distill_multitask_runtime_probe")
 

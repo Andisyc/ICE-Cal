@@ -382,6 +382,13 @@ def _multitask_sources(cfg: DictConfig) -> list[dict[str, Any]]:
     return [dict(cast(dict[str, Any], source)) for source in sources]
 
 
+def _optional_int_cfg(cfg: DictConfig, path: str) -> int | None:
+    value = OmegaConf.select(cfg, path)
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
 def run_multitask_dataset_assembly(
     cfg: DictConfig,
     *,
@@ -397,9 +404,18 @@ def run_multitask_dataset_assembly(
         raise ValueError("training.multitask_dataset_path must be set")
     dataset = build_multitask_distillation_dataset(
         _multitask_sources(cfg),
-        expected_student_obs_dim=int(cfg.student.obs_dim),
-        expected_teacher_obs_dim=int(cfg.teacher.obs_dim),
-        expected_teacher_action_dim=int(cfg.teacher.action_dim),
+        expected_student_obs_dim=_optional_int_cfg(
+            cfg,
+            "training.multitask_expected_student_obs_dim",
+        ),
+        expected_teacher_obs_dim=_optional_int_cfg(
+            cfg,
+            "training.multitask_expected_teacher_obs_dim",
+        ),
+        expected_teacher_action_dim=_optional_int_cfg(
+            cfg,
+            "training.multitask_expected_teacher_action_dim",
+        ),
         device=_distill_device(cfg),
     )
     save_distillation_dataset(resolved_dataset_path, dataset)
