@@ -88,7 +88,7 @@ def test_behavior_distillation_checkpoint_roundtrip(tmp_path) -> None:
     torch.manual_seed(11)
     source = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
     target = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
-    checkpoint_path = tmp_path / "distill_model.pt"
+    checkpoint_path = tmp_path / "nested" / "distill_model.pt"
 
     save_distillation_checkpoint(
         checkpoint_path,
@@ -99,6 +99,7 @@ def test_behavior_distillation_checkpoint_roundtrip(tmp_path) -> None:
     )
     checkpoint = load_distillation_checkpoint(target, checkpoint_path)
 
+    assert checkpoint_path.is_file()
     assert checkpoint["agent_steps"] == 16
     assert checkpoint["teacher_metadata"] == {"algo": "sac", "task": "G1WalkHeight"}
     assert checkpoint["distill_runtime_cfg"] == {"loss_type": "mse"}

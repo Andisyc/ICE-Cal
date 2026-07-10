@@ -19,6 +19,8 @@ def save_distillation_checkpoint(
 ) -> None:
     """Save the deployable student and distillation provenance."""
 
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "student_state_dict": student.state_dict(),
         "agent_steps": int(agent_steps),
@@ -29,7 +31,9 @@ def save_distillation_checkpoint(
         payload["optimizer_state_dict"] = optimizer.state_dict()
     if obs_normalizer is not None:
         payload["obs_normalizer"] = obs_normalizer.state_dict()
-    torch.save(payload, Path(path))
+    torch.save(payload, resolved_path)
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"distillation checkpoint was not saved: {resolved_path}")
 
 
 def load_distillation_checkpoint(

@@ -936,6 +936,7 @@ def main(cfg: DictConfig) -> None:
                 batch_size=int(OmegaConf.select(cfg, "training.offline_batch_size", default=256)),
                 max_updates=int(OmegaConf.select(cfg, "training.offline_max_updates", default=1)),
                 checkpoint_path=OmegaConf.select(cfg, "training.offline_checkpoint"),
+                device=_distill_device(cfg),
             )
         )
         return
