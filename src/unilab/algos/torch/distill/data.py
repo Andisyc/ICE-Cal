@@ -98,6 +98,39 @@ def _validate_command_intents(
     return intents
 
 
+def _command_intents_from_commands(
+    commands: torch.Tensor,
+    *,
+    xy_threshold: float,
+    yaw_threshold: float,
+) -> tuple[str, ...]:
+    xy_threshold = float(xy_threshold)
+    yaw_threshold = float(yaw_threshold)
+    if xy_threshold < 0.0:
+        raise ValueError(f"command_xy_threshold must be non-negative, got {xy_threshold}")
+    if yaw_threshold < 0.0:
+        raise ValueError(f"command_yaw_threshold must be non-negative, got {yaw_threshold}")
+    xy_norm = torch.linalg.norm(commands[:, :2], dim=1)
+    yaw_abs = commands[:, 2].abs()
+    active = (xy_norm > xy_threshold) | (yaw_abs > yaw_threshold)
+    return tuple("active" if bool(value) else "inactive" for value in active.detach().cpu())
+
+
+def _command_intents_from_role_labels(
+    role_labels: tuple[str, ...],
+) -> tuple[str, ...] | None:
+    intents: list[str] = []
+    for role in role_labels:
+        normalized = role.lower()
+        if "stand" in normalized:
+            intents.append("inactive")
+        elif "walk" in normalized:
+            intents.append("active")
+        else:
+            return None
+    return tuple(intents)
+
+
 def _label_counts(labels: tuple[str, ...]) -> dict[str, int]:
     return {label: labels.count(label) for label in sorted(set(labels))}
 
@@ -212,6 +245,17 @@ def build_distillation_dataset(
         role_labels,
         num_samples=int(student_obs.shape[0]),
     )
+    if command_intents is None and validated_commands is not None:
+        command_intents = _command_intents_from_commands(
+            validated_commands,
+            xy_threshold=float(metadata_dict.get("command_xy_threshold", 0.05)),
+            yaw_threshold=float(metadata_dict.get("command_yaw_threshold", 0.05)),
+        )
+        metadata_dict["command_intent_inference_source"] = "commands"
+    if command_intents is None and validated_role_labels is not None:
+        command_intents = _command_intents_from_role_labels(validated_role_labels)
+        if command_intents is not None:
+            metadata_dict["command_intent_inference_source"] = "role_labels"
     validated_command_intents = _validate_command_intents(
         command_intents,
         num_samples=int(student_obs.shape[0]),

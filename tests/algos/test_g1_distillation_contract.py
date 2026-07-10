@@ -770,10 +770,79 @@ def test_distillation_dataset_roundtrip_preserves_role_labels_contract(tmp_path)
 
     assert restored.role_labels == role_labels
     assert restored.metadata["role_labels"] == list(role_labels)
+    assert restored.command_intents == ("inactive", "active", "inactive", "active")
+    assert restored.metadata["command_intent_inference_source"] == "role_labels"
+    assert restored.metadata["command_intent_counts"] == {"active": 2, "inactive": 2}
     assert restored.as_batch(start=2, batch_size=8).role_labels == (
         "stand_height",
         "walk_height",
     )
+
+
+def test_distillation_dataset_infers_command_intents_from_legacy_roles(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        load_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    checkpoint_path = tmp_path / "legacy_role_dataset.pt"
+    torch.save(
+        {
+            "student_obs": torch.randn(4, 5),
+            "teacher_obs": torch.empty(4, 0),
+            "teacher_actions": torch.randn(4, 3),
+            "metadata": {"source": "legacy-role-only"},
+            "role_labels": ["walk_flat", "stand", "g1_walk_flat", "g1_stand_still"],
+            "num_samples": 4,
+        },
+        checkpoint_path,
+    )
+    restored = load_distillation_dataset(
+        checkpoint_path,
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+    )
+
+    assert restored.command_intents == ("active", "inactive", "active", "inactive")
+    assert restored.metadata["command_intent_inference_source"] == "role_labels"
+    assert restored.metadata["command_intent_counts"] == {"active": 2, "inactive": 2}
+
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    result = run_offline_distillation_updates(
+        trainer,
+        restored,
+        batch_size=4,
+        max_updates=1,
+        balance_key="command_intent",
+        balanced_labels=("inactive", "active"),
+    )
+
+    assert result.last_balance_label_counts == {"inactive": 2, "active": 2}
+
+
+def test_distillation_dataset_keeps_unknown_roles_without_intent_guess() -> None:
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    dataset = build_distillation_dataset(
+        torch.randn(2, 5),
+        torch.empty(2, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(2, 3),
+        role_labels=("height_low", "height_high"),
+    )
+
+    assert dataset.command_intents is None
+    assert "command_intent_inference_source" not in dataset.metadata
 
 
 def test_distillation_dataset_roundtrip_preserves_command_intent_contract(tmp_path) -> None:
