@@ -9,6 +9,7 @@ SIM="mujoco"
 DRY_RUN=0
 CHECKPOINT_PATH=""
 CHECKPOINT_SELECTOR=""
+LOG_FILE="${UNILAB_LOG_FILE:-}"
 POSITIONAL_ARGS=()
 
 while [ "$#" -gt 0 ]; do
@@ -57,6 +58,18 @@ while [ "$#" -gt 0 ]; do
             CHECKPOINT_SELECTOR="$2"
             shift 2
             ;;
+        --log-file)
+            if [ "$#" -lt 2 ]; then
+                echo "Usage error: --log-file requires a value"
+                exit 2
+            fi
+            LOG_FILE="$2"
+            shift 2
+            ;;
+        --log-file=*)
+            LOG_FILE="${1#--log-file=}"
+            shift
+            ;;
         g1_walk_flat|g1_stand_still|g1_walk_height)
             TASK="$1"
             shift
@@ -75,6 +88,14 @@ fi
 
 if [ -z "${UNILAB_G1_ACTION_TRACE_INTERVAL+x}" ]; then
     export UNILAB_G1_ACTION_TRACE_INTERVAL=20
+fi
+
+if [ -n "$LOG_FILE" ]; then
+    LOG_DIR="$(dirname "$LOG_FILE")"
+    if [ "$LOG_DIR" != "." ]; then
+        mkdir -p "$LOG_DIR"
+    fi
+    exec > >(tee "$LOG_FILE") 2>&1
 fi
 
 # 将那些两边都一样的长参数提取出来，方便以后修改
@@ -116,6 +137,9 @@ fi
 ARGS+=("${POSITIONAL_ARGS[@]}")
 
 echo "[start.sh] task=${TASK} sim=${SIM} algo=${ALGO} keyboard=${KEYBOARD}"
+if [ -n "$LOG_FILE" ]; then
+    echo "[start.sh] log_file=${LOG_FILE}"
+fi
 if [ -n "$CHECKPOINT_PATH" ]; then
     echo "[start.sh] checkpoint_path=${CHECKPOINT_PATH}"
 elif [ -n "$CHECKPOINT_SELECTOR" ]; then

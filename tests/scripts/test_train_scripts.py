@@ -2217,6 +2217,102 @@ def test_distill_script_collects_walk_flat_teacher_policy_cached_dataset(
     assert torch.isfinite(restored.teacher_actions).all()
 
 
+def test_distill_script_collects_walk_flat_inactive_student_rollout_with_stand_teacher(
+    tmp_path: Path,
+) -> None:
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MLPStudentPolicy,
+        load_distillation_dataset,
+        save_distillation_checkpoint,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "stand_teacher.pt"
+    teacher_state = teacher.state_dict()
+    for key, value in teacher_state.items():
+        if torch.is_floating_point(value):
+            teacher_state[key] = torch.full_like(value, 0.015)
+    torch.save({"actor": teacher_state}, teacher_checkpoint)
+
+    rollout_student = MLPStudentPolicy(obs_dim=98, action_dim=29, hidden_dims=(32,))
+    rollout_checkpoint = tmp_path / "rollout_student.pt"
+    save_distillation_checkpoint(
+        rollout_checkpoint,
+        student=rollout_student,
+        agent_steps=128,
+        distill_runtime_cfg={
+            "student_model_type": "mlp",
+            "student_obs_dim": 98,
+            "student_action_dim": 29,
+            "student_hidden_dims": [32],
+            "student_activation": "elu",
+            "student_squash_action": True,
+        },
+    )
+
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco",
+            "teacher.task_name=G1StandStill",
+            f"teacher.load_run={teacher_checkpoint}",
+            "teacher.checkpoint=-1",
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+            "training.collect_command_sample_filter=inactive",
+            "training.collect_action_mode=student_policy",
+            f"training.collect_rollout_checkpoint_path={rollout_checkpoint}",
+        ]
+    )
+    dataset_path = tmp_path / "walk_owner_stand_teacher_student_rollout.pt"
+    fake_env = _FakeDistillCollectEnv(
+        num_envs=2,
+        action_dim=29,
+        obs_dim=98,
+        critic_dim=101,
+        command_batches=[
+            np.zeros((2, 3), dtype=np.float32),
+            np.zeros((2, 3), dtype=np.float32),
+        ],
+    )
+
+    collect_probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "walk-flat-stand-teacher-dagger-test"},
+    )
+
+    assert collect_probe["collect_command_sample_filter"] == "inactive"
+    assert collect_probe["collect_action_mode"] == "student_policy"
+    assert collect_probe["collect_command_intent_counts"] == {"inactive": 3}
+    assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert collect_probe["rollout_policy_checkpoint_path"] == str(rollout_checkpoint)
+    assert fake_env.last_actions is not None
+    assert np.isfinite(fake_env.last_actions).all()
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        expected_teacher_action_dim=29,
+    )
+    assert restored.metadata["task_name"] == "G1WalkFlat"
+    assert restored.metadata["action_mode"] == "student_policy"
+    assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert restored.metadata["rollout_policy_checkpoint_path"] == str(rollout_checkpoint)
+    assert restored.metadata["command_intent_counts"] == {"inactive": 3}
+    assert restored.teacher_actions is not None
+    assert restored.teacher_actions.shape == (3, 29)
+
+
 def test_distill_script_formal_stand_still_run_writes_metadata_and_checkpoint(
     tmp_path: Path,
 ) -> None:

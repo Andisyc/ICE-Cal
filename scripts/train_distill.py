@@ -636,6 +636,9 @@ def _distill_device(cfg: DictConfig) -> str:
 
 def _expected_owner_command_sample_filter(cfg: DictConfig) -> str | None:
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
+    teacher_task_name = str(OmegaConf.select(cfg, "teacher.task_name", default=task_name))
+    if task_name == "G1WalkFlat" and teacher_task_name == "G1StandStill":
+        return "inactive"
     return _OWNER_COMMAND_SAMPLE_FILTERS.get(task_name)
 
 
@@ -693,8 +696,21 @@ def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
     allowed_tasks = {"G1WalkFlat", "G1StandStill"}
     if task_name not in allowed_tasks:
         raise ValueError("teacher target collection only supports 98-D G1WalkFlat/G1StandStill")
-    if teacher_task_name != task_name:
-        raise ValueError("teacher target collection requires teacher.task_name to match training.task_name")
+    cross_stand_teacher = task_name == "G1WalkFlat" and teacher_task_name == "G1StandStill"
+    if teacher_task_name != task_name and not cross_stand_teacher:
+        raise ValueError(
+            "teacher target collection requires teacher.task_name to match training.task_name, "
+            "except G1WalkFlat inactive collection may use a G1StandStill teacher"
+        )
+    if cross_stand_teacher:
+        actual_filter = str(
+            OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
+        )
+        if actual_filter != "inactive":
+            raise ValueError(
+                "G1WalkFlat collection with a G1StandStill teacher requires "
+                "training.collect_command_sample_filter=inactive"
+            )
     if int(cfg.teacher.obs_dim) != 98 or int(cfg.student.obs_dim) != 98:
         raise ValueError("teacher target collection requires 98-D teacher and student obs")
     if str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")) != "obs":

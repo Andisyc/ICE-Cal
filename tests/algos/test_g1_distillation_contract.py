@@ -1521,6 +1521,69 @@ def test_collect_distillation_dataset_from_env_student_policy_rollout_mode() -> 
     assert not torch.allclose(dataset.teacher_actions[:2], torch.as_tensor(env.last_actions))
 
 
+def test_collect_distillation_dataset_from_env_student_policy_resets_done_rows() -> None:
+    from unilab.algos.torch.distill import collect_distillation_dataset_from_env
+
+    class FakeTeacherPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full((obs.shape[0], 3), 0.25, dtype=obs.dtype, device=obs.device)
+
+    class FakeRolloutPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full((obs.shape[0], 3), -0.5, dtype=obs.dtype, device=obs.device)
+
+    class DoneAfterStepEnv(_FakeDistillEnv):
+        def reset(self, env_indices):
+            self.reset_calls += 1
+            env_indices = np.asarray(env_indices, dtype=np.int32)
+            base = np.arange(16, dtype=np.float32).reshape(2, 8)
+            if env_indices.shape[0] == self.num_envs:
+                rows = base
+            else:
+                rows = base[env_indices] + 100.0
+            return {"obs": rows, "critic": rows + 100.0}, {
+                "reset_indices": env_indices,
+            }
+
+        def step(self, actions):
+            self.step_calls += 1
+            self.last_actions = np.asarray(actions, dtype=np.float32)
+            return type(
+                "State",
+                (),
+                {
+                    "obs": self._obs(self.step_calls),
+                    "info": {},
+                    "terminated": np.asarray([True, False], dtype=np.bool_),
+                    "truncated": np.asarray([False, False], dtype=np.bool_),
+                },
+            )()
+
+    env = DoneAfterStepEnv()
+    dataset = collect_distillation_dataset_from_env(
+        env,
+        num_samples=4,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        teacher_obs_key="obs",
+        student_projection="identity",
+        action_mode="student_policy",
+        teacher_policy=FakeTeacherPolicy(),
+        rollout_policy=FakeRolloutPolicy(),
+    )
+
+    assert env.step_calls == 1
+    assert env.reset_calls == 2
+    assert dataset.metadata["action_mode"] == "student_policy"
+    assert dataset.metadata["done_seen_samples"] == 1
+    assert dataset.metadata["autoreset_done_count"] == 0
+    assert dataset.metadata["manual_done_reset_count"] == 1
+    assert torch.equal(dataset.student_obs[0], torch.arange(8, dtype=torch.float32))
+    assert torch.equal(dataset.student_obs[1], torch.arange(8, 16, dtype=torch.float32))
+    assert torch.equal(dataset.student_obs[2], torch.arange(8, dtype=torch.float32) + 100.0)
+    assert torch.equal(dataset.student_obs[3], torch.arange(8, 16, dtype=torch.float32) + 1.0)
+
+
 def test_collect_distillation_dataset_from_env_filters_active_command_samples() -> None:
     from unilab.algos.torch.distill import collect_distillation_dataset_from_env
 

@@ -198,6 +198,87 @@ def _policy_actions(
     return action_tensor.cpu().numpy().astype(np.float32)
 
 
+def _state_done_mask(state: Any, *, expected_rows: int) -> np.ndarray:
+    terminated = getattr(state, "terminated", None)
+    truncated = getattr(state, "truncated", None)
+    if terminated is None and truncated is None:
+        return np.zeros((int(expected_rows),), dtype=np.bool_)
+
+    done = np.zeros((int(expected_rows),), dtype=np.bool_)
+    for name, value in (("terminated", terminated), ("truncated", truncated)):
+        if value is None:
+            continue
+        arr = np.asarray(value, dtype=np.bool_).reshape(-1)
+        if arr.shape != done.shape:
+            raise ValueError(
+                f"collector state.{name} shape mismatch: expected {done.shape}, got {arr.shape}"
+            )
+        np.logical_or(done, arr, out=done)
+    return done
+
+
+def _state_has_autoreset_final_observation(state: Any, done: np.ndarray) -> bool:
+    if not np.any(done):
+        return False
+    final_observation = getattr(state, "final_observation", None)
+    if isinstance(final_observation, Mapping):
+        return True
+    info = getattr(state, "info", None)
+    if isinstance(info, Mapping) and isinstance(info.get("final_observation"), Mapping):
+        terminal_mask = info.get("_final_observation")
+        if terminal_mask is None:
+            return True
+        mask = np.asarray(terminal_mask, dtype=np.bool_).reshape(-1)
+        return mask.shape == done.shape and bool(np.any(mask[done]))
+    return False
+
+
+def _reset_done_rows_after_step(
+    env: Any,
+    state: Any,
+    *,
+    num_envs: int,
+) -> tuple[dict[str, Any], dict[str, Any], int, int, int]:
+    """Return next obs/info after guarding student-policy rollouts from terminal drift.
+
+    UniLab NpEnv autoreset keeps the terminal flag visible while replacing done
+    rows with reset observations and recording final_observation. Fake or custom
+    envs may return terminal rows without autoreset; those rows are reset here
+    before the next collection iteration samples them.
+    """
+
+    obs = getattr(state, "obs")
+    info = getattr(state, "info", {})
+    done = _state_done_mask(state, expected_rows=int(num_envs))
+    done_count = int(np.count_nonzero(done))
+    if done_count == 0:
+        return obs, info, 0, 0, 0
+    if _state_has_autoreset_final_observation(state, done):
+        return obs, info, done_count, done_count, 0
+    if not callable(getattr(env, "reset", None)):
+        raise ValueError("collector saw done rows but env.reset is not callable")
+
+    done_indices = np.flatnonzero(done).astype(np.int32)
+    reset_obs, reset_info = env.reset(done_indices)
+    next_obs = {key: np.asarray(value).copy() for key, value in obs.items()}
+    for key, value in reset_obs.items():
+        if key not in next_obs:
+            raise KeyError(f"Reset observation key {key!r} not found in step observation")
+        next_obs[key][done_indices] = value
+
+    next_info = dict(info)
+    if reset_info:
+        for key, value in reset_info.items():
+            if isinstance(value, np.ndarray):
+                if key not in next_info:
+                    full_shape = (int(num_envs),) + value.shape[1:]
+                    next_info[key] = np.zeros(full_shape, dtype=value.dtype)
+                next_info[key][done_indices] = value
+            else:
+                next_info[key] = value
+    return next_obs, next_info, done_count, 0, done_count
+
+
 def collect_distillation_dataset_from_env(
     env: Any,
     *,
@@ -277,6 +358,9 @@ def collect_distillation_dataset_from_env(
     command_seen_samples = 0
     command_selected_samples = 0
     synthetic_teacher_tail = False
+    done_seen_samples = 0
+    autoreset_done_count = 0
+    manual_done_reset_count = 0
 
     while collected_count < int(num_samples):
         source_np = _obs_array(obs, teacher_obs_key)
@@ -389,8 +473,12 @@ def collect_distillation_dataset_from_env(
         action_abs_max = max(action_abs_max, float(np.max(np.abs(actions))))
         state = env.step(actions)
         env_steps += 1
-        obs = state.obs
-        current_info = state.info
+        obs, current_info, done_count, autoreset_count, manual_reset_count = (
+            _reset_done_rows_after_step(env, state, num_envs=num_envs)
+        )
+        done_seen_samples += done_count
+        autoreset_done_count += autoreset_count
+        manual_done_reset_count += manual_reset_count
 
     payload = dict(metadata or {})
     payload.update(
@@ -405,6 +493,9 @@ def collect_distillation_dataset_from_env(
             "action_abs_max": float(action_abs_max),
             "num_envs": num_envs,
             "env_steps": env_steps,
+            "done_seen_samples": int(done_seen_samples),
+            "autoreset_done_count": int(autoreset_done_count),
+            "manual_done_reset_count": int(manual_done_reset_count),
             "synthetic_teacher_tail": bool(synthetic_teacher_tail),
         }
     )
