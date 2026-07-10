@@ -2052,7 +2052,8 @@ def test_distill_script_collects_stand_still_teacher_policy_dataset_and_updates(
 
     mod = _train_distill()
     teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
-    teacher_checkpoint = tmp_path / "stand_teacher.pt"
+    teacher_checkpoint = tmp_path / "G1StandStill" / "model_5000.pt"
+    teacher_checkpoint.parent.mkdir(parents=True)
     teacher_state = teacher.state_dict()
     for key, value in teacher_state.items():
         if torch.is_floating_point(value):
@@ -2231,7 +2232,8 @@ def test_distill_script_collects_walk_flat_inactive_student_rollout_with_stand_t
 
     mod = _train_distill()
     teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
-    teacher_checkpoint = tmp_path / "stand_teacher.pt"
+    teacher_checkpoint = tmp_path / "G1StandStill" / "model_5000.pt"
+    teacher_checkpoint.parent.mkdir(parents=True)
     teacher_state = teacher.state_dict()
     for key, value in teacher_state.items():
         if torch.is_floating_point(value):
@@ -2257,9 +2259,7 @@ def test_distill_script_collects_walk_flat_inactive_student_rollout_with_stand_t
     cfg = _distill_cfg(
         [
             "task=g1_walk_flat/mujoco",
-            "teacher.task_name=G1StandStill",
-            f"teacher.load_run={teacher_checkpoint}",
-            "teacher.checkpoint=-1",
+            f"teacher.checkpoint_path={teacher_checkpoint}",
             "teacher.actor_hidden_dim=16",
             "teacher.use_layer_norm=false",
             "teacher.obs_normalization=false",

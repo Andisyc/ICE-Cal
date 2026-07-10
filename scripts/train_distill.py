@@ -37,6 +37,7 @@ _OWNER_COMMAND_SAMPLE_FILTERS = {
     "G1WalkFlat": "active",
     "G1StandStill": "inactive",
 }
+_DISTILL_TASK_NAME_HINTS = frozenset(_OWNER_COMMAND_SAMPLE_FILTERS)
 
 
 def _int_tuple(values: Any) -> tuple[int, ...]:
@@ -634,9 +635,41 @@ def _distill_device(cfg: DictConfig) -> str:
     return "cpu" if device in (None, "") else str(device)
 
 
+def _teacher_task_name_for_collection(cfg: DictConfig) -> str:
+    teacher_task_name = str(
+        OmegaConf.select(
+            cfg,
+            "teacher.task_name",
+            default=str(OmegaConf.select(cfg, "training.task_name")),
+        )
+    )
+    checkpoint_path = OmegaConf.select(cfg, "teacher.checkpoint_path")
+    if checkpoint_path in (None, ""):
+        return teacher_task_name
+    checkpoint_parts = set(Path(str(checkpoint_path)).parts)
+    hinted_task_names = sorted(_DISTILL_TASK_NAME_HINTS & checkpoint_parts)
+    if not hinted_task_names:
+        return teacher_task_name
+    if len(hinted_task_names) > 1:
+        raise ValueError(
+            "teacher.checkpoint_path contains multiple distill task hints: "
+            f"{hinted_task_names}"
+        )
+    hinted_task_name = hinted_task_names[0]
+    if teacher_task_name != hinted_task_name:
+        default_task_name = str(OmegaConf.select(cfg, "training.task_name"))
+        if teacher_task_name != default_task_name:
+            raise ValueError(
+                "teacher.task_name conflicts with teacher.checkpoint_path task hint: "
+                f"teacher.task_name={teacher_task_name!r}, checkpoint_hint={hinted_task_name!r}"
+            )
+        teacher_task_name = hinted_task_name
+    return teacher_task_name
+
+
 def _expected_owner_command_sample_filter(cfg: DictConfig) -> str | None:
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
-    teacher_task_name = str(OmegaConf.select(cfg, "teacher.task_name", default=task_name))
+    teacher_task_name = _teacher_task_name_for_collection(cfg)
     if task_name == "G1WalkFlat" and teacher_task_name == "G1StandStill":
         return "inactive"
     return _OWNER_COMMAND_SAMPLE_FILTERS.get(task_name)
@@ -692,7 +725,7 @@ def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
     """Keep teacher-target collection scoped to explicit 98-D flat/standing routes."""
 
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
-    teacher_task_name = str(OmegaConf.select(cfg, "teacher.task_name"))
+    teacher_task_name = _teacher_task_name_for_collection(cfg)
     allowed_tasks = {"G1WalkFlat", "G1StandStill"}
     if task_name not in allowed_tasks:
         raise ValueError("teacher target collection only supports 98-D G1WalkFlat/G1StandStill")
