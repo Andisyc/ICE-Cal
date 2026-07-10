@@ -493,6 +493,91 @@ def test_moe_expert_diagnostics_flags_router_collapse_and_label_errors() -> None
         diagnose_moe_expert_routes(student, obs, role_labels=["stand"])
 
 
+def test_moe_expert_semantics_probe_reports_cached_action_error(tmp_path) -> None:
+    from scripts.deploy.check_unilab_g1_distill_moe_expert_semantics import run_check
+
+    from unilab.algos.torch.distill import (
+        MoEStudentPolicy,
+        build_distillation_dataset,
+        save_distillation_checkpoint,
+        save_distillation_dataset,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        routing_mode="hard",
+        squash_action=False,
+    )
+    with torch.no_grad():
+        for expert, bias in zip(
+            student.experts,
+            (torch.tensor([0.1, -0.1]), torch.tensor([0.5, 0.2])),
+            strict=True,
+        ):
+            expert.net[-1].weight.zero_()
+            expert.net[-1].bias.copy_(bias)
+        student.router[-1].weight.zero_()
+        student.router[-1].bias.zero_()
+        student.router[-1].weight[0, 0] = 4.0
+        student.router[-1].weight[1, 1] = 4.0
+
+    student_obs = torch.tensor(
+        [[2.0, 0.0], [1.0, 0.0], [0.0, 2.0], [0.0, 1.0]],
+        dtype=torch.float32,
+    )
+    teacher_actions = torch.tensor(
+        [[0.1, -0.1], [0.1, -0.1], [0.5, 0.2], [0.5, 0.2]],
+        dtype=torch.float32,
+    )
+    dataset_path = tmp_path / "role_dataset.pt"
+    checkpoint_path = tmp_path / "moe_student.pt"
+    dataset = build_distillation_dataset(
+        student_obs,
+        torch.empty(4, 0),
+        expected_student_obs_dim=2,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=2,
+        teacher_actions=teacher_actions,
+        role_labels=("stand", "stand", "walk_flat", "walk_flat"),
+    )
+    save_distillation_dataset(dataset_path, dataset)
+    save_distillation_checkpoint(
+        checkpoint_path,
+        student=student,
+        agent_steps=4,
+        distill_runtime_cfg={
+            "student_model_type": "moe",
+            "student_obs_dim": 2,
+            "teacher_obs_dim": 0,
+            "student_action_dim": 2,
+            "student_num_experts": 2,
+            "student_expert_hidden_dims": [],
+            "student_router_hidden_dims": [],
+            "student_routing_mode": "hard",
+            "student_squash_action": False,
+        },
+    )
+
+    checks, details = run_check(
+        task="g1_walk_flat/mujoco",
+        dataset_path=dataset_path,
+        student_checkpoint=checkpoint_path,
+        hard_routing=True,
+    )
+
+    action_imitation = details["moe_expert/action_imitation"]
+    assert all(check.level != "FAIL" for check in checks)
+    assert action_imitation["overall"]["mse"] == pytest.approx(0.0)
+    assert action_imitation["by_role"]["stand"]["mse"] == pytest.approx(0.0)
+    assert action_imitation["by_role"]["walk_flat"]["mse"] == pytest.approx(0.0)
+    assert action_imitation["by_role"]["stand"]["student_action_abs_max"] == pytest.approx(0.1)
+    assert action_imitation["by_role"]["walk_flat"]["student_action_abs_max"] == pytest.approx(0.5)
+
+
 def test_distillation_dataset_roundtrip_preserves_obs_batch_contract(tmp_path) -> None:
     from unilab.algos.torch.distill import (
         build_distillation_dataset,

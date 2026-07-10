@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
@@ -44,6 +46,77 @@ def _metadata_role_labels(metadata: dict[str, Any], *, num_samples: int) -> list
             f"labels={len(labels)} samples={int(num_samples)}"
         )
     return labels
+
+
+def _action_imitation_summary(
+    policy: MoEStudentPolicy,
+    student_obs: torch.Tensor,
+    teacher_actions: torch.Tensor | None,
+    *,
+    role_labels: list[str] | None,
+    hard_routing: bool,
+) -> dict[str, Any] | None:
+    if teacher_actions is None:
+        return None
+    if teacher_actions.ndim != 2:
+        raise ValueError(f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}")
+    if teacher_actions.shape[0] != student_obs.shape[0]:
+        raise ValueError(
+            "teacher_actions batch size must match student_obs: "
+            f"teacher_actions={teacher_actions.shape[0]} student_obs={student_obs.shape[0]}"
+        )
+    with torch.no_grad():
+        output = policy(
+            student_obs,
+            hard_routing=bool(hard_routing),
+            return_diagnostics=True,
+        )
+    student_actions = output.action.detach()
+    target_actions = teacher_actions.to(
+        device=student_actions.device,
+        dtype=student_actions.dtype,
+    )
+    if target_actions.shape != student_actions.shape:
+        raise ValueError(
+            "teacher_actions shape must match student actions: "
+            f"teacher_actions={tuple(target_actions.shape)} student_actions={tuple(student_actions.shape)}"
+        )
+
+    sq_error = (student_actions - target_actions).square().mean(dim=-1)
+    abs_error = (student_actions - target_actions).abs().mean(dim=-1)
+    labels = role_labels if role_labels is not None else ["all"] * int(student_obs.shape[0])
+    if len(labels) != int(student_obs.shape[0]):
+        raise ValueError(
+            "role_labels length must match student_obs batch size: "
+            f"labels={len(labels)} batch={int(student_obs.shape[0])}"
+        )
+
+    def summarize(mask: torch.Tensor) -> dict[str, Any]:
+        selected_sq = sq_error.index_select(0, mask)
+        selected_abs = abs_error.index_select(0, mask)
+        selected_student = student_actions.index_select(0, mask)
+        selected_target = target_actions.index_select(0, mask)
+        return {
+            "count": int(mask.numel()),
+            "mse": float(selected_sq.mean().detach().cpu().item()),
+            "mae": float(selected_abs.mean().detach().cpu().item()),
+            "student_action_abs_max": float(selected_student.abs().max().detach().cpu().item()),
+            "teacher_action_abs_max": float(selected_target.abs().max().detach().cpu().item()),
+        }
+
+    by_role: dict[str, Any] = {}
+    for role in sorted(set(labels)):
+        idx = torch.tensor(
+            [i for i, label in enumerate(labels) if label == role],
+            dtype=torch.long,
+            device=student_actions.device,
+        )
+        by_role[str(role)] = summarize(idx)
+    overall_idx = torch.arange(student_obs.shape[0], dtype=torch.long, device=student_actions.device)
+    return {
+        "overall": summarize(overall_idx),
+        "by_role": by_role,
+    }
 
 
 def run_check(
@@ -99,6 +172,13 @@ def run_check(
         collapse_fraction=float(collapse_fraction),
     )
     payload = moe_diagnostics_to_dict(diagnostics)
+    action_imitation = _action_imitation_summary(
+        policy,
+        dataset.student_obs,
+        dataset.teacher_actions,
+        role_labels=role_labels,
+        hard_routing=bool(hard_routing),
+    )
     details.update(
         {
             "moe_expert/dataset_num_samples": dataset.num_samples,
@@ -107,6 +187,7 @@ def run_check(
             "moe_expert/dataset_metadata": dict(dataset.metadata),
             "moe_expert/role_labels_present": diagnostics.role_labels_present,
             "moe_expert/diagnostics": payload,
+            "moe_expert/action_imitation": action_imitation,
         }
     )
 
@@ -148,6 +229,20 @@ def run_check(
         "moe_expert/route_entropy",
         f"{diagnostics.overall.mean_entropy:.6f}",
     )
+    if action_imitation is None:
+        _add(
+            checks,
+            "WARN",
+            "moe_expert/action_imitation",
+            "dataset has no cached teacher_actions; cannot compute student-vs-teacher action error",
+        )
+    else:
+        _add(
+            checks,
+            "PASS",
+            "moe_expert/action_imitation",
+            f"overall_mse={action_imitation['overall']['mse']:.6f}",
+        )
     return checks, details
 
 
