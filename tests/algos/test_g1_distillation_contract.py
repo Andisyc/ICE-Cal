@@ -393,6 +393,91 @@ def test_moe_distillation_trainer_applies_command_intent_router_loss() -> None:
     assert router_grad_norm > 0.0
 
 
+def test_moe_distillation_trainer_uses_command_intent_expert_behavior_loss() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MoEStudentPolicy,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    with torch.no_grad():
+        student.router[-1].weight.zero_()
+        student.router[-1].bias.zero_()
+        for expert, bias in zip(
+            student.experts,
+            (torch.tensor([0.0, 0.0]), torch.tensor([10.0, 10.0])),
+            strict=True,
+        ):
+            expert.net[-1].weight.zero_()
+            expert.net[-1].bias.copy_(bias)
+    optimizer = torch.optim.Adam(student.parameters(), lr=0.0)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=optimizer,
+        command_intent_expert_targets={"inactive": 0, "active": 1},
+    )
+
+    stats = trainer.update(
+        DistillationBatch(
+            student_obs=torch.zeros(2, 2),
+            teacher_obs=torch.empty(2, 0),
+            command_intents=("inactive", "active"),
+            teacher_actions=torch.tensor([[0.0, 0.0], [10.0, 10.0]]),
+        )
+    )
+
+    assert stats.behavior_loss == pytest.approx(0.0)
+    assert stats.behavior_action_shape == (2, 2)
+    assert stats.behavior_action_source == "command_intent_expert"
+    assert stats.behavior_target_count == 2
+    assert stats.loss == pytest.approx(0.0)
+
+
+def test_moe_expert_behavior_loss_rejects_conflicting_role_and_intent_targets() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MoEStudentPolicy,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    optimizer = torch.optim.Adam(student.parameters(), lr=0.0)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=optimizer,
+        role_expert_targets={"stand": 0},
+        command_intent_expert_targets={"inactive": 1},
+    )
+
+    with pytest.raises(ValueError, match="conflict"):
+        trainer.update(
+            DistillationBatch(
+                student_obs=torch.zeros(1, 2),
+                teacher_obs=torch.empty(1, 0),
+                role_labels=("stand",),
+                command_intents=("inactive",),
+                teacher_actions=torch.zeros(1, 2),
+            )
+        )
+
+
 def test_moe_role_conditioned_router_loss_fails_closed() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,

@@ -23,6 +23,7 @@ from unilab.algos.torch.distill import (
     MoEStudentPolicy,
     build_multitask_distillation_dataset,
     collect_distillation_dataset_from_env,
+    load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
     load_sac_teacher_policy,
@@ -155,6 +156,104 @@ def _student_runtime_cfg(cfg: DictConfig) -> dict[str, Any]:
     return payload
 
 
+def _resolve_optional_checkpoint_path(
+    checkpoint_path: str | Path | None,
+    *,
+    root_dir: str | Path = ROOT_DIR,
+    field_name: str,
+) -> Path | None:
+    if checkpoint_path in (None, ""):
+        return None
+    path = Path(str(checkpoint_path))
+    resolved_path = path if path.is_absolute() else Path(root_dir) / path
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"{field_name} does not exist: {resolved_path}")
+    return resolved_path
+
+
+def _runtime_cfg_subset_for_student(cfg: DictConfig) -> dict[str, Any]:
+    runtime_cfg = _student_runtime_cfg(cfg)
+    if runtime_cfg["student_model_type"] == "moe":
+        return {
+            key: runtime_cfg[key]
+            for key in (
+                "student_model_type",
+                "student_obs_dim",
+                "student_action_dim",
+                "student_activation",
+                "student_squash_action",
+                "student_num_experts",
+                "student_expert_hidden_dims",
+                "student_router_hidden_dims",
+                "student_routing_mode",
+            )
+        }
+    return {
+        key: runtime_cfg[key]
+        for key in (
+            "student_model_type",
+            "student_obs_dim",
+            "student_action_dim",
+            "student_activation",
+            "student_squash_action",
+            "student_hidden_dims",
+        )
+    }
+
+
+def _validate_student_init_runtime_cfg(
+    cfg: DictConfig,
+    *,
+    runtime_cfg: dict[str, Any],
+    checkpoint_path: Path,
+) -> None:
+    expected = _runtime_cfg_subset_for_student(cfg)
+    mismatches: list[str] = []
+    for key, expected_value in expected.items():
+        actual_value = runtime_cfg.get(key)
+        if actual_value != expected_value:
+            mismatches.append(f"{key}: expected {expected_value!r}, got {actual_value!r}")
+    if mismatches:
+        raise ValueError(
+            "training.offline_init_checkpoint student runtime config mismatch for "
+            f"{checkpoint_path}: " + "; ".join(mismatches)
+        )
+
+
+def _load_student_init_checkpoint(
+    student: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    checkpoint_path: Path,
+    *,
+    cfg: DictConfig,
+    device: str | torch.device,
+    resume_optimizer: bool,
+) -> dict[str, Any]:
+    loaded_student = load_distillation_student_policy(checkpoint_path, device=device)
+    runtime_cfg = dict(loaded_student.distill_runtime_cfg)
+    _validate_student_init_runtime_cfg(
+        cfg,
+        runtime_cfg=runtime_cfg,
+        checkpoint_path=checkpoint_path,
+    )
+    checkpoint = load_distillation_checkpoint(
+        student,
+        checkpoint_path,
+        optimizer=optimizer if resume_optimizer else None,
+        device=device,
+    )
+    return {
+        "path": str(checkpoint_path),
+        "agent_steps": int(checkpoint.get("agent_steps", loaded_student.agent_steps)),
+        "optimizer_requested": bool(resume_optimizer),
+        "optimizer_loaded": bool(resume_optimizer)
+        and checkpoint.get("optimizer_state_dict") is not None,
+        "student_model_type": runtime_cfg.get("student_model_type"),
+        "student_obs_dim": runtime_cfg.get("student_obs_dim"),
+        "student_action_dim": runtime_cfg.get("student_action_dim"),
+    }
+
+
 def _teacher_metadata(cfg: DictConfig, teacher_checkpoint: str | Path) -> dict[str, Any]:
     metadata = {
         "algo_family": str(cfg.teacher.algo_family),
@@ -182,6 +281,7 @@ def _distill_runtime_cfg(
     *,
     distill_source: str,
     dataset_path: str | Path | None = None,
+    student_init_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "distill_source": str(distill_source),
@@ -204,6 +304,9 @@ def _distill_runtime_cfg(
                 resolve=True,
             )
         ),
+        "expert_behavior_loss_source": str(
+            OmegaConf.select(cfg, "algo.expert_behavior_loss_source", default="auto")
+        ),
         "offline_repeat_dataset": bool(
             OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)
         ),
@@ -219,6 +322,15 @@ def _distill_runtime_cfg(
     }
     if dataset_path is not None:
         payload["dataset_path"] = str(dataset_path)
+    if student_init_metadata:
+        payload["student_init_checkpoint_path"] = str(student_init_metadata["path"])
+        payload["student_init_agent_steps"] = int(student_init_metadata["agent_steps"])
+        payload["student_init_optimizer_requested"] = bool(
+            student_init_metadata.get("optimizer_requested", False)
+        )
+        payload["student_init_optimizer_loaded"] = bool(
+            student_init_metadata["optimizer_loaded"]
+        )
     return payload
 
 
@@ -229,6 +341,7 @@ def _probe_result(
     result: Any,
     distill_source: str,
     dataset_path: str | Path | None = None,
+    student_init_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     probe = {
         "distill_source": str(distill_source),
@@ -246,6 +359,9 @@ def _probe_result(
         "student_grad_norm": result.last_student_grad_norm,
         "loss": result.last_loss,
         "behavior_loss": result.last_behavior_loss,
+        "behavior_action_shape": result.last_behavior_action_shape,
+        "behavior_action_source": result.last_behavior_action_source,
+        "behavior_target_count": result.last_behavior_target_count,
         "aux_loss": result.last_aux_loss,
         "role_loss": result.last_role_loss,
         "role_target_count": result.last_role_target_count,
@@ -260,6 +376,13 @@ def _probe_result(
         "samples_seen": result.samples_seen,
         "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
     }
+    if isinstance(student_init_metadata, dict):
+        probe["student_init_checkpoint_path"] = student_init_metadata.get("path")
+        probe["student_init_agent_steps"] = student_init_metadata.get("agent_steps")
+        probe["student_init_optimizer_requested"] = student_init_metadata.get(
+            "optimizer_requested"
+        )
+        probe["student_init_optimizer_loaded"] = student_init_metadata.get("optimizer_loaded")
     if dataset_path is not None:
         probe["dataset_path"] = str(dataset_path)
     return probe
@@ -306,6 +429,7 @@ def build_distillation_trainer(
     cfg: DictConfig,
     *,
     teacher_checkpoint: str | Path,
+    student_init_checkpoint: str | Path | None = None,
     device: str | torch.device = "cpu",
 ) -> BehaviorDistillationTrainer:
     """Load teacher, build student, and assemble one behavior distillation trainer."""
@@ -322,6 +446,22 @@ def build_distillation_trainer(
     )
     student = build_student_policy(cfg, device=device)
     optimizer = torch.optim.Adam(student.parameters(), lr=float(cfg.algo.learning_rate))
+    student_init_metadata: dict[str, Any] = {}
+    resolved_student_init_checkpoint = _resolve_optional_checkpoint_path(
+        student_init_checkpoint,
+        field_name="training.offline_init_checkpoint",
+    )
+    if resolved_student_init_checkpoint is not None:
+        student_init_metadata = _load_student_init_checkpoint(
+            student,
+            optimizer,
+            resolved_student_init_checkpoint,
+            cfg=cfg,
+            device=device,
+            resume_optimizer=bool(
+                OmegaConf.select(cfg, "training.offline_resume_optimizer", default=True)
+            ),
+        )
     return BehaviorDistillationTrainer(
         student=student,
         teacher=teacher,
@@ -344,6 +484,10 @@ def build_distillation_trainer(
                 OmegaConf.select(cfg, "algo.command_intent_expert_targets", default={}),
                 resolve=True,
             )
+        ),
+        student_init_metadata=student_init_metadata,
+        expert_behavior_loss_source=str(
+            OmegaConf.select(cfg, "algo.expert_behavior_loss_source", default="auto")
         ),
     )
 
@@ -411,8 +555,14 @@ def run_offline_dataset_update(
     trainer = build_distillation_trainer(
         cfg,
         teacher_checkpoint=teacher_checkpoint,
+        student_init_checkpoint=OmegaConf.select(
+            cfg,
+            "training.offline_init_checkpoint",
+            default=None,
+        ),
         device=device,
     )
+    student_init_metadata = dict(getattr(trainer, "student_init_metadata", {}))
     dataset = load_distillation_dataset(
         dataset_path,
         expected_student_obs_dim=int(cfg.student.obs_dim),
@@ -431,6 +581,7 @@ def run_offline_dataset_update(
             cfg,
             distill_source="offline_dataset",
             dataset_path=dataset_path,
+            student_init_metadata=student_init_metadata,
         ),
         repeat_dataset=bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)),
         shuffle=bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
@@ -446,6 +597,7 @@ def run_offline_dataset_update(
         result=result,
         distill_source="offline_dataset",
         dataset_path=dataset_path,
+        student_init_metadata=student_init_metadata,
     )
 
 

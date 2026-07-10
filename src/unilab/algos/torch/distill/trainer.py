@@ -38,6 +38,9 @@ class BehaviorDistillationStats:
     expert_usage: tuple[float, ...] | None = None
     route_entropy: float | None = None
     teacher_action_source: str = "teacher"
+    behavior_action_shape: tuple[int, ...] = ()
+    behavior_action_source: str = "student_action"
+    behavior_target_count: int = 0
 
 
 class BehaviorDistillationTrainer:
@@ -56,6 +59,8 @@ class BehaviorDistillationTrainer:
         role_expert_targets: Mapping[str, int] | None = None,
         command_intent_loss_coef: float = 0.0,
         command_intent_expert_targets: Mapping[str, int] | None = None,
+        student_init_metadata: Mapping[str, Any] | None = None,
+        expert_behavior_loss_source: Literal["auto", "none", "role", "command_intent"] = "auto",
     ) -> None:
         self.student = student
         self.teacher = teacher
@@ -73,8 +78,15 @@ class BehaviorDistillationTrainer:
             str(intent): int(expert_idx)
             for intent, expert_idx in dict(command_intent_expert_targets or {}).items()
         }
+        self.student_init_metadata = dict(student_init_metadata or {})
+        self.expert_behavior_loss_source = str(expert_behavior_loss_source)
         if self.aux_loss_coef < 0.0:
             raise ValueError(f"aux_loss_coef must be non-negative, got {aux_loss_coef}")
+        if self.expert_behavior_loss_source not in ("auto", "none", "role", "command_intent"):
+            raise ValueError(
+                "expert_behavior_loss_source must be one of auto/none/role/command_intent, "
+                f"got {expert_behavior_loss_source!r}"
+            )
         if self.role_loss_coef < 0.0:
             raise ValueError(f"role_loss_coef must be non-negative, got {role_loss_coef}")
         if self.role_loss_coef > 0.0 and not self.role_expert_targets:
@@ -139,13 +151,14 @@ class BehaviorDistillationTrainer:
         tuple[float, ...] | None,
         float | None,
         torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         try:
             student_output: Any = self.student(student_obs, return_diagnostics=True)
         except TypeError:
             student_output = self.student(student_obs)
         if isinstance(student_output, torch.Tensor):
-            return student_output, student_output.new_zeros(()), None, None, None
+            return student_output, student_output.new_zeros(()), None, None, None, None
 
         student_action = getattr(student_output, "action", None)
         if not isinstance(student_action, torch.Tensor):
@@ -155,6 +168,7 @@ class BehaviorDistillationTrainer:
         route_entropy: float | None = None
         route_probs = getattr(student_output, "route_probs", None)
         router_logits = getattr(student_output, "router_logits", None)
+        expert_actions = getattr(student_output, "expert_actions", None)
         if isinstance(route_probs, torch.Tensor):
             if route_probs.ndim != 2:
                 raise ValueError(
@@ -180,7 +194,124 @@ class BehaviorDistillationTrainer:
 
         if router_logits is not None and not isinstance(router_logits, torch.Tensor):
             raise TypeError("student output diagnostics `router_logits` must be a tensor")
-        return student_action, aux_loss, expert_usage, route_entropy, router_logits
+        if expert_actions is not None and not isinstance(expert_actions, torch.Tensor):
+            raise TypeError("student output diagnostics `expert_actions` must be a tensor")
+        return student_action, aux_loss, expert_usage, route_entropy, router_logits, expert_actions
+
+    @staticmethod
+    def _target_indices_from_labels(
+        *,
+        labels: tuple[str, ...] | None,
+        targets: Mapping[str, int],
+        batch_size: int,
+        num_experts: int,
+        label_name: str,
+        required: bool,
+        device: torch.device,
+    ) -> torch.Tensor | None:
+        if not targets:
+            if required:
+                raise ValueError(f"{label_name}_expert_targets must be non-empty")
+            return None
+        if labels is None:
+            if required:
+                raise ValueError(f"{label_name} labels are required for expert behavior loss")
+            return None
+        if len(labels) != int(batch_size):
+            raise ValueError(
+                f"{label_name} length mismatch: labels={len(labels)} batch={int(batch_size)}"
+            )
+
+        target_indices: list[int] = []
+        for label in labels:
+            label_key = str(label)
+            if label_key not in targets:
+                if required:
+                    raise ValueError(
+                        f"unmapped {label_name} label for expert behavior loss: {label_key!r}"
+                    )
+                return None
+            target_indices.append(int(targets[label_key]))
+        target_tensor = torch.tensor(target_indices, dtype=torch.long, device=device)
+        if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(num_experts):
+            raise ValueError(
+                f"{label_name}_expert_targets index out of range: "
+                f"targets={sorted(set(target_indices))} num_experts={int(num_experts)}"
+            )
+        return target_tensor
+
+    def _expert_behavior_action(
+        self,
+        *,
+        student_action: torch.Tensor,
+        expert_actions: torch.Tensor | None,
+        role_labels: tuple[str, ...] | None,
+        command_intents: tuple[str, ...] | None,
+    ) -> tuple[torch.Tensor, str, int]:
+        if self.expert_behavior_loss_source == "none" or expert_actions is None:
+            return student_action, "student_action", 0
+        if expert_actions.ndim != 3:
+            raise ValueError(f"expert_actions must be rank-3, got shape {tuple(expert_actions.shape)}")
+        if expert_actions.shape[0] != student_action.shape[0]:
+            raise ValueError(
+                "expert_actions batch size mismatch: "
+                f"expert_actions={int(expert_actions.shape[0])} student={int(student_action.shape[0])}"
+            )
+        if expert_actions.shape[-1] != student_action.shape[-1]:
+            raise ValueError(
+                "expert_actions action dim mismatch: "
+                f"expert_actions={int(expert_actions.shape[-1])} student={int(student_action.shape[-1])}"
+            )
+
+        batch_size = int(student_action.shape[0])
+        num_experts = int(expert_actions.shape[1])
+        command_targets = self._target_indices_from_labels(
+            labels=command_intents,
+            targets=self.command_intent_expert_targets,
+            batch_size=batch_size,
+            num_experts=num_experts,
+            label_name="command_intent",
+            required=self.expert_behavior_loss_source == "command_intent",
+            device=expert_actions.device,
+        )
+        role_targets = self._target_indices_from_labels(
+            labels=role_labels,
+            targets=self.role_expert_targets,
+            batch_size=batch_size,
+            num_experts=num_experts,
+            label_name="role",
+            required=self.expert_behavior_loss_source == "role",
+            device=expert_actions.device,
+        )
+        if command_targets is not None and role_targets is not None:
+            if not torch.equal(command_targets, role_targets):
+                raise ValueError(
+                    "command_intent_expert_targets conflict with role_expert_targets "
+                    "for expert behavior loss"
+                )
+
+        selected_targets: torch.Tensor | None
+        source: str
+        if self.expert_behavior_loss_source == "command_intent":
+            selected_targets = command_targets
+            source = "command_intent_expert"
+        elif self.expert_behavior_loss_source == "role":
+            selected_targets = role_targets
+            source = "role_expert"
+        elif command_targets is not None:
+            selected_targets = command_targets
+            source = "command_intent_expert"
+        elif role_targets is not None:
+            selected_targets = role_targets
+            source = "role_expert"
+        else:
+            return student_action, "student_action", 0
+        if selected_targets is None:
+            return student_action, "student_action", 0
+
+        row_indices = torch.arange(batch_size, device=expert_actions.device)
+        selected_action = expert_actions[row_indices, selected_targets]
+        return selected_action, source, int(selected_targets.numel())
 
     def _role_router_loss(
         self,
@@ -275,7 +406,7 @@ class BehaviorDistillationTrainer:
         else:
             teacher_action = self._cached_teacher_action(batch.teacher_actions)
             teacher_action_source = "cached"
-        student_action, aux_loss, expert_usage, route_entropy, router_logits = (
+        student_action, aux_loss, expert_usage, route_entropy, router_logits, expert_actions = (
             self._student_action_and_aux(batch.student_obs)
         )
         role_loss, role_target_count = self._role_router_loss(
@@ -290,7 +421,15 @@ class BehaviorDistillationTrainer:
             batch_size=int(batch.student_obs.shape[0]),
             like=student_action,
         )
-        behavior_loss = self._loss(student_action, teacher_action)
+        behavior_action, behavior_action_source, behavior_target_count = (
+            self._expert_behavior_action(
+                student_action=student_action,
+                expert_actions=expert_actions,
+                role_labels=batch.role_labels,
+                command_intents=batch.command_intents,
+            )
+        )
+        behavior_loss = self._loss(behavior_action, teacher_action)
         loss = (
             behavior_loss
             + self.aux_loss_coef * aux_loss
@@ -322,4 +461,7 @@ class BehaviorDistillationTrainer:
             expert_usage=expert_usage,
             route_entropy=route_entropy,
             teacher_action_source=teacher_action_source,
+            behavior_action_shape=tuple(behavior_action.shape),
+            behavior_action_source=behavior_action_source,
+            behavior_target_count=behavior_target_count,
         )

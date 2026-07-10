@@ -5088,6 +5088,253 @@ dual-teacher route now crosses live collection, persistence, balanced sampling,
 and one bounded offline update. It still does not prove the trained fused policy
 will stand or walk in a long MuJoCo rollout.
 
+### Step DA-1: Distillation Dataset Audit Tool
+
+Scope: make the large offline distillation dataset inspectable without launching
+MuJoCo, retraining, or relying on one-off `/private/tmp` scripts.
+
+Non-scope:
+
+- no collector or trainer behavior change;
+- no MoE loss or routing change;
+- no checkpoint migration;
+- no policy-quality claim.
+
+Files:
+
+- Created: `scripts/deploy/check_unilab_g1_distill_dataset_audit.py`
+  - Loads a saved distillation `.pt` payload on CPU with mmap when available.
+  - Reports tensor shapes/stats, role counts, command-intent counts,
+    role-intent pairs, source metadata, and per-role/per-intent action stats.
+  - Treats hard schema problems as `issues`; command threshold disagreement is
+    reported as `warnings` so small boundary-speed samples do not masquerade as
+    file corruption.
+- Created: `tests/scripts/test_distill_dataset_audit.py`
+  - Covers normal role/intent/source summaries, threshold mismatch warnings, and
+    strict failure on hard schema row mismatch.
+- Updated: `note/testing/test_inventory.md`
+  - Registers the focused audit test command and the large-file smoke command.
+
+Owner module: `src/unilab/algos/torch/distill/data.py` owns the saved dataset
+payload contract; the new deploy script is a read-only diagnostic over that
+contract.
+
+Core parameter path:
+
+```text
+saved .pt payload
+ -> student_obs / teacher_obs / teacher_actions / commands
+ -> role_labels / command_intents
+ -> metadata.source_* summaries
+ -> issues / warnings / compact JSON audit
+```
+
+Test class: core parameter path for saved dataset schema and semantic labels.
+
+Commands:
+
+```bash
+uv run pytest tests/scripts/test_distill_dataset_audit.py -q
+uv run ruff check scripts/deploy/check_unilab_g1_distill_dataset_audit.py tests/scripts/test_distill_dataset_audit.py
+uv run python -m py_compile scripts/deploy/check_unilab_g1_distill_dataset_audit.py tests/scripts/test_distill_dataset_audit.py
+uv run python scripts/deploy/check_unilab_g1_distill_dataset_audit.py walk_stand_dagger2_merged.pt --stat-sample-rows 8192 --strict
+```
+
+Evidence (2026-07-11):
+
+- Focused pytest: PASS (`3 passed`).
+- Ruff: PASS (`All checks passed!`).
+- Py compile: PASS.
+- Real local `walk_stand_dagger2_merged.pt` smoke: PASS with `status=ok`,
+  `num_samples=786432`, 98-D student/teacher obs, 29-D teacher actions,
+  `role_counts={'stand': 393216, 'walk_flat': 393216}`,
+  `command_intent_counts={'active': 393216, 'inactive': 393216}`, and no
+  hard issues.
+- The only warning on the real file is `3000/786432` command-intent labels
+  differing from the default threshold recomputation, about 0.38 percent. This
+  is a small boundary-command issue, not evidence of role/intent merge
+  corruption.
+
+Status: COMPLETE for dataset-audit tooling. Current evidence says the pulled
+`walk_stand_dagger2_merged.pt` is structurally balanced and not obviously
+role/intent corrupted. The next failure boundary is therefore downstream of the
+dataset payload: training semantics, expert-specific imitation under hard
+routing, or closed-loop deployment behavior.
+
+### Step DA-2: Offline Student Init/Resume Path
+
+Scope: add a real student checkpoint input path for offline distillation
+continuation, so DAgger or repeated offline updates do not silently restart from
+a random student.
+
+Non-scope:
+
+- no collector change;
+- no MoE architecture or routing change;
+- no replay buffer or online behavior cloning loop;
+- no claim that resumed checkpoints stand or walk better in MuJoCo.
+
+Design decision:
+
+```text
+training.offline_init_checkpoint = input student checkpoint to initialize/resume from
+training.offline_resume_optimizer = whether optimizer state is restored if present
+training.offline_checkpoint      = output student checkpoint to write after updates
+```
+
+Files:
+
+- Modified: `conf/distill/config.yaml`
+  - Adds inert default `training.offline_init_checkpoint: null`.
+  - Adds `training.offline_resume_optimizer: true`; set it to `false` when the
+    old student weights should initialize a fresh optimizer or a new learning
+    rate.
+- Modified: `scripts/train_distill.py`
+  - Resolves `training.offline_init_checkpoint` as a real file when set.
+  - Validates the checkpoint student runtime contract against current cfg before
+    loading weights.
+  - Loads student weights and optimizer state when present before constructing
+    the offline update loop.
+  - Writes `student_init_checkpoint_path`, `student_init_agent_steps`,
+    `student_init_optimizer_requested`, and `student_init_optimizer_loaded` into
+    probe output and saved runtime cfg.
+- Modified: `src/unilab/algos/torch/distill/trainer.py`
+  - Stores `student_init_metadata` on the trainer for explicit diagnostics.
+- Modified: `tests/scripts/test_train_scripts.py`
+  - Adds one zero-lr semantic test proving output weights come from the init
+    checkpoint.
+  - Adds one mismatch test proving hidden-dim/runtime cfg drift fails closed.
+
+Owner module: `scripts/train_distill.py` owns entrypoint/trainer assembly;
+`src/unilab/algos/torch/distill/checkpoint.py` remains the persistence owner.
+
+Core parameter path:
+
+```text
+training.offline_init_checkpoint
+ -> resolve file
+ -> load_distillation_student_policy runtime cfg
+ -> validate cfg-compatible student architecture
+ -> load_distillation_checkpoint(student, optimizer)
+ -> run_offline_distillation_updates(...)
+ -> save output checkpoint with init provenance
+```
+
+Test class: core parameter path for checkpoint load/resume and strict
+architecture guard.
+
+Commands:
+
+```bash
+uv run pytest tests/scripts/test_train_scripts.py -q -k 'offline_update_initializes_from_student_checkpoint or offline_init_checkpoint_rejects_student_contract_mismatch'
+uv run pytest tests/scripts/test_train_scripts.py -q -k 'offline_update_uses_balanced_role_sampler or saves_offline_dataset_student_checkpoint or offline_update_initializes_from_student_checkpoint or offline_init_checkpoint_rejects_student_contract_mismatch'
+uv run pytest tests/scripts/test_distill_dataset_audit.py -q
+uv run ruff check scripts/train_distill.py src/unilab/algos/torch/distill/trainer.py tests/scripts/test_train_scripts.py
+uv run python -m py_compile scripts/train_distill.py src/unilab/algos/torch/distill/trainer.py tests/scripts/test_train_scripts.py
+```
+
+Evidence (2026-07-11):
+
+- Focused init/resume tests: PASS (`2 passed, 187 deselected`).
+- Adjacent offline update regression subset: PASS (`3 passed, 186 deselected`).
+- Wider script-level distill subset: PASS (`56 passed, 133 deselected`).
+- Dataset audit tests: PASS (`3 passed`).
+- Ruff: PASS (`All checks passed!`).
+- Py compile: PASS.
+
+Status: COMPLETE for offline student init/resume plumbing. The next experiment
+command should pass the previous student checkpoint as
+`training.offline_init_checkpoint=<old_student.pt>` and a different output path
+as `training.offline_checkpoint=<new_student.pt>`.
+
+### Step DA-3: MoE Per-Expert Behavior Cloning Loss
+
+Scope: align offline MoE behavior cloning with deployment-time command routing.
+When a sample carries command intent or role labels and those labels map to an
+expert, the behavior loss now supervises that expert action directly instead of
+the soft mixture action.
+
+Non-scope:
+
+- no dataset or collector change;
+- no playback hard-routing change;
+- no online DAgger loop;
+- no claim that the next checkpoint will automatically stand/walk without live
+  validation.
+
+Design decision:
+
+```text
+algo.expert_behavior_loss_source=auto
+  command_intent labels + command_intent_expert_targets -> train selected command expert
+  else role_labels + role_expert_targets                 -> train selected role expert
+  else                                                   -> old student_action mixture loss
+```
+
+If role targets and command-intent targets are both present but point to
+different experts for the same row, training fails closed. This protects the
+core concept: zero-command samples must not silently update the walking expert,
+and walking-command samples must not silently update the stand expert.
+
+Files:
+
+- Modified: `src/unilab/algos/torch/distill/trainer.py`
+  - Adds `expert_behavior_loss_source`.
+  - Extracts per-row target expert indices from command intent or role labels.
+  - Uses `expert_actions[row, target_expert]` for behavior loss when available.
+  - Reports `behavior_action_source`, `behavior_action_shape`, and
+    `behavior_target_count`.
+- Modified: `src/unilab/algos/torch/distill/offline.py`
+  - Persists the last behavior-action diagnostics through offline run results.
+- Modified: `scripts/train_distill.py`
+  - Saves `expert_behavior_loss_source` in `distill_runtime_cfg`.
+  - Prints behavior-action diagnostics in the CLI probe result.
+- Modified: `conf/distill/config.yaml`
+  - Adds default `algo.expert_behavior_loss_source: auto`.
+- Modified: `tests/algos/test_g1_distillation_contract.py`
+  - Adds a toy MoE fixture where soft mixture would be wrong but selected
+    command expert imitation has zero loss.
+  - Adds a fail-closed conflict test for role/command expert target mismatch.
+
+Owner module: `src/unilab/algos/torch/distill/trainer.py` owns loss semantics.
+
+Core parameter path:
+
+```text
+DistillationBatch.command_intents / role_labels
+ -> command_intent_expert_targets / role_expert_targets
+ -> target expert index per row
+ -> MoEStudentOutput.expert_actions[:, target]
+ -> behavior_loss
+ -> OfflineDistillationRunResult / train_distill probe diagnostics
+```
+
+Test class: core parameter path for expert target selection and behavior loss.
+
+Commands:
+
+```bash
+uv run pytest tests/algos/test_g1_distillation_contract.py -q -k 'expert_behavior_loss or command_intent_expert_behavior_loss or conflicting_role_and_intent_targets'
+uv run pytest tests/algos/test_g1_distillation_contract.py -q -k 'moe or command_intent or role_conditioned'
+uv run pytest tests/scripts/test_train_scripts.py -q -k distill
+uv run ruff check src/unilab/algos/torch/distill/trainer.py src/unilab/algos/torch/distill/offline.py scripts/train_distill.py tests/algos/test_g1_distillation_contract.py tests/scripts/test_train_scripts.py
+uv run python -m py_compile src/unilab/algos/torch/distill/trainer.py src/unilab/algos/torch/distill/offline.py scripts/train_distill.py tests/algos/test_g1_distillation_contract.py tests/scripts/test_train_scripts.py
+```
+
+Evidence (2026-07-11):
+
+- Focused expert-behavior tests: PASS (`2 passed, 60 deselected`).
+- Wider MoE/command/role algorithm subset: PASS (`18 passed, 44 deselected`,
+  with two existing zero-element tensor warnings).
+- Script-level distill subset: PASS (`56 passed, 133 deselected`).
+- Ruff: PASS (`All checks passed!`).
+- Py compile: PASS.
+
+Status: COMPLETE for per-expert BC loss. The next training command should keep
+`algo.expert_behavior_loss_source=auto` and should show
+`behavior_action_source=command_intent_expert` when using the current
+walk/stand command-intent dataset.
+
 ## Validation Ladder
 
 1. Static owner scan:

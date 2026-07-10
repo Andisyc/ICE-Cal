@@ -1598,6 +1598,158 @@ def test_distill_script_offline_update_uses_balanced_role_sampler(tmp_path: Path
     assert runtime_cfg["offline_balanced_labels"] == ["stand", "walk"]
 
 
+def test_distill_script_offline_update_initializes_from_student_checkpoint(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        load_distillation_checkpoint,
+        save_distillation_checkpoint,
+        save_distillation_dataset,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "algo.learning_rate=0.0",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+    dataset_path = tmp_path / "dataset.pt"
+    save_distillation_dataset(
+        dataset_path,
+        build_distillation_dataset(
+            torch.randn(4, 99),
+            torch.randn(4, 99),
+            expected_student_obs_dim=99,
+            expected_teacher_obs_dim=99,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.randn(4, 29),
+        ),
+    )
+    init_student = MLPStudentPolicy(obs_dim=99, action_dim=29, hidden_dims=(32,))
+    for param in init_student.parameters():
+        torch.nn.init.constant_(param, 0.123)
+    init_optimizer = torch.optim.Adam(init_student.parameters(), lr=0.0)
+    init_optimizer.zero_grad(set_to_none=True)
+    init_student(torch.randn(2, 99)).sum().backward()
+    init_optimizer.step()
+    init_checkpoint = tmp_path / "init_student.pt"
+    save_distillation_checkpoint(
+        init_checkpoint,
+        student=init_student,
+        optimizer=init_optimizer,
+        agent_steps=128,
+        distill_runtime_cfg={
+            "student_model_type": "mlp",
+            "student_obs_dim": 99,
+            "student_action_dim": 29,
+            "student_activation": "elu",
+            "student_squash_action": True,
+            "student_hidden_dims": [32],
+        },
+    )
+    output_checkpoint = tmp_path / "continued_student.pt"
+    cfg.training.offline_init_checkpoint = str(init_checkpoint)
+
+    probe = mod.run_offline_dataset_update(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        dataset_path=dataset_path,
+        batch_size=2,
+        max_updates=1,
+        checkpoint_path=output_checkpoint,
+        device="cpu",
+    )
+
+    assert probe["student_init_checkpoint_path"] == str(init_checkpoint)
+    assert probe["student_init_agent_steps"] == 128
+    assert probe["student_init_optimizer_requested"] is True
+    assert probe["student_init_optimizer_loaded"] is True
+    restored = MLPStudentPolicy(obs_dim=99, action_dim=29, hidden_dims=(32,))
+    checkpoint = load_distillation_checkpoint(restored, output_checkpoint)
+    runtime_cfg = checkpoint["distill_runtime_cfg"]
+    assert runtime_cfg["student_init_checkpoint_path"] == str(init_checkpoint)
+    assert runtime_cfg["student_init_agent_steps"] == 128
+    assert runtime_cfg["student_init_optimizer_requested"] is True
+    assert runtime_cfg["student_init_optimizer_loaded"] is True
+    for init_param, restored_param in zip(init_student.parameters(), restored.parameters()):
+        assert torch.allclose(init_param, restored_param)
+
+
+def test_distill_script_offline_init_checkpoint_rejects_student_contract_mismatch(
+    tmp_path: Path,
+):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        save_distillation_checkpoint,
+        save_distillation_dataset,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+    dataset_path = tmp_path / "dataset.pt"
+    save_distillation_dataset(
+        dataset_path,
+        build_distillation_dataset(
+            torch.randn(2, 99),
+            torch.randn(2, 99),
+            expected_student_obs_dim=99,
+            expected_teacher_obs_dim=99,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.randn(2, 29),
+        ),
+    )
+    init_checkpoint = tmp_path / "bad_init_student.pt"
+    save_distillation_checkpoint(
+        init_checkpoint,
+        student=MLPStudentPolicy(obs_dim=99, action_dim=29, hidden_dims=(64,)),
+        agent_steps=1,
+        distill_runtime_cfg={
+            "student_model_type": "mlp",
+            "student_obs_dim": 99,
+            "student_action_dim": 29,
+            "student_activation": "elu",
+            "student_squash_action": True,
+            "student_hidden_dims": [64],
+        },
+    )
+    cfg.training.offline_init_checkpoint = str(init_checkpoint)
+
+    with pytest.raises(ValueError, match="offline_init_checkpoint student runtime config mismatch"):
+        mod.run_offline_dataset_update(
+            cfg,
+            teacher_checkpoint=teacher_checkpoint,
+            dataset_path=dataset_path,
+            batch_size=2,
+            max_updates=1,
+            checkpoint_path=tmp_path / "unused.pt",
+            device="cpu",
+        )
+
+
 def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Path):
     import torch
 

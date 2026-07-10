@@ -30,6 +30,9 @@ class OfflineDistillationRunResult:
     losses: tuple[float, ...]
     student_grad_norms: tuple[float, ...]
     last_behavior_loss: float
+    last_behavior_action_shape: tuple[int, ...]
+    last_behavior_action_source: str
+    last_behavior_target_count: int
     last_aux_loss: float
     last_role_loss: float
     last_role_target_count: int
@@ -174,6 +177,9 @@ def run_offline_distillation_updates(
     last_teacher_action_requires_grad = False
     last_teacher_action_source = "teacher"
     last_behavior_loss = 0.0
+    last_behavior_action_shape: tuple[int, ...] | None = None
+    last_behavior_action_source = "student_action"
+    last_behavior_target_count = 0
     last_aux_loss = 0.0
     last_role_loss = 0.0
     last_role_target_count = 0
@@ -233,6 +239,9 @@ def run_offline_distillation_updates(
         last_teacher_action_requires_grad = stats.teacher_action_requires_grad
         last_teacher_action_source = stats.teacher_action_source
         last_behavior_loss = stats.behavior_loss
+        last_behavior_action_shape = stats.behavior_action_shape
+        last_behavior_action_source = stats.behavior_action_source
+        last_behavior_target_count = stats.behavior_target_count
         last_aux_loss = stats.aux_loss
         last_role_loss = stats.role_loss
         last_role_target_count = stats.role_target_count
@@ -270,6 +279,9 @@ def run_offline_distillation_updates(
         losses=tuple(losses),
         student_grad_norms=tuple(grad_norms),
         last_behavior_loss=last_behavior_loss,
+        last_behavior_action_shape=last_behavior_action_shape or (),
+        last_behavior_action_source=last_behavior_action_source,
+        last_behavior_target_count=last_behavior_target_count,
         last_aux_loss=last_aux_loss,
         last_role_loss=last_role_loss,
         last_role_target_count=last_role_target_count,
