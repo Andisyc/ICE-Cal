@@ -1066,6 +1066,44 @@ def test_collect_distillation_dataset_from_env_teacher_policy_action_mode() -> N
     assert torch.isfinite(dataset.teacher_actions).all()
 
 
+def test_collect_distillation_dataset_from_env_student_policy_rollout_mode() -> None:
+    from unilab.algos.torch.distill import collect_distillation_dataset_from_env
+
+    class FakeTeacherPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            assert obs.shape == (2, 8)
+            return torch.full((obs.shape[0], 3), 0.25, dtype=obs.dtype, device=obs.device)
+
+    class FakeRolloutPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            assert obs.shape == (2, 8)
+            return torch.full((obs.shape[0], 3), -0.5, dtype=obs.dtype, device=obs.device)
+
+    env = _FakeDistillEnv()
+    dataset = collect_distillation_dataset_from_env(
+        env,
+        num_samples=3,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        teacher_obs_key="obs",
+        student_projection="identity",
+        action_mode="student_policy",
+        teacher_policy=FakeTeacherPolicy(),
+        rollout_policy=FakeRolloutPolicy(),
+    )
+
+    assert dataset.metadata["action_mode"] == "student_policy"
+    assert dataset.metadata["action_seed"] is None
+    assert dataset.metadata["rollout_policy"] == "distillation_student"
+    assert dataset.metadata["action_abs_max"] == pytest.approx(0.5)
+    assert env.last_actions is not None
+    assert np.allclose(env.last_actions, -0.5)
+    assert dataset.teacher_actions is not None
+    assert dataset.teacher_actions.shape == (3, 3)
+    assert torch.allclose(dataset.teacher_actions, torch.full((3, 3), 0.25))
+    assert not torch.allclose(dataset.teacher_actions[:2], torch.as_tensor(env.last_actions))
+
+
 def test_collect_distillation_dataset_from_env_filters_active_command_samples() -> None:
     from unilab.algos.torch.distill import collect_distillation_dataset_from_env
 
@@ -1276,6 +1314,46 @@ def test_offline_distillation_run_accepts_cached_teacher_actions(tmp_path) -> No
     assert result.teacher_action_requires_grad is False
     assert result.teacher_action_shape == (2, 3)
     assert result.last_teacher_action_source == "cached"
+    assert result.last_student_grad_norm > 0.0
+
+
+def test_offline_distillation_run_can_repeat_dataset_for_multiple_updates() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    torch.manual_seed(31)
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    optimizer = torch.optim.Adam(student.parameters(), lr=1e-2)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(7, 3),
+        optimizer=optimizer,
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(3, 5),
+        torch.randn(3, 7),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+        role_labels=("walk", "stand", "walk"),
+    )
+
+    result = run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=2,
+        max_updates=4,
+        repeat_dataset=True,
+        shuffle=True,
+        seed=5,
+    )
+
+    assert result.update_count == 4
+    assert result.samples_seen == 6
+    assert len(result.losses) == 4
     assert result.last_student_grad_norm > 0.0
 
 

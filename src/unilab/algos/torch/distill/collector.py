@@ -168,30 +168,31 @@ def _module_device(module: torch.nn.Module) -> torch.device:
         return torch.device("cpu")
 
 
-def _teacher_policy_actions(
-    teacher_policy: torch.nn.Module,
-    teacher_obs: np.ndarray,
+def _policy_actions(
+    policy: torch.nn.Module,
+    obs: np.ndarray,
     *,
     action_dim: int,
+    policy_name: str,
 ) -> np.ndarray:
     obs_tensor = torch.as_tensor(
-        teacher_obs,
+        obs,
         dtype=torch.float32,
-        device=_module_device(teacher_policy),
+        device=_module_device(policy),
     )
     with torch.inference_mode():
-        action_tensor = teacher_policy(obs_tensor)
+        action_tensor = policy(obs_tensor)
     if isinstance(action_tensor, tuple):
         action_tensor = action_tensor[0]
     action_tensor = torch.as_tensor(action_tensor).detach()
     if action_tensor.ndim != 2:
         raise ValueError(
-            f"teacher_policy action must be rank-2, got shape {tuple(action_tensor.shape)}"
+            f"{policy_name} action must be rank-2, got shape {tuple(action_tensor.shape)}"
         )
-    if action_tensor.shape[0] != teacher_obs.shape[0] or action_tensor.shape[1] != int(action_dim):
+    if action_tensor.shape[0] != obs.shape[0] or action_tensor.shape[1] != int(action_dim):
         raise ValueError(
-            "teacher_policy action shape mismatch: "
-            f"expected ({teacher_obs.shape[0]}, {int(action_dim)}), "
+            f"{policy_name} action shape mismatch: "
+            f"expected ({obs.shape[0]}, {int(action_dim)}), "
             f"got {tuple(action_tensor.shape)}"
         )
     return action_tensor.cpu().numpy().astype(np.float32)
@@ -210,6 +211,7 @@ def collect_distillation_dataset_from_env(
     action_mode: str = "zero",
     action_seed: int | None = None,
     teacher_policy: torch.nn.Module | None = None,
+    rollout_policy: torch.nn.Module | None = None,
     command_sample_filter: str = "none",
     command_info_key: str = "commands",
     command_xy_threshold: float = 0.05,
@@ -224,13 +226,23 @@ def collect_distillation_dataset_from_env(
     command_sample_filter = str(command_sample_filter)
     if command_sample_filter not in {"none", "active", "inactive"}:
         raise ValueError(f"Unsupported command_sample_filter: {command_sample_filter!r}")
-    if action_mode not in {"zero", "random", "teacher_policy"}:
+    if action_mode not in {"zero", "random", "teacher_policy", "student_policy"}:
         raise ValueError(f"Unsupported collect action_mode: {action_mode!r}")
-    if action_mode == "teacher_policy" and teacher_policy is None:
-        raise ValueError("teacher_policy is required when action_mode='teacher_policy'")
-    if action_mode != "teacher_policy" and teacher_policy is not None:
-        raise ValueError("teacher_policy can only be set when action_mode='teacher_policy'")
-    if action_mode == "teacher_policy" and action_seed is not None:
+    if action_mode in {"teacher_policy", "student_policy"} and teacher_policy is None:
+        raise ValueError(
+            f"teacher_policy is required when action_mode={action_mode!r} "
+            "to cache teacher target actions"
+        )
+    if action_mode not in {"teacher_policy", "student_policy"} and teacher_policy is not None:
+        raise ValueError(
+            "teacher_policy can only be set when action_mode='teacher_policy' "
+            "or action_mode='student_policy'"
+        )
+    if action_mode == "student_policy" and rollout_policy is None:
+        raise ValueError("rollout_policy is required when action_mode='student_policy'")
+    if action_mode != "student_policy" and rollout_policy is not None:
+        raise ValueError("rollout_policy can only be set when action_mode='student_policy'")
+    if action_mode in {"teacher_policy", "student_policy"} and action_seed is not None:
         raise ValueError("action_seed is only supported when action_mode='random'")
     action_shape = getattr(getattr(env, "action_space", None), "shape", None)
     if action_shape is None:
@@ -293,19 +305,32 @@ def collect_distillation_dataset_from_env(
         if command_sample_filter != "none":
             command_seen_samples += int(row_mask.shape[0])
             command_selected_samples += int(np.count_nonzero(row_mask))
-        if action_mode == "teacher_policy":
-            actions = _teacher_policy_actions(
+        label_actions = None
+        if teacher_policy is not None:
+            label_actions = _policy_actions(
                 teacher_policy,
                 teacher_np,
                 action_dim=action_dim,
+                policy_name="teacher_policy",
+            )
+            if not np.all(np.isfinite(label_actions)):
+                raise ValueError("teacher_policy produced non-finite target actions")
+        if action_mode == "teacher_policy":
+            actions = label_actions
+        elif action_mode == "student_policy":
+            actions = _policy_actions(
+                rollout_policy,
+                student_np,
+                action_dim=action_dim,
+                policy_name="rollout_policy",
             )
             if not np.all(np.isfinite(actions)):
-                raise ValueError(f"collect action_mode={action_mode!r} produced non-finite actions")
+                raise ValueError("rollout_policy produced non-finite rollout actions")
         else:
             actions = None
         selected_teacher_np = teacher_np[row_mask]
         selected_student_np = student_np[row_mask]
-        selected_actions = actions[row_mask] if actions is not None else None
+        selected_actions = label_actions[row_mask] if label_actions is not None else None
         remaining = int(num_samples) - collected_count
         take = min(remaining, selected_teacher_np.shape[0])
         if take > 0:
@@ -367,6 +392,8 @@ def collect_distillation_dataset_from_env(
                 "max_env_steps": effective_max_env_steps,
             }
         )
+    if action_mode == "student_policy":
+        payload["rollout_policy"] = "distillation_student"
     return build_distillation_dataset(
         torch.cat(student_chunks, dim=0),
         torch.cat(teacher_chunks, dim=0),

@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from .checkpoint import save_distillation_checkpoint
 from .data import DistillationTensorDataset
-from .trainer import BehaviorDistillationTrainer
+from .trainer import BehaviorDistillationTrainer, DistillationBatch
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,23 @@ class OfflineDistillationRunResult:
     last_route_entropy: float | None
 
 
+def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) -> DistillationBatch:
+    indices = indices.to(device=dataset.student_obs.device)
+    role_labels = None
+    if dataset.role_labels is not None:
+        role_labels = tuple(dataset.role_labels[int(index)] for index in indices.detach().cpu())
+    return DistillationBatch(
+        student_obs=dataset.student_obs.index_select(0, indices),
+        teacher_obs=dataset.teacher_obs.index_select(0, indices),
+        role_labels=role_labels,
+        teacher_actions=(
+            None
+            if dataset.teacher_actions is None
+            else dataset.teacher_actions.index_select(0, indices)
+        ),
+    )
+
+
 def run_offline_distillation_updates(
     trainer: BehaviorDistillationTrainer,
     dataset: DistillationTensorDataset,
@@ -44,6 +63,9 @@ def run_offline_distillation_updates(
     checkpoint_path: str | Path | None = None,
     teacher_metadata: Mapping[str, Any] | None = None,
     distill_runtime_cfg: Mapping[str, Any] | None = None,
+    repeat_dataset: bool = False,
+    shuffle: bool = False,
+    seed: int | None = None,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -69,12 +91,33 @@ def run_offline_distillation_updates(
     last_role_target_count = 0
     last_expert_usage: tuple[float, ...] | None = None
     last_route_entropy: float | None = None
+    generator = torch.Generator()
+    if seed is not None:
+        generator.manual_seed(int(seed))
+
+    def _order() -> torch.Tensor:
+        if shuffle:
+            return torch.randperm(dataset.num_samples, generator=generator)
+        return torch.arange(dataset.num_samples)
+
+    order = _order()
+    cursor = 0
 
     for update_idx in range(int(max_updates)):
-        start = update_idx * int(batch_size)
-        if start >= dataset.num_samples:
-            break
-        batch = dataset.as_batch(start=start, batch_size=int(batch_size))
+        if repeat_dataset or shuffle:
+            if cursor >= dataset.num_samples:
+                if not repeat_dataset:
+                    break
+                order = _order()
+                cursor = 0
+            end = min(dataset.num_samples, cursor + int(batch_size))
+            batch = _indexed_batch(dataset, order[cursor:end])
+            cursor = end
+        else:
+            start = update_idx * int(batch_size)
+            if start >= dataset.num_samples:
+                break
+            batch = dataset.as_batch(start=start, batch_size=int(batch_size))
         stats = trainer.update(batch)
 
         samples_seen += int(batch.student_obs.shape[0])

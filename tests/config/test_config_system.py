@@ -160,6 +160,8 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.offline_batch_size == 256
     assert cfg.training.offline_max_updates == 1
     assert cfg.training.offline_checkpoint is None
+    assert cfg.training.offline_repeat_dataset is False
+    assert cfg.training.offline_shuffle is False
     assert cfg.training.formal_run is False
     assert cfg.training.formal_run_name is None
     assert cfg.training.formal_run_dir is None
@@ -173,6 +175,7 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.collect_num_envs == 1
     assert cfg.training.collect_action_mode == "zero"
     assert cfg.training.collect_action_seed is None
+    assert cfg.training.collect_rollout_checkpoint_path is None
     assert cfg.training.collect_teacher_obs_key == "obs"
     assert cfg.training.collect_teacher_projection == "identity"
     assert cfg.training.collect_student_projection == "identity"
@@ -280,6 +283,8 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
             "training.offline_batch_size=4",
             "training.offline_max_updates=2",
             "training.offline_checkpoint=/tmp/student.pt",
+            "training.offline_repeat_dataset=true",
+            "training.offline_shuffle=true",
             "training.play_checkpoint_path=/tmp/play_student.pt",
             "training.formal_run=true",
             "training.formal_run_name=test_formal",
@@ -307,6 +312,8 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
     assert cfg.training.offline_batch_size == 4
     assert cfg.training.offline_max_updates == 2
     assert cfg.training.offline_checkpoint == "/tmp/student.pt"
+    assert cfg.training.offline_repeat_dataset is True
+    assert cfg.training.offline_shuffle is True
     assert cfg.training.play_checkpoint_path == "/tmp/play_student.pt"
     assert cfg.training.formal_run is True
     assert cfg.training.formal_run_name == "test_formal"

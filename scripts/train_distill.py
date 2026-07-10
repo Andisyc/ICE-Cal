@@ -22,6 +22,7 @@ from unilab.algos.torch.distill import (
     build_multitask_distillation_dataset,
     collect_distillation_dataset_from_env,
     load_distillation_dataset,
+    load_distillation_student_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
     run_offline_distillation_updates,
@@ -158,6 +159,10 @@ def _distill_runtime_cfg(
                 resolve=True,
             )
         ),
+        "offline_repeat_dataset": bool(
+            OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)
+        ),
+        "offline_shuffle": bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
         **_student_runtime_cfg(cfg),
         "teacher_obs_dim": int(cfg.teacher.obs_dim),
     }
@@ -362,6 +367,9 @@ def run_offline_dataset_update(
             distill_source="offline_dataset",
             dataset_path=dataset_path,
         ),
+        repeat_dataset=bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)),
+        shuffle=bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
+        seed=int(cfg.algo.seed),
     )
     return _probe_result(
         cfg,
@@ -478,6 +486,16 @@ def _expected_samples_seen_for_offline_run(
         expected_teacher_action_dim=int(cfg.teacher.action_dim),
         device=device,
     )
+    if bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)):
+        samples_seen = 0
+        cursor = 0
+        for _ in range(int(max_updates)):
+            if cursor >= dataset.num_samples:
+                cursor = 0
+            end = min(dataset.num_samples, cursor + int(batch_size))
+            samples_seen += end - cursor
+            cursor = end
+        return samples_seen
     return min(int(dataset.num_samples), int(batch_size) * int(max_updates))
 
 
@@ -578,29 +596,43 @@ def _distill_device(cfg: DictConfig) -> str:
 
 
 def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
-    """Keep teacher-policy rollout scoped to explicit 98-D flat/standing routes."""
+    """Keep teacher-target collection scoped to explicit 98-D flat/standing routes."""
 
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
     teacher_task_name = str(OmegaConf.select(cfg, "teacher.task_name"))
     allowed_tasks = {"G1WalkFlat", "G1StandStill"}
     if task_name not in allowed_tasks:
-        raise ValueError("teacher_policy collection only supports 98-D G1WalkFlat/G1StandStill")
+        raise ValueError("teacher target collection only supports 98-D G1WalkFlat/G1StandStill")
     if teacher_task_name != task_name:
-        raise ValueError("teacher_policy collection requires teacher.task_name to match training.task_name")
+        raise ValueError("teacher target collection requires teacher.task_name to match training.task_name")
     if int(cfg.teacher.obs_dim) != 98 or int(cfg.student.obs_dim) != 98:
-        raise ValueError("teacher_policy collection requires 98-D teacher and student obs")
+        raise ValueError("teacher target collection requires 98-D teacher and student obs")
     if str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")) != "obs":
-        raise ValueError("teacher_policy collection requires training.collect_teacher_obs_key=obs")
+        raise ValueError("teacher target collection requires training.collect_teacher_obs_key=obs")
     if str(OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity")) != "identity":
-        raise ValueError("teacher_policy collection requires identity teacher projection")
+        raise ValueError("teacher target collection requires identity teacher projection")
     if str(OmegaConf.select(cfg, "training.collect_student_projection", default="identity")) != "identity":
-        raise ValueError("teacher_policy collection requires identity student projection")
+        raise ValueError("teacher target collection requires identity student projection")
     if OmegaConf.select(cfg, "training.collect_student_drop_index") is not None:
-        raise ValueError("teacher_policy collection does not support collect_student_drop_index")
+        raise ValueError("teacher target collection does not support collect_student_drop_index")
     if OmegaConf.select(cfg, "training.collect_action_seed") is not None:
-        raise ValueError("teacher_policy collection does not use training.collect_action_seed")
+        raise ValueError("teacher target collection does not use training.collect_action_seed")
     if bool(OmegaConf.select(cfg, "env.commands.observe_height_command", default=False)):
-        raise ValueError("teacher_policy collection must not use height-command observations")
+        raise ValueError("teacher target collection must not use height-command observations")
+
+
+def _resolve_collect_rollout_checkpoint(cfg: DictConfig) -> Path:
+    checkpoint_path = OmegaConf.select(cfg, "training.collect_rollout_checkpoint_path")
+    if checkpoint_path in (None, ""):
+        raise ValueError(
+            "training.collect_rollout_checkpoint_path must be set when "
+            "training.collect_action_mode=student_policy"
+        )
+    path = Path(str(checkpoint_path))
+    resolved_path = path if path.is_absolute() else ROOT_DIR / path
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"training.collect_rollout_checkpoint_path does not exist: {resolved_path}")
+    return resolved_path
 
 
 def run_collect_dataset(
@@ -618,13 +650,15 @@ def run_collect_dataset(
 
     action_mode = _collect_action_mode(cfg)
     teacher_policy = None
+    rollout_policy = None
     teacher_policy_checkpoint_path: Path | None = None
-    if action_mode == "teacher_policy":
+    rollout_policy_checkpoint_path: Path | None = None
+    if action_mode in {"teacher_policy", "student_policy"}:
         _require_teacher_policy_collection_route(cfg)
         teacher_policy_checkpoint_path, _run_dir = resolve_teacher_checkpoint(cfg, root_dir=ROOT_DIR)
         if teacher_policy_checkpoint_path is None:
             raise FileNotFoundError(
-                "No SAC teacher checkpoint resolved for teacher_policy collection. "
+                "No SAC teacher checkpoint resolved for teacher target collection. "
                 "Set teacher.load_run/teacher.checkpoint or training.log_root."
             )
         teacher_policy = load_sac_teacher_policy(
@@ -632,6 +666,24 @@ def run_collect_dataset(
             build_teacher_spec(cfg),
             device=_distill_device(cfg),
         )
+    if action_mode == "student_policy":
+        rollout_policy_checkpoint_path = _resolve_collect_rollout_checkpoint(cfg)
+        loaded_rollout_policy = load_distillation_student_policy(
+            rollout_policy_checkpoint_path,
+            device=_distill_device(cfg),
+        )
+        if int(loaded_rollout_policy.obs_dim) != int(cfg.student.obs_dim):
+            raise ValueError(
+                "student_policy rollout obs dim mismatch: "
+                f"checkpoint={loaded_rollout_policy.obs_dim} cfg.student.obs_dim={int(cfg.student.obs_dim)}"
+            )
+        if int(loaded_rollout_policy.action_dim) != int(cfg.student.action_dim):
+            raise ValueError(
+                "student_policy rollout action dim mismatch: "
+                f"checkpoint={loaded_rollout_policy.action_dim} "
+                f"cfg.student.action_dim={int(cfg.student.action_dim)}"
+            )
+        rollout_policy = loaded_rollout_policy.policy
 
     if create_env_fn is None:
         ensure_registries()
@@ -659,6 +711,8 @@ def run_collect_dataset(
         }
         if teacher_policy_checkpoint_path is not None:
             metadata["teacher_policy_checkpoint_path"] = str(teacher_policy_checkpoint_path)
+        if rollout_policy_checkpoint_path is not None:
+            metadata["rollout_policy_checkpoint_path"] = str(rollout_policy_checkpoint_path)
         dataset = collect_distillation_dataset_from_env(
             env,
             num_samples=int(OmegaConf.select(cfg, "training.collect_num_samples", default=1024)),
@@ -675,6 +729,7 @@ def run_collect_dataset(
             action_mode=action_mode,
             action_seed=OmegaConf.select(cfg, "training.collect_action_seed"),
             teacher_policy=teacher_policy,
+            rollout_policy=rollout_policy,
             command_sample_filter=str(
                 OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
             ),
@@ -711,6 +766,11 @@ def run_collect_dataset(
         "collect_action_abs_max": float(dataset.metadata.get("action_abs_max", 0.0)),
         "teacher_policy_checkpoint_path": (
             str(teacher_policy_checkpoint_path) if teacher_policy_checkpoint_path is not None else None
+        ),
+        "rollout_policy_checkpoint_path": (
+            str(rollout_policy_checkpoint_path)
+            if rollout_policy_checkpoint_path is not None
+            else None
         ),
         "teacher_obs_key": str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")),
         "teacher_projection": str(

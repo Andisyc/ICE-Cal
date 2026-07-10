@@ -65,6 +65,8 @@ training:
   offline_batch_size: 256
   offline_max_updates: 1
   offline_checkpoint: null
+  offline_repeat_dataset: false
+  offline_shuffle: false
   formal_run: false
   formal_run_name: null
   formal_run_dir: null
@@ -78,6 +80,7 @@ training:
   collect_num_envs: 1
   collect_action_mode: zero
   collect_action_seed: null
+  collect_rollout_checkpoint_path: null
   collect_teacher_obs_key: obs
   collect_teacher_projection: identity
   collect_student_projection: identity
