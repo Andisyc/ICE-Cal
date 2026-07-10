@@ -2282,19 +2282,51 @@ def test_distill_script_collects_walk_flat_inactive_student_rollout_with_stand_t
             np.zeros((2, 3), dtype=np.float32),
         ],
     )
+    calls: dict[str, Any] = {}
+
+    def create_env_fn(*args, **kwargs):
+        calls["cfg"] = args[0]
+        calls["kwargs"] = kwargs
+        return fake_env
 
     collect_probe = mod.run_collect_dataset(
         cfg,
         dataset_path=dataset_path,
-        create_env_fn=lambda *args, **kwargs: fake_env,
-        env_cfg_override_fn=lambda cfg: {"owner": "walk-flat-stand-teacher-dagger-test"},
+        create_env_fn=create_env_fn,
+        env_cfg_override_fn=lambda cfg: {
+            "owner": "walk-flat-stand-teacher-dagger-test",
+            "rel_standing_envs": OmegaConf.select(cfg, "env.commands.rel_standing_envs"),
+            "rel_transition_envs": OmegaConf.select(cfg, "env.commands.rel_transition_envs"),
+            "vel_limit": OmegaConf.to_container(
+                OmegaConf.select(cfg, "env.commands.vel_limit"),
+                resolve=True,
+            ),
+            "transition_vel_limit": OmegaConf.to_container(
+                OmegaConf.select(cfg, "env.commands.transition_vel_limit"),
+                resolve=True,
+            ),
+        },
     )
 
     assert collect_probe["collect_command_sample_filter"] == "inactive"
     assert collect_probe["collect_action_mode"] == "student_policy"
     assert collect_probe["collect_command_intent_counts"] == {"inactive": 3}
+    assert collect_probe["collect_command_distribution_overrides"] == {
+        "env.commands.vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "env.commands.transition_vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "env.commands.rel_standing_envs": 1.0,
+        "env.commands.rel_transition_envs": 0.0,
+        "env.commands.small_xy_threshold": 0.0,
+    }
     assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
     assert collect_probe["rollout_policy_checkpoint_path"] == str(rollout_checkpoint)
+    assert calls["kwargs"]["env_cfg_override"] == {
+        "owner": "walk-flat-stand-teacher-dagger-test",
+        "rel_standing_envs": 1.0,
+        "rel_transition_envs": 0.0,
+        "vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "transition_vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+    }
     assert fake_env.last_actions is not None
     assert np.isfinite(fake_env.last_actions).all()
 
@@ -2309,6 +2341,13 @@ def test_distill_script_collects_walk_flat_inactive_student_rollout_with_stand_t
     assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
     assert restored.metadata["rollout_policy_checkpoint_path"] == str(rollout_checkpoint)
     assert restored.metadata["command_intent_counts"] == {"inactive": 3}
+    assert restored.metadata["command_distribution_overrides"] == {
+        "env.commands.vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "env.commands.transition_vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "env.commands.rel_standing_envs": 1.0,
+        "env.commands.rel_transition_envs": 0.0,
+        "env.commands.small_xy_threshold": 0.0,
+    }
     assert restored.teacher_actions is not None
     assert restored.teacher_actions.shape == (3, 29)
 

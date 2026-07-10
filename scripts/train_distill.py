@@ -721,6 +721,34 @@ def _require_collected_command_intent_contract(cfg: DictConfig, dataset: Any) ->
         )
 
 
+def _collect_command_distribution_overrides(cfg: DictConfig) -> dict[str, Any]:
+    expected_filter = _expected_owner_command_sample_filter(cfg)
+    actual_filter = str(OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none"))
+    task_name = str(OmegaConf.select(cfg, "training.task_name"))
+    teacher_task_name = _teacher_task_name_for_collection(cfg)
+    if (
+        task_name == "G1WalkFlat"
+        and teacher_task_name == "G1StandStill"
+        and expected_filter == "inactive"
+        and actual_filter == "inactive"
+    ):
+        return {
+            "env.commands.vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            "env.commands.transition_vel_limit": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            "env.commands.rel_standing_envs": 1.0,
+            "env.commands.rel_transition_envs": 0.0,
+            "env.commands.small_xy_threshold": 0.0,
+        }
+    return {}
+
+
+def _apply_collect_command_distribution_overrides(cfg: DictConfig) -> dict[str, Any]:
+    overrides = _collect_command_distribution_overrides(cfg)
+    for key, value in overrides.items():
+        OmegaConf.update(cfg, key, value, merge=False, force_add=True)
+    return overrides
+
+
 def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
     """Keep teacher-target collection scoped to explicit 98-D flat/standing routes."""
 
@@ -789,6 +817,7 @@ def run_collect_dataset(
 
     action_mode = _collect_action_mode(cfg)
     _require_owner_command_sample_filter(cfg)
+    command_distribution_overrides = _apply_collect_command_distribution_overrides(cfg)
     teacher_policy = None
     rollout_policy = None
     teacher_policy_checkpoint_path: Path | None = None
@@ -853,6 +882,8 @@ def run_collect_dataset(
             metadata["teacher_policy_checkpoint_path"] = str(teacher_policy_checkpoint_path)
         if rollout_policy_checkpoint_path is not None:
             metadata["rollout_policy_checkpoint_path"] = str(rollout_policy_checkpoint_path)
+        if command_distribution_overrides:
+            metadata["command_distribution_overrides"] = command_distribution_overrides
         dataset = collect_distillation_dataset_from_env(
             env,
             num_samples=int(OmegaConf.select(cfg, "training.collect_num_samples", default=1024)),
@@ -927,6 +958,9 @@ def run_collect_dataset(
         "collect_command_seen_samples": dataset.metadata.get("command_seen_samples"),
         "collect_command_selected_samples": dataset.metadata.get("command_selected_samples"),
         "collect_command_intent_counts": dataset.metadata.get("command_intent_counts"),
+        "collect_command_distribution_overrides": dataset.metadata.get(
+            "command_distribution_overrides"
+        ),
     }
 
 
