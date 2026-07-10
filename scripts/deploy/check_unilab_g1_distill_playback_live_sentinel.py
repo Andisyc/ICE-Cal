@@ -169,6 +169,7 @@ def run_check(
     action_mode: str,
     load_run: str,
     checkpoint: str | None,
+    checkpoint_path: str | None = None,
     task: str = "g1_walk_height/mujoco",
     device: str | None = "cpu",
     make_temp_policy_checkpoint: bool = False,
@@ -195,6 +196,7 @@ def run_check(
         task=str(cfg.training.task_name),
         load_run=str(load_run),
         checkpoint=checkpoint,
+        checkpoint_path=checkpoint_path,
         action_mode=str(action_mode),
         policy_obs_mode=str(cfg.interactive.policy_obs_mode),
         algo_log_name=str(cfg.algo.algo_log_name),
@@ -211,6 +213,7 @@ def run_check(
         "distill_playback/task_owner": str(task),
         "distill_playback/load_run": str(load_run),
         "distill_playback/checkpoint": checkpoint,
+        "distill_playback/checkpoint_path_override": checkpoint_path,
         "distill_playback/steps": int(steps),
         "distill_playback/device": device,
         "distill_playback/cfg_student_obs_dim": int(cfg.student.obs_dim),
@@ -317,6 +320,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-mode", choices=("zero", "policy"), default="zero")
     parser.add_argument("--load-run", default="-1")
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--checkpoint-path", default=None)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--make-temp-policy-checkpoint", action="store_true")
     parser.add_argument("--temp-student-model-type", choices=("mlp", "moe"), default="mlp")
@@ -330,11 +334,12 @@ def main() -> int:
         task=args.task,
         action_mode=args.action_mode,
         load_run=args.load_run,
-            checkpoint=args.checkpoint,
-            device=args.device,
-            make_temp_policy_checkpoint=bool(args.make_temp_policy_checkpoint),
-            temp_student_model_type=str(args.temp_student_model_type),
-        )
+        checkpoint=args.checkpoint,
+        checkpoint_path=args.checkpoint_path,
+        device=args.device,
+        make_temp_policy_checkpoint=bool(args.make_temp_policy_checkpoint),
+        temp_student_model_type=str(args.temp_student_model_type),
+    )
     print_report(checks, details)
     return 1 if any(check.level == "FAIL" for check in checks) else 0
 

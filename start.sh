@@ -7,6 +7,8 @@ ALGO="sac"
 TASK="g1_walk_flat"
 SIM="mujoco"
 DRY_RUN=0
+CHECKPOINT_PATH=""
+CHECKPOINT_SELECTOR=""
 POSITIONAL_ARGS=()
 
 while [ "$#" -gt 0 ]; do
@@ -37,6 +39,22 @@ while [ "$#" -gt 0 ]; do
                 exit 2
             fi
             SIM="$2"
+            shift 2
+            ;;
+        --checkpoint-path|--ckpt-path)
+            if [ "$#" -lt 2 ]; then
+                echo "Usage error: $1 requires a value"
+                exit 2
+            fi
+            CHECKPOINT_PATH="$2"
+            shift 2
+            ;;
+        --checkpoint|--ckpt)
+            if [ "$#" -lt 2 ]; then
+                echo "Usage error: $1 requires a value"
+                exit 2
+            fi
+            CHECKPOINT_SELECTOR="$2"
             shift 2
             ;;
         g1_walk_flat|g1_stand_still|g1_walk_height)
@@ -73,19 +91,38 @@ ARGS=(
 #   ./start.sh 2026-06-12_15-46-01_mujoco
 #   ./start.sh --task g1_stand_still 2026-07-09_00-00-00_mujoco
 # 等价于追加：
-#   algo.load_run=<RUN_NAME> +algo.checkpoint=model_5000.pt
+#   algo.load_run=<RUN_NAME>
+# 并由播放入口自动选择该 run 目录下最新的 model_*.pt。
 if [ "${#POSITIONAL_ARGS[@]}" -gt 0 ] && [[ "${POSITIONAL_ARGS[0]}" != *=* ]] && [[ "${POSITIONAL_ARGS[0]}" != -* ]]; then
     RUN_NAME="${POSITIONAL_ARGS[0]}"
     POSITIONAL_ARGS=("${POSITIONAL_ARGS[@]:1}")
     ARGS+=(
         "algo.load_run=${RUN_NAME}"
-        "+algo.checkpoint=model_5000.pt"
     )
+fi
+
+if [ -n "$CHECKPOINT_SELECTOR" ]; then
+    ARGS+=("algo.checkpoint=${CHECKPOINT_SELECTOR}")
+fi
+
+if [ -n "$CHECKPOINT_PATH" ]; then
+    if [ "$ALGO" != "distill" ]; then
+        echo "Usage error: --checkpoint-path is currently supported for --algo distill playback"
+        exit 2
+    fi
+    ARGS+=("training.play_checkpoint_path=${CHECKPOINT_PATH}")
 fi
 
 ARGS+=("${POSITIONAL_ARGS[@]}")
 
 echo "[start.sh] task=${TASK} sim=${SIM} algo=${ALGO} keyboard=${KEYBOARD}"
+if [ -n "$CHECKPOINT_PATH" ]; then
+    echo "[start.sh] checkpoint_path=${CHECKPOINT_PATH}"
+elif [ -n "$CHECKPOINT_SELECTOR" ]; then
+    echo "[start.sh] checkpoint=${CHECKPOINT_SELECTOR}"
+else
+    echo "[start.sh] checkpoint=latest-by-run-resolver"
+fi
 if [ -n "${UNILAB_G1_ACTION_TRACE+x}" ]; then
     echo "[start.sh] action_trace=${UNILAB_G1_ACTION_TRACE} interval=${UNILAB_G1_ACTION_TRACE_INTERVAL}"
 fi

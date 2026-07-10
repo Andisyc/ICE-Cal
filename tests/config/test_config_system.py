@@ -155,6 +155,7 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.dry_run_batch_size == 8
     assert cfg.training.dry_run_updates == 1
     assert cfg.training.dry_run_checkpoint is None
+    assert cfg.training.play_checkpoint_path is None
     assert cfg.training.offline_dataset_path is None
     assert cfg.training.offline_batch_size == 256
     assert cfg.training.offline_max_updates == 1
@@ -279,6 +280,7 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
             "training.offline_batch_size=4",
             "training.offline_max_updates=2",
             "training.offline_checkpoint=/tmp/student.pt",
+            "training.play_checkpoint_path=/tmp/play_student.pt",
             "training.formal_run=true",
             "training.formal_run_name=test_formal",
             "training.formal_run_dir=/tmp/distill_formal",
@@ -305,6 +307,7 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
     assert cfg.training.offline_batch_size == 4
     assert cfg.training.offline_max_updates == 2
     assert cfg.training.offline_checkpoint == "/tmp/student.pt"
+    assert cfg.training.play_checkpoint_path == "/tmp/play_student.pt"
     assert cfg.training.formal_run is True
     assert cfg.training.formal_run_name == "test_formal"
     assert cfg.training.formal_run_dir == "/tmp/distill_formal"

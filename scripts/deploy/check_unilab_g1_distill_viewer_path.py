@@ -55,6 +55,7 @@ def _viewer_command(
     task_owner: str,
     load_run: str,
     checkpoint: str | None,
+    checkpoint_path: str | None,
     action_mode: str,
     device: str | None,
 ) -> list[str]:
@@ -73,6 +74,8 @@ def _viewer_command(
     ]
     if checkpoint is not None:
         cmd.append(f"algo.checkpoint={checkpoint}")
+    if checkpoint_path is not None:
+        cmd.append(f"training.play_checkpoint_path={checkpoint_path}")
     if device is not None:
         cmd.append(f"training.device={device}")
     return cmd
@@ -106,6 +109,7 @@ def run_check(
     checkpoint: str | None,
     action_mode: str,
     device: str | None,
+    checkpoint_path: str | None = None,
     create_session_fn=create_distill_playback_session,
     load_viewer_model_fn=play_interactive._load_viewer_model,
     state_transfer_fn=_transfer_physics_to_viewer_model,
@@ -114,6 +118,7 @@ def run_check(
     cfg = play_interactive._compose_interactive_config("distill", [f"task={task}"])
     cfg.algo.load_run = str(load_run)
     cfg.algo.checkpoint = checkpoint
+    cfg.training.play_checkpoint_path = checkpoint_path
     cfg.interactive.action_mode = str(action_mode)
     if device is not None:
         cfg.training.device = str(device)
@@ -126,6 +131,7 @@ def run_check(
         task_owner=task,
         load_run=str(load_run),
         checkpoint=checkpoint,
+        checkpoint_path=checkpoint_path,
         action_mode=str(action_mode),
         device=device,
     )
@@ -135,6 +141,7 @@ def run_check(
         "distill_viewer/task_owner": str(task),
         "distill_viewer/load_run": str(load_run),
         "distill_viewer/checkpoint": checkpoint,
+        "distill_viewer/checkpoint_path_override": checkpoint_path,
         "distill_viewer/action_mode": str(action_mode),
         "distill_viewer/device": device,
         "distill_viewer/cfg_student_obs_dim": int(cfg.student.obs_dim),
@@ -251,6 +258,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task", default="g1_stand_still/mujoco")
     parser.add_argument("--load-run", required=True)
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--checkpoint-path", default=None)
     parser.add_argument("--action-mode", choices=("policy",), default="policy")
     parser.add_argument("--device", default="cpu")
     return parser.parse_args()
@@ -262,6 +270,7 @@ def main() -> int:
         task=args.task,
         load_run=args.load_run,
         checkpoint=args.checkpoint,
+        checkpoint_path=args.checkpoint_path,
         action_mode=args.action_mode,
         device=args.device,
     )

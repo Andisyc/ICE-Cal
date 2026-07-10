@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 import torch
 
+import unilab.visualization.interactive_playback as interactive_playback
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -486,6 +488,45 @@ def test_create_distill_playback_session_loads_student_policy(tmp_path: Path) ->
     assert captured["actions"].shape == (1, 2)
     assert captured["actions"].requires_grad is False
     assert torch.isfinite(captured["actions"]).all()
+
+
+def test_distill_playback_resolves_explicit_student_checkpoint_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import unilab.training.run as training_run
+
+    checkpoint_path = tmp_path / "student.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    cfg = SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat"))
+
+    def fail_resolve_task_checkpoint_path(*args, **kwargs):
+        raise AssertionError(
+            "training.play_checkpoint_path must bypass run/checkpoint resolution"
+        )
+
+    monkeypatch.setattr(
+        training_run,
+        "resolve_task_checkpoint_path",
+        fail_resolve_task_checkpoint_path,
+    )
+
+    resolved = interactive_playback._resolve_distill_checkpoint_from_playback_cfg(
+        RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run="-1",
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            checkpoint_path=str(checkpoint_path),
+        ),
+        cfg,
+        tmp_path,
+    )
+
+    assert resolved == checkpoint_path
 
 
 def test_create_distill_playback_session_missing_checkpoint_uses_zero_actions(

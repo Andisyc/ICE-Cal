@@ -71,6 +71,7 @@ class RslRlPlaybackConfig:
     num_envs: int = 1
     speed: float = 1.0
     start_paused: bool = False
+    checkpoint_path: str | None = None
 
 
 @dataclass
@@ -961,6 +962,15 @@ def _resolve_distill_checkpoint_from_playback_cfg(
     root_dir: str | Path,
 ) -> Path | None:
     from unilab.training.run import resolve_task_checkpoint_path
+
+    if playback_cfg.checkpoint_path not in (None, ""):
+        path = Path(str(playback_cfg.checkpoint_path))
+        resolved_path = path if path.is_absolute() else Path(root_dir) / path
+        if not resolved_path.is_file():
+            raise FileNotFoundError(
+                f"training.play_checkpoint_path does not exist: {resolved_path}"
+            )
+        return resolved_path
 
     checkpoint_path, _run_dir = resolve_task_checkpoint_path(
         root_dir,

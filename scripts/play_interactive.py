@@ -114,6 +114,7 @@ class PlayInteractiveArgs:
     task: str
     load_run: str
     checkpoint: str | None
+    checkpoint_path: str | None
     action_mode: str
     policy_obs_mode: str
     algo_log_name: str
@@ -1054,6 +1055,7 @@ def _build_playback_config(args, *, num_envs: int = 1) -> RslRlPlaybackConfig:
         task=str(args.task),
         load_run=str(args.load_run),
         checkpoint=getattr(args, "checkpoint", None),
+        checkpoint_path=getattr(args, "checkpoint_path", None),
         action_mode=str(args.action_mode),
         policy_obs_mode=str(args.policy_obs_mode),
         algo_log_name=str(getattr(args, "algo_log_name", "rsl_rl_ppo")),
@@ -1615,6 +1617,9 @@ def _build_play_args(cfg: DictConfig, *, algo: str = "ppo") -> PlayInteractiveAr
         task=str(cfg.training.task_name),
         load_run=str(cfg.algo.load_run),
         checkpoint=_normalize_checkpoint_value(OmegaConf.select(cfg, "algo.checkpoint")),
+        checkpoint_path=_normalize_checkpoint_value(
+            OmegaConf.select(cfg, "training.play_checkpoint_path")
+        ),
         action_mode=str(cfg.interactive.action_mode),
         policy_obs_mode=str(cfg.interactive.policy_obs_mode),
         algo_log_name=str(cfg.algo.algo_log_name),
