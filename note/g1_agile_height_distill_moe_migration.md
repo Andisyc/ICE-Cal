@@ -4689,6 +4689,405 @@ Status: COMPLETE for SW-4 dual-teacher probe intent filters. This proves the
 real walking/standing teacher probe now uses command-intent filters and records
 the filter evidence. It still does not prove long-horizon fused policy quality.
 
+### Step CR-1: Command Intent Contract
+
+Scope: record the command-intent routing contract that must bind data
+collection, role labels, MoE router training, checkpoint metadata, playback, and
+live diagnostics.
+
+Problem:
+
+- Current SW-3/SW-4 proves source collection filters: walking teacher data comes
+  from active velocity/yaw commands, and standing teacher data comes from
+  inactive commands.
+- The trained MoE playback failure showed a separate gap: the deploy-time router
+  can still infer expert choice from observation state alone. In zero-command
+  startup, this lets an upright walking-task state route to the walking expert
+  before the robot has proven standing stability.
+- Therefore the missing design object is not only `role_labels`; it is command
+  intent as a first-class routing authority.
+
+Design delta:
+
+```text
+Old design:
+  role_labels identify the source teacher after collection, and
+  collect_command_sample_filter selects rows for each teacher.
+
+New design:
+  command_intent is the shared semantic object across collection, dataset,
+  router loss, deployment routing, and diagnostics.
+
+Changed semantic objects:
+  commands, command_active_mask, collect_command_sample_filter, role_labels,
+  router_logits, route_probs, selected_expert, role_expert_targets,
+  student checkpoint metadata, playback trace.
+
+Forbidden old assumptions:
+  - The MoE router may not be trusted to discover stand vs walk purely from
+    proprioceptive state at deployment.
+  - Zero-command rows may not train or select the walking teacher/expert.
+  - Nonzero velocity/yaw rows may not train or select the standing teacher/expert.
+  - A late switch to the stand expert after falling is not a valid standing
+    behavior proof.
+
+Affected phases:
+  collection -> dataset persistence -> multi-task assembly -> router loss ->
+  checkpoint save/load -> playback action path -> live trace.
+
+Expected runtime evidence:
+  zero command => expected_intent=stand, expected_expert=stand expert,
+  selected_expert matches before falling, student-vs-standing-teacher MSE is low,
+  base height remains above the standing sentinel threshold.
+```
+
+Command-intent rule:
+
+```text
+active(command)   := sqrt(vx^2 + vy^2) > xy_threshold OR abs(yaw) > yaw_threshold
+inactive(command) := NOT active(command)
+```
+
+Current two-teacher routing contract:
+
+| command intent | teacher source | role label | current target expert | allowed action source |
+| --- | --- | --- | --- | --- |
+| active velocity/yaw command | `G1WalkFlat` | `walk_flat` | `algo.role_expert_targets.walk_flat` (current run: `0`) | walking teacher cached action |
+| inactive / no task command | `G1StandStill` | `stand` | `algo.role_expert_targets.stand` (current run: `1`) | standing teacher cached action |
+
+Authority boundary:
+
+- Command intent may choose or strongly bias which expert is responsible for the
+  action.
+- Command intent may supervise router logits during distillation.
+- Command intent may be persisted as dataset metadata or per-row labels for
+  diagnostics and replayable training.
+- Command intent must not change reward ownership, reset physics, teacher action
+  values, or hide a bad student action with a playback-only clamp.
+
+Height-control extension:
+
+- Height control is not part of the current two-teacher gate.
+- Future height data must add an explicit third intent or sub-intent instead of
+  silently overloading `walk_flat` or `stand`.
+- Until a real height teacher exists, `G1WalkHeight` remains a separate 99-D
+  owner route and must not be mixed into the 98-D walk/stand MoE dataset.
+
+Required implementation steps after CR-1:
+
+1. CR-2 Dataset command-intent schema: persist per-row command or intent labels
+   and verify save/load, slicing, and multi-task assembly.
+2. CR-3 Collection command owner: guarantee walking collection produces active
+   commands and standing collection produces inactive commands, not only filters
+   whatever the env happened to sample.
+3. CR-4 Router command prior: add explicit command-intent router loss and an
+   optional deploy-time hard/bias route controlled by config.
+4. CR-5 Playback/live sentinel: print `expected_intent`,
+   `expected_expert`, `selected_expert`, route probabilities, standing-teacher
+   action MSE, and base height before the first fall.
+
+Completion gate for the whole CR series:
+
+- A zero-command MuJoCo playback of the fused MoE checkpoint selects or strongly
+  biases to the stand expert from the first traced step.
+- A nonzero velocity/yaw command selects or strongly biases to the walk expert.
+- Both facts are proven by scriptable diagnostics before any visual-quality
+  claim.
+
+### Step CR-2: Dataset Schema Command/Intent
+
+Scope: add command-intent fields to the offline distillation dataset schema so
+the CR routing contract has a persistent per-row object before router or live
+playback changes.
+
+Implemented contract:
+
+- `DistillationTensorDataset.commands`: optional `(N, 3)` tensor storing
+  `[vx, vy, yaw]` command rows.
+- `DistillationTensorDataset.command_intents`: optional per-row labels with
+  only `active` or `inactive`.
+- `DistillationBatch` preserves `commands` and `command_intents` through
+  `as_batch()` and shuffled offline indexing.
+- `save_distillation_dataset()` and `load_distillation_dataset()` round-trip
+  the new fields while old datasets without those keys remain valid.
+- `build_multitask_distillation_dataset()` concatenates command fields only when
+  all sources provide them, and fails closed on mixed command-schema sources.
+- `collect_distillation_dataset_from_env()` stores selected command rows and
+  derived `active/inactive` intent labels when command filtering is enabled.
+
+Non-scope:
+
+- No MoE router prior yet.
+- No deploy-time hard route yet.
+- No live MuJoCo behavior claim.
+- No height-control intent yet.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/algos/test_g1_distillation_contract.py -q -k "command_intent or command_sample_filter or collect_distillation_dataset_from_env_filters or multitask_distillation_dataset_adapter_merges"
+uv run python -m py_compile src/unilab/algos/torch/distill/data.py src/unilab/algos/torch/distill/collector.py src/unilab/algos/torch/distill/offline.py src/unilab/algos/torch/distill/trainer.py tests/algos/test_g1_distillation_contract.py
+uv run pytest tests/algos/test_g1_distillation_contract.py -q
+uv run pytest tests/scripts/test_train_scripts.py -q -k "multitask_dataset or collect"
+uv run ruff check src/unilab/algos/torch/distill/data.py src/unilab/algos/torch/distill/collector.py src/unilab/algos/torch/distill/offline.py src/unilab/algos/torch/distill/trainer.py tests/algos/test_g1_distillation_contract.py
+```
+
+Results:
+
+- Focused command-intent contract: PASS, `5 passed, 47 deselected`.
+- Full distillation contract suite: PASS, `52 passed`.
+- Focused script connector: PASS, `9 passed, 173 deselected`.
+- Py compile: PASS.
+- Ruff: PASS.
+
+Status: COMPLETE for CR-2 dataset schema. This proves command intent survives
+dataset build, batch slicing, persistence, collector selection, and multitask
+merge. It does not prove router behavior or live fused-policy behavior.
+
+### Step CR-3: Collection Command Owner
+
+Scope: fail closed when the collection entrypoint is asked to build walk/stand
+distillation datasets with the wrong command-intent filter.
+
+Implemented contract:
+
+- `G1WalkFlat` collection requires `training.collect_command_sample_filter=active`.
+- `G1StandStill` collection requires `training.collect_command_sample_filter=inactive`.
+- The guard runs before env creation, so a CLI override cannot silently collect
+  semantically inverted data.
+- After collection, saved datasets must contain `commands`, `command_intents`,
+  `command_seen_samples`, `command_selected_samples`, and exact
+  `command_intent_counts`.
+
+Non-scope:
+
+- No router prior yet.
+- No deploy-time hard or biased expert route yet.
+- No claim that the trained MoE stands in MuJoCo.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/scripts/test_train_scripts.py -q -k "owner_command_filter_override or collects_stand_still_dataset_with_owner_config or collects_owner_filtered_walk_dataset or collects_stand_still_teacher_policy_dataset_and_updates or collects_walk_flat_teacher_policy_cached_dataset"
+```
+
+Result:
+
+- Focused script owner route: PASS, `6 passed, 178 deselected`.
+- The first TDD run failed before the fix because the wrong filter reached the
+  collector and failed later on fake-env dimensions, proving the missing owner
+  guard was real.
+
+Status: COMPLETE for CR-3 collection owner guard. This proves the offline
+collection command route cannot be accidentally inverted by CLI overrides for
+the current 98-D walk/stand MoE route. It does not prove router behavior or live
+playback behavior.
+
+### Step CR-4: MoE Router Command-Intent Supervision
+
+Scope: add explicit command-intent router supervision to the offline MoE
+distillation trainer, separate from source-role supervision.
+
+Implemented contract:
+
+- `algo.command_intent_loss_coef` defaults to `0.0`, so legacy distillation runs
+  keep the previous behavior unless the loss is explicitly enabled.
+- `algo.command_intent_expert_targets` maps `active` and `inactive` command
+  intents to MoE expert indices; the current default mapping is `active: 0`,
+  `inactive: 1`, matching `walk_flat -> expert 0` and `stand -> expert 1`
+  while the coefficient remains off by default.
+- When enabled, `DistillationBatch.command_intents` is required and is trained
+  with cross-entropy on MoE `router_logits`.
+- Missing target mappings, missing command-intent labels, invalid target expert
+  indices, and non-MoE students fail closed.
+- Offline run diagnostics and checkpoint runtime metadata record
+  `command_intent_loss`, `command_intent_target_count`,
+  `command_intent_loss_coef`, and `command_intent_expert_targets`.
+- The dual-teacher walk/stand probe now uses `active -> walk_flat expert` and
+  `inactive -> stand expert` command-intent targets in addition to role labels.
+
+Non-scope:
+
+- No deploy-time hard or biased expert route yet.
+- No live MuJoCo playback claim.
+- No height-control command intent yet.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/algos/test_g1_distillation_contract.py -q -k "command_intent_router_loss"
+uv run pytest tests/scripts/test_train_scripts.py -q -k "dual_teacher_probe_requires_owner_intent_filters or role_conditioned_moe_trainer"
+uv run pytest tests/config/test_config_system.py -q -k "distill"
+uv run pytest tests/algos/test_g1_distillation_contract.py -q
+uv run pytest tests/scripts/test_train_scripts.py -q -k "role_conditioned_moe_trainer or dual_teacher_probe_requires_owner_intent_filters or multitask_runtime_probe_runs_cached_moe_update or owner_command_filter_override or collects_stand_still_dataset_with_owner_config or collects_owner_filtered_walk_dataset or collects_stand_still_teacher_policy_dataset_and_updates or collects_walk_flat_teacher_policy_cached_dataset"
+```
+
+Results:
+
+- Command-intent trainer loss: PASS, `2 passed, 52 deselected`.
+- Script/probe connector: PASS, `2 passed, 182 deselected`.
+- Distill config compose: PASS, `6 passed, 117 deselected`.
+- Full distillation algos contract after CR-4: PASS, `54 passed`.
+- Focused script impact suite after CR-4: PASS, `9 passed, 175 deselected`.
+
+Status: COMPLETE for CR-4 offline router supervision. This proves command
+intent is now a training signal for the MoE router and is recorded in offline
+diagnostics. It does not prove the deployed policy selects the intended expert
+in MuJoCo; that remains CR-5.
+
+### Step CR-5: Playback/Deployment Command Routing Contract
+
+Scope: enforce and expose the command-intent routing contract during generic
+distillation playback/deployment.
+
+Implemented contract:
+
+- `interactive.distill_command_routing` defaults to `auto`.
+- `auto` only becomes deploy-time hard routing for MoE checkpoints whose runtime
+  config records `command_intent_loss_coef > 0`; old MLP checkpoints and old MoE
+  checkpoints keep previous behavior.
+- `hard` selects the expected expert action directly:
+  `inactive -> command_intent_expert_targets.inactive` and
+  `active -> command_intent_expert_targets.active`.
+- `bias` keeps soft MoE mixing but adds `interactive.distill_command_routing_bias`
+  to the expected expert logit.
+- Playback fails closed if command routing is active but
+  `env.state.info["commands"]` is missing, malformed, non-finite, or batch-size
+  mismatched.
+- `scripts/play_interactive.py` trace now reports routing mode, whether routing
+  was applied, expected intent, expected expert, selected expert, raw selected
+  expert, and routed route probabilities.
+- `check_unilab_g1_distill_playback_live_sentinel.py` records and checks the
+  same routing contract when a policy exposes those playback attributes.
+
+Non-scope:
+
+- No claim that an already-trained MoE checkpoint will stand or walk better.
+- No live GUI/manual visual pass.
+- No height-control expert route.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/visualization/test_interactive_playback.py -q -k "distill"
+uv run pytest tests/config/test_config_system.py -q -k "distill"
+uv run pytest tests/scripts/test_train_scripts.py -q -k "distill_playback_live_sentinel"
+uv run ruff check src/unilab/visualization/interactive_playback.py scripts/play_interactive.py scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py tests/visualization/test_interactive_playback.py tests/config/test_config_system.py tests/scripts/test_train_scripts.py
+uv run python -m py_compile src/unilab/visualization/interactive_playback.py scripts/play_interactive.py scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py
+```
+
+Results:
+
+- Distill playback focused suite: PASS, `8 passed, 12 deselected`.
+- Distill config compose: PASS, `6 passed, 117 deselected`.
+- Distill playback live sentinel focused suite: PASS, `4 passed, 180 deselected`.
+- Ruff touched files: PASS.
+- Py compile touched playback scripts: PASS.
+
+Status: COMPLETE for CR-5 deployment routing contract. This proves the playback
+path can force zero-command startup to the inactive/standing expert and expose
+the decision in trace/sentinel output. It still does not prove trained checkpoint
+quality or long-horizon MuJoCo stability.
+
+### Step CR-6: Balanced Offline Stand/Walk Sampler
+
+Scope: add an explicit offline batch sampler so stand/walk, or inactive/active,
+training proportions are controlled per update instead of depending on saved
+dataset order, dataset imbalance, or random shuffle.
+
+Implemented contract:
+
+- `training.offline_balance_key` defaults to `none`.
+- Supported keys are `none`, `role`, and `command_intent`.
+- `training.offline_balanced_labels` optionally fixes label order, for example
+  `[stand, walk]` or `[inactive, active]`; if omitted, labels are inferred from
+  the dataset.
+- Balanced sampling is with replacement, so minority classes such as stand can
+  appear in every update even when the merged dataset is imbalanced.
+- Each update records `batch_label_counts`; probe output and
+  `OfflineDistillationRunResult` expose the full count sequence plus the last
+  batch counts.
+- `distill_runtime_cfg` persists `offline_balance_key` and
+  `offline_balanced_labels`, so the checkpoint records whether it was trained
+  with balanced sampling.
+- Formal run checkpoint naming uses `batch_size * max_updates` when balanced
+  sampling is active, because samples are drawn with replacement.
+
+Non-scope:
+
+- No collector change.
+- No live MuJoCo run.
+- No claim that existing MoE checkpoints improve without retraining.
+- No height-control balancing yet.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/algos/test_g1_distillation_contract.py -q -k "balanced_sampler or balances_role_batches or balances_command_intent"
+uv run pytest tests/config/test_config_system.py -q -k "distill"
+uv run pytest tests/scripts/test_train_scripts.py -q -k "offline_update_uses_balanced_role_sampler"
+```
+
+Results:
+
+- Offline balanced sampler contracts: PASS, `3 passed, 54 deselected`.
+- Distill config compose: PASS, `6 passed, 117 deselected`.
+- Script/config/checkpoint connector: PASS, `1 passed, 184 deselected`.
+
+Status: COMPLETE for CR-6 offline sampler balance. This proves balanced batches
+can be constructed for both role labels and command-intent labels and that the
+script route persists the setting into checkpoints. It does not prove trained
+policy quality or live stability.
+
+### Step CR-7: Dual-Teacher Runtime Probe With Balanced Updates
+
+Scope: run the real dual-teacher walk/stand distillation probe through live
+MuJoCo collection, source merge, balanced offline update, and runtime
+diagnostics.
+
+Implemented contract:
+
+- `check_unilab_g1_distill_dual_teacher_moe_probe.py` now uses the CR-6
+  balanced sampler by default with `balance_key=role` and labels
+  `[walk_flat, stand]`.
+- The probe payload records `balance_key`, `batch_label_counts`, and
+  `last_balance_label_counts` under `offline_update`.
+- The probe fails closed if balanced counts omit an expected label, do not sum
+  to `batch_size`, or differ by more than 1 sample per label.
+- The runtime route still verifies owner command filters:
+  `walk_flat -> active`, `stand -> inactive`.
+- The runtime update still uses cached 29-D teacher actions, not a live teacher
+  module call.
+
+Non-scope:
+
+- No long training.
+- No final MoE policy quality claim.
+- No GUI/human inspection.
+- No height-control route.
+
+Evidence (2026-07-10):
+
+```bash
+uv run pytest tests/scripts/test_train_scripts.py -q -k "dual_teacher_probe_requires_owner_intent_filters"
+uv run scripts/deploy/check_unilab_g1_distill_dual_teacher_moe_probe.py --work-dir /private/tmp/unilab-cr7-dual-teacher-probe --num-samples 4 --num-envs 1 --batch-size 4 --max-updates 2 --device cpu
+```
+
+Observed runtime facts:
+
+- Live collection created 4 `G1WalkFlat` active samples and 4 `G1StandStill`
+  inactive samples.
+- Merged dataset shape was 8 samples, 98-D student obs, 98-D teacher obs, and
+  cached 29-D teacher actions.
+- Offline update used `teacher_action_source=cached`.
+- Balanced update reported `last_counts={'walk_flat': 2, 'stand': 2}`.
+- Role and command-intent router losses were both positive in the runtime probe.
+
+Status: COMPLETE for CR-7 runtime probe. This proves the script-level
+dual-teacher route now crosses live collection, persistence, balanced sampling,
+and one bounded offline update. It still does not prove the trained fused policy
+will stand or walk in a long MuJoCo rollout.
+
 ## Validation Ladder
 
 1. Static owner scan:
@@ -4725,11 +5124,15 @@ the filter evidence. It still does not prove long-horizon fused policy quality.
 | GPL code contamination | External GPL implementation copied into UniLab | source policy review before patch |
 | MoE too early | Router learns reward bugs instead of behavior modes | Phase 1/2 stop conditions before Phase 3 |
 | Teacher source drift | A `G1WalkFlat` or legacy checkpoint is treated as a real height-conditioned teacher | checkpoint metadata audit plus teacher-obs preflight before formal training |
+| Command intent not enforced at deploy time | Zero-command startup routes to walking expert and falls before stand expert can recover | command-intent router trace: expected intent/expert, selected expert, standing-teacher MSE, base height |
+| Training batch role drift | Stand samples are too rare inside MoE update batches, so the router/action loss is dominated by walk data | `offline_balance_key=role` or `command_intent` plus `offline_batch_label_counts` |
 
 ## Immediate Next Step
 
-The focused migration gate is complete; do not continue with `Step 3.x`
-feature labels unless a new research boundary is explicitly chosen.
+The focused migration gate is complete and the new active research boundary is
+the CR command-intent series. Do not continue with generic `Step 3.x` labels;
+use CR labels until command-intent routing is either implemented or explicitly
+rejected.
 
 ```text
 Current completed chain:
@@ -4748,9 +5151,9 @@ Current completed chain:
   -> focused final integration gate: stale search, note/test inventory
      alignment, architecture JSON parse, impact suite, and selected live probes
 Remaining named options:
-  Human review / commit preparation
-  Optional heavier whole-repo gate, e.g. make test-all
-  Future MoE role-rich dataset work, only with role-labelled or command-diverse data
+  Re-train/evaluate the MoE checkpoint with command-intent loss and balanced sampling enabled
+  Long-horizon MuJoCo playback and human GUI inspection
+  Human review / commit preparation after CR command-intent gate
 Manual GUI command verified for Old Step 24b:
   mjpython scripts/play_interactive.py --algo distill --task g1_stand_still
     --sim mujoco

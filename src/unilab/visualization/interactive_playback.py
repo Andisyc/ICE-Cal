@@ -202,11 +202,13 @@ class RslRlPlaybackSession:
         self.policy = policy
         self.num_envs = int(num_envs)
         self.obs: Any | None = None
+        self.action_obs: Any | None = None
         self.actions: torch.Tensor | None = None
         self.step_count = 0
 
     def reset(self) -> Any:
         self.obs, _info = self.wrapped_env.reset()
+        self.action_obs = None
         self.actions = None
         self.step_count = 0
         return self.obs
@@ -236,6 +238,7 @@ class RslRlPlaybackSession:
     def _build_actions(self) -> torch.Tensor:
         if self.obs is None:
             raise RuntimeError("Playback session must be reset before stepping.")
+        self.action_obs = self.obs
         action_space = self.env.action_space
         action_dim = int(action_space.shape[0])
         if self.action_mode == "policy" and self.policy is not None:
@@ -1015,6 +1018,126 @@ def _distill_student_obs_tensor(obs: Any, *, device: str | torch.device) -> torc
     return torch.as_tensor(obs, dtype=torch.float32, device=device)
 
 
+def distill_command_intents_from_commands(
+    commands: Any,
+    *,
+    xy_threshold: float = 0.05,
+    yaw_threshold: float = 0.05,
+) -> tuple[str, ...]:
+    command_array = np.asarray(commands, dtype=np.float32)
+    if command_array.ndim == 1:
+        command_array = command_array.reshape(1, -1)
+    if command_array.ndim != 2 or command_array.shape[1] < 3:
+        raise ValueError(
+            "distill command intent requires commands with shape (N, >=3), "
+            f"got {command_array.shape}"
+        )
+    if not np.isfinite(command_array[:, :3]).all():
+        raise ValueError("distill command intent requires finite command values")
+    xy_norm = np.linalg.norm(command_array[:, :2], axis=1)
+    active = (xy_norm > float(xy_threshold)) | (
+        np.abs(command_array[:, 2]) > float(yaw_threshold)
+    )
+    return tuple("active" if bool(value) else "inactive" for value in active)
+
+
+def _cfg_select(cfg: Any, dotted_path: str, default: Any = None) -> Any:
+    current = cfg
+    for key in dotted_path.split("."):
+        if isinstance(current, Mapping):
+            if key not in current:
+                return default
+            current = current[key]
+        else:
+            if not hasattr(current, key):
+                return default
+            current = getattr(current, key)
+    return current
+
+
+def _distill_commands_from_env(env: Any, *, batch_size: int) -> np.ndarray | None:
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    if not isinstance(info, Mapping) or "commands" not in info:
+        return None
+    commands = np.asarray(info["commands"], dtype=np.float32)
+    if commands.ndim == 1:
+        commands = commands.reshape(1, -1)
+    if commands.ndim != 2 or commands.shape[1] < 3:
+        raise ValueError(
+            "distill command routing requires env.state.info['commands'] with "
+            f"shape (N, >=3), got {commands.shape}"
+        )
+    if commands.shape[0] == 1 and int(batch_size) > 1:
+        commands = np.repeat(commands, int(batch_size), axis=0)
+    if commands.shape[0] != int(batch_size):
+        raise ValueError(
+            "distill command routing command batch mismatch: "
+            f"commands={commands.shape[0]} obs_batch={int(batch_size)}"
+        )
+    return commands[:, :3]
+
+
+def _distill_command_intent_targets(
+    cfg: Any,
+    runtime_cfg: Mapping[str, Any],
+) -> dict[str, int]:
+    targets = runtime_cfg.get("command_intent_expert_targets")
+    if not isinstance(targets, Mapping):
+        targets = _cfg_select(cfg, "algo.command_intent_expert_targets", None)
+    if not isinstance(targets, Mapping):
+        targets = {"active": 0, "inactive": 1}
+    resolved = {str(key): int(value) for key, value in targets.items()}
+    missing = {"active", "inactive"} - set(resolved)
+    if missing:
+        raise ValueError(
+            "distill command routing requires command_intent_expert_targets for "
+            f"{sorted(missing)}"
+        )
+    return resolved
+
+
+def _distill_effective_command_routing_mode(
+    cfg: Any,
+    runtime_cfg: Mapping[str, Any],
+    *,
+    is_moe: bool,
+) -> tuple[str, str]:
+    configured = str(_cfg_select(cfg, "interactive.distill_command_routing", "auto")).lower()
+    if configured not in {"none", "auto", "hard", "bias"}:
+        raise ValueError(
+            "interactive.distill_command_routing must be one of "
+            f"none, auto, hard, bias; got {configured!r}"
+        )
+    if not is_moe:
+        return configured, "none"
+    if configured == "auto":
+        coef = float(runtime_cfg.get("command_intent_loss_coef") or 0.0)
+        return configured, "hard" if coef > 0.0 else "none"
+    return configured, configured
+
+
+def _distill_expected_expert_tensor(
+    intents: tuple[str, ...],
+    targets: Mapping[str, int],
+    *,
+    num_experts: int,
+    device: torch.device | str,
+) -> torch.Tensor:
+    indices = [int(targets[intent]) for intent in intents]
+    if not indices:
+        return torch.empty((0,), dtype=torch.long, device=device)
+    target_tensor = torch.as_tensor(indices, dtype=torch.long, device=device)
+    if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(
+        num_experts
+    ):
+        raise ValueError(
+            "distill command routing expert target out of range: "
+            f"targets={sorted(set(indices))} num_experts={int(num_experts)}"
+        )
+    return target_tensor
+
+
 def create_distill_playback_session(
     *,
     playback_cfg: RslRlPlaybackConfig,
@@ -1078,11 +1201,170 @@ def create_distill_playback_session(
 
                 loaded_student = load_distillation_student_policy
             student = loaded_student(checkpoint, device=device_name)
+            raw_checkpoint = torch.load(
+                Path(checkpoint),
+                map_location="cpu",
+                weights_only=False,
+            )
+            obs_normalizer_state = (
+                raw_checkpoint.get("obs_normalizer")
+                if isinstance(raw_checkpoint, Mapping)
+                else None
+            )
+            obs_normalizer_keys = (
+                tuple(str(key) for key in obs_normalizer_state.keys())
+                if isinstance(obs_normalizer_state, Mapping)
+                else ()
+            )
+            runtime_cfg = dict(student.distill_runtime_cfg)
+            student_model_type = str(runtime_cfg.get("student_model_type", "mlp"))
+            is_moe_student = student_model_type == "moe" and hasattr(student.policy, "experts")
+            routing_config_mode, routing_mode = _distill_effective_command_routing_mode(
+                cfg,
+                runtime_cfg,
+                is_moe=is_moe_student,
+            )
+            routing_targets = _distill_command_intent_targets(cfg, runtime_cfg)
+            routing_xy_threshold = float(
+                _cfg_select(cfg, "interactive.distill_command_xy_threshold", 0.05)
+            )
+            routing_yaw_threshold = float(
+                _cfg_select(cfg, "interactive.distill_command_yaw_threshold", 0.05)
+            )
+            routing_bias = float(
+                _cfg_select(cfg, "interactive.distill_command_routing_bias", 10.0)
+            )
 
             def policy(obs: Any) -> Any:
                 obs_tensor = _distill_student_obs_tensor(obs, device=device_name)
                 with torch.no_grad():
-                    return student.policy(obs_tensor).detach()
+                    if not is_moe_student:
+                        action = student.policy(obs_tensor).detach()
+                        setattr(policy, "_unilab_distill_command_routing_applied", False)
+                        setattr(policy, "_unilab_distill_last_command_intents", ())
+                        setattr(policy, "_unilab_distill_last_expected_experts", ())
+                        setattr(policy, "_unilab_distill_last_selected_experts", ())
+                        setattr(policy, "_unilab_distill_last_route_probs", None)
+                        setattr(policy, "_unilab_distill_last_raw_route_probs", None)
+                        return action
+
+                    student_output = student.policy(obs_tensor, return_diagnostics=True)
+                    route_probs = student_output.route_probs
+                    raw_route_probs = student_output.route_probs
+                    raw_selected = torch.argmax(raw_route_probs, dim=-1)
+                    selected = raw_selected
+                    action = student_output.action
+                    intents: tuple[str, ...] = ()
+                    expected_experts: torch.Tensor | None = None
+                    routing_applied = False
+
+                    if routing_mode in {"hard", "bias"}:
+                        commands = _distill_commands_from_env(
+                            env,
+                            batch_size=int(obs_tensor.shape[0]),
+                        )
+                        if commands is None:
+                            raise ValueError(
+                                "distill command routing requires "
+                                "env.state.info['commands'] during playback"
+                            )
+                        intents = distill_command_intents_from_commands(
+                            commands,
+                            xy_threshold=routing_xy_threshold,
+                            yaw_threshold=routing_yaw_threshold,
+                        )
+                        expected_experts = _distill_expected_expert_tensor(
+                            intents,
+                            routing_targets,
+                            num_experts=int(student.policy.num_experts),
+                            device=obs_tensor.device,
+                        )
+                        rows = torch.arange(
+                            int(obs_tensor.shape[0]),
+                            dtype=torch.long,
+                            device=obs_tensor.device,
+                        )
+                        if routing_mode == "hard":
+                            action = student_output.expert_actions[rows, expected_experts]
+                            selected = expected_experts
+                            route_probs = torch.nn.functional.one_hot(
+                                expected_experts,
+                                num_classes=int(student.policy.num_experts),
+                            ).to(dtype=student_output.route_probs.dtype)
+                        else:
+                            biased_logits = student_output.router_logits.clone()
+                            biased_logits[rows, expected_experts] += routing_bias
+                            temperature = max(
+                                float(getattr(student.policy, "router_temperature", 1.0)),
+                                1e-8,
+                            )
+                            route_probs = torch.softmax(biased_logits / temperature, dim=-1)
+                            selected = torch.argmax(route_probs, dim=-1)
+                            action = torch.sum(
+                                student_output.expert_actions * route_probs.unsqueeze(-1),
+                                dim=1,
+                            )
+                        routing_applied = True
+
+                    expected_tuple = (
+                        tuple(int(value) for value in expected_experts.detach().cpu().tolist())
+                        if expected_experts is not None
+                        else ()
+                    )
+                    setattr(policy, "_unilab_distill_command_routing_applied", routing_applied)
+                    setattr(policy, "_unilab_distill_last_command_intents", intents)
+                    setattr(policy, "_unilab_distill_last_expected_experts", expected_tuple)
+                    setattr(
+                        policy,
+                        "_unilab_distill_last_selected_experts",
+                        tuple(int(value) for value in selected.detach().cpu().tolist()),
+                    )
+                    setattr(policy, "_unilab_distill_last_route_probs", route_probs.detach().cpu())
+                    setattr(
+                        policy,
+                        "_unilab_distill_last_raw_route_probs",
+                        raw_route_probs.detach().cpu(),
+                    )
+                    setattr(
+                        policy,
+                        "_unilab_distill_last_raw_selected_experts",
+                        tuple(int(value) for value in raw_selected.detach().cpu().tolist()),
+                    )
+                    return action.detach()
+
+            setattr(policy, "_unilab_distill_student_policy", student.policy)
+            setattr(policy, "_unilab_distill_device", device_name)
+            setattr(policy, "_unilab_distill_checkpoint_path", str(checkpoint))
+            setattr(policy, "_unilab_distill_agent_steps", int(student.agent_steps))
+            setattr(policy, "_unilab_distill_runtime_cfg", runtime_cfg)
+            setattr(policy, "_unilab_distill_obs_normalizer_present", bool(obs_normalizer_keys))
+            setattr(policy, "_unilab_distill_obs_normalizer_keys", obs_normalizer_keys)
+            setattr(policy, "_unilab_distill_command_routing_mode", routing_mode)
+            setattr(
+                policy,
+                "_unilab_distill_command_routing_config_mode",
+                routing_config_mode,
+            )
+            setattr(policy, "_unilab_distill_command_routing_targets", dict(routing_targets))
+            setattr(policy, "_unilab_distill_command_routing_applied", False)
+            setattr(policy, "_unilab_distill_last_command_intents", ())
+            setattr(policy, "_unilab_distill_last_expected_experts", ())
+            setattr(policy, "_unilab_distill_last_selected_experts", ())
+            setattr(policy, "_unilab_distill_last_route_probs", None)
+            setattr(policy, "_unilab_distill_last_raw_route_probs", None)
+            log(
+                "Distill checkpoint diagnostics: "
+                f"student_obs_dim={student.obs_dim}, "
+                f"student_action_dim={student.action_dim}, "
+                f"agent_steps={int(student.agent_steps)}, "
+                f"obs_normalizer={'present' if obs_normalizer_keys else 'absent'}"
+            )
+            if routing_mode != "none":
+                log(
+                    "Distill command routing: "
+                    f"configured={routing_config_mode}, effective={routing_mode}, "
+                    f"targets={dict(routing_targets)}"
+                )
 
     log(f"Policy obs mode: {policy_obs_mode}")
     log(f"Action mode: {playback_cfg.action_mode}")
@@ -1163,6 +1445,7 @@ __all__ = [
     "create_hora_distill_playback_session",
     "create_rsl_rl_playback_session",
     "create_sac_playback_session",
+    "distill_command_intents_from_commands",
     "prepare_motion_overlay_selection",
     "select_torch_device",
 ]

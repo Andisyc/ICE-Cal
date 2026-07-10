@@ -126,6 +126,11 @@ fi
 if [ -n "${UNILAB_G1_ACTION_TRACE+x}" ]; then
     echo "[start.sh] action_trace=${UNILAB_G1_ACTION_TRACE} interval=${UNILAB_G1_ACTION_TRACE_INTERVAL}"
 fi
+if [ -n "${UNILAB_G1_STANDING_TEACHER_CHECKPOINT+x}" ]; then
+    echo "[start.sh] standing_teacher_checkpoint=${UNILAB_G1_STANDING_TEACHER_CHECKPOINT}"
+elif [ -n "${UNILAB_G1_DISTILL_STANDING_TEACHER_CHECKPOINT+x}" ]; then
+    echo "[start.sh] standing_teacher_checkpoint=${UNILAB_G1_DISTILL_STANDING_TEACHER_CHECKPOINT}"
+fi
 printf '[start.sh] command:'
 printf ' %q' "${ARGS[@]}"
 printf '\n'

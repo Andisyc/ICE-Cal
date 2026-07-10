@@ -246,8 +246,24 @@ def run_check(
         physics = session.physics_state()
         info = getattr(session, "info", {})
         actions = getattr(session, "actions", None)
+        policy_fn = getattr(session, "policy", None)
         actions_arr = _array_on_cpu(actions)
         actions_abs_max = None if actions_arr is None else float(np.max(np.abs(actions_arr)))
+        command_routing_mode = getattr(policy_fn, "_unilab_distill_command_routing_mode", None)
+        command_routing_applied = getattr(
+            policy_fn,
+            "_unilab_distill_command_routing_applied",
+            None,
+        )
+        command_intents = tuple(
+            getattr(policy_fn, "_unilab_distill_last_command_intents", ()) or ()
+        )
+        expected_experts = tuple(
+            getattr(policy_fn, "_unilab_distill_last_expected_experts", ()) or ()
+        )
+        selected_experts = tuple(
+            getattr(policy_fn, "_unilab_distill_last_selected_experts", ()) or ()
+        )
 
         details.update(
             {
@@ -257,6 +273,11 @@ def run_check(
                 "distill_playback/physics_shape": _shape(physics),
                 "distill_playback/actions_shape": _shape(actions),
                 "distill_playback/actions_abs_max": actions_abs_max,
+                "distill_playback/command_routing_mode": command_routing_mode,
+                "distill_playback/command_routing_applied": command_routing_applied,
+                "distill_playback/command_intents": list(command_intents),
+                "distill_playback/command_expected_experts": list(expected_experts),
+                "distill_playback/command_selected_experts": list(selected_experts),
                 "distill_playback/info_keys": sorted(info.keys())[:12] if isinstance(info, dict) else [],
                 "distill_playback/messages": messages,
             }
@@ -296,6 +317,21 @@ def run_check(
                 _add(checks, "PASS", "distill_playback/policy_action_nonzero", f"{actions_abs_max:.6f}")
             else:
                 _add(checks, "FAIL", "distill_playback/policy_action_nonzero", str(actions_abs_max))
+            if expected_experts and selected_experts:
+                if int(expected_experts[0]) == int(selected_experts[0]):
+                    _add(
+                        checks,
+                        "PASS",
+                        "distill_playback/command_routing_contract",
+                        f"{command_intents[0] if command_intents else '<unknown>'}->{int(selected_experts[0])}",
+                    )
+                else:
+                    _add(
+                        checks,
+                        "FAIL",
+                        "distill_playback/command_routing_contract",
+                        f"expected={int(expected_experts[0])} selected={int(selected_experts[0])}",
+                    )
     finally:
         if session is not None:
             _close_env(session.env)

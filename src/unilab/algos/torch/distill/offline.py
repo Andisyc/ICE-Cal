@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,8 +33,13 @@ class OfflineDistillationRunResult:
     last_aux_loss: float
     last_role_loss: float
     last_role_target_count: int
+    last_command_intent_loss: float
+    last_command_intent_target_count: int
     last_expert_usage: tuple[float, ...] | None
     last_route_entropy: float | None
+    balance_key: str
+    batch_label_counts: tuple[dict[str, int], ...]
+    last_balance_label_counts: dict[str, int]
 
 
 def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) -> DistillationBatch:
@@ -51,7 +56,88 @@ def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) ->
             if dataset.teacher_actions is None
             else dataset.teacher_actions.index_select(0, indices)
         ),
+        commands=None if dataset.commands is None else dataset.commands.index_select(0, indices),
+        command_intents=(
+            None
+            if dataset.command_intents is None
+            else tuple(dataset.command_intents[int(index)] for index in indices.detach().cpu())
+        ),
     )
+
+
+def _labels_for_balance_key(
+    dataset: DistillationTensorDataset,
+    balance_key: str,
+) -> tuple[str, ...] | None:
+    if balance_key == "none":
+        return None
+    if balance_key == "role":
+        if dataset.role_labels is None:
+            raise ValueError("offline balance_key='role' requires dataset.role_labels")
+        return dataset.role_labels
+    if balance_key == "command_intent":
+        if dataset.command_intents is None:
+            raise ValueError(
+                "offline balance_key='command_intent' requires dataset.command_intents"
+            )
+        return dataset.command_intents
+    raise ValueError(
+        "offline balance_key must be one of 'none', 'role', or 'command_intent', "
+        f"got {balance_key!r}"
+    )
+
+
+def _balanced_batch_indices(
+    labels: tuple[str, ...],
+    *,
+    batch_size: int,
+    balanced_labels: Sequence[str] | None,
+    generator: torch.Generator,
+) -> tuple[torch.Tensor, dict[str, int]]:
+    selected_labels = (
+        tuple(str(label) for label in balanced_labels)
+        if balanced_labels
+        else tuple(sorted(set(labels)))
+    )
+    if not selected_labels:
+        raise ValueError("offline balanced sampler requires at least one label")
+    if len(set(selected_labels)) != len(selected_labels):
+        raise ValueError(f"offline balanced labels must be unique: {selected_labels}")
+    if int(batch_size) < len(selected_labels):
+        raise ValueError(
+            "offline balanced sampler requires batch_size >= number of labels: "
+            f"batch_size={int(batch_size)} labels={len(selected_labels)}"
+        )
+
+    label_to_indices = {
+        label: torch.as_tensor(
+            [idx for idx, value in enumerate(labels) if value == label],
+            dtype=torch.long,
+        )
+        for label in selected_labels
+    }
+    missing = [label for label, indices in label_to_indices.items() if indices.numel() == 0]
+    if missing:
+        raise ValueError(f"offline balanced sampler missing labels: {missing}")
+
+    base_quota = int(batch_size) // len(selected_labels)
+    remainder = int(batch_size) % len(selected_labels)
+    chunks: list[torch.Tensor] = []
+    counts: dict[str, int] = {}
+    for label_idx, label in enumerate(selected_labels):
+        quota = base_quota + (1 if label_idx < remainder else 0)
+        source = label_to_indices[label]
+        picks = torch.randint(
+            int(source.numel()),
+            (quota,),
+            generator=generator,
+            dtype=torch.long,
+        )
+        chunks.append(source.index_select(0, picks))
+        counts[label] = int(quota)
+    indices = torch.cat(chunks, dim=0)
+    order = torch.randperm(int(indices.numel()), generator=generator)
+    return indices.index_select(0, order), counts
 
 
 def run_offline_distillation_updates(
@@ -66,6 +152,8 @@ def run_offline_distillation_updates(
     repeat_dataset: bool = False,
     shuffle: bool = False,
     seed: int | None = None,
+    balance_key: str = "none",
+    balanced_labels: Sequence[str] | None = None,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -89,8 +177,13 @@ def run_offline_distillation_updates(
     last_aux_loss = 0.0
     last_role_loss = 0.0
     last_role_target_count = 0
+    last_command_intent_loss = 0.0
+    last_command_intent_target_count = 0
     last_expert_usage: tuple[float, ...] | None = None
     last_route_entropy: float | None = None
+    resolved_balance_key = str(balance_key)
+    balance_labels = _labels_for_balance_key(dataset, resolved_balance_key)
+    batch_label_counts: list[dict[str, int]] = []
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(int(seed))
@@ -104,7 +197,16 @@ def run_offline_distillation_updates(
     cursor = 0
 
     for update_idx in range(int(max_updates)):
-        if repeat_dataset or shuffle:
+        label_counts: dict[str, int] = {}
+        if balance_labels is not None:
+            indices, label_counts = _balanced_batch_indices(
+                balance_labels,
+                batch_size=int(batch_size),
+                balanced_labels=balanced_labels,
+                generator=generator,
+            )
+            batch = _indexed_batch(dataset, indices)
+        elif repeat_dataset or shuffle:
             if cursor >= dataset.num_samples:
                 if not repeat_dataset:
                     break
@@ -118,6 +220,7 @@ def run_offline_distillation_updates(
             if start >= dataset.num_samples:
                 break
             batch = dataset.as_batch(start=start, batch_size=int(batch_size))
+        batch_label_counts.append(label_counts)
         stats = trainer.update(batch)
 
         samples_seen += int(batch.student_obs.shape[0])
@@ -133,6 +236,8 @@ def run_offline_distillation_updates(
         last_aux_loss = stats.aux_loss
         last_role_loss = stats.role_loss
         last_role_target_count = stats.role_target_count
+        last_command_intent_loss = stats.command_intent_loss
+        last_command_intent_target_count = stats.command_intent_target_count
         last_expert_usage = stats.expert_usage
         last_route_entropy = stats.route_entropy
 
@@ -168,6 +273,11 @@ def run_offline_distillation_updates(
         last_aux_loss=last_aux_loss,
         last_role_loss=last_role_loss,
         last_role_target_count=last_role_target_count,
+        last_command_intent_loss=last_command_intent_loss,
+        last_command_intent_target_count=last_command_intent_target_count,
         last_expert_usage=last_expert_usage,
         last_route_entropy=last_route_entropy,
+        balance_key=resolved_balance_key,
+        batch_label_counts=tuple(batch_label_counts),
+        last_balance_label_counts=batch_label_counts[-1] if batch_label_counts else {},
     )

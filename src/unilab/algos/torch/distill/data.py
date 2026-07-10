@@ -60,6 +60,48 @@ def _validate_role_labels(
     return labels
 
 
+def _validate_commands(
+    commands: torch.Tensor | None,
+    *,
+    num_samples: int,
+) -> torch.Tensor | None:
+    if commands is None:
+        return None
+    if commands.ndim != 2 or int(commands.shape[-1]) != 3:
+        raise ValueError(f"commands must have shape (N, 3), got {tuple(commands.shape)}")
+    if int(commands.shape[0]) != int(num_samples):
+        raise ValueError(
+            "commands batch size mismatch: "
+            f"commands={int(commands.shape[0])} samples={int(num_samples)}"
+        )
+    if not torch.isfinite(commands).all():
+        raise ValueError("commands must contain only finite values")
+    return commands
+
+
+def _validate_command_intents(
+    command_intents: list[str] | tuple[str, ...] | None,
+    *,
+    num_samples: int,
+) -> tuple[str, ...] | None:
+    if command_intents is None:
+        return None
+    if len(command_intents) != int(num_samples):
+        raise ValueError(
+            "command_intents length mismatch: "
+            f"intents={len(command_intents)} samples={int(num_samples)}"
+        )
+    intents = tuple(str(intent) for intent in command_intents)
+    allowed = {"active", "inactive"}
+    if any(intent not in allowed for intent in intents):
+        raise ValueError("command_intents must contain only active/inactive labels")
+    return intents
+
+
+def _label_counts(labels: tuple[str, ...]) -> dict[str, int]:
+    return {label: labels.count(label) for label in sorted(set(labels))}
+
+
 @dataclass(frozen=True)
 class DistillationTensorDataset:
     """In-memory offline distillation observations with explicit shape contracts."""
@@ -69,6 +111,8 @@ class DistillationTensorDataset:
     metadata: dict[str, Any] = field(default_factory=dict)
     role_labels: tuple[str, ...] | None = None
     teacher_actions: torch.Tensor | None = None
+    commands: torch.Tensor | None = None
+    command_intents: tuple[str, ...] | None = None
 
     @property
     def num_samples(self) -> int:
@@ -101,6 +145,10 @@ class DistillationTensorDataset:
             teacher_actions=(
                 None if self.teacher_actions is None else self.teacher_actions[start:end]
             ),
+            commands=None if self.commands is None else self.commands[start:end],
+            command_intents=(
+                None if self.command_intents is None else self.command_intents[start:end]
+            ),
         )
 
 
@@ -114,6 +162,8 @@ def build_distillation_dataset(
     metadata: Mapping[str, Any] | None = None,
     role_labels: list[str] | tuple[str, ...] | None = None,
     teacher_actions: torch.Tensor | None = None,
+    commands: torch.Tensor | None = None,
+    command_intents: list[str] | tuple[str, ...] | None = None,
 ) -> DistillationTensorDataset:
     """Validate and package offline student/teacher observations for distillation."""
 
@@ -143,24 +193,42 @@ def build_distillation_dataset(
                 "student/teacher action dataset batch size mismatch: "
                 f"student={student_obs.shape[0]} teacher_actions={teacher_actions.shape[0]}"
             )
+    validated_commands = _validate_commands(
+        commands,
+        num_samples=int(student_obs.shape[0]),
+    )
     metadata_dict = dict(metadata or {})
     metadata_role_labels = metadata_dict.get("role_labels")
     if role_labels is None and metadata_role_labels is not None:
         if not isinstance(metadata_role_labels, list | tuple):
             raise ValueError("metadata role_labels must be a list or tuple")
         role_labels = [str(label) for label in metadata_role_labels]
+    metadata_command_intents = metadata_dict.get("command_intents")
+    if command_intents is None and metadata_command_intents is not None:
+        if not isinstance(metadata_command_intents, list | tuple):
+            raise ValueError("metadata command_intents must be a list or tuple")
+        command_intents = [str(intent) for intent in metadata_command_intents]
     validated_role_labels = _validate_role_labels(
         role_labels,
         num_samples=int(student_obs.shape[0]),
     )
+    validated_command_intents = _validate_command_intents(
+        command_intents,
+        num_samples=int(student_obs.shape[0]),
+    )
     if validated_role_labels is not None:
         metadata_dict["role_labels"] = list(validated_role_labels)
+    if validated_command_intents is not None:
+        metadata_dict["command_intents"] = list(validated_command_intents)
+        metadata_dict["command_intent_counts"] = _label_counts(validated_command_intents)
     return DistillationTensorDataset(
         student_obs=student_obs,
         teacher_obs=teacher_obs,
         metadata=metadata_dict,
         role_labels=validated_role_labels,
         teacher_actions=teacher_actions,
+        commands=validated_commands,
+        command_intents=validated_command_intents,
     )
 
 
@@ -223,6 +291,8 @@ def build_multitask_distillation_dataset(
     source_student_obs_dim: int | None = None
     source_teacher_obs_dim: int | None = None
     source_teacher_action_dim: int | None = None
+    source_has_commands: bool | None = None
+    source_has_command_intents: bool | None = None
     for source in sources:
         path = Path(_source_value(source, "path"))
         role = str(_source_value(source, "role"))
@@ -236,6 +306,18 @@ def build_multitask_distillation_dataset(
         if dataset.teacher_actions is None:
             raise ValueError(
                 f"multitask source {path} must contain cached teacher_actions"
+            )
+        has_commands = dataset.commands is not None
+        if source_has_commands is None:
+            source_has_commands = has_commands
+        elif has_commands != source_has_commands:
+            raise ValueError("multitask sources must either all include commands or none")
+        has_command_intents = dataset.command_intents is not None
+        if source_has_command_intents is None:
+            source_has_command_intents = has_command_intents
+        elif has_command_intents != source_has_command_intents:
+            raise ValueError(
+                "multitask sources must either all include command_intents or none"
             )
         if source_student_obs_dim is None:
             source_student_obs_dim = dataset.student_obs_dim
@@ -274,6 +356,21 @@ def build_multitask_distillation_dataset(
         ],
         dim=0,
     )
+    commands = (
+        torch.cat([dataset.commands for dataset in datasets if dataset.commands is not None], dim=0)
+        if source_has_commands
+        else None
+    )
+    command_intents = (
+        tuple(
+            intent
+            for dataset in datasets
+            if dataset.command_intents is not None
+            for intent in dataset.command_intents
+        )
+        if source_has_command_intents
+        else None
+    )
     role_labels = tuple(
         role
         for role, dataset in zip(source_roles, datasets, strict=True)
@@ -287,6 +384,8 @@ def build_multitask_distillation_dataset(
         "source_sample_counts": source_sample_counts,
         "source_metadata": source_metadata,
     }
+    if command_intents is not None:
+        metadata["command_intent_counts"] = _label_counts(command_intents)
     return build_distillation_dataset(
         student_obs,
         teacher_obs,
@@ -296,6 +395,8 @@ def build_multitask_distillation_dataset(
         metadata=metadata,
         role_labels=role_labels,
         teacher_actions=teacher_actions,
+        commands=commands,
+        command_intents=command_intents,
     )
 
 
@@ -309,6 +410,10 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
         "role_labels": None if dataset.role_labels is None else list(dataset.role_labels),
         "teacher_actions": (
             None if dataset.teacher_actions is None else dataset.teacher_actions.detach().cpu()
+        ),
+        "commands": None if dataset.commands is None else dataset.commands.detach().cpu(),
+        "command_intents": (
+            None if dataset.command_intents is None else list(dataset.command_intents)
         ),
         "student_obs_dim": dataset.student_obs_dim,
         "teacher_obs_dim": dataset.teacher_obs_dim,
@@ -330,6 +435,7 @@ def load_distillation_dataset(
 
     payload = torch.load(Path(path), map_location=device, weights_only=False)
     teacher_actions = payload.get("teacher_actions")
+    commands = payload.get("commands")
     dataset = build_distillation_dataset(
         payload["student_obs"].to(device),
         payload["teacher_obs"].to(device),
@@ -339,6 +445,8 @@ def load_distillation_dataset(
         metadata=payload.get("metadata", {}),
         role_labels=payload.get("role_labels"),
         teacher_actions=None if teacher_actions is None else teacher_actions.to(device),
+        commands=None if commands is None else commands.to(device),
+        command_intents=payload.get("command_intents"),
     )
     expected_count = payload.get("num_samples")
     if expected_count is not None and int(expected_count) != dataset.num_samples:

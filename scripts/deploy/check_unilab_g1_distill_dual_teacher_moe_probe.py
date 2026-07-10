@@ -86,6 +86,8 @@ def _multitask_cfg(*, sources: list[dict[str, str]], merged_path: Path, device: 
                 "aux_loss_coef": 0.0,
                 "role_loss_coef": 0.25,
                 "role_expert_targets": {"walk_flat": 0, "stand": 1},
+                "command_intent_loss_coef": 0.25,
+                "command_intent_expert_targets": {"active": 0, "inactive": 1},
             },
             "student": {
                 "obs_dim": 98,
@@ -132,6 +134,8 @@ def _build_trainer(*, device: str) -> tuple[BehaviorDistillationTrainer, Raising
         aux_loss_coef=0.0,
         role_loss_coef=0.25,
         role_expert_targets={"walk_flat": 0, "stand": 1},
+        command_intent_loss_coef=0.25,
+        command_intent_expert_targets={"active": 0, "inactive": 1},
     )
     return trainer, teacher
 
@@ -215,6 +219,8 @@ def run_check(
     batch_size: int = 4,
     max_updates: int = 2,
     device: str = "cpu",
+    balance_key: str = "role",
+    balanced_labels: list[str] | tuple[str, ...] | None = ("walk_flat", "stand"),
 ) -> dict[str, Any]:
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -300,11 +306,33 @@ def run_check(
         merged,
         batch_size=int(batch_size),
         max_updates=int(max_updates),
+        balance_key=str(balance_key),
+        balanced_labels=balanced_labels,
+        seed=23,
     )
     if teacher.called:
         raise AssertionError("merged offline update unexpectedly called a teacher")
     if result.last_teacher_action_source != "cached":
         raise AssertionError(f"expected cached target, got {result.last_teacher_action_source!r}")
+    if str(balance_key) != "none":
+        expected_balance_labels = (
+            tuple(str(label) for label in balanced_labels)
+            if balanced_labels
+            else tuple(sorted(set(merged.role_labels or ())))
+        )
+        for counts in result.batch_label_counts:
+            if set(counts) != set(expected_balance_labels):
+                raise AssertionError(
+                    "balanced sampler emitted unexpected labels: "
+                    f"counts={counts} expected={expected_balance_labels}"
+                )
+            if sum(int(value) for value in counts.values()) != int(batch_size):
+                raise AssertionError(
+                    "balanced sampler count total mismatch: "
+                    f"counts={counts} batch_size={int(batch_size)}"
+                )
+            if max(counts.values()) - min(counts.values()) > 1:
+                raise AssertionError(f"balanced sampler counts are imbalanced: {counts}")
 
     return {
         "status": "ok",
@@ -327,6 +355,11 @@ def run_check(
             "behavior_loss": result.last_behavior_loss,
             "role_loss": result.last_role_loss,
             "role_target_count": result.last_role_target_count,
+            "command_intent_loss": result.last_command_intent_loss,
+            "command_intent_target_count": result.last_command_intent_target_count,
+            "balance_key": result.balance_key,
+            "batch_label_counts": list(result.batch_label_counts),
+            "last_balance_label_counts": dict(result.last_balance_label_counts),
             "student_grad_norm": result.last_student_grad_norm,
             "student_action_shape": list(result.student_action_shape),
             "teacher_action_shape": list(result.teacher_action_shape),
@@ -345,7 +378,10 @@ def print_report(payload: dict[str, Any]) -> None:
         f"roles={payload['role_counts']} "
         f"filters={payload['command_filter_contracts']} "
         f"teacher_action_source={payload['offline_update']['teacher_action_source']} "
-        f"role_loss={payload['offline_update']['role_loss']:.6f}"
+        f"balance={payload['offline_update']['balance_key']} "
+        f"last_counts={payload['offline_update']['last_balance_label_counts']} "
+        f"role_loss={payload['offline_update']['role_loss']:.6f} "
+        f"command_intent_loss={payload['offline_update']['command_intent_loss']:.6f}"
     )
 
 
@@ -359,6 +395,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--max-updates", type=int, default=2)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--balance-key", choices=("none", "role", "command_intent"), default="role")
+    parser.add_argument(
+        "--balanced-label",
+        action="append",
+        dest="balanced_labels",
+        default=None,
+        help="Balanced label order; repeat for multiple labels. Defaults to walk_flat,stand.",
+    )
     return parser.parse_args()
 
 
@@ -373,6 +417,12 @@ def main() -> int:
         batch_size=int(args.batch_size),
         max_updates=int(args.max_updates),
         device=str(args.device),
+        balance_key=str(args.balance_key),
+        balanced_labels=(
+            tuple(args.balanced_labels)
+            if args.balanced_labels is not None
+            else ("walk_flat", "stand")
+        ),
     )
     print_report(payload)
     return 0

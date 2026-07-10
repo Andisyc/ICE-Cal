@@ -17,6 +17,8 @@ class DistillationBatch:
     teacher_obs: torch.Tensor
     role_labels: tuple[str, ...] | None = None
     teacher_actions: torch.Tensor | None = None
+    commands: torch.Tensor | None = None
+    command_intents: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,8 @@ class BehaviorDistillationStats:
     aux_loss: float = 0.0
     role_loss: float = 0.0
     role_target_count: int = 0
+    command_intent_loss: float = 0.0
+    command_intent_target_count: int = 0
     expert_usage: tuple[float, ...] | None = None
     route_entropy: float | None = None
     teacher_action_source: str = "teacher"
@@ -50,6 +54,8 @@ class BehaviorDistillationTrainer:
         aux_loss_coef: float = 0.0,
         role_loss_coef: float = 0.0,
         role_expert_targets: Mapping[str, int] | None = None,
+        command_intent_loss_coef: float = 0.0,
+        command_intent_expert_targets: Mapping[str, int] | None = None,
     ) -> None:
         self.student = student
         self.teacher = teacher
@@ -62,12 +68,27 @@ class BehaviorDistillationTrainer:
             str(role): int(expert_idx)
             for role, expert_idx in dict(role_expert_targets or {}).items()
         }
+        self.command_intent_loss_coef = float(command_intent_loss_coef)
+        self.command_intent_expert_targets = {
+            str(intent): int(expert_idx)
+            for intent, expert_idx in dict(command_intent_expert_targets or {}).items()
+        }
         if self.aux_loss_coef < 0.0:
             raise ValueError(f"aux_loss_coef must be non-negative, got {aux_loss_coef}")
         if self.role_loss_coef < 0.0:
             raise ValueError(f"role_loss_coef must be non-negative, got {role_loss_coef}")
         if self.role_loss_coef > 0.0 and not self.role_expert_targets:
             raise ValueError("role_expert_targets must be non-empty when role_loss_coef > 0")
+        if self.command_intent_loss_coef < 0.0:
+            raise ValueError(
+                "command_intent_loss_coef must be non-negative, "
+                f"got {command_intent_loss_coef}"
+            )
+        if self.command_intent_loss_coef > 0.0 and not self.command_intent_expert_targets:
+            raise ValueError(
+                "command_intent_expert_targets must be non-empty when "
+                "command_intent_loss_coef > 0"
+            )
         self.update_count = 0
         self.teacher.eval()
 
@@ -197,6 +218,44 @@ class BehaviorDistillationTrainer:
             )
         return F.cross_entropy(router_logits, targets), int(targets.numel())
 
+    def _command_intent_router_loss(
+        self,
+        *,
+        command_intents: tuple[str, ...] | None,
+        router_logits: torch.Tensor | None,
+        batch_size: int,
+        like: torch.Tensor,
+    ) -> tuple[torch.Tensor, int]:
+        if self.command_intent_loss_coef <= 0.0:
+            return like.new_zeros(()), 0
+        if command_intents is None:
+            raise ValueError("command_intents are required when command_intent_loss_coef > 0")
+        if len(command_intents) != int(batch_size):
+            raise ValueError(
+                "command_intents length mismatch: "
+                f"intents={len(command_intents)} batch={int(batch_size)}"
+            )
+        if router_logits is None:
+            raise TypeError("command-intent router loss requires MoE router logits")
+        if router_logits.ndim != 2:
+            raise ValueError(f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}")
+
+        target_indices: list[int] = []
+        for intent in command_intents:
+            intent_key = str(intent)
+            if intent_key not in self.command_intent_expert_targets:
+                raise ValueError(
+                    f"unmapped command intent for command-intent loss: {intent_key!r}"
+                )
+            target_indices.append(int(self.command_intent_expert_targets[intent_key]))
+        targets = torch.tensor(target_indices, dtype=torch.long, device=router_logits.device)
+        if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(router_logits.shape[-1]):
+            raise ValueError(
+                "command_intent_expert_targets index out of range: "
+                f"targets={sorted(set(target_indices))} num_experts={int(router_logits.shape[-1])}"
+            )
+        return F.cross_entropy(router_logits, targets), int(targets.numel())
+
     def update(self, batch: DistillationBatch) -> BehaviorDistillationStats:
         if batch.teacher_actions is None and batch.student_obs.shape[0] != batch.teacher_obs.shape[0]:
             raise ValueError(
@@ -225,11 +284,18 @@ class BehaviorDistillationTrainer:
             batch_size=int(batch.student_obs.shape[0]),
             like=student_action,
         )
+        command_intent_loss, command_intent_target_count = self._command_intent_router_loss(
+            command_intents=batch.command_intents,
+            router_logits=router_logits,
+            batch_size=int(batch.student_obs.shape[0]),
+            like=student_action,
+        )
         behavior_loss = self._loss(student_action, teacher_action)
         loss = (
             behavior_loss
             + self.aux_loss_coef * aux_loss
             + self.role_loss_coef * role_loss
+            + self.command_intent_loss_coef * command_intent_loss
         )
 
         self.optimizer.zero_grad(set_to_none=True)
@@ -251,6 +317,8 @@ class BehaviorDistillationTrainer:
             aux_loss=float(aux_loss.detach().item()),
             role_loss=float(role_loss.detach().item()),
             role_target_count=role_target_count,
+            command_intent_loss=float(command_intent_loss.detach().item()),
+            command_intent_target_count=command_intent_target_count,
             expert_usage=expert_usage,
             route_entropy=route_entropy,
             teacher_action_source=teacher_action_source,

@@ -26,6 +26,7 @@ from unilab.visualization.interactive_playback import (
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
     create_sac_playback_session,
+    distill_command_intents_from_commands,
     prepare_motion_overlay_selection,
 )
 
@@ -478,6 +479,10 @@ def test_create_distill_playback_session_loads_student_policy(tmp_path: Path) ->
     assert captured["policy_obs_mode"] == "actor"
     assert messages == [
         f"Loading distillation student checkpoint: {checkpoint_path}",
+        (
+            "Distill checkpoint diagnostics: student_obs_dim=5, "
+            "student_action_dim=2, agent_steps=4, obs_normalizer=absent"
+        ),
         "Policy obs mode: actor",
         "Action mode: policy",
     ]
@@ -488,6 +493,141 @@ def test_create_distill_playback_session_loads_student_policy(tmp_path: Path) ->
     assert captured["actions"].shape == (1, 2)
     assert captured["actions"].requires_grad is False
     assert torch.isfinite(captured["actions"]).all()
+
+
+def test_distill_command_intents_from_commands_thresholds() -> None:
+    intents = distill_command_intents_from_commands(
+        np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.06, 0.0, 0.0],
+                [0.0, 0.0, -0.06],
+                [0.05, 0.0, 0.05],
+            ],
+            dtype=np.float32,
+        ),
+        xy_threshold=0.05,
+        yaw_threshold=0.05,
+    )
+
+    assert intents == ("inactive", "active", "active", "inactive")
+
+
+def test_distill_playback_hard_routes_moe_by_command_intent(tmp_path: Path) -> None:
+    from unilab.algos.torch.distill import MoEStudentPolicy, save_distillation_checkpoint
+
+    checkpoint_path = tmp_path / "moe_student.pt"
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    with torch.no_grad():
+        for param in student.parameters():
+            param.zero_()
+        student.experts[0].net[-1].bias.fill_(0.25)
+        student.experts[1].net[-1].bias.fill_(-0.4)
+        student.router[-1].bias.copy_(torch.tensor([5.0, -5.0]))
+    save_distillation_checkpoint(
+        checkpoint_path,
+        student=student,
+        agent_steps=8,
+        teacher_metadata={"task_name": "G1WalkFlat"},
+        distill_runtime_cfg={
+            "student_model_type": "moe",
+            "student_obs_dim": 4,
+            "student_action_dim": 2,
+            "student_num_experts": 2,
+            "student_expert_hidden_dims": [],
+            "student_router_hidden_dims": [],
+            "student_activation": "elu",
+            "student_squash_action": False,
+            "student_routing_mode": "soft",
+            "student_router_temperature": 1.0,
+            "command_intent_loss_coef": 0.25,
+            "command_intent_expert_targets": {"active": 0, "inactive": 1},
+        },
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeEnv:
+        action_space = SimpleNamespace(
+            shape=(2,),
+            low=np.full((2,), -1.0),
+            high=np.full((2,), 1.0),
+        )
+
+        def __init__(self) -> None:
+            self.state = SimpleNamespace(
+                info={"commands": np.zeros((1, 3), dtype=np.float32)}
+            )
+
+        def get_physics_state_snapshot(self):
+            return np.zeros((1, 4), dtype=np.float32)
+
+    class FakeWrapper:
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str):
+            self.env = env
+
+        def reset(self):
+            return torch.zeros((1, 4), dtype=torch.float32), {}
+
+        def step(self, actions):
+            captured["actions"] = actions.detach().clone()
+            return torch.zeros((1, 4), dtype=torch.float32), torch.zeros((1,)), False, {}
+
+    deps = {
+        "resolve_checkpoint": lambda playback_cfg, cfg, root_dir: checkpoint_path,
+        "create_env": lambda cfg, *, num_envs: FakeEnv(),
+        "wrapper_cls": FakeWrapper,
+    }
+    cfg = SimpleNamespace(
+        training=SimpleNamespace(task_name="G1WalkFlat"),
+        interactive=SimpleNamespace(
+            distill_command_routing="auto",
+            distill_command_xy_threshold=0.05,
+            distill_command_yaw_threshold=0.05,
+            distill_command_routing_bias=10.0,
+        ),
+        algo=SimpleNamespace(
+            command_intent_expert_targets={"active": 0, "inactive": 1},
+        ),
+    )
+
+    session, _policy_obs_mode, _checkpoint = create_distill_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run=str(checkpoint_path),
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            num_envs=1,
+        ),
+        cfg=cfg,
+        root_dir=tmp_path,
+        device="cpu",
+        deps=deps,
+        log=lambda message: None,
+    )
+
+    session.reset()
+    session.step_once()
+    assert torch.allclose(captured["actions"], torch.full((1, 2), -0.4))
+    assert getattr(session.policy, "_unilab_distill_last_command_intents") == ("inactive",)
+    assert getattr(session.policy, "_unilab_distill_last_expected_experts") == (1,)
+    assert getattr(session.policy, "_unilab_distill_last_selected_experts") == (1,)
+    assert getattr(session.policy, "_unilab_distill_command_routing_applied") is True
+
+    session.env.state.info["commands"] = np.array([[0.2, 0.0, 0.0]], dtype=np.float32)
+    session.step_once()
+    assert torch.allclose(captured["actions"], torch.full((1, 2), 0.25))
+    assert getattr(session.policy, "_unilab_distill_last_command_intents") == ("active",)
+    assert getattr(session.policy, "_unilab_distill_last_expected_experts") == (0,)
 
 
 def test_distill_playback_resolves_explicit_student_checkpoint_path(

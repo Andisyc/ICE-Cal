@@ -18,6 +18,7 @@ Use these rules before choosing tests. Never test only the edited file when the 
 | `stand_action_authority` | command mode -> action execution -> PD target -> stability/recovery | S1/S2/S4; T-transform, T-oracle, T-scale, T-live |
 | `action_scale` / default pose | config -> actor output -> `apply_action` -> PD target -> first-step physics | S2/S4; T-transform, T-scale, T-live |
 | checkpoint/run_config playback | run_config -> `_apply_checkpoint_env_contract` -> env obs_dim -> actor load -> interactive command probe | S3/S4; T-persist, T-order, T-diff, T-live |
+| distill command intent routing | command sampler/info -> `command_active_mask` -> collection filter -> persisted command intent / role labels -> multi-task dataset assembly -> router loss/prior -> checkpoint metadata -> distill playback trace | S1/S2/S3/S4; T-mask, T-role, T-dist, T-grad, T-persist, T-live |
 
 ## Cross-Repo Runtime
 

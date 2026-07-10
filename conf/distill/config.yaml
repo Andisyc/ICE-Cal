@@ -14,6 +14,10 @@ algo:
   aux_loss_coef: 0.0
   role_loss_coef: 0.0
   role_expert_targets: {}
+  command_intent_loss_coef: 0.0
+  command_intent_expert_targets:
+    active: 0
+    inactive: 1
   save_interval_steps: 10000000
   log_interval_steps: 32768
   load_run: "-1"
@@ -67,6 +71,8 @@ training:
   offline_checkpoint: null
   offline_repeat_dataset: false
   offline_shuffle: false
+  offline_balance_key: none
+  offline_balanced_labels: []
   formal_run: false
   formal_run_name: null
   formal_run_dir: null
@@ -122,6 +128,10 @@ interactive:
   keyboard_step_lin: 0.1
   keyboard_step_ang: 0.2
   require_keyboard_command_obs: true
+  distill_command_routing: auto
+  distill_command_xy_threshold: 0.05
+  distill_command_yaw_threshold: 0.05
+  distill_command_routing_bias: 10.0
 
 env: {}
 reward: {}

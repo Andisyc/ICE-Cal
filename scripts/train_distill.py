@@ -33,6 +33,10 @@ from unilab.training import BackendAdapter, ExperimentTracker, create_env, ensur
 from unilab.training.run import resolve_task_checkpoint_path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+_OWNER_COMMAND_SAMPLE_FILTERS = {
+    "G1WalkFlat": "active",
+    "G1StandStill": "inactive",
+}
 
 
 def _int_tuple(values: Any) -> tuple[int, ...]:
@@ -159,10 +163,25 @@ def _distill_runtime_cfg(
                 resolve=True,
             )
         ),
+        "command_intent_loss_coef": float(
+            OmegaConf.select(cfg, "algo.command_intent_loss_coef", default=0.0)
+        ),
+        "command_intent_expert_targets": dict(
+            OmegaConf.to_container(
+                OmegaConf.select(cfg, "algo.command_intent_expert_targets", default={}),
+                resolve=True,
+            )
+        ),
         "offline_repeat_dataset": bool(
             OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)
         ),
         "offline_shuffle": bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
+        "offline_balance_key": str(
+            OmegaConf.select(cfg, "training.offline_balance_key", default="none")
+        ),
+        "offline_balanced_labels": list(
+            OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
+        ),
         **_student_runtime_cfg(cfg),
         "teacher_obs_dim": int(cfg.teacher.obs_dim),
     }
@@ -198,8 +217,13 @@ def _probe_result(
         "aux_loss": result.last_aux_loss,
         "role_loss": result.last_role_loss,
         "role_target_count": result.last_role_target_count,
+        "command_intent_loss": result.last_command_intent_loss,
+        "command_intent_target_count": result.last_command_intent_target_count,
         "expert_usage": result.last_expert_usage,
         "route_entropy": result.last_route_entropy,
+        "offline_balance_key": result.balance_key,
+        "offline_batch_label_counts": result.batch_label_counts,
+        "offline_last_balance_label_counts": result.last_balance_label_counts,
         "update_count": result.update_count,
         "samples_seen": result.samples_seen,
         "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
@@ -277,6 +301,15 @@ def build_distillation_trainer(
         role_expert_targets=dict(
             OmegaConf.to_container(
                 OmegaConf.select(cfg, "algo.role_expert_targets", default={}),
+                resolve=True,
+            )
+        ),
+        command_intent_loss_coef=float(
+            OmegaConf.select(cfg, "algo.command_intent_loss_coef", default=0.0)
+        ),
+        command_intent_expert_targets=dict(
+            OmegaConf.to_container(
+                OmegaConf.select(cfg, "algo.command_intent_expert_targets", default={}),
                 resolve=True,
             )
         ),
@@ -370,6 +403,10 @@ def run_offline_dataset_update(
         repeat_dataset=bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)),
         shuffle=bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
         seed=int(cfg.algo.seed),
+        balance_key=str(OmegaConf.select(cfg, "training.offline_balance_key", default="none")),
+        balanced_labels=list(
+            OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
+        ),
     )
     return _probe_result(
         cfg,
@@ -486,6 +523,8 @@ def _expected_samples_seen_for_offline_run(
         expected_teacher_action_dim=int(cfg.teacher.action_dim),
         device=device,
     )
+    if str(OmegaConf.select(cfg, "training.offline_balance_key", default="none")) != "none":
+        return int(batch_size) * int(max_updates)
     if bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)):
         samples_seen = 0
         cursor = 0
@@ -595,6 +634,57 @@ def _distill_device(cfg: DictConfig) -> str:
     return "cpu" if device in (None, "") else str(device)
 
 
+def _expected_owner_command_sample_filter(cfg: DictConfig) -> str | None:
+    task_name = str(OmegaConf.select(cfg, "training.task_name"))
+    return _OWNER_COMMAND_SAMPLE_FILTERS.get(task_name)
+
+
+def _require_owner_command_sample_filter(cfg: DictConfig) -> None:
+    expected_filter = _expected_owner_command_sample_filter(cfg)
+    if expected_filter is None:
+        return
+    actual_filter = str(OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none"))
+    if actual_filter != expected_filter:
+        task_name = str(OmegaConf.select(cfg, "training.task_name"))
+        raise ValueError(
+            f"{task_name} requires training.collect_command_sample_filter={expected_filter} "
+            f"for command-intent distillation collection; got {actual_filter!r}"
+        )
+
+
+def _require_collected_command_intent_contract(cfg: DictConfig, dataset: Any) -> None:
+    expected_filter = _expected_owner_command_sample_filter(cfg)
+    if expected_filter is None:
+        return
+    expected_intent = "active" if expected_filter == "active" else "inactive"
+    actual_filter = str(dataset.metadata.get("command_sample_filter", "none"))
+    if actual_filter != expected_filter:
+        raise ValueError(
+            "collected dataset command filter mismatch: "
+            f"expected {expected_filter!r}, got {actual_filter!r}"
+        )
+    if dataset.commands is None:
+        raise ValueError("owner command-intent collection must persist dataset.commands")
+    if dataset.command_intents is None:
+        raise ValueError("owner command-intent collection must persist dataset.command_intents")
+    intent_counts = dict(dataset.metadata.get("command_intent_counts") or {})
+    expected_counts = {expected_intent: int(dataset.num_samples)}
+    if intent_counts != expected_counts:
+        raise ValueError(
+            "collected dataset command intent mismatch: "
+            f"expected {expected_counts}, got {intent_counts}"
+        )
+    seen_samples = dataset.metadata.get("command_seen_samples")
+    selected_samples = dataset.metadata.get("command_selected_samples")
+    if seen_samples is None or selected_samples is None:
+        raise ValueError("owner command-intent collection must record command_seen/selected samples")
+    if int(selected_samples) < int(dataset.num_samples):
+        raise ValueError(
+            "owner command-intent collection selected too few samples: "
+            f"selected={selected_samples}, dataset_num_samples={dataset.num_samples}"
+        )
+
+
 def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
     """Keep teacher-target collection scoped to explicit 98-D flat/standing routes."""
 
@@ -649,6 +739,7 @@ def run_collect_dataset(
         raise ValueError("training.collect_dataset_path must be set for live dataset collection")
 
     action_mode = _collect_action_mode(cfg)
+    _require_owner_command_sample_filter(cfg)
     teacher_policy = None
     rollout_policy = None
     teacher_policy_checkpoint_path: Path | None = None
@@ -745,6 +836,7 @@ def run_collect_dataset(
             max_env_steps=None if collect_max_env_steps is None else int(collect_max_env_steps),
             metadata=metadata,
         )
+        _require_collected_command_intent_contract(cfg, dataset)
         save_distillation_dataset(resolved_dataset_path, dataset)
     finally:
         close = getattr(env, "close", None)
@@ -785,6 +877,7 @@ def run_collect_dataset(
         ),
         "collect_command_seen_samples": dataset.metadata.get("command_seen_samples"),
         "collect_command_selected_samples": dataset.metadata.get("command_selected_samples"),
+        "collect_command_intent_counts": dataset.metadata.get("command_intent_counts"),
     }
 
 

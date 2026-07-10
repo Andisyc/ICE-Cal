@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,21 @@ def _metadata_role_labels(metadata: dict[str, Any], *, num_samples: int) -> list
             f"labels={len(labels)} samples={int(num_samples)}"
         )
     return labels
+
+
+def _report_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    report = dict(metadata)
+    raw_role_labels = report.pop("role_labels", None)
+    if isinstance(raw_role_labels, list):
+        counts = Counter(str(label) for label in raw_role_labels)
+        report["role_label_counts"] = {
+            role: int(counts[role])
+            for role in sorted(counts)
+        }
+        report["role_label_count_total"] = int(sum(counts.values()))
+    elif raw_role_labels is not None:
+        report["role_labels_type"] = type(raw_role_labels).__name__
+    return report
 
 
 def _action_imitation_summary(
@@ -184,7 +200,7 @@ def run_check(
             "moe_expert/dataset_num_samples": dataset.num_samples,
             "moe_expert/dataset_student_obs_dim": dataset.student_obs_dim,
             "moe_expert/dataset_teacher_obs_dim": dataset.teacher_obs_dim,
-            "moe_expert/dataset_metadata": dict(dataset.metadata),
+            "moe_expert/dataset_metadata": _report_metadata(dict(dataset.metadata)),
             "moe_expert/role_labels_present": diagnostics.role_labels_present,
             "moe_expert/diagnostics": payload,
             "moe_expert/action_imitation": action_imitation,

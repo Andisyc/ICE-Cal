@@ -162,6 +162,8 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.offline_checkpoint is None
     assert cfg.training.offline_repeat_dataset is False
     assert cfg.training.offline_shuffle is False
+    assert cfg.training.offline_balance_key == "none"
+    assert cfg.training.offline_balanced_labels == []
     assert cfg.training.formal_run is False
     assert cfg.training.formal_run_name is None
     assert cfg.training.formal_run_dir is None
@@ -187,6 +189,10 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.collect_max_env_steps is None
     assert cfg.interactive.action_mode == "zero"
     assert cfg.interactive.policy_obs_mode == "auto"
+    assert cfg.interactive.distill_command_routing == "auto"
+    assert cfg.interactive.distill_command_xy_threshold == pytest.approx(0.05)
+    assert cfg.interactive.distill_command_yaw_threshold == pytest.approx(0.05)
+    assert cfg.interactive.distill_command_routing_bias == pytest.approx(10.0)
     assert cfg.env.commands.observe_height_command is True
     assert cfg.reward.scales.track_base_height_exp_smooth == pytest.approx(4.0)
     assert cfg.teacher.algo_family == "sac"
@@ -197,6 +203,8 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.algo.aux_loss_coef == pytest.approx(0.0)
     assert cfg.algo.role_loss_coef == pytest.approx(0.0)
     assert dict(cfg.algo.role_expert_targets) == {}
+    assert cfg.algo.command_intent_loss_coef == pytest.approx(0.0)
+    assert dict(cfg.algo.command_intent_expert_targets) == {"active": 0, "inactive": 1}
     assert cfg.student.model_type == "mlp"
     assert cfg.student.obs_dim == 99
     assert cfg.student.action_dim == 29
@@ -279,13 +287,19 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
             "algo.aux_loss_coef=0.1",
             "algo.role_loss_coef=0.2",
             "+algo.role_expert_targets={stand:0,walk_height:1}",
+            "algo.command_intent_loss_coef=0.3",
+            "algo.command_intent_expert_targets={inactive:0,active:1}",
             "training.offline_dataset_path=/tmp/distill_dataset.pt",
             "training.offline_batch_size=4",
             "training.offline_max_updates=2",
             "training.offline_checkpoint=/tmp/student.pt",
             "training.offline_repeat_dataset=true",
             "training.offline_shuffle=true",
+            "training.offline_balance_key=command_intent",
+            "training.offline_balanced_labels=[inactive,active]",
             "training.play_checkpoint_path=/tmp/play_student.pt",
+            "interactive.distill_command_routing=hard",
+            "interactive.distill_command_routing_bias=7.5",
             "training.formal_run=true",
             "training.formal_run_name=test_formal",
             "training.formal_run_dir=/tmp/distill_formal",
@@ -308,13 +322,19 @@ def test_distill_moe_student_config_composes_only_when_selected() -> None:
     assert cfg.algo.aux_loss_coef == pytest.approx(0.1)
     assert cfg.algo.role_loss_coef == pytest.approx(0.2)
     assert dict(cfg.algo.role_expert_targets) == {"stand": 0, "walk_height": 1}
+    assert cfg.algo.command_intent_loss_coef == pytest.approx(0.3)
+    assert dict(cfg.algo.command_intent_expert_targets) == {"inactive": 0, "active": 1}
     assert cfg.training.offline_dataset_path == "/tmp/distill_dataset.pt"
     assert cfg.training.offline_batch_size == 4
     assert cfg.training.offline_max_updates == 2
     assert cfg.training.offline_checkpoint == "/tmp/student.pt"
     assert cfg.training.offline_repeat_dataset is True
     assert cfg.training.offline_shuffle is True
+    assert cfg.training.offline_balance_key == "command_intent"
+    assert cfg.training.offline_balanced_labels == ["inactive", "active"]
     assert cfg.training.play_checkpoint_path == "/tmp/play_student.pt"
+    assert cfg.interactive.distill_command_routing == "hard"
+    assert cfg.interactive.distill_command_routing_bias == pytest.approx(7.5)
     assert cfg.training.formal_run is True
     assert cfg.training.formal_run_name == "test_formal"
     assert cfg.training.formal_run_dir == "/tmp/distill_formal"

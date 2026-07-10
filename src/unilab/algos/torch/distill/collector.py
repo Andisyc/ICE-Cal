@@ -270,6 +270,8 @@ def collect_distillation_dataset_from_env(
     student_chunks: list[torch.Tensor] = []
     teacher_chunks: list[torch.Tensor] = []
     teacher_action_chunks: list[torch.Tensor] = []
+    command_chunks: list[torch.Tensor] = []
+    command_intent_chunks: list[str] = []
     env_steps = 0
     collected_count = 0
     command_seen_samples = 0
@@ -288,6 +290,24 @@ def collect_distillation_dataset_from_env(
             projection=str(student_projection),
             expected_student_obs_dim=int(expected_student_obs_dim),
             student_drop_index=student_drop_index,
+        )
+        commands_np = (
+            _info_array(
+                current_info,
+                str(command_info_key),
+                expected_rows=teacher_np.shape[0],
+            )
+            if command_sample_filter != "none"
+            else None
+        )
+        command_active = (
+            command_active_mask(
+                commands_np,
+                xy_threshold=float(command_xy_threshold),
+                yaw_threshold=float(command_yaw_threshold),
+            )
+            if commands_np is not None
+            else None
         )
         row_mask = _command_sample_mask(
             current_info,
@@ -331,6 +351,8 @@ def collect_distillation_dataset_from_env(
         selected_teacher_np = teacher_np[row_mask]
         selected_student_np = student_np[row_mask]
         selected_actions = label_actions[row_mask] if label_actions is not None else None
+        selected_commands = commands_np[row_mask] if commands_np is not None else None
+        selected_command_active = command_active[row_mask] if command_active is not None else None
         remaining = int(num_samples) - collected_count
         take = min(remaining, selected_teacher_np.shape[0])
         if take > 0:
@@ -339,6 +361,12 @@ def collect_distillation_dataset_from_env(
             if selected_actions is not None:
                 teacher_action_chunks.append(
                     torch.as_tensor(selected_actions[:take], dtype=torch.float32)
+                )
+            if selected_commands is not None and selected_command_active is not None:
+                command_chunks.append(torch.as_tensor(selected_commands[:take], dtype=torch.float32))
+                command_intent_chunks.extend(
+                    "active" if bool(value) else "inactive"
+                    for value in selected_command_active[:take]
                 )
             collected_count += int(take)
         if actions is not None:
@@ -404,4 +432,6 @@ def collect_distillation_dataset_from_env(
         teacher_actions=(
             torch.cat(teacher_action_chunks, dim=0) if teacher_action_chunks else None
         ),
+        commands=torch.cat(command_chunks, dim=0) if command_chunks else None,
+        command_intents=tuple(command_intent_chunks) if command_intent_chunks else None,
     )

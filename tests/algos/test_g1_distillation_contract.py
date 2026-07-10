@@ -338,6 +338,60 @@ def test_moe_distillation_trainer_applies_role_conditioned_router_loss() -> None
     assert router_grad_norm > 0.0
 
 
+def test_moe_distillation_trainer_applies_command_intent_router_loss() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MoEStudentPolicy,
+    )
+
+    torch.manual_seed(47)
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    with torch.no_grad():
+        for expert in student.experts:
+            expert.net[-1].weight.zero_()
+            expert.net[-1].bias.zero_()
+        student.router[-1].weight.zero_()
+        student.router[-1].bias.zero_()
+    optimizer = torch.optim.Adam(student.parameters(), lr=1e-2)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=optimizer,
+        command_intent_loss_coef=0.75,
+        command_intent_expert_targets={"inactive": 0, "active": 1},
+    )
+
+    stats = trainer.update(
+        DistillationBatch(
+            student_obs=torch.eye(4),
+            teacher_obs=torch.empty(4, 0),
+            command_intents=("inactive", "inactive", "active", "active"),
+            teacher_actions=torch.zeros(4, 2),
+        )
+    )
+
+    router_grad_norm = sum(
+        float(param.grad.detach().pow(2).sum().item())
+        for param in student.router.parameters()
+        if param.grad is not None
+    )
+    assert stats.behavior_loss == pytest.approx(0.0)
+    assert stats.aux_loss == pytest.approx(0.0)
+    assert stats.role_loss == pytest.approx(0.0)
+    assert stats.command_intent_loss > 0.0
+    assert stats.command_intent_target_count == 4
+    assert stats.loss == pytest.approx(0.75 * stats.command_intent_loss)
+    assert router_grad_norm > 0.0
+
+
 def test_moe_role_conditioned_router_loss_fails_closed() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,
@@ -395,6 +449,68 @@ def test_moe_role_conditioned_router_loss_fails_closed() -> None:
                 student_obs=torch.zeros(2, 4),
                 teacher_obs=torch.empty(2, 0),
                 role_labels=("stand", "stand"),
+                teacher_actions=torch.zeros(2, 2),
+            )
+        )
+
+
+def test_moe_command_intent_router_loss_fails_closed() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MLPStudentPolicy,
+        MoEStudentPolicy,
+    )
+
+    student = MoEStudentPolicy(obs_dim=4, action_dim=2, num_experts=2)
+    optimizer = torch.optim.Adam(student.parameters(), lr=1e-2)
+    with pytest.raises(ValueError, match="command_intent_expert_targets"):
+        BehaviorDistillationTrainer(
+            student=student,
+            teacher=torch.nn.Identity(),
+            optimizer=optimizer,
+            command_intent_loss_coef=0.1,
+        )
+
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=optimizer,
+        command_intent_loss_coef=0.1,
+        command_intent_expert_targets={"inactive": 0},
+    )
+    with pytest.raises(ValueError, match="command_intents"):
+        trainer.update(
+            DistillationBatch(
+                student_obs=torch.zeros(2, 4),
+                teacher_obs=torch.empty(2, 0),
+                teacher_actions=torch.zeros(2, 2),
+            )
+        )
+    with pytest.raises(ValueError, match="unmapped command intent"):
+        trainer.update(
+            DistillationBatch(
+                student_obs=torch.zeros(2, 4),
+                teacher_obs=torch.empty(2, 0),
+                command_intents=("inactive", "active"),
+                teacher_actions=torch.zeros(2, 2),
+            )
+        )
+
+    mlp = MLPStudentPolicy(obs_dim=4, action_dim=2, hidden_dims=(8,))
+    mlp_trainer = BehaviorDistillationTrainer(
+        student=mlp,
+        teacher=torch.nn.Identity(),
+        optimizer=torch.optim.Adam(mlp.parameters(), lr=1e-2),
+        command_intent_loss_coef=0.1,
+        command_intent_expert_targets={"inactive": 0},
+    )
+    with pytest.raises(TypeError, match="router logits"):
+        mlp_trainer.update(
+            DistillationBatch(
+                student_obs=torch.zeros(2, 4),
+                teacher_obs=torch.empty(2, 0),
+                command_intents=("inactive", "inactive"),
                 teacher_actions=torch.zeros(2, 2),
             )
         )
@@ -570,7 +686,11 @@ def test_moe_expert_semantics_probe_reports_cached_action_error(tmp_path) -> Non
     )
 
     action_imitation = details["moe_expert/action_imitation"]
+    dataset_metadata = details["moe_expert/dataset_metadata"]
     assert all(check.level != "FAIL" for check in checks)
+    assert "role_labels" not in dataset_metadata
+    assert dataset_metadata["role_label_counts"] == {"stand": 2, "walk_flat": 2}
+    assert dataset_metadata["role_label_count_total"] == 4
     assert action_imitation["overall"]["mse"] == pytest.approx(0.0)
     assert action_imitation["by_role"]["stand"]["mse"] == pytest.approx(0.0)
     assert action_imitation["by_role"]["walk_flat"]["mse"] == pytest.approx(0.0)
@@ -654,6 +774,57 @@ def test_distillation_dataset_roundtrip_preserves_role_labels_contract(tmp_path)
         "stand_height",
         "walk_height",
     )
+
+
+def test_distillation_dataset_roundtrip_preserves_command_intent_contract(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    student_obs = torch.arange(20, dtype=torch.float32).reshape(4, 5)
+    teacher_obs = torch.arange(28, dtype=torch.float32).reshape(4, 7)
+    commands = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [0.10, 0.0, 0.0],
+            [0.0, 0.0, 0.20],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    command_intents = ("inactive", "active", "active", "inactive")
+    dataset = build_distillation_dataset(
+        student_obs,
+        teacher_obs,
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+        metadata={"source": "command-intent-fixture"},
+        commands=commands,
+        command_intents=command_intents,
+        role_labels=("stand", "walk_flat", "walk_flat", "stand"),
+    )
+
+    batch = dataset.as_batch(start=1, batch_size=2)
+    assert batch.commands is not None
+    assert torch.equal(batch.commands, commands[1:3])
+    assert batch.command_intents == ("active", "active")
+    assert batch.role_labels == ("walk_flat", "walk_flat")
+
+    checkpoint_path = tmp_path / "command_intent_distill_dataset.pt"
+    save_distillation_dataset(checkpoint_path, dataset)
+    restored = load_distillation_dataset(
+        checkpoint_path,
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+    )
+
+    assert restored.commands is not None
+    assert torch.equal(restored.commands, commands)
+    assert restored.command_intents == command_intents
+    assert restored.metadata["command_intents"] == list(command_intents)
+    assert restored.metadata["command_intent_counts"] == {"active": 2, "inactive": 2}
 
 
 def test_distillation_dataset_roundtrip_preserves_cached_teacher_actions(tmp_path) -> None:
@@ -749,6 +920,57 @@ def test_distillation_dataset_rejects_bad_role_labels_contract() -> None:
         )
 
 
+def test_distillation_dataset_rejects_bad_command_intent_contract() -> None:
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    with pytest.raises(ValueError, match="commands.*shape"):
+        build_distillation_dataset(
+            torch.zeros(4, 5),
+            torch.zeros(4, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            commands=torch.zeros(4, 2),
+        )
+
+    with pytest.raises(ValueError, match="commands batch size"):
+        build_distillation_dataset(
+            torch.zeros(4, 5),
+            torch.zeros(4, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            commands=torch.zeros(3, 3),
+        )
+
+    commands = torch.zeros(4, 3)
+    commands[0, 0] = float("nan")
+    with pytest.raises(ValueError, match="commands.*finite"):
+        build_distillation_dataset(
+            torch.zeros(4, 5),
+            torch.zeros(4, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            commands=commands,
+        )
+
+    with pytest.raises(ValueError, match="command_intents length"):
+        build_distillation_dataset(
+            torch.zeros(4, 5),
+            torch.zeros(4, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            command_intents=("active",),
+        )
+
+    with pytest.raises(ValueError, match="command_intents.*active/inactive"):
+        build_distillation_dataset(
+            torch.zeros(4, 5),
+            torch.zeros(4, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            command_intents=("active", "inactive", "walk", "stand"),
+        )
+
+
 def test_distillation_dataset_rejects_bad_cached_teacher_actions_contract() -> None:
     from unilab.algos.torch.distill import build_distillation_dataset
 
@@ -804,6 +1026,8 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
         expected_teacher_obs_dim=5,
         expected_teacher_action_dim=3,
         teacher_actions=torch.full((2, 3), 0.25),
+        commands=torch.zeros(2, 3),
+        command_intents=("inactive", "inactive"),
         metadata={"task_name": "G1StandStill"},
     )
     walk_dataset = build_distillation_dataset(
@@ -813,6 +1037,11 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
         expected_teacher_obs_dim=5,
         expected_teacher_action_dim=3,
         teacher_actions=torch.full((3, 3), -0.5),
+        commands=torch.tensor(
+            [[0.1, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.3]],
+            dtype=torch.float32,
+        ),
+        command_intents=("active", "active", "active"),
         metadata={"task_name": "G1WalkHeight"},
     )
     save_distillation_dataset(stand_path, stand_dataset)
@@ -844,6 +1073,15 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     assert merged.metadata["source_count"] == 2
     assert merged.metadata["source_roles"] == ["stand", "walk_height"]
     assert merged.metadata["source_sample_counts"] == [2, 3]
+    assert merged.commands is not None
+    assert merged.command_intents == (
+        "inactive",
+        "inactive",
+        "active",
+        "active",
+        "active",
+    )
+    assert merged.metadata["command_intent_counts"] == {"active": 3, "inactive": 2}
     assert merged.as_batch(start=1, batch_size=3).role_labels == (
         "stand",
         "walk_height",
@@ -861,6 +1099,9 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     assert reloaded.role_labels == merged.role_labels
     assert reloaded.teacher_actions is not None
     assert torch.allclose(reloaded.teacher_actions, merged.teacher_actions)
+    assert reloaded.commands is not None
+    assert torch.equal(reloaded.commands, merged.commands)
+    assert reloaded.command_intents == merged.command_intents
 
 
 def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
@@ -904,6 +1145,20 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
             teacher_actions=torch.zeros(2, 3),
         ),
     )
+    command_schema_path = tmp_path / "command_schema.pt"
+    save_distillation_dataset(
+        command_schema_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 5),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+            teacher_actions=torch.zeros(2, 3),
+            commands=torch.zeros(2, 3),
+            command_intents=("inactive", "inactive"),
+        ),
+    )
 
     with pytest.raises(ValueError, match="at least one source"):
         build_multitask_distillation_dataset([])
@@ -928,6 +1183,13 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
             [
                 {"path": matching_path, "role": "stand"},
                 {"path": bad_dim_path, "role": "walk_height"},
+            ],
+        )
+    with pytest.raises(ValueError, match="all include commands or none"):
+        build_multitask_distillation_dataset(
+            [
+                {"path": matching_path, "role": "stand"},
+                {"path": command_schema_path, "role": "walk_height"},
             ],
         )
 
@@ -1214,6 +1476,13 @@ def test_collect_distillation_dataset_from_env_filters_active_command_samples() 
     assert dataset.metadata["command_seen_samples"] == 4
     assert dataset.metadata["command_selected_samples"] == 2
     assert dataset.metadata["env_steps"] == 1
+    assert dataset.commands is not None
+    assert torch.equal(
+        dataset.commands,
+        torch.tensor([[0.10, 0.0, 0.0], [0.0, 0.0, 0.10]], dtype=torch.float32),
+    )
+    assert dataset.command_intents == ("active", "active")
+    assert dataset.metadata["command_intent_counts"] == {"active": 2}
     assert torch.equal(dataset.teacher_obs[0], torch.arange(8, 16, dtype=torch.float32))
     assert torch.equal(dataset.teacher_obs[1], torch.arange(8, dtype=torch.float32) + 1.0)
 
@@ -1243,6 +1512,13 @@ def test_collect_distillation_dataset_from_env_filters_inactive_command_samples(
     assert dataset.metadata["command_seen_samples"] == 4
     assert dataset.metadata["command_selected_samples"] == 2
     assert dataset.metadata["env_steps"] == 1
+    assert dataset.commands is not None
+    assert torch.equal(
+        dataset.commands,
+        torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=torch.float32),
+    )
+    assert dataset.command_intents == ("inactive", "inactive")
+    assert dataset.metadata["command_intent_counts"] == {"inactive": 2}
     assert torch.equal(dataset.teacher_obs[0], torch.arange(8, dtype=torch.float32))
     assert torch.equal(dataset.teacher_obs[1], torch.arange(8, 16, dtype=torch.float32) + 1.0)
 
@@ -1440,6 +1716,135 @@ def test_offline_distillation_run_can_repeat_dataset_for_multiple_updates() -> N
     assert result.samples_seen == 6
     assert len(result.losses) == 4
     assert result.last_student_grad_norm > 0.0
+
+
+def test_offline_distillation_run_balances_role_batches() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    class RaisingTeacher(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            del obs
+            raise AssertionError("balanced cached-target path must not call teacher")
+
+    torch.manual_seed(37)
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    optimizer = torch.optim.Adam(student.parameters(), lr=1e-2)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=RaisingTeacher(),
+        optimizer=optimizer,
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(6, 5),
+        torch.empty(6, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(6, 3),
+        role_labels=("stand", "walk", "walk", "walk", "walk", "walk"),
+    )
+
+    result = run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=4,
+        max_updates=3,
+        balance_key="role",
+        balanced_labels=("stand", "walk"),
+        seed=11,
+    )
+
+    assert result.update_count == 3
+    assert result.samples_seen == 12
+    assert result.batch_label_counts == (
+        {"stand": 2, "walk": 2},
+        {"stand": 2, "walk": 2},
+        {"stand": 2, "walk": 2},
+    )
+    assert result.last_balance_label_counts == {"stand": 2, "walk": 2}
+    assert result.last_teacher_action_source == "cached"
+    assert result.last_student_grad_norm > 0.0
+
+
+def test_offline_distillation_run_balances_command_intent_batches() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    torch.manual_seed(41)
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(6, 5),
+        torch.empty(6, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(6, 3),
+        command_intents=("inactive", "active", "active", "active", "active", "active"),
+    )
+
+    result = run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=4,
+        max_updates=2,
+        balance_key="command_intent",
+        balanced_labels=("inactive", "active"),
+        seed=13,
+    )
+
+    assert result.batch_label_counts == (
+        {"inactive": 2, "active": 2},
+        {"inactive": 2, "active": 2},
+    )
+    assert result.last_balance_label_counts == {"inactive": 2, "active": 2}
+    assert result.samples_seen == 8
+
+
+def test_offline_distillation_run_balanced_sampler_fails_closed() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(2, 5),
+        torch.empty(2, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(2, 3),
+    )
+
+    with pytest.raises(ValueError, match="role_labels"):
+        run_offline_distillation_updates(
+            trainer,
+            dataset,
+            batch_size=2,
+            max_updates=1,
+            balance_key="role",
+        )
 
 
 def test_distillation_student_checkpoint_loads_for_student_only_playback(tmp_path) -> None:

@@ -611,6 +611,13 @@ def test_g1_distill_playback_live_sentinel_moe_policy_checkpoint_contract(capsys
         env = FakeEnv()
         info = {"commands": np.zeros((1, 3), dtype=np.float32)}
         actions = None
+        policy = types.SimpleNamespace(
+            _unilab_distill_command_routing_mode="hard",
+            _unilab_distill_command_routing_applied=True,
+            _unilab_distill_last_command_intents=("inactive",),
+            _unilab_distill_last_expected_experts=(1,),
+            _unilab_distill_last_selected_experts=(1,),
+        )
 
         def reset(self):
             return np.zeros((1, 99), dtype=np.float32)
@@ -649,7 +656,12 @@ def test_g1_distill_playback_live_sentinel_moe_policy_checkpoint_contract(capsys
     assert details["distill_playback/temp_student_model_type"] == "moe"
     assert details["distill_playback/checkpoint_path"].endswith("model_1.pt")
     assert details["distill_playback/actions_abs_max"] == pytest.approx(0.05)
+    assert details["distill_playback/command_routing_mode"] == "hard"
+    assert details["distill_playback/command_intents"] == ["inactive"]
+    assert details["distill_playback/command_expected_experts"] == [1]
+    assert details["distill_playback/command_selected_experts"] == [1]
     assert "Loading distillation student checkpoint:" in out
+    assert "[PASS] distill_playback/command_routing_contract: inactive->1" in out
     assert isinstance(captured["loaded"].policy, MoEStudentPolicy)
     assert captured["loaded"].obs_dim == 99
     assert captured["loaded"].action_dim == 29
@@ -1145,6 +1157,8 @@ def test_distill_script_builds_role_conditioned_moe_trainer(tmp_path: Path):
             "student.router_hidden_dims=[16]",
             "algo.role_loss_coef=0.2",
             "+algo.role_expert_targets={stand:0,walk_height:1,height:2}",
+            "algo.command_intent_loss_coef=0.3",
+            "algo.command_intent_expert_targets={inactive:0,active:1}",
         ]
     )
     teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
@@ -1160,12 +1174,16 @@ def test_distill_script_builds_role_conditioned_moe_trainer(tmp_path: Path):
 
     assert trainer.role_loss_coef == pytest.approx(0.2)
     assert trainer.role_expert_targets == {"stand": 0, "walk_height": 1, "height": 2}
+    assert trainer.command_intent_loss_coef == pytest.approx(0.3)
+    assert trainer.command_intent_expert_targets == {"inactive": 0, "active": 1}
     assert runtime_cfg["role_loss_coef"] == pytest.approx(0.2)
     assert runtime_cfg["role_expert_targets"] == {
         "stand": 0,
         "walk_height": 1,
         "height": 2,
     }
+    assert runtime_cfg["command_intent_loss_coef"] == pytest.approx(0.3)
+    assert runtime_cfg["command_intent_expert_targets"] == {"inactive": 0, "active": 1}
 
 
 def test_distill_script_resolves_teacher_checkpoint_with_training_semantics(
@@ -1483,6 +1501,69 @@ def test_distill_script_dataset_update_loads_saved_dataset_and_saves_moe_student
     assert loaded_student.policy(torch.randn(1, 99)).shape == (1, 29)
 
 
+def test_distill_script_offline_update_uses_balanced_role_sampler(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        load_distillation_checkpoint,
+        save_distillation_dataset,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "algo.learning_rate=0.01",
+            "training.offline_balance_key=role",
+            "training.offline_balanced_labels=[stand,walk]",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+    dataset_path = tmp_path / "imbalanced_dataset.pt"
+    dataset = build_distillation_dataset(
+        torch.randn(6, 99),
+        torch.randn(6, 99),
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        expected_teacher_action_dim=29,
+        teacher_actions=torch.randn(6, 29),
+        role_labels=("stand", "walk", "walk", "walk", "walk", "walk"),
+    )
+    save_distillation_dataset(dataset_path, dataset)
+    student_checkpoint = tmp_path / "balanced_student.pt"
+
+    probe = mod.run_offline_dataset_update(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        dataset_path=dataset_path,
+        batch_size=4,
+        max_updates=2,
+        checkpoint_path=student_checkpoint,
+        device="cpu",
+    )
+
+    assert probe["offline_balance_key"] == "role"
+    assert probe["offline_batch_label_counts"] == (
+        {"stand": 2, "walk": 2},
+        {"stand": 2, "walk": 2},
+    )
+    assert probe["offline_last_balance_label_counts"] == {"stand": 2, "walk": 2}
+    assert probe["samples_seen"] == 8
+    restored = MLPStudentPolicy(obs_dim=99, action_dim=29, hidden_dims=(32,))
+    checkpoint = load_distillation_checkpoint(restored, student_checkpoint)
+    runtime_cfg = checkpoint["distill_runtime_cfg"]
+    assert runtime_cfg["offline_balance_key"] == "role"
+    assert runtime_cfg["offline_balanced_labels"] == ["stand", "walk"]
+
+
 def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Path):
     import torch
 
@@ -1667,6 +1748,8 @@ def test_g1_distill_dual_teacher_probe_requires_owner_intent_filters(
         task_name = str(cfg.training.task_name)
         role = "walk_flat" if task_name == "G1WalkFlat" else "stand"
         command_filter = str(cfg.training.collect_command_sample_filter)
+        command_intent = "active" if command_filter == "active" else "inactive"
+        command_value = 0.1 if command_intent == "active" else 0.0
         captured_filters[role] = command_filter
         captured_checkpoint_paths[role] = str(cfg.teacher.checkpoint_path)
         save_distillation_dataset(
@@ -1678,6 +1761,8 @@ def test_g1_distill_dual_teacher_probe_requires_owner_intent_filters(
                 expected_teacher_obs_dim=98,
                 expected_teacher_action_dim=29,
                 teacher_actions=torch.full((2, 29), 0.1 if role == "walk_flat" else -0.1),
+                commands=torch.full((2, 3), command_value),
+                command_intents=(command_intent, command_intent),
                 metadata={
                     "source": "fake-filtered-collection",
                     "command_sample_filter": command_filter,
@@ -1717,6 +1802,14 @@ def test_g1_distill_dual_teacher_probe_requires_owner_intent_filters(
     assert payload["command_filter_contracts"]["stand"]["expected_filter"] == "inactive"
     assert payload["command_filter_contracts"]["walk_flat"]["command_selected_samples"] == 2
     assert payload["command_filter_contracts"]["stand"]["command_selected_samples"] == 2
+    assert payload["offline_update"]["command_intent_loss"] > 0.0
+    assert payload["offline_update"]["command_intent_target_count"] == 2
+    assert payload["offline_update"]["balance_key"] == "role"
+    assert payload["offline_update"]["batch_label_counts"] == [{"walk_flat": 1, "stand": 1}]
+    assert payload["offline_update"]["last_balance_label_counts"] == {
+        "walk_flat": 1,
+        "stand": 1,
+    }
 
 
 def test_distill_script_collects_live_env_dataset_with_owner_projection(tmp_path: Path):
@@ -1825,6 +1918,7 @@ def test_distill_script_collects_stand_still_dataset_with_owner_config(tmp_path:
     assert probe["collect_command_sample_filter"] == "inactive"
     assert probe["collect_command_seen_samples"] == 4
     assert probe["collect_command_selected_samples"] == 4
+    assert probe["collect_command_intent_counts"] == {"inactive": 3}
     assert calls["kwargs"]["task_name"] == "G1StandStill"
     assert calls["kwargs"]["sim_backend"] == "mujoco"
     assert calls["kwargs"]["env_cfg_override"] == {"owner": "stand-still-distill-test"}
@@ -1842,6 +1936,7 @@ def test_distill_script_collects_stand_still_dataset_with_owner_config(tmp_path:
     assert restored.metadata["synthetic_teacher_tail"] is False
     assert restored.metadata["command_sample_filter"] == "inactive"
     assert restored.metadata["command_selected_samples"] == 4
+    assert restored.metadata["command_intent_counts"] == {"inactive": 3}
 
 
 def test_distill_script_collects_owner_filtered_walk_dataset(tmp_path: Path):
@@ -1882,6 +1977,7 @@ def test_distill_script_collects_owner_filtered_walk_dataset(tmp_path: Path):
     assert probe["collect_command_sample_filter"] == "active"
     assert probe["collect_command_seen_samples"] == 4
     assert probe["collect_command_selected_samples"] == 2
+    assert probe["collect_command_intent_counts"] == {"active": 2}
 
     restored = load_distillation_dataset(
         dataset_path,
@@ -1891,8 +1987,41 @@ def test_distill_script_collects_owner_filtered_walk_dataset(tmp_path: Path):
     assert restored.metadata["command_sample_filter"] == "active"
     assert restored.metadata["command_seen_samples"] == 4
     assert restored.metadata["command_selected_samples"] == 2
+    assert restored.metadata["command_intent_counts"] == {"active": 2}
     assert torch.equal(restored.teacher_obs[0], torch.arange(98, 196, dtype=torch.float32))
     assert torch.equal(restored.teacher_obs[1], torch.arange(98, dtype=torch.float32) + 1.0)
+
+
+@pytest.mark.parametrize(
+    ("task_override", "bad_filter", "expected_filter"),
+    [
+        ("task=g1_walk_flat/mujoco", "inactive", "active"),
+        ("task=g1_stand_still/mujoco", "active", "inactive"),
+    ],
+)
+def test_distill_script_rejects_owner_command_filter_override(
+    tmp_path: Path,
+    task_override: str,
+    bad_filter: str,
+    expected_filter: str,
+) -> None:
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            task_override,
+            f"training.collect_command_sample_filter={bad_filter}",
+            "training.collect_num_samples=2",
+            "training.collect_num_envs=2",
+        ]
+    )
+
+    with pytest.raises(ValueError, match=f"requires training.collect_command_sample_filter={expected_filter}"):
+        mod.run_collect_dataset(
+            cfg,
+            dataset_path=tmp_path / "bad_owner_filter.pt",
+            create_env_fn=lambda *args, **kwargs: _FakeDistillCollectEnv(),
+            env_cfg_override_fn=lambda cfg: {"owner": "must-not-create-env"},
+        )
 
 
 def test_distill_script_rejects_teacher_policy_collection_on_height_route(
@@ -1968,6 +2097,8 @@ def test_distill_script_collects_stand_still_teacher_policy_dataset_and_updates(
     assert collect_probe["collect_action_mode"] == "teacher_policy"
     assert collect_probe["collect_action_seed"] is None
     assert collect_probe["collect_action_abs_max"] > 0.0
+    assert collect_probe["collect_command_sample_filter"] == "inactive"
+    assert collect_probe["collect_command_intent_counts"] == {"inactive": 3}
     assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
     assert fake_env.last_actions is not None
     assert np.isfinite(fake_env.last_actions).all()
@@ -1982,6 +2113,7 @@ def test_distill_script_collects_stand_still_teacher_policy_dataset_and_updates(
     assert restored.metadata["task_name"] == "G1StandStill"
     assert restored.metadata["action_mode"] == "teacher_policy"
     assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert restored.metadata["command_intent_counts"] == {"inactive": 3}
     assert restored.teacher_actions is not None
     assert restored.teacher_actions.shape == (3, 29)
     assert torch.isfinite(restored.teacher_actions).all()
@@ -2064,6 +2196,8 @@ def test_distill_script_collects_walk_flat_teacher_policy_cached_dataset(
     assert collect_probe["dataset_teacher_obs_dim"] == 98
     assert collect_probe["collect_action_mode"] == "teacher_policy"
     assert collect_probe["collect_action_abs_max"] > 0.0
+    assert collect_probe["collect_command_sample_filter"] == "active"
+    assert collect_probe["collect_command_intent_counts"] == {"active": 3}
     assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
     assert fake_env.last_actions is not None
     assert np.isfinite(fake_env.last_actions).all()
@@ -2077,6 +2211,7 @@ def test_distill_script_collects_walk_flat_teacher_policy_cached_dataset(
     assert restored.metadata["task_name"] == "G1WalkFlat"
     assert restored.metadata["action_mode"] == "teacher_policy"
     assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert restored.metadata["command_intent_counts"] == {"active": 3}
     assert restored.teacher_actions is not None
     assert restored.teacher_actions.shape == (3, 29)
     assert torch.isfinite(restored.teacher_actions).all()
