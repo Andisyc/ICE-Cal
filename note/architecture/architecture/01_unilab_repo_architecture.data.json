@@ -57,26 +57,26 @@
     },
     {
       "group": "Entry",
-      "path": "scripts/train_rsl_rl.py / train_mlx_ppo.py / train_appo.py / train_offpolicy.py",
+      "path": "scripts/train_rsl_rl.py / train_mlx_ppo.py / train_appo.py / train_offpolicy.py / train_distill.py",
       "color": "#475569",
       "blocks": [
         {
           "id": "U-E-02",
-          "role": "Hydra 训练入口。只做装配：解析 cfg、注册环境、构造 env/runner、处理 checkpoint、日志和回放。",
-          "lines": "train_rsl_rl.py:185-344; train_mlx_ppo.py:197-430; train_appo.py:24-74,157-430; train_offpolicy.py:150-235,387-720",
+          "role": "Hydra 训练入口。只做装配：解析 cfg、注册环境、构造 env/runner、处理 checkpoint、日志和回放；`train_distill.py` 当前接入离线 teacher/student/trainer 装配、teacher checkpoint input-dim preflight、MLP/MoE student 选择、fake-batch probe、saved-dataset offline update 和 live-env dataset collection；generic distill live playback sentinel 覆盖 MuJoCo reset/step 生命周期，并可生成 MLP/MoE 临时 student checkpoint。",
+          "lines": "train_rsl_rl.py:185-344; train_mlx_ppo.py:197-430; train_appo.py:24-74,157-430; train_offpolicy.py:150-235,387-720; train_distill.py:1-459; scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py:1-337",
           "concept": "C-ENTRY"
         }
       ]
     },
     {
       "group": "Config",
-      "path": "conf/{ppo,appo,offpolicy,hora_distill,ppo_him}/config.yaml",
+      "path": "conf/{ppo,appo,offpolicy,hora_distill,ppo_him,distill}/config.yaml",
       "color": "#2563eb",
       "blocks": [
         {
           "id": "U-C-01",
-          "role": "算法级 Hydra 根配置。定义训练设备、日志、runner 参数和默认 task choice。",
-          "lines": "conf/ppo/config.yaml:1-80; conf/appo/config.yaml:1-90; conf/offpolicy/config.yaml:1-95; conf/hora_distill/config.yaml:1-90; conf/ppo_him/config.yaml:1-80",
+          "role": "算法级 Hydra 根配置。定义训练设备、日志、runner 参数和默认 task choice。`conf/distill` 是 generic behavior distillation 的显式 owner root, 默认 `student.model_type=mlp`, 显式 override 才进入 MoE fake-batch、saved-dataset offline update 或 live-env dataset collection 路径。",
+          "lines": "conf/ppo/config.yaml:1-80; conf/appo/config.yaml:1-90; conf/offpolicy/config.yaml:1-95; conf/hora_distill/config.yaml:1-90; conf/ppo_him/config.yaml:1-80; conf/distill/config.yaml:1-116; conf/distill/task/g1_walk_height/mujoco.yaml:1-68",
           "concept": "C-CONFIG"
         }
       ]
@@ -211,8 +211,8 @@
       "blocks": [
         {
           "id": "U-A-01",
-          "role": "Torch 算法运行时。包含 RSL-RL PPO adapter、APPO、HORA、HIM-PPO、SAC/TD3、FastSAC/FlashSAC 等 learner/runner。",
-          "lines": "appo/runner.py:47-220; offpolicy/double_buffer_runner.py:41-220; fast_sac/learner.py:356-560; flash_sac/runner.py:1-220; rsl_rl_ppo.py:1-180",
+          "role": "Torch 算法运行时。包含 RSL-RL PPO adapter、APPO、HORA、HIM-PPO、SAC/TD3、FastSAC/FlashSAC, 以及 generic behavior distillation 的 learner/runner、离线训练模块、SAC teacher checkpoint inspect/validate、live-env observation collector、本地 MoE student、trainer aux diagnostics、fake-batch/saved-dataset/runtime collection metadata 和 MLP/MoE student-only playback loader。",
+          "lines": "appo/runner.py:47-220; offpolicy/double_buffer_runner.py:41-220; fast_sac/learner.py:356-560; flash_sac/runner.py:1-220; rsl_rl_ppo.py:1-180; distill/{models,moe_student,trainer,checkpoint,teacher,data,collector,offline,playback}.py:1-170",
           "concept": "C-ALGO"
         }
       ]
@@ -276,8 +276,8 @@
       "blocks": [
         {
           "id": "U-X-01",
-          "role": "资产、可视化与工具层。管理 robot/object XML/mesh/cache、demo 预设、导入导出、回放、批量渲染和 NaN 可视化。",
-          "lines": "assets/hub.py:1-120; demo.py:304-380 run_demo; tools/import_robot.py:1-180; tools/export_scene.py:1-160; visualization/playback.py:1-160",
+          "role": "资产、可视化与工具层。管理 robot/object XML/mesh/cache、demo 预设、导入导出、回放、批量渲染和 NaN 可视化；interactive playback 包含 generic distill student 的 fake-env session adapter 和 --algo distill CLI route。",
+          "lines": "assets/hub.py:1-120; demo.py:304-380 run_demo; tools/import_robot.py:1-180; tools/export_scene.py:1-160; visualization/playback.py:1-160; visualization/interactive_playback.py:184-250,851-1061; scripts/play_interactive.py:392-399,1279-1396",
           "concept": "C-ASSET"
         }
       ]

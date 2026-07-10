@@ -63,6 +63,15 @@ def _load_script(name: str) -> Any:
     return mod
 
 
+def _load_deploy_script(name: str) -> Any:
+    path = _SCRIPTS_DIR / "deploy" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
 def test_analyze_offpolicy_trace_reports_training_e2e(tmp_path, capsys):
     trace_path = tmp_path / "trace.json"
     trace_path.write_text(
@@ -95,7 +104,558 @@ def test_analyze_offpolicy_trace_reports_training_e2e(tmp_path, capsys):
     assert "weight_sync_end_to_next_update0_start_gap: n=1 mean=0.300ms" in out
 
 
+def test_g1_distill_playback_live_sentinel_contract(capsys):
+    mod = _load_deploy_script("check_unilab_g1_distill_playback_live_sentinel")
+
+    class FakeEnv:
+        action_space = types.SimpleNamespace(shape=(29,))
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self):
+            self.env = FakeEnv()
+            self.actions = None
+            self.info = {"commands": np.zeros((1, 3), dtype=np.float32)}
+            self.reset_count = 0
+            self.step_count = 0
+
+        def reset(self):
+            self.reset_count += 1
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def step_once(self):
+            self.step_count += 1
+            self.actions = np.zeros((1, 29), dtype=np.float32)
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def physics_state(self):
+            return np.zeros((1, 75), dtype=np.float32)
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_session(**kwargs):
+        captured.update(kwargs)
+        kwargs["log"]("Policy obs mode: actor")
+        kwargs["log"]("Action mode: zero")
+        return FakeSession(), "actor", None
+
+    checks, details = mod.run_check(
+        steps=2,
+        action_mode="zero",
+        load_run="-1",
+        checkpoint=None,
+        create_session_fn=fake_create_session,
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert all(check.level == "PASS" for check in checks)
+    assert captured["playback_cfg"].algo_log_name == "distill"
+    assert captured["playback_cfg"].task == "G1WalkHeight"
+    assert details["distill_playback/policy_obs_mode"] == "actor"
+    assert details["distill_playback/action_dim"] == 29
+    assert details["distill_playback/physics_shape"] == [1, 75]
+    assert details["distill_playback/actions_shape"] == [1, 29]
+    assert "UniLab G1 generic distill playback live sentinel" in out
+    assert "[PASS] distill_playback/actions: (1, 29)" in out
+
+
+def test_g1_distill_viewer_path_preflight_reaches_viewer_model(tmp_path: Path, monkeypatch, capsys):
+    mod = _load_deploy_script("check_unilab_g1_distill_viewer_path")
+    checkpoint = tmp_path / "model_2.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    class FakeEnv:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self):
+            self.env = FakeEnv()
+            self.actions = np.full((1, 29), 0.1, dtype=np.float32)
+
+        def reset(self):
+            return np.zeros((1, 98), dtype=np.float32)
+
+        def step_once(self):
+            return np.zeros((1, 98), dtype=np.float32)
+
+        def physics_state(self):
+            return np.zeros((1, 72), dtype=np.float32)
+
+    class FakeViewerModel:
+        nq = 35
+        nv = 34
+        nu = 29
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_session(**kwargs):
+        captured.update(kwargs)
+        kwargs["log"]("Policy obs mode: actor")
+        kwargs["log"]("Action mode: policy")
+        return FakeSession(), "actor", str(checkpoint)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/mjpython")
+    checks, details = mod.run_check(
+        task="g1_stand_still/mujoco",
+        action_mode="policy",
+        load_run=str(checkpoint),
+        checkpoint=None,
+        device="cpu",
+        create_session_fn=fake_create_session,
+        load_viewer_model_fn=lambda env, *, use_env_visual_model: FakeViewerModel(),
+        state_transfer_fn=lambda model, physics: {"qpos_shape": [35], "qvel_shape": [34]},
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert all(check.level == "PASS" for check in checks)
+    assert captured["playback_cfg"].task == "G1StandStill"
+    assert captured["playback_cfg"].action_mode == "policy"
+    assert details["distill_viewer/task_owner"] == "g1_stand_still/mujoco"
+    assert details["distill_viewer/cfg_student_obs_dim"] == 98
+    assert details["distill_viewer/cfg_teacher_obs_dim"] == 98
+    assert details["distill_viewer/checkpoint_path"] == str(checkpoint)
+    assert "mjpython scripts/play_interactive.py --algo distill" in details["distill_viewer/viewer_command"]
+    assert "UniLab G1 generic distill viewer path preflight" in out
+    assert "[PASS] distill_viewer/state_transfer" in out
+
+
+def test_g1_distill_moe_expert_semantics_checker_reads_role_labels(tmp_path: Path, capsys):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MoEStudentPolicy,
+        build_distillation_dataset,
+        save_distillation_checkpoint,
+        save_distillation_dataset,
+    )
+
+    mod = _load_deploy_script("check_unilab_g1_distill_moe_expert_semantics")
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=2,
+        num_experts=3,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        routing_mode="hard",
+        squash_action=False,
+    )
+    with torch.no_grad():
+        student.router[-1].weight.zero_()
+        student.router[-1].bias.zero_()
+        student.router[-1].weight[0, 0] = 4.0
+        student.router[-1].weight[1, 1] = 4.0
+        student.router[-1].weight[2, 2] = 4.0
+    checkpoint_path = tmp_path / "moe_student.pt"
+    save_distillation_checkpoint(
+        checkpoint_path,
+        student=student,
+        agent_steps=6,
+        distill_runtime_cfg={
+            "student_model_type": "moe",
+            "student_obs_dim": 4,
+            "student_action_dim": 2,
+            "student_num_experts": 3,
+            "student_expert_hidden_dims": [],
+            "student_router_hidden_dims": [],
+            "student_routing_mode": "hard",
+            "student_router_temperature": 1.0,
+            "student_activation": "elu",
+            "student_squash_action": False,
+            "teacher_obs_dim": 4,
+        },
+    )
+    dataset_path = tmp_path / "dataset.pt"
+    dataset = build_distillation_dataset(
+        torch.tensor(
+            [
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0, 0.0],
+                [0.0, 0.0, 2.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        torch.zeros(3, 4),
+        expected_student_obs_dim=4,
+        expected_teacher_obs_dim=4,
+        metadata={"role_labels": ["stand", "walk", "recovery"]},
+    )
+    save_distillation_dataset(dataset_path, dataset)
+
+    checks, details = mod.run_check(
+        task="g1_stand_still/mujoco",
+        dataset_path=dataset_path,
+        student_checkpoint=checkpoint_path,
+        device="cpu",
+        hard_routing=True,
+        collapse_fraction=0.95,
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert details["moe_expert/student_model_type"] == "moe"
+    assert details["moe_expert/role_labels_present"] is True
+    by_role = {
+        item["role"]: item
+        for item in details["moe_expert/diagnostics"]["by_role"]
+    }
+    assert by_role["stand"]["dominant_expert"] == 0
+    assert by_role["walk"]["dominant_expert"] == 1
+    assert by_role["recovery"]["dominant_expert"] == 2
+    assert "[PASS] moe_expert/role_labels" in out
+    assert "[PASS] moe_expert/collapse_guard" in out
+
+
+def test_g1_distill_teacher_obs_contract_reports_live_identity(capsys):
+    mod = _load_deploy_script("check_unilab_g1_distill_teacher_obs_contract")
+    cfg = _distill_cfg()
+
+    class FakeEnv:
+        obs_groups_spec = {"obs": 99, "critic": 102}
+        closed = False
+
+        def reset(self, env_indices):
+            assert env_indices.shape == (1,)
+            return {
+                "obs": np.zeros((1, 99), dtype=np.float32),
+                "critic": np.zeros((1, 102), dtype=np.float32),
+            }, {}
+
+        def close(self):
+            self.closed = True
+
+    fake_env = FakeEnv()
+    captured: dict[str, Any] = {}
+
+    def create_env_fn(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_env
+
+    checks, details = mod.run_check(
+        cfg=cfg,
+        create_env_fn=create_env_fn,
+        env_cfg_override_fn=lambda cfg: {"owner": "teacher-obs-test"},
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert any(
+        check.level == "PASS"
+        and check.name == "distill_teacher_obs/teacher_live_dim"
+        and check.detail == "99"
+        for check in checks
+    )
+    assert any(
+        check.level == "WARN" and check.name == "distill_teacher_obs/checkpoint_input_dim"
+        for check in checks
+    )
+    assert captured["kwargs"]["env_cfg_override"] == {"owner": "teacher-obs-test"}
+    assert captured["kwargs"]["task_name"] == "G1WalkHeight"
+    assert details["distill_teacher_obs/live_obs_shape"] == (1, 99)
+    assert details["distill_teacher_obs/live_critic_shape"] == (1, 102)
+    assert fake_env.closed is True
+    assert "UniLab G1 generic distill teacher obs contract audit" in out
+
+
+def test_g1_distill_teacher_obs_contract_checks_checkpoint_input_dim(tmp_path: Path):
+    import torch
+
+    mod = _load_deploy_script("check_unilab_g1_distill_teacher_obs_contract")
+    cfg = _distill_cfg()
+    checkpoint_path = tmp_path / "teacher.pt"
+    torch.save({"actor": {"net.0.weight": torch.zeros((512, 99))}}, checkpoint_path)
+
+    class FakeEnv:
+        obs_groups_spec = {"obs": 99, "critic": 102}
+
+        def reset(self, env_indices):
+            return {
+                "obs": np.zeros((1, 99), dtype=np.float32),
+                "critic": np.zeros((1, 102), dtype=np.float32),
+            }, {}
+
+    checks, details = mod.run_check(
+        checkpoint_path=checkpoint_path,
+        cfg=cfg,
+        create_env_fn=lambda *args, **kwargs: FakeEnv(),
+        env_cfg_override_fn=lambda cfg: {},
+    )
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert any(
+        check.level == "PASS" and check.name == "distill_teacher_obs/checkpoint_input_dim"
+        for check in checks
+    )
+    assert details["distill_teacher_obs/checkpoint_first_weight"] == "net.0.weight"
+    assert details["distill_teacher_obs/checkpoint_input_dim"] == 99
+
+
+def test_g1_distill_teacher_obs_contract_reports_legacy_projection_bridge(capsys):
+    mod = _load_deploy_script("check_unilab_g1_distill_teacher_obs_contract")
+    cfg = _distill_cfg(["teacher.obs_dim=100", "training.collect_teacher_projection=pad_zeros"])
+
+    class FakeEnv:
+        obs_groups_spec = {"obs": 99, "critic": 102}
+
+        def reset(self, env_indices):
+            return {
+                "obs": np.zeros((1, 99), dtype=np.float32),
+                "critic": np.zeros((1, 102), dtype=np.float32),
+            }, {}
+
+    checks, details = mod.run_check(
+        cfg=cfg,
+        create_env_fn=lambda *args, **kwargs: FakeEnv(),
+        env_cfg_override_fn=lambda cfg: {},
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert any(
+        check.level == "WARN"
+        and check.name == "distill_teacher_obs/projection_bridge"
+        and "live_obs=99 -> teacher=100" in check.detail
+        for check in checks
+    )
+    assert details["distill_teacher_obs/teacher_obs_dim"] == 100
+    assert details["distill_teacher_obs/teacher_projection"] == "pad_zeros"
+    assert "synthetic_tail=1" in out
+
+
+def test_g1_distill_teacher_obs_contract_reports_stand_still_identity(
+    tmp_path: Path,
+    capsys,
+):
+    import torch
+
+    mod = _load_deploy_script("check_unilab_g1_distill_teacher_obs_contract")
+    cfg = _distill_cfg(["task=g1_stand_still/mujoco"])
+    checkpoint_path = tmp_path / "stand_teacher.pt"
+    torch.save({"actor": {"net.0.weight": torch.zeros((512, 98))}}, checkpoint_path)
+
+    class FakeEnv:
+        obs_groups_spec = {"obs": 98, "critic": 101}
+
+        def reset(self, env_indices):
+            return {
+                "obs": np.zeros((1, 98), dtype=np.float32),
+                "critic": np.zeros((1, 101), dtype=np.float32),
+            }, {}
+
+    checks, details = mod.run_check(
+        task="g1_stand_still/mujoco",
+        checkpoint_path=checkpoint_path,
+        cfg=cfg,
+        create_env_fn=lambda *args, **kwargs: FakeEnv(),
+        env_cfg_override_fn=lambda cfg: {},
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert any(
+        check.level == "PASS"
+        and check.name == "distill_teacher_obs/teacher_live_dim"
+        and check.detail == "98"
+        for check in checks
+    )
+    assert any(
+        check.level == "PASS" and check.name == "distill_teacher_obs/checkpoint_input_dim"
+        for check in checks
+    )
+    assert details["distill_teacher_obs/task_owner"] == "g1_stand_still/mujoco"
+    assert details["distill_teacher_obs/task"] == "G1StandStill"
+    assert details["distill_teacher_obs/teacher_obs_dim"] == 98
+    assert details["distill_teacher_obs/student_obs_dim"] == 98
+    assert details["distill_teacher_obs/teacher_projection"] == "identity"
+    assert details["distill_teacher_obs/live_obs_shape"] == (1, 98)
+    assert details["distill_teacher_obs/live_critic_shape"] == (1, 101)
+    assert details["distill_teacher_obs/checkpoint_input_dim"] == 98
+    assert "[PASS] distill_teacher_obs/teacher_live_dim: 98" in out
+
+
+def test_g1_distill_playback_live_sentinel_policy_checkpoint_contract(capsys):
+    from unilab.algos.torch.distill import load_distillation_student_policy
+
+    mod = _load_deploy_script("check_unilab_g1_distill_playback_live_sentinel")
+
+    class FakeEnv:
+        action_space = types.SimpleNamespace(shape=(29,))
+
+    class FakeSession:
+        env = FakeEnv()
+        info = {"commands": np.zeros((1, 3), dtype=np.float32)}
+        actions = None
+
+        def reset(self):
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def step_once(self):
+            self.actions = np.full((1, 29), 0.05, dtype=np.float32)
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def physics_state(self):
+            return np.zeros((1, 75), dtype=np.float32)
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_session(**kwargs):
+        captured.update(kwargs)
+        checkpoint = Path(kwargs["playback_cfg"].load_run) / "model_1.pt"
+        loaded = load_distillation_student_policy(checkpoint, device="cpu")
+        captured["loaded"] = loaded
+        kwargs["log"](f"Loading distillation student checkpoint: {checkpoint}")
+        return FakeSession(), "actor", str(checkpoint)
+
+    checks, details = mod.run_check(
+        steps=1,
+        action_mode="policy",
+        load_run="-1",
+        checkpoint=None,
+        make_temp_policy_checkpoint=True,
+        create_session_fn=fake_create_session,
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert all(check.level == "PASS" for check in checks)
+    assert captured["playback_cfg"].action_mode == "policy"
+    assert details["distill_playback/checkpoint_path"].endswith("model_1.pt")
+    assert details["distill_playback/actions_abs_max"] == pytest.approx(0.05)
+    assert "[PASS] distill_playback/policy_checkpoint:" in out
+    assert "[PASS] distill_playback/policy_action_nonzero: 0.050000" in out
+    assert captured["loaded"].obs_dim == 99
+    assert captured["loaded"].action_dim == 29
+
+
+def test_g1_distill_playback_live_sentinel_stand_still_policy_checkpoint_contract(
+    capsys,
+):
+    from unilab.algos.torch.distill import load_distillation_student_policy
+
+    mod = _load_deploy_script("check_unilab_g1_distill_playback_live_sentinel")
+
+    class FakeEnv:
+        action_space = types.SimpleNamespace(shape=(29,))
+
+    class FakeSession:
+        env = FakeEnv()
+        info = {"commands": np.zeros((1, 3), dtype=np.float32)}
+        actions = None
+
+        def reset(self):
+            return np.zeros((1, 98), dtype=np.float32)
+
+        def step_once(self):
+            self.actions = np.full((1, 29), 0.05, dtype=np.float32)
+            return np.zeros((1, 98), dtype=np.float32)
+
+        def physics_state(self):
+            return np.zeros((1, 75), dtype=np.float32)
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_session(**kwargs):
+        captured.update(kwargs)
+        checkpoint = Path(kwargs["playback_cfg"].load_run) / "model_1.pt"
+        loaded = load_distillation_student_policy(checkpoint, device="cpu")
+        captured["loaded"] = loaded
+        kwargs["log"](f"Loading distillation student checkpoint: {checkpoint}")
+        return FakeSession(), "actor", str(checkpoint)
+
+    checks, details = mod.run_check(
+        steps=1,
+        task="g1_stand_still/mujoco",
+        action_mode="policy",
+        load_run="-1",
+        checkpoint=None,
+        make_temp_policy_checkpoint=True,
+        create_session_fn=fake_create_session,
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert all(check.level == "PASS" for check in checks)
+    assert captured["playback_cfg"].task == "G1StandStill"
+    assert details["distill_playback/task"] == "G1StandStill"
+    assert details["distill_playback/task_owner"] == "g1_stand_still/mujoco"
+    assert details["distill_playback/cfg_student_obs_dim"] == 98
+    assert details["distill_playback/cfg_teacher_obs_dim"] == 98
+    assert details["distill_playback/actions_abs_max"] == pytest.approx(0.05)
+    assert captured["loaded"].obs_dim == 98
+    assert captured["loaded"].action_dim == 29
+    assert "[PASS] distill_playback/policy_action_nonzero: 0.050000" in out
+
+
 # ---------------------------------------------------------------------------
+def test_g1_distill_playback_live_sentinel_moe_policy_checkpoint_contract(capsys):
+    from unilab.algos.torch.distill import MoEStudentPolicy, load_distillation_student_policy
+
+    mod = _load_deploy_script("check_unilab_g1_distill_playback_live_sentinel")
+
+    class FakeEnv:
+        action_space = types.SimpleNamespace(shape=(29,))
+
+    class FakeSession:
+        env = FakeEnv()
+        info = {"commands": np.zeros((1, 3), dtype=np.float32)}
+        actions = None
+
+        def reset(self):
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def step_once(self):
+            self.actions = np.full((1, 29), 0.05, dtype=np.float32)
+            return np.zeros((1, 99), dtype=np.float32)
+
+        def physics_state(self):
+            return np.zeros((1, 75), dtype=np.float32)
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_session(**kwargs):
+        captured.update(kwargs)
+        checkpoint = Path(kwargs["playback_cfg"].load_run) / "model_1.pt"
+        loaded = load_distillation_student_policy(checkpoint, device="cpu")
+        captured["loaded"] = loaded
+        kwargs["log"](f"Loading distillation student checkpoint: {checkpoint}")
+        return FakeSession(), "actor", str(checkpoint)
+
+    checks, details = mod.run_check(
+        steps=1,
+        action_mode="policy",
+        load_run="-1",
+        checkpoint=None,
+        make_temp_policy_checkpoint=True,
+        temp_student_model_type="moe",
+        create_session_fn=fake_create_session,
+    )
+    mod.print_report(checks, details)
+    out = capsys.readouterr().out
+
+    assert all(check.level == "PASS" for check in checks)
+    assert captured["playback_cfg"].action_mode == "policy"
+    assert details["distill_playback/temp_student_model_type"] == "moe"
+    assert details["distill_playback/checkpoint_path"].endswith("model_1.pt")
+    assert details["distill_playback/actions_abs_max"] == pytest.approx(0.05)
+    assert "Loading distillation student checkpoint:" in out
+    assert isinstance(captured["loaded"].policy, MoEStudentPolicy)
+    assert captured["loaded"].obs_dim == 99
+    assert captured["loaded"].action_dim == 29
+    assert captured["loaded"].distill_runtime_cfg["student_model_type"] == "moe"
+
+
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -163,6 +723,13 @@ def _hora_distill_cfg(overrides=None):
         return compose("config", overrides=overrides or [])
 
 
+def _distill_cfg(overrides=None):
+    """Compose the generic behavior distillation Hydra config."""
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(_CONF_DIR / "distill"), version_base="1.3"):
+        return compose("config", overrides=overrides or [])
+
+
 def _train_rsl_rl(monkeypatch: pytest.MonkeyPatch):
     import types
 
@@ -193,6 +760,69 @@ def _train_hora_distill():
         The loaded ``scripts/train_hora_distill.py`` module.
     """
     return _load_script("train_hora_distill")
+
+
+def _train_distill():
+    """Load the generic behavior distillation entrypoint module."""
+    return _load_script("train_distill")
+
+
+class _FakeDistillCollectEnv:
+    def __init__(
+        self,
+        *,
+        num_envs: int = 2,
+        action_dim: int = 29,
+        obs_dim: int = 99,
+        critic_dim: int = 102,
+        command_batches: list[np.ndarray] | None = None,
+    ) -> None:
+        self.num_envs = num_envs
+        self.obs_dim = obs_dim
+        self.critic_dim = critic_dim
+        self.command_batches = command_batches
+        self.action_space = types.SimpleNamespace(shape=(action_dim,))
+        self.state = None
+        self.reset_calls = 0
+        self.step_calls = 0
+        self.closed = False
+        self.last_actions = None
+
+    def init_state(self) -> None:
+        self.state = object()
+
+    def reset(self, env_indices):
+        self.reset_calls += 1
+        info = {"reset_indices": np.asarray(env_indices)}
+        info.update(self._command_info(0))
+        return self._obs(0), info
+
+    def step(self, actions):
+        self.step_calls += 1
+        assert actions.shape == (self.num_envs, self.action_space.shape[0])
+        self.last_actions = np.asarray(actions, dtype=np.float32)
+        return types.SimpleNamespace(
+            obs=self._obs(self.step_calls),
+            info=self._command_info(self.step_calls),
+        )
+
+    def close(self) -> None:
+        self.closed = True
+
+    def _obs(self, offset: int) -> dict[str, np.ndarray]:
+        obs = np.arange(self.num_envs * self.obs_dim, dtype=np.float32).reshape(
+            self.num_envs, self.obs_dim
+        )
+        critic = np.arange(self.num_envs * self.critic_dim, dtype=np.float32).reshape(
+            self.num_envs, self.critic_dim
+        )
+        return {"obs": obs + float(offset), "critic": critic + 500.0}
+
+    def _command_info(self, batch_index: int) -> dict[str, np.ndarray]:
+        if self.command_batches is None:
+            return {}
+        index = min(int(batch_index), len(self.command_batches) - 1)
+        return {"commands": self.command_batches[index]}
 
 
 def test_offpolicy_hydra_default_algo():
@@ -394,6 +1024,1108 @@ def test_hora_distill_sharpa_appo_student_owner_selects_nodr_demo_profile():
     assert cfg.env.domain_rand.contact_sensor_noise == pytest.approx(0.0)
     assert cfg.algo.model.priv_info_embed_dim == 9
     assert cfg.algo.model.priv_mlp_hidden_dims == [256, 128, 9]
+
+
+def test_distill_script_builds_teacher_and_student_from_owner_config():
+    from unilab.algos.torch.distill import MLPStudentPolicy
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32,16]",
+        ]
+    )
+
+    teacher_spec = mod.build_teacher_spec(cfg)
+    student = mod.build_student_policy(cfg, device="cpu")
+
+    assert teacher_spec.obs_dim == 99
+    assert teacher_spec.action_dim == 29
+    assert teacher_spec.actor_hidden_dim == 16
+    assert teacher_spec.use_layer_norm is False
+    assert teacher_spec.obs_normalization is False
+    assert cfg.student.model_type == "mlp"
+    assert isinstance(student, MLPStudentPolicy)
+    assert student.obs_dim == 99
+    assert student.action_dim == 29
+    assert [layer.out_features for layer in student.net if hasattr(layer, "out_features")] == [
+        32,
+        16,
+        29,
+    ]
+
+
+def test_distill_script_builds_stand_still_teacher_and_student_from_owner_config():
+    mod = _train_distill()
+    cfg = _distill_cfg(["task=g1_stand_still/mujoco"])
+
+    teacher_spec = mod.build_teacher_spec(cfg)
+    student = mod.build_student_policy(cfg, device="cpu")
+
+    assert cfg.training.task_name == "G1StandStill"
+    assert cfg.teacher.task_name == "G1StandStill"
+    assert cfg.teacher.load_run == "2026-07-09_22-55-05_mujoco"
+    assert cfg.teacher.checkpoint == 5000
+    assert teacher_spec.obs_dim == 98
+    assert teacher_spec.action_dim == 29
+    assert student.obs_dim == 98
+    assert student.action_dim == 29
+
+
+def test_distill_script_builds_walk_flat_teacher_and_student_from_owner_config():
+    mod = _train_distill()
+    cfg = _distill_cfg(["task=g1_walk_flat/mujoco"])
+
+    teacher_spec = mod.build_teacher_spec(cfg)
+    student = mod.build_student_policy(cfg, device="cpu")
+
+    assert cfg.training.task_name == "G1WalkFlat"
+    assert cfg.teacher.task_name == "G1WalkFlat"
+    assert cfg.teacher.load_run == "2026-07-09_02-48-58_mujoco"
+    assert cfg.teacher.checkpoint == 5000
+    assert teacher_spec.obs_dim == 98
+    assert teacher_spec.action_dim == 29
+    assert student.obs_dim == 98
+    assert student.action_dim == 29
+
+
+def test_distill_script_builds_moe_student_from_owner_config():
+    from unilab.algos.torch.distill import MoEStudentPolicy
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "student.model_type=moe",
+            "student.num_experts=3",
+            "student.expert_hidden_dims=[32]",
+            "student.router_hidden_dims=[16]",
+            "student.routing_mode=soft",
+            "student.router_temperature=0.75",
+            "algo.aux_loss_coef=0.25",
+        ]
+    )
+
+    student = mod.build_student_policy(cfg, device="cpu")
+
+    assert isinstance(student, MoEStudentPolicy)
+    assert student.obs_dim == 99
+    assert student.action_dim == 29
+    assert student.num_experts == 3
+    assert student.routing_mode == "soft"
+    assert student.router_temperature == pytest.approx(0.75)
+    assert len(student.experts) == 3
+    assert [layer.out_features for layer in student.router if hasattr(layer, "out_features")] == [
+        16,
+        3,
+    ]
+    assert [
+        layer.out_features
+        for layer in student.experts[0].net
+        if hasattr(layer, "out_features")
+    ] == [32, 29]
+
+
+def test_distill_script_builds_role_conditioned_moe_trainer(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.model_type=moe",
+            "student.num_experts=3",
+            "student.expert_hidden_dims=[32]",
+            "student.router_hidden_dims=[16]",
+            "algo.role_loss_coef=0.2",
+            "+algo.role_expert_targets={stand:0,walk_height:1,height:2}",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+
+    trainer = mod.build_distillation_trainer(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        device="cpu",
+    )
+    runtime_cfg = mod._distill_runtime_cfg(cfg, distill_source="unit")
+
+    assert trainer.role_loss_coef == pytest.approx(0.2)
+    assert trainer.role_expert_targets == {"stand": 0, "walk_height": 1, "height": 2}
+    assert runtime_cfg["role_loss_coef"] == pytest.approx(0.2)
+    assert runtime_cfg["role_expert_targets"] == {
+        "stand": 0,
+        "walk_height": 1,
+        "height": 2,
+    }
+
+
+def test_distill_script_resolves_teacher_checkpoint_with_training_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.load_run=teacher_run",
+            "teacher.checkpoint=42",
+            "training.log_root=teacher_logs",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_resolve_task_checkpoint_path(root_dir, **kwargs):
+        captured["root_dir"] = root_dir
+        captured.update(kwargs)
+        return tmp_path / "model_42.pt", tmp_path / "teacher_run"
+
+    monkeypatch.setattr(mod, "resolve_task_checkpoint_path", fake_resolve_task_checkpoint_path)
+
+    checkpoint_path, run_dir = mod.resolve_teacher_checkpoint(cfg, root_dir=tmp_path)
+
+    assert checkpoint_path == tmp_path / "model_42.pt"
+    assert run_dir == tmp_path / "teacher_run"
+    assert captured == {
+        "root_dir": tmp_path,
+        "task_name": "G1WalkHeight",
+        "load_run": "teacher_run",
+        "algo_log_name": "fast_sac",
+        "checkpoint": "42",
+        "suffix": ".pt",
+        "log_root": "teacher_logs",
+    }
+
+
+def test_distill_script_resolves_explicit_teacher_checkpoint_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    mod = _train_distill()
+    checkpoint_path = tmp_path / "explicit_teacher.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    cfg = _distill_cfg(
+        [
+            f"teacher.checkpoint_path={checkpoint_path}",
+            "teacher.load_run=should_not_be_used",
+            "teacher.checkpoint=42",
+        ]
+    )
+
+    def fail_resolve_task_checkpoint_path(*args, **kwargs):
+        raise AssertionError("teacher.checkpoint_path must bypass run/checkpoint resolution")
+
+    monkeypatch.setattr(mod, "resolve_task_checkpoint_path", fail_resolve_task_checkpoint_path)
+
+    resolved_checkpoint_path, run_dir = mod.resolve_teacher_checkpoint(cfg, root_dir=tmp_path)
+
+    assert resolved_checkpoint_path == checkpoint_path
+    assert run_dir == tmp_path
+
+
+def test_distill_script_fake_batch_probe_loads_teacher_and_updates_student(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MLPStudentPolicy,
+        load_distillation_checkpoint,
+        load_distillation_student_policy,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "algo.learning_rate=0.01",
+            "algo.max_grad_norm=10.0",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    checkpoint_path = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, checkpoint_path)
+    student_checkpoint_path = tmp_path / "student.pt"
+
+    probe = mod.run_fake_batch_update(
+        cfg,
+        teacher_checkpoint=checkpoint_path,
+        batch_size=2,
+        max_updates=2,
+        checkpoint_path=student_checkpoint_path,
+        device="cpu",
+    )
+
+    assert probe["teacher_obs_shape"] == (2, 99)
+    assert probe["student_obs_shape"] == (2, 99)
+    assert probe["dataset_num_samples"] == 4
+    assert probe["dataset_student_obs_dim"] == 99
+    assert probe["dataset_teacher_obs_dim"] == 99
+    assert probe["teacher_action_shape"] == (2, 29)
+    assert probe["student_action_shape"] == (2, 29)
+    assert probe["teacher_action_requires_grad"] is False
+    assert probe["update_count"] == 2
+    assert probe["samples_seen"] == 4
+    assert probe["checkpoint_path"] == str(student_checkpoint_path)
+    assert probe["student_grad_norm"] > 0.0
+    assert probe["loss"] >= 0.0
+    assert student_checkpoint_path.exists()
+
+    restored = MLPStudentPolicy(obs_dim=99, action_dim=29, hidden_dims=(32,))
+    checkpoint = load_distillation_checkpoint(restored, student_checkpoint_path)
+    assert checkpoint["agent_steps"] == 4
+    assert checkpoint["teacher_metadata"]["task_name"] == "G1WalkHeight"
+    assert checkpoint["teacher_metadata"]["checkpoint_actor_input_dim"] == 99
+    assert checkpoint["teacher_metadata"]["checkpoint_first_weight_key"] == "net.0.weight"
+    assert checkpoint["distill_runtime_cfg"]["student_obs_dim"] == 99
+    assert checkpoint["distill_runtime_cfg"]["student_action_dim"] == 29
+    assert checkpoint["distill_runtime_cfg"]["student_hidden_dims"] == [32]
+    assert checkpoint["distill_runtime_cfg"]["student_activation"] == "elu"
+
+    loaded_student = load_distillation_student_policy(student_checkpoint_path, device="cpu")
+    assert loaded_student.policy(torch.randn(1, 99)).shape == (1, 29)
+
+
+def test_distill_script_rejects_legacy_teacher_checkpoint_without_override(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+        ]
+    )
+    legacy_teacher = SACActor(100, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    checkpoint_path = tmp_path / "legacy_teacher.pt"
+    torch.save({"actor": legacy_teacher.state_dict()}, checkpoint_path)
+
+    with pytest.raises(ValueError, match="teacher.obs_dim=100"):
+        mod.run_fake_batch_update(
+            cfg,
+            teacher_checkpoint=checkpoint_path,
+            batch_size=1,
+            max_updates=1,
+            device="cpu",
+        )
+
+
+def test_distill_script_fake_batch_probe_records_moe_aux_diagnostics(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MoEStudentPolicy,
+        load_distillation_checkpoint,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.model_type=moe",
+            "student.num_experts=3",
+            "student.expert_hidden_dims=[32]",
+            "student.router_hidden_dims=[16]",
+            "algo.learning_rate=0.01",
+            "algo.max_grad_norm=10.0",
+            "algo.aux_loss_coef=0.25",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    checkpoint_path = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, checkpoint_path)
+    student_checkpoint_path = tmp_path / "moe_student.pt"
+
+    probe = mod.run_fake_batch_update(
+        cfg,
+        teacher_checkpoint=checkpoint_path,
+        batch_size=2,
+        max_updates=2,
+        checkpoint_path=student_checkpoint_path,
+        device="cpu",
+    )
+
+    assert probe["student_model_type"] == "moe"
+    assert probe["teacher_obs_shape"] == (2, 99)
+    assert probe["student_obs_shape"] == (2, 99)
+    assert probe["student_action_shape"] == (2, 29)
+    assert probe["update_count"] == 2
+    assert probe["samples_seen"] == 4
+    assert probe["behavior_loss"] > 0.0
+    assert probe["aux_loss"] >= 0.0
+    assert probe["loss"] == pytest.approx(probe["behavior_loss"] + 0.25 * probe["aux_loss"])
+    assert probe["expert_usage"] is not None
+    assert len(probe["expert_usage"]) == 3
+    assert sum(probe["expert_usage"]) == pytest.approx(2.0)
+    assert probe["route_entropy"] is not None
+    assert probe["route_entropy"] >= 0.0
+
+    restored = MoEStudentPolicy(
+        obs_dim=99,
+        action_dim=29,
+        num_experts=3,
+        expert_hidden_dims=(32,),
+        router_hidden_dims=(16,),
+    )
+    checkpoint = load_distillation_checkpoint(restored, student_checkpoint_path)
+    runtime_cfg = checkpoint["distill_runtime_cfg"]
+    assert runtime_cfg["student_model_type"] == "moe"
+    assert runtime_cfg["student_num_experts"] == 3
+    assert runtime_cfg["student_expert_hidden_dims"] == [32]
+    assert runtime_cfg["student_router_hidden_dims"] == [16]
+    assert runtime_cfg["aux_loss_coef"] == pytest.approx(0.25)
+
+
+def test_distill_script_dataset_update_loads_saved_dataset_and_saves_moe_student(
+    tmp_path: Path,
+):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        MoEStudentPolicy,
+        build_distillation_dataset,
+        load_distillation_checkpoint,
+        load_distillation_student_policy,
+        save_distillation_dataset,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.model_type=moe",
+            "student.num_experts=3",
+            "student.expert_hidden_dims=[32]",
+            "student.router_hidden_dims=[16]",
+            "algo.learning_rate=0.01",
+            "algo.max_grad_norm=10.0",
+            "algo.aux_loss_coef=0.25",
+        ]
+    )
+    teacher = SACActor(99, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+    dataset_path = tmp_path / "dataset.pt"
+    dataset = build_distillation_dataset(
+        torch.randn(4, 99),
+        torch.randn(4, 99),
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        metadata={"source": "saved_fixture", "role": "offline_dataset"},
+    )
+    save_distillation_dataset(dataset_path, dataset)
+    student_checkpoint = tmp_path / "offline_moe_student.pt"
+
+    probe = mod.run_offline_dataset_update(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        dataset_path=dataset_path,
+        batch_size=2,
+        max_updates=2,
+        checkpoint_path=student_checkpoint,
+        device="cpu",
+    )
+
+    assert probe["distill_source"] == "offline_dataset"
+    assert probe["dataset_path"] == str(dataset_path)
+    assert probe["student_model_type"] == "moe"
+    assert probe["dataset_num_samples"] == 4
+    assert probe["dataset_student_obs_dim"] == 99
+    assert probe["dataset_teacher_obs_dim"] == 99
+    assert probe["dataset_metadata"] == {
+        "source": "saved_fixture",
+        "role": "offline_dataset",
+    }
+    assert probe["teacher_obs_shape"] == (2, 99)
+    assert probe["student_obs_shape"] == (2, 99)
+    assert probe["teacher_action_shape"] == (2, 29)
+    assert probe["student_action_shape"] == (2, 29)
+    assert probe["update_count"] == 2
+    assert probe["samples_seen"] == 4
+    assert probe["behavior_loss"] > 0.0
+    assert probe["aux_loss"] >= 0.0
+    assert probe["loss"] == pytest.approx(probe["behavior_loss"] + 0.25 * probe["aux_loss"])
+    assert probe["checkpoint_path"] == str(student_checkpoint)
+
+    restored = MoEStudentPolicy(
+        obs_dim=99,
+        action_dim=29,
+        num_experts=3,
+        expert_hidden_dims=(32,),
+        router_hidden_dims=(16,),
+    )
+    checkpoint = load_distillation_checkpoint(restored, student_checkpoint)
+    runtime_cfg = checkpoint["distill_runtime_cfg"]
+    assert runtime_cfg["distill_source"] == "offline_dataset"
+    assert runtime_cfg["dataset_path"] == str(dataset_path)
+    assert runtime_cfg["student_model_type"] == "moe"
+    assert runtime_cfg["student_num_experts"] == 3
+
+    loaded_student = load_distillation_student_policy(student_checkpoint, device="cpu")
+    assert loaded_student.policy(torch.randn(1, 99)).shape == (1, 29)
+
+
+def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    mod = _train_distill()
+    stand_path = tmp_path / "stand.pt"
+    walk_path = tmp_path / "walk.pt"
+    merged_path = tmp_path / "merged.pt"
+    save_distillation_dataset(
+        stand_path,
+        build_distillation_dataset(
+            torch.full((2, 99), 1.0),
+            torch.full((2, 99), 2.0),
+            expected_student_obs_dim=99,
+            expected_teacher_obs_dim=99,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.full((2, 29), 0.1),
+        ),
+    )
+    save_distillation_dataset(
+        walk_path,
+        build_distillation_dataset(
+            torch.full((3, 99), 3.0),
+            torch.full((3, 99), 4.0),
+            expected_student_obs_dim=99,
+            expected_teacher_obs_dim=99,
+            expected_teacher_action_dim=29,
+            teacher_actions=torch.full((3, 29), -0.2),
+        ),
+    )
+    cfg = _distill_cfg(
+        [
+            f"training.multitask_dataset_path={merged_path}",
+            f"+training.multitask_sources=[{{path:{stand_path},role:stand}},{{path:{walk_path},role:walk_height}}]",
+        ]
+    )
+
+    probe = mod.run_multitask_dataset_assembly(cfg, dataset_path=merged_path)
+
+    assert probe["distill_source"] == "multitask_adapter"
+    assert probe["dataset_path"] == str(merged_path)
+    assert probe["dataset_num_samples"] == 5
+    assert probe["dataset_student_obs_dim"] == 99
+    assert probe["dataset_teacher_obs_dim"] == 99
+    assert probe["dataset_teacher_action_dim"] == 29
+    assert probe["source_roles"] == ["stand", "walk_height"]
+    assert probe["source_sample_counts"] == [2, 3]
+
+    restored = load_distillation_dataset(
+        merged_path,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        expected_teacher_action_dim=29,
+    )
+    assert restored.role_labels == (
+        "stand",
+        "stand",
+        "walk_height",
+        "walk_height",
+        "walk_height",
+    )
+    assert restored.teacher_actions is not None
+    assert torch.allclose(restored.teacher_actions[:2], torch.full((2, 29), 0.1))
+    assert torch.allclose(restored.teacher_actions[2:], torch.full((3, 29), -0.2))
+
+
+def test_g1_distill_multitask_runtime_probe_runs_cached_moe_update(tmp_path: Path, capsys):
+    mod = _load_deploy_script("check_unilab_g1_distill_multitask_runtime_probe")
+
+    payload = mod.run_check(work_dir=tmp_path, device="cpu")
+    mod.print_report(payload)
+    out = capsys.readouterr().out
+
+    assert payload["status"] == "ok"
+    assert payload["probe"] == "g1_distill_multitask_runtime"
+    assert payload["merged_num_samples"] == 6
+    assert payload["role_counts"] == {"height": 1, "stand": 2, "walk_height": 3}
+    assert payload["teacher_action_shape"] == [6, 29]
+    assert payload["offline_update"]["update_count"] == 2
+    assert payload["offline_update"]["samples_seen"] == 6
+    assert payload["offline_update"]["teacher_action_source"] == "cached"
+    assert payload["offline_update"]["role_loss"] > 0.0
+    assert payload["offline_update"]["role_target_count"] == 3
+    assert payload["offline_update"]["student_grad_norm"] > 0.0
+    assert "[PASS] g1_distill_multitask_runtime" in out
+
+
+def test_g1_distill_dual_teacher_probe_requires_owner_intent_filters(
+    tmp_path: Path,
+    monkeypatch,
+):
+    import torch
+
+    from unilab.algos.torch.distill import build_distillation_dataset, save_distillation_dataset
+
+    mod = _load_deploy_script("check_unilab_g1_distill_dual_teacher_moe_probe")
+    captured_filters: dict[str, str] = {}
+    captured_checkpoint_paths: dict[str, str] = {}
+
+    def fake_checkpoint_info(path):
+        return {
+            "checkpoint_path": str(path),
+            "actor_input_dim": 98,
+            "first_weight_key": "net.0.weight",
+        }
+
+    def fake_run_collect_dataset(cfg, *, dataset_path):
+        task_name = str(cfg.training.task_name)
+        role = "walk_flat" if task_name == "G1WalkFlat" else "stand"
+        command_filter = str(cfg.training.collect_command_sample_filter)
+        captured_filters[role] = command_filter
+        captured_checkpoint_paths[role] = str(cfg.teacher.checkpoint_path)
+        save_distillation_dataset(
+            dataset_path,
+            build_distillation_dataset(
+                torch.full((2, 98), 1.0 if role == "walk_flat" else 2.0),
+                torch.full((2, 98), 3.0 if role == "walk_flat" else 4.0),
+                expected_student_obs_dim=98,
+                expected_teacher_obs_dim=98,
+                expected_teacher_action_dim=29,
+                teacher_actions=torch.full((2, 29), 0.1 if role == "walk_flat" else -0.1),
+                metadata={
+                    "source": "fake-filtered-collection",
+                    "command_sample_filter": command_filter,
+                    "command_seen_samples": 3,
+                    "command_selected_samples": 2,
+                    "action_abs_max": 0.1,
+                    "env_steps": 1,
+                },
+            ),
+        )
+        return {
+            "collect_command_sample_filter": command_filter,
+            "collect_command_seen_samples": 3,
+            "collect_command_selected_samples": 2,
+        }
+
+    monkeypatch.setattr(mod, "_checkpoint_info", fake_checkpoint_info)
+    monkeypatch.setattr(mod.train_distill, "run_collect_dataset", fake_run_collect_dataset)
+
+    payload = mod.run_check(
+        walking_checkpoint=tmp_path / "walk.pt",
+        standing_checkpoint=tmp_path / "stand.pt",
+        work_dir=tmp_path,
+        num_samples=2,
+        num_envs=1,
+        batch_size=2,
+        max_updates=1,
+        device="cpu",
+    )
+
+    assert captured_filters == {"stand": "inactive", "walk_flat": "active"}
+    assert captured_checkpoint_paths == {
+        "stand": str(tmp_path / "stand.pt"),
+        "walk_flat": str(tmp_path / "walk.pt"),
+    }
+    assert payload["command_filter_contracts"]["walk_flat"]["expected_filter"] == "active"
+    assert payload["command_filter_contracts"]["stand"]["expected_filter"] == "inactive"
+    assert payload["command_filter_contracts"]["walk_flat"]["command_selected_samples"] == 2
+    assert payload["command_filter_contracts"]["stand"]["command_selected_samples"] == 2
+
+
+def test_distill_script_collects_live_env_dataset_with_owner_projection(tmp_path: Path):
+    from unilab.algos.torch.distill import load_distillation_dataset
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+        ]
+    )
+    dataset_path = tmp_path / "collected_dataset.pt"
+    calls: dict[str, Any] = {}
+    fake_env = _FakeDistillCollectEnv(num_envs=2, action_dim=29)
+
+    def create_env_fn(*args, **kwargs):
+        calls["args"] = args
+        calls["kwargs"] = kwargs
+        return fake_env
+
+    probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=create_env_fn,
+        env_cfg_override_fn=lambda cfg: {"owner": "distill-test"},
+    )
+
+    assert probe["distill_source"] == "live_env_rollout"
+    assert probe["dataset_path"] == str(dataset_path)
+    assert probe["dataset_num_samples"] == 3
+    assert probe["dataset_student_obs_dim"] == 99
+    assert probe["dataset_teacher_obs_dim"] == 99
+    assert probe["student_obs_shape"] == (3, 99)
+    assert probe["teacher_obs_shape"] == (3, 99)
+    assert probe["collect_num_envs"] == 2
+    assert probe["collect_action_mode"] == "zero"
+    assert probe["collect_action_seed"] is None
+    assert probe["collect_action_abs_max"] == 0.0
+    assert probe["teacher_projection"] == "identity"
+    assert probe["student_projection"] == "identity"
+    assert probe["student_drop_index"] is None
+    assert calls["kwargs"]["num_envs"] == 2
+    assert calls["kwargs"]["env_cfg_override"] == {"owner": "distill-test"}
+    assert calls["kwargs"]["sim_backend"] == "mujoco"
+    assert calls["kwargs"]["task_name"] == "G1WalkHeight"
+    assert fake_env.reset_calls == 1
+    assert fake_env.step_calls == 1
+    assert fake_env.closed is True
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+    )
+    assert restored.metadata["source"] == "live_env_rollout"
+    assert restored.metadata["teacher_projection"] == "identity"
+    assert restored.metadata["student_projection"] == "identity"
+    assert restored.metadata["student_drop_index"] is None
+    assert restored.metadata["teacher_obs_key"] == "obs"
+    assert restored.metadata["synthetic_teacher_tail"] is False
+
+
+def test_distill_script_collects_stand_still_dataset_with_owner_config(tmp_path: Path):
+    from unilab.algos.torch.distill import load_distillation_dataset
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "task=g1_stand_still/mujoco",
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+        ]
+    )
+    dataset_path = tmp_path / "stand_still_collected_dataset.pt"
+    fake_env = _FakeDistillCollectEnv(
+        num_envs=2,
+        action_dim=29,
+        obs_dim=98,
+        critic_dim=101,
+        command_batches=[
+            np.zeros((2, 3), dtype=np.float32),
+            np.zeros((2, 3), dtype=np.float32),
+        ],
+    )
+    calls: dict[str, Any] = {}
+
+    def create_env_fn(*args, **kwargs):
+        calls["kwargs"] = kwargs
+        return fake_env
+
+    probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=create_env_fn,
+        env_cfg_override_fn=lambda cfg: {"owner": "stand-still-distill-test"},
+    )
+
+    assert probe["dataset_num_samples"] == 3
+    assert probe["dataset_student_obs_dim"] == 98
+    assert probe["dataset_teacher_obs_dim"] == 98
+    assert probe["student_obs_shape"] == (3, 98)
+    assert probe["teacher_obs_shape"] == (3, 98)
+    assert probe["teacher_projection"] == "identity"
+    assert probe["student_projection"] == "identity"
+    assert probe["collect_command_sample_filter"] == "inactive"
+    assert probe["collect_command_seen_samples"] == 4
+    assert probe["collect_command_selected_samples"] == 4
+    assert calls["kwargs"]["task_name"] == "G1StandStill"
+    assert calls["kwargs"]["sim_backend"] == "mujoco"
+    assert calls["kwargs"]["env_cfg_override"] == {"owner": "stand-still-distill-test"}
+    assert fake_env.step_calls == 1
+    assert fake_env.closed is True
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+    )
+    assert restored.metadata["task_name"] == "G1StandStill"
+    assert restored.metadata["teacher_projection"] == "identity"
+    assert restored.metadata["student_projection"] == "identity"
+    assert restored.metadata["synthetic_teacher_tail"] is False
+    assert restored.metadata["command_sample_filter"] == "inactive"
+    assert restored.metadata["command_selected_samples"] == 4
+
+
+def test_distill_script_collects_owner_filtered_walk_dataset(tmp_path: Path):
+    import torch
+
+    from unilab.algos.torch.distill import load_distillation_dataset
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco",
+            "training.collect_num_samples=2",
+            "training.collect_num_envs=2",
+            "training.collect_max_env_steps=1",
+        ]
+    )
+    assert cfg.training.collect_command_sample_filter == "active"
+    dataset_path = tmp_path / "walk_filtered_dataset.pt"
+    fake_env = _FakeDistillCollectEnv(
+        num_envs=2,
+        action_dim=29,
+        obs_dim=98,
+        critic_dim=101,
+        command_batches=[
+            np.asarray([[0.0, 0.0, 0.0], [0.10, 0.0, 0.0]], dtype=np.float32),
+            np.asarray([[0.0, 0.0, 0.10], [0.0, 0.0, 0.0]], dtype=np.float32),
+        ],
+    )
+
+    probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "walk-filter-distill-test"},
+    )
+
+    assert probe["dataset_num_samples"] == 2
+    assert probe["collect_command_sample_filter"] == "active"
+    assert probe["collect_command_seen_samples"] == 4
+    assert probe["collect_command_selected_samples"] == 2
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+    )
+    assert restored.metadata["command_sample_filter"] == "active"
+    assert restored.metadata["command_seen_samples"] == 4
+    assert restored.metadata["command_selected_samples"] == 2
+    assert torch.equal(restored.teacher_obs[0], torch.arange(98, 196, dtype=torch.float32))
+    assert torch.equal(restored.teacher_obs[1], torch.arange(98, dtype=torch.float32) + 1.0)
+
+
+def test_distill_script_rejects_teacher_policy_collection_on_height_route(
+    tmp_path: Path,
+) -> None:
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.collect_action_mode=teacher_policy"])
+
+    with pytest.raises(ValueError, match="G1WalkFlat/G1StandStill"):
+        mod.run_collect_dataset(
+            cfg,
+            dataset_path=tmp_path / "height_teacher_policy_dataset.pt",
+            create_env_fn=lambda *args, **kwargs: _FakeDistillCollectEnv(),
+            env_cfg_override_fn=lambda cfg: {"owner": "must-not-create-env"},
+        )
+
+
+def test_distill_script_collects_stand_still_teacher_policy_dataset_and_updates(
+    tmp_path: Path,
+) -> None:
+    import torch
+
+    from unilab.algos.torch.distill import (
+        load_distillation_dataset,
+        load_distillation_student_policy,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "stand_teacher.pt"
+    teacher_state = teacher.state_dict()
+    for key, value in teacher_state.items():
+        if torch.is_floating_point(value):
+            teacher_state[key] = torch.full_like(value, 0.01)
+    torch.save({"actor": teacher_state}, teacher_checkpoint)
+    cfg = _distill_cfg(
+        [
+            "task=g1_stand_still/mujoco",
+            f"teacher.load_run={teacher_checkpoint}",
+            "teacher.checkpoint=-1",
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+            "training.collect_action_mode=teacher_policy",
+        ]
+    )
+    dataset_path = tmp_path / "stand_teacher_policy_dataset.pt"
+    student_checkpoint = tmp_path / "stand_student.pt"
+    fake_env = _FakeDistillCollectEnv(
+        num_envs=2,
+        action_dim=29,
+        obs_dim=98,
+        critic_dim=101,
+        command_batches=[
+            np.zeros((2, 3), dtype=np.float32),
+            np.zeros((2, 3), dtype=np.float32),
+        ],
+    )
+
+    collect_probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "stand-teacher-policy-test"},
+    )
+
+    assert collect_probe["dataset_student_obs_dim"] == 98
+    assert collect_probe["dataset_teacher_obs_dim"] == 98
+    assert collect_probe["collect_action_mode"] == "teacher_policy"
+    assert collect_probe["collect_action_seed"] is None
+    assert collect_probe["collect_action_abs_max"] > 0.0
+    assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert fake_env.last_actions is not None
+    assert np.isfinite(fake_env.last_actions).all()
+    assert np.max(np.abs(fake_env.last_actions)) > 0.0
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        expected_teacher_action_dim=29,
+    )
+    assert restored.metadata["task_name"] == "G1StandStill"
+    assert restored.metadata["action_mode"] == "teacher_policy"
+    assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert restored.teacher_actions is not None
+    assert restored.teacher_actions.shape == (3, 29)
+    assert torch.isfinite(restored.teacher_actions).all()
+
+    update_probe = mod.run_offline_dataset_update(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        dataset_path=dataset_path,
+        batch_size=2,
+        max_updates=1,
+        checkpoint_path=student_checkpoint,
+        device="cpu",
+    )
+
+    assert update_probe["distill_source"] == "offline_dataset"
+    assert update_probe["dataset_student_obs_dim"] == 98
+    assert update_probe["dataset_teacher_obs_dim"] == 98
+    assert update_probe["teacher_obs_shape"] == (2, 98)
+    assert update_probe["student_obs_shape"] == (2, 98)
+    assert update_probe["teacher_action_shape"] == (2, 29)
+    assert update_probe["student_action_shape"] == (2, 29)
+    assert update_probe["teacher_action_requires_grad"] is False
+    assert update_probe["update_count"] == 1
+    assert update_probe["checkpoint_path"] == str(student_checkpoint)
+
+    loaded_student = load_distillation_student_policy(student_checkpoint, device="cpu")
+    assert loaded_student.obs_dim == 98
+    assert loaded_student.action_dim == 29
+
+
+def test_distill_script_collects_walk_flat_teacher_policy_cached_dataset(
+    tmp_path: Path,
+) -> None:
+    import torch
+
+    from unilab.algos.torch.distill import load_distillation_dataset
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "walk_teacher.pt"
+    teacher_state = teacher.state_dict()
+    for key, value in teacher_state.items():
+        if torch.is_floating_point(value):
+            teacher_state[key] = torch.full_like(value, 0.02)
+    torch.save({"actor": teacher_state}, teacher_checkpoint)
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco",
+            f"teacher.load_run={teacher_checkpoint}",
+            "teacher.checkpoint=-1",
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+            "training.collect_action_mode=teacher_policy",
+        ]
+    )
+    dataset_path = tmp_path / "walk_teacher_policy_dataset.pt"
+    fake_env = _FakeDistillCollectEnv(
+        num_envs=2,
+        action_dim=29,
+        obs_dim=98,
+        critic_dim=101,
+        command_batches=[
+            np.asarray([[0.10, 0.0, 0.0], [0.20, 0.0, 0.0]], dtype=np.float32),
+            np.asarray([[0.0, 0.0, 0.10], [0.30, 0.0, 0.0]], dtype=np.float32),
+        ],
+    )
+
+    collect_probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "walk-flat-teacher-policy-test"},
+    )
+
+    assert collect_probe["dataset_student_obs_dim"] == 98
+    assert collect_probe["dataset_teacher_obs_dim"] == 98
+    assert collect_probe["collect_action_mode"] == "teacher_policy"
+    assert collect_probe["collect_action_abs_max"] > 0.0
+    assert collect_probe["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert fake_env.last_actions is not None
+    assert np.isfinite(fake_env.last_actions).all()
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        expected_teacher_action_dim=29,
+    )
+    assert restored.metadata["task_name"] == "G1WalkFlat"
+    assert restored.metadata["action_mode"] == "teacher_policy"
+    assert restored.metadata["teacher_policy_checkpoint_path"] == str(teacher_checkpoint)
+    assert restored.teacher_actions is not None
+    assert restored.teacher_actions.shape == (3, 29)
+    assert torch.isfinite(restored.teacher_actions).all()
+
+
+def test_distill_script_formal_stand_still_run_writes_metadata_and_checkpoint(
+    tmp_path: Path,
+) -> None:
+    import torch
+
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_student_policy,
+        save_distillation_dataset,
+    )
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    mod = _train_distill()
+    teacher = SACActor(98, 29, hidden_dim=16, use_layer_norm=False, device="cpu")
+    teacher_checkpoint = tmp_path / "stand_teacher.pt"
+    torch.save({"actor": teacher.state_dict()}, teacher_checkpoint)
+    dataset_path = tmp_path / "stand_dataset.pt"
+    dataset = build_distillation_dataset(
+        torch.randn(4, 98),
+        torch.randn(4, 98),
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        metadata={"source": "stand_fixture", "action_mode": "teacher_policy"},
+    )
+    save_distillation_dataset(dataset_path, dataset)
+    run_dir = tmp_path / "formal_run"
+    cfg = _distill_cfg(
+        [
+            "task=g1_stand_still/mujoco",
+            f"teacher.load_run={teacher_checkpoint}",
+            "teacher.checkpoint=-1",
+            "teacher.actor_hidden_dim=16",
+            "teacher.use_layer_norm=false",
+            "teacher.obs_normalization=false",
+            "student.hidden_dims=[32]",
+            "training.formal_run=true",
+            f"training.formal_run_dir={run_dir}",
+            f"training.offline_dataset_path={dataset_path}",
+            "training.offline_batch_size=2",
+            "training.offline_max_updates=2",
+        ]
+    )
+
+    probe = mod.run_formal_offline_dataset_update(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        device="cpu",
+    )
+
+    checkpoint_path = run_dir / "model_4.pt"
+    run_config = json.loads((run_dir / "run_config.json").read_text(encoding="utf-8"))
+    run_summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
+
+    assert probe["distill_source"] == "formal_offline_dataset"
+    assert probe["run_dir"] == str(run_dir)
+    assert probe["checkpoint_path"] == str(checkpoint_path)
+    assert probe["update_count"] == 2
+    assert probe["samples_seen"] == 4
+    assert checkpoint_path.exists()
+    assert run_config["run"]["algo"] == "distill"
+    assert run_config["run"]["task"] == "G1StandStill"
+    assert run_config["config"]["training"]["formal_run"] is True
+    assert run_config["config"]["training"]["formal_run_dir"] == str(run_dir)
+    assert run_config["config"]["training"]["offline_dataset_path"] == str(dataset_path)
+    assert run_summary["status"] == "completed"
+    assert run_summary["distill_source"] == "formal_offline_dataset"
+    assert run_summary["checkpoint_path"] == str(checkpoint_path)
+    assert run_summary["samples_seen"] == 4
+
+    loaded_student = load_distillation_student_policy(checkpoint_path, device="cpu")
+    assert loaded_student.obs_dim == 98
+    assert loaded_student.action_dim == 29
+    assert loaded_student.agent_steps == 4
+    assert loaded_student.distill_runtime_cfg["distill_source"] == "offline_dataset"
+
+
+def test_distill_script_collects_random_action_dataset_with_seed(tmp_path: Path):
+    from unilab.algos.torch.distill import load_distillation_dataset
+
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=2",
+            "training.collect_action_mode=random",
+            "training.collect_action_seed=11",
+        ]
+    )
+    dataset_path = tmp_path / "random_collected_dataset.pt"
+    fake_env = _FakeDistillCollectEnv(num_envs=2, action_dim=29)
+
+    probe = mod.run_collect_dataset(
+        cfg,
+        dataset_path=dataset_path,
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "distill-test"},
+    )
+
+    assert probe["collect_action_mode"] == "random"
+    assert probe["collect_action_seed"] == 11
+    assert probe["collect_action_abs_max"] > 0.0
+    assert fake_env.last_actions is not None
+    assert np.isfinite(fake_env.last_actions).all()
+    assert np.max(np.abs(fake_env.last_actions)) > 0.0
+
+    restored = load_distillation_dataset(
+        dataset_path,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+    )
+    assert restored.metadata["action_mode"] == "random"
+    assert restored.metadata["action_seed"] == 11
+    assert restored.metadata["action_abs_max"] > 0.0
 
 
 def test_hora_distill_runtime_checkpoint_records_model_only():

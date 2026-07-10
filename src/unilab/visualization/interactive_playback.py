@@ -201,15 +201,18 @@ class RslRlPlaybackSession:
         self.policy = policy
         self.num_envs = int(num_envs)
         self.obs: Any | None = None
+        self.actions: torch.Tensor | None = None
         self.step_count = 0
 
     def reset(self) -> Any:
         self.obs, _info = self.wrapped_env.reset()
+        self.actions = None
         self.step_count = 0
         return self.obs
 
     def step_once(self) -> Any:
         actions = self._build_actions()
+        self.actions = actions
         self.obs, _reward, _done, _info = self.wrapped_env.step(actions)
         self.step_count += 1
         return self.obs
@@ -952,6 +955,138 @@ def create_hora_distill_playback_session(
     return session, policy_obs_mode, checkpoint_path
 
 
+def _resolve_distill_checkpoint_from_playback_cfg(
+    playback_cfg: RslRlPlaybackConfig,
+    cfg: Any,
+    root_dir: str | Path,
+) -> Path | None:
+    from unilab.training.run import resolve_task_checkpoint_path
+
+    checkpoint_path, _run_dir = resolve_task_checkpoint_path(
+        root_dir,
+        task_name=str(getattr(cfg.training, "task_name", playback_cfg.task)),
+        load_run=playback_cfg.load_run,
+        algo_log_name=playback_cfg.algo_log_name,
+        checkpoint=playback_cfg.checkpoint,
+        log_root=playback_cfg.log_root,
+    )
+    return checkpoint_path
+
+
+def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
+    _ensure_scripts_dir(root_dir)
+    from unilab.algos.torch.distill import load_distillation_student_policy
+    from unilab.algos.torch.hora.rsl_rl import HoraRslRlVecEnvWrapper
+    from unilab.training import BackendAdapter, create_env, ensure_registries
+
+    ensure_registries()
+
+    return {
+        "build_env_cfg_override": lambda cfg: BackendAdapter(
+            cfg,
+            root_dir=root_dir,
+            algo_name="distill",
+        ).build_task_env_cfg_override(),
+        "create_env": create_env,
+        "load_student_policy": load_distillation_student_policy,
+        "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
+        "wrapper_cls": HoraRslRlVecEnvWrapper,
+    }
+
+
+def _distill_student_obs_tensor(obs: Any, *, device: str | torch.device) -> torch.Tensor:
+    if isinstance(obs, Mapping):
+        if "obs" in obs:
+            obs = obs["obs"]
+        elif "actor" in obs:
+            obs = obs["actor"]
+    if isinstance(obs, torch.Tensor):
+        return obs.to(device=device, dtype=torch.float32)
+    return torch.as_tensor(obs, dtype=torch.float32, device=device)
+
+
+def create_distill_playback_session(
+    *,
+    playback_cfg: RslRlPlaybackConfig,
+    cfg: Any,
+    root_dir: str | Path,
+    device: str | None,
+    deps: Mapping[str, Any] | None = None,
+    log: LogFn = print,
+) -> tuple[RslRlPlaybackSession, str, str | None]:
+    """Create a playback session for generic distillation student checkpoints."""
+
+    resolved_deps = dict(_default_distill_playback_deps(root_dir) if deps is None else deps)
+    device_name = select_torch_device() if device is None else str(device)
+    checkpoint = resolved_deps["resolve_checkpoint"](playback_cfg, cfg, root_dir)
+    checkpoint_path = str(checkpoint) if checkpoint is not None else None
+    policy_obs_mode = playback_cfg.policy_obs_mode
+    if policy_obs_mode == "auto":
+        policy_obs_mode = "actor"
+
+    create_env = resolved_deps["create_env"]
+    task_name = str(getattr(cfg.training, "task_name", playback_cfg.task))
+    build_env_cfg_override = resolved_deps.get("build_env_cfg_override")
+    env_cfg_override = build_env_cfg_override(cfg) if build_env_cfg_override is not None else {}
+    try:
+        env = create_env(
+            cfg,
+            num_envs=int(playback_cfg.num_envs),
+            env_cfg_override=env_cfg_override,
+            sim_backend="mujoco",
+            task_name=task_name,
+        )
+    except TypeError:
+        if deps is None:
+            raise
+        try:
+            env = create_env(
+                cfg,
+                num_envs=int(playback_cfg.num_envs),
+                env_cfg_override=env_cfg_override,
+            )
+        except TypeError:
+            env = create_env(cfg, num_envs=int(playback_cfg.num_envs))
+    if env is None:
+        raise RuntimeError("Playback env factory did not return an environment.")
+
+    wrapper_cls = resolved_deps["wrapper_cls"]
+    wrapped_env = wrapper_cls(env, device=device_name, policy_obs_mode=policy_obs_mode)
+    policy: Callable[[Any], Any] | None = None
+
+    if playback_cfg.action_mode == "policy":
+        if checkpoint is None or not Path(checkpoint).exists():
+            log(
+                "WARNING: no generic distillation student checkpoint found - "
+                "falling back to zero actions."
+            )
+        else:
+            log(f"Loading distillation student checkpoint: {checkpoint}")
+            loaded_student = resolved_deps.get("load_student_policy")
+            if loaded_student is None:
+                from unilab.algos.torch.distill import load_distillation_student_policy
+
+                loaded_student = load_distillation_student_policy
+            student = loaded_student(checkpoint, device=device_name)
+
+            def policy(obs: Any) -> Any:
+                obs_tensor = _distill_student_obs_tensor(obs, device=device_name)
+                with torch.no_grad():
+                    return student.policy(obs_tensor).detach()
+
+    log(f"Policy obs mode: {policy_obs_mode}")
+    log(f"Action mode: {playback_cfg.action_mode}")
+    session = RslRlPlaybackSession(
+        env=env,
+        wrapped_env=wrapped_env,
+        device=device_name,
+        action_mode=playback_cfg.action_mode,
+        policy=policy,
+        num_envs=playback_cfg.num_envs,
+    )
+    return session, policy_obs_mode, checkpoint_path
+
+
 def prepare_motion_overlay_selection(
     env: Any,
     *,
@@ -1014,6 +1149,7 @@ __all__ = [
     "RslRlPlaybackConfig",
     "RslRlPlaybackSession",
     "create_appo_playback_session",
+    "create_distill_playback_session",
     "create_hora_distill_playback_session",
     "create_rsl_rl_playback_session",
     "create_sac_playback_session",

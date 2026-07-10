@@ -317,6 +317,73 @@ def test_g1_sac_playback_warns_for_checkpoint_without_standing_contract(tmp_path
     assert any("standing/walking reward-mode contract" in message for message in messages)
 
 
+def test_play_interactive_cli_accepts_distill_config_route():
+    mod = _load_script("play_interactive")
+
+    parsed = mod._parse_interactive_cli(
+        [
+            "--algo",
+            "distill",
+            "--task",
+            "g1_walk_height",
+            "--sim",
+            "mujoco",
+            "interactive.action_mode=policy",
+        ]
+    )
+    cfg = mod._compose_interactive_config(parsed.algo, parsed.overrides)
+    args = mod._build_play_args(cfg, algo=parsed.algo)
+
+    assert parsed.algo == "distill"
+    assert parsed.overrides[0] == "task=g1_walk_height/mujoco"
+    assert cfg.algo.algo_log_name == "distill"
+    assert cfg.training.task_name == "G1WalkHeight"
+    assert args.algo == "distill"
+    assert args.action_mode == "policy"
+    assert args.policy_obs_mode == "auto"
+
+
+def test_play_interactive_routes_distill_to_generic_session(monkeypatch):
+    mod = _load_script("play_interactive")
+    calls: dict[str, Any] = {}
+
+    class FakeSession:
+        env = object()
+
+    def fake_create_distill_playback_session(**kwargs):
+        calls.update(kwargs)
+        return FakeSession(), "actor", "/tmp/model.pt"
+
+    monkeypatch.setattr(mod, "create_distill_playback_session", fake_create_distill_playback_session)
+    monkeypatch.setattr(mod, "_uses_native_mujoco_viewer_launch", lambda: True)
+    monkeypatch.setattr(mod, "_can_launch_glfw_viewer", lambda: False)
+
+    args = type(
+        "Args",
+        (),
+        {
+            "task": "G1WalkHeight",
+            "load_run": "demo",
+            "checkpoint": None,
+            "action_mode": "policy",
+            "policy_obs_mode": "actor",
+            "algo_log_name": "distill",
+            "log_root": None,
+            "speed": 1.0,
+            "start_paused": False,
+            "algo": "distill",
+        },
+    )()
+    cfg = mod.OmegaConf.create({"training": {"device": "cpu"}})
+
+    mod.play_interactive(args, cfg=cfg, algo="distill")
+
+    assert calls["playback_cfg"].algo_log_name == "distill"
+    assert calls["playback_cfg"].action_mode == "policy"
+    assert calls["cfg"] is cfg
+    assert calls["device"] == "cpu"
+
+
 def test_play_interactive_viewer_model_uses_shared_render_playback_resolver(
     tmp_path: Path, monkeypatch
 ):

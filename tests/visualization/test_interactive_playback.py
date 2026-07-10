@@ -20,6 +20,7 @@ from unilab.visualization.interactive_playback import (
     RslRlPlaybackConfig,
     RslRlPlaybackSession,
     create_appo_playback_session,
+    create_distill_playback_session,
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
     create_sac_playback_session,
@@ -391,6 +392,160 @@ def test_create_hora_distill_playback_session_missing_checkpoint_uses_zero_actio
     assert messages == [
         "missing checkpoint",
         "WARNING: falling back to zero actions.",
+        "Policy obs mode: actor",
+        "Action mode: policy",
+    ]
+
+    session.reset()
+    session.step_once()
+
+    assert torch.equal(captured["actions"], torch.zeros((1, 2)))
+
+
+def test_create_distill_playback_session_loads_student_policy(tmp_path: Path) -> None:
+    from unilab.algos.torch.distill import MLPStudentPolicy, save_distillation_checkpoint
+
+    checkpoint_path = tmp_path / "generic_distill_student.pt"
+    student = MLPStudentPolicy(obs_dim=5, action_dim=2, hidden_dims=(8,))
+    save_distillation_checkpoint(
+        checkpoint_path,
+        student=student,
+        agent_steps=4,
+        teacher_metadata={"task_name": "G1WalkHeight"},
+        distill_runtime_cfg={
+            "student_obs_dim": 5,
+            "student_action_dim": 2,
+            "student_hidden_dims": [8],
+            "student_activation": "elu",
+            "student_squash_action": True,
+        },
+    )
+    captured: dict[str, Any] = {}
+    messages: list[str] = []
+
+    class FakeEnv:
+        action_space = SimpleNamespace(
+            shape=(2,),
+            low=np.full((2,), -1.0),
+            high=np.full((2,), 1.0),
+        )
+        state = SimpleNamespace(info={})
+
+        def get_physics_state_snapshot(self):
+            return np.zeros((1, 4), dtype=np.float32)
+
+    class FakeWrapper:
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str):
+            self.env = env
+            captured["wrapper_device"] = device
+            captured["policy_obs_mode"] = policy_obs_mode
+
+        def reset(self):
+            return torch.ones((1, 5), dtype=torch.float32), {}
+
+        def step(self, actions):
+            captured["actions"] = actions
+            return torch.ones((1, 5), dtype=torch.float32), torch.zeros((1,)), False, {}
+
+    deps = {
+        "resolve_checkpoint": lambda playback_cfg, cfg, root_dir: checkpoint_path,
+        "create_env": lambda cfg, *, num_envs: FakeEnv(),
+        "wrapper_cls": FakeWrapper,
+    }
+
+    session, policy_obs_mode, checkpoint = create_distill_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkHeight",
+            load_run=str(checkpoint_path),
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            num_envs=1,
+        ),
+        cfg=SimpleNamespace(training=SimpleNamespace(task_name="G1WalkHeight")),
+        root_dir=tmp_path,
+        device="cpu",
+        deps=deps,
+        log=messages.append,
+    )
+
+    assert policy_obs_mode == "actor"
+    assert checkpoint == str(checkpoint_path)
+    assert captured["policy_obs_mode"] == "actor"
+    assert messages == [
+        f"Loading distillation student checkpoint: {checkpoint_path}",
+        "Policy obs mode: actor",
+        "Action mode: policy",
+    ]
+
+    session.reset()
+    session.step_once()
+
+    assert captured["actions"].shape == (1, 2)
+    assert captured["actions"].requires_grad is False
+    assert torch.isfinite(captured["actions"]).all()
+
+
+def test_create_distill_playback_session_missing_checkpoint_uses_zero_actions(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+    messages: list[str] = []
+
+    class FakeEnv:
+        action_space = SimpleNamespace(
+            shape=(2,),
+            low=np.full((2,), -1.0),
+            high=np.full((2,), 1.0),
+        )
+        state = SimpleNamespace(info={})
+
+        def get_physics_state_snapshot(self):
+            return np.zeros((1, 4), dtype=np.float32)
+
+    class FakeWrapper:
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str):
+            self.env = env
+            captured["policy_obs_mode"] = policy_obs_mode
+
+        def reset(self):
+            return torch.ones((1, 5), dtype=torch.float32), {}
+
+        def step(self, actions):
+            captured["actions"] = actions
+            return torch.ones((1, 5), dtype=torch.float32), torch.zeros((1,)), False, {}
+
+    deps = {
+        "resolve_checkpoint": lambda playback_cfg, cfg, root_dir: None,
+        "create_env": lambda cfg, *, num_envs: FakeEnv(),
+        "wrapper_cls": FakeWrapper,
+    }
+
+    session, policy_obs_mode, checkpoint = create_distill_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkHeight",
+            load_run="missing",
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            num_envs=1,
+        ),
+        cfg=SimpleNamespace(training=SimpleNamespace(task_name="G1WalkHeight")),
+        root_dir=tmp_path,
+        device="cpu",
+        deps=deps,
+        log=messages.append,
+    )
+
+    assert policy_obs_mode == "actor"
+    assert checkpoint is None
+    assert captured["policy_obs_mode"] == "actor"
+    assert messages == [
+        "WARNING: no generic distillation student checkpoint found - falling back to zero actions.",
         "Policy obs mode: actor",
         "Action mode: policy",
     ]

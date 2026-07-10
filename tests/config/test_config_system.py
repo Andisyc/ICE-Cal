@@ -55,6 +55,8 @@ def _normalize_overrides(algo_dir: str, overrides: list[str] | None) -> list[str
     if not task_selected:
         if algo_dir == "offpolicy":
             normalized.append(f"task={algo}/g1_walk_flat/mujoco")
+        elif algo_dir == "distill":
+            normalized.append("task=g1_walk_height/mujoco")
         else:
             normalized.append("task=go1_joystick_flat/mujoco")
 
@@ -132,12 +134,184 @@ def _supported_task_cases() -> list[tuple[str, str, str, str, str, list[str]]]:
         ("appo", "config"),
         ("ppo", "config"),
         ("ppo", "config_mlx"),
+        ("distill", "config"),
     ],
 )
 def test_algo_config_composes(algo_dir: str, config_name: str):
     cfg = _compose(algo_dir, config_name)
     assert cfg.training.task_name
     assert cfg.training.sim_backend == "mujoco"
+
+
+def test_distill_g1_walk_height_owner_composes() -> None:
+    cfg = _compose("distill", overrides=["task=g1_walk_height/mujoco"])
+
+    assert cfg.training.task_name == "G1WalkHeight"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.algo.algo_log_name == "distill"
+    assert cfg.algo.loss_type == "mse"
+    assert cfg.algo.gradient_length == 15
+    assert cfg.training.dry_run is False
+    assert cfg.training.dry_run_batch_size == 8
+    assert cfg.training.dry_run_updates == 1
+    assert cfg.training.dry_run_checkpoint is None
+    assert cfg.training.offline_dataset_path is None
+    assert cfg.training.offline_batch_size == 256
+    assert cfg.training.offline_max_updates == 1
+    assert cfg.training.offline_checkpoint is None
+    assert cfg.training.formal_run is False
+    assert cfg.training.formal_run_name is None
+    assert cfg.training.formal_run_dir is None
+    assert cfg.training.multitask_dataset_path is None
+    assert cfg.training.multitask_sources == []
+    assert cfg.training.collect_dataset_path is None
+    assert cfg.training.collect_num_samples == 1024
+    assert cfg.training.collect_num_envs == 1
+    assert cfg.training.collect_action_mode == "zero"
+    assert cfg.training.collect_action_seed is None
+    assert cfg.training.collect_teacher_obs_key == "obs"
+    assert cfg.training.collect_teacher_projection == "identity"
+    assert cfg.training.collect_student_projection == "identity"
+    assert cfg.training.collect_student_drop_index is None
+    assert cfg.training.collect_command_sample_filter == "none"
+    assert cfg.training.collect_command_info_key == "commands"
+    assert cfg.training.collect_command_xy_threshold == pytest.approx(0.05)
+    assert cfg.training.collect_command_yaw_threshold == pytest.approx(0.05)
+    assert cfg.training.collect_max_env_steps is None
+    assert cfg.interactive.action_mode == "zero"
+    assert cfg.interactive.policy_obs_mode == "auto"
+    assert cfg.env.commands.observe_height_command is True
+    assert cfg.reward.scales.track_base_height_exp_smooth == pytest.approx(4.0)
+    assert cfg.teacher.algo_family == "sac"
+    assert cfg.teacher.algo_type == "sac"
+    assert cfg.teacher.task == "sac/g1_walk_height/mujoco"
+    assert cfg.teacher.checkpoint_path is None
+    assert cfg.teacher.obs_dim == 99
+    assert cfg.algo.aux_loss_coef == pytest.approx(0.0)
+    assert cfg.algo.role_loss_coef == pytest.approx(0.0)
+    assert dict(cfg.algo.role_expert_targets) == {}
+    assert cfg.student.model_type == "mlp"
+    assert cfg.student.obs_dim == 99
+    assert cfg.student.action_dim == 29
+    assert cfg.student.hidden_dims == [256, 256, 256]
+    assert cfg.student.num_experts == 3
+    assert cfg.student.expert_hidden_dims == [256, 256, 256]
+    assert cfg.student.router_hidden_dims == []
+    assert cfg.student.routing_mode == "soft"
+    assert cfg.student.router_temperature == pytest.approx(1.0)
+
+
+def test_distill_g1_walk_flat_owner_composes() -> None:
+    cfg = _compose("distill", overrides=["task=g1_walk_flat/mujoco"])
+
+    assert cfg.training.task_name == "G1WalkFlat"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.training.collect_command_sample_filter == "active"
+    assert cfg.training.collect_command_info_key == "commands"
+    assert cfg.training.collect_command_xy_threshold == pytest.approx(0.05)
+    assert cfg.training.collect_command_yaw_threshold == pytest.approx(0.05)
+    assert cfg.env.commands.observe_height_command is False
+    assert cfg.env.commands.random_height_during_walking is False
+    assert cfg.reward.scales.tracking_lin_vel == pytest.approx(2.0)
+    assert "track_base_height_exp_smooth" not in cfg.reward.scales
+    assert cfg.teacher.task == "sac/g1_walk_flat/mujoco"
+    assert cfg.teacher.task_name == "G1WalkFlat"
+    assert cfg.teacher.checkpoint_path is None
+    assert cfg.teacher.load_run == "2026-07-09_02-48-58_mujoco"
+    assert cfg.teacher.checkpoint == 5000
+    assert cfg.teacher.obs_dim == 98
+    assert cfg.teacher.action_dim == 29
+    assert cfg.student.obs_dim == 98
+    assert cfg.student.action_dim == 29
+
+
+def test_distill_g1_stand_still_owner_composes() -> None:
+    cfg = _compose("distill", overrides=["task=g1_stand_still/mujoco"])
+
+    assert cfg.training.task_name == "G1StandStill"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.training.collect_command_sample_filter == "inactive"
+    assert cfg.training.collect_command_info_key == "commands"
+    assert cfg.training.collect_command_xy_threshold == pytest.approx(0.05)
+    assert cfg.training.collect_command_yaw_threshold == pytest.approx(0.05)
+    assert cfg.env.commands.vel_limit == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    assert cfg.env.commands.rel_standing_envs == pytest.approx(1.0)
+    assert cfg.env.commands.rel_transition_envs == pytest.approx(0.0)
+    assert cfg.env.commands.observe_height_command is False
+    assert cfg.env.commands.random_height_during_walking is False
+    assert cfg.env.reset_base_qvel_limit == pytest.approx(0.0)
+    assert cfg.env.standing_reset_base_qvel_limit == pytest.approx(0.0)
+    assert cfg.env.stand_action_authority is False
+    assert cfg.env.curriculum.enabled is False
+    assert cfg.reward.scales.stand_base_height_deficit_l1 == pytest.approx(-240.0)
+    assert cfg.reward.scales.stand_support_height_margin_l2 == pytest.approx(-1500.0)
+    assert cfg.teacher.task == "sac/g1_stand_still/mujoco"
+    assert cfg.teacher.task_name == "G1StandStill"
+    assert cfg.teacher.checkpoint_path is None
+    assert cfg.teacher.load_run == "2026-07-09_22-55-05_mujoco"
+    assert cfg.teacher.checkpoint == 5000
+    assert cfg.teacher.obs_dim == 98
+    assert cfg.teacher.action_dim == 29
+    assert cfg.student.obs_dim == 98
+    assert cfg.student.action_dim == 29
+    assert cfg.training.collect_teacher_projection == "identity"
+    assert cfg.training.collect_student_projection == "identity"
+
+
+def test_distill_moe_student_config_composes_only_when_selected() -> None:
+    cfg = _compose(
+        "distill",
+        overrides=[
+            "task=g1_walk_height/mujoco",
+            "student.model_type=moe",
+            "student.num_experts=4",
+            "student.expert_hidden_dims=[64,32]",
+            "student.router_hidden_dims=[16]",
+            "student.routing_mode=hard",
+            "student.router_temperature=0.75",
+            "algo.aux_loss_coef=0.1",
+            "algo.role_loss_coef=0.2",
+            "+algo.role_expert_targets={stand:0,walk_height:1}",
+            "training.offline_dataset_path=/tmp/distill_dataset.pt",
+            "training.offline_batch_size=4",
+            "training.offline_max_updates=2",
+            "training.offline_checkpoint=/tmp/student.pt",
+            "training.formal_run=true",
+            "training.formal_run_name=test_formal",
+            "training.formal_run_dir=/tmp/distill_formal",
+            "training.collect_dataset_path=/tmp/collected.pt",
+            "training.collect_num_samples=3",
+            "training.collect_num_envs=1",
+            "teacher.obs_dim=100",
+            "training.collect_teacher_projection=pad_zeros",
+            "training.collect_student_projection=drop_index",
+            "training.collect_student_drop_index=96",
+        ],
+    )
+
+    assert cfg.student.model_type == "moe"
+    assert cfg.student.num_experts == 4
+    assert cfg.student.expert_hidden_dims == [64, 32]
+    assert cfg.student.router_hidden_dims == [16]
+    assert cfg.student.routing_mode == "hard"
+    assert cfg.student.router_temperature == pytest.approx(0.75)
+    assert cfg.algo.aux_loss_coef == pytest.approx(0.1)
+    assert cfg.algo.role_loss_coef == pytest.approx(0.2)
+    assert dict(cfg.algo.role_expert_targets) == {"stand": 0, "walk_height": 1}
+    assert cfg.training.offline_dataset_path == "/tmp/distill_dataset.pt"
+    assert cfg.training.offline_batch_size == 4
+    assert cfg.training.offline_max_updates == 2
+    assert cfg.training.offline_checkpoint == "/tmp/student.pt"
+    assert cfg.training.formal_run is True
+    assert cfg.training.formal_run_name == "test_formal"
+    assert cfg.training.formal_run_dir == "/tmp/distill_formal"
+    assert cfg.training.collect_dataset_path == "/tmp/collected.pt"
+    assert cfg.training.collect_num_samples == 3
+    assert cfg.training.collect_num_envs == 1
+    assert cfg.teacher.obs_dim == 100
+    assert cfg.training.collect_teacher_projection == "pad_zeros"
+    assert cfg.training.collect_student_projection == "drop_index"
+    assert cfg.training.collect_student_drop_index == 96
 
 
 def test_legacy_config_groups_removed():

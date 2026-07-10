@@ -68,6 +68,7 @@ from unilab.visualization.interactive_playback import (
     _actor_input_dim_from_state_dict,
     _load_playback_checkpoint,
     create_appo_playback_session,
+    create_distill_playback_session,
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
     create_sac_playback_session,
@@ -389,13 +390,14 @@ def _warn_if_g1_sac_checkpoint_lacks_standing_contract(
     return issues
 
 
-SUPPORTED_INTERACTIVE_ALGOS = ("ppo", "appo", "sac", "flashsac", "hora_distill")
+SUPPORTED_INTERACTIVE_ALGOS = ("ppo", "appo", "sac", "flashsac", "hora_distill", "distill")
 _CONFIG_ROOT_BY_ALGO = {
     "ppo": "ppo",
     "appo": "appo",
     "sac": "offpolicy",
     "flashsac": "offpolicy",
     "hora_distill": "hora_distill",
+    "distill": "distill",
 }
 _OFFPOLICY_INTERACTIVE_ALGOS = {"sac", "flashsac"}
 _G1_STANDING_CONTRACT_STAND_TERMS = {
@@ -1384,6 +1386,18 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
                     "HORA distill interactive playback requires a composed Hydra config."
                 )
             session = create_hora_distill_playback_session(
+                playback_cfg=playback_cfg,
+                cfg=cfg,
+                root_dir=ROOT_DIR,
+                device=device,
+                log=lambda message: print(f"[play_interactive] {message}"),
+            )
+        elif algo == "distill":
+            if cfg is None:
+                raise ValueError(
+                    "Generic distill interactive playback requires a composed Hydra config."
+                )
+            session = create_distill_playback_session(
                 playback_cfg=playback_cfg,
                 cfg=cfg,
                 root_dir=ROOT_DIR,
