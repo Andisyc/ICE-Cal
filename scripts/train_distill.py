@@ -6,6 +6,8 @@ assembles the configured entrypoint routes.
 
 from __future__ import annotations
 
+import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -38,6 +40,7 @@ _OWNER_COMMAND_SAMPLE_FILTERS = {
     "G1StandStill": "inactive",
 }
 _DISTILL_TASK_NAME_HINTS = frozenset(_OWNER_COMMAND_SAMPLE_FILTERS)
+_CLI_SEQUENCE_SUMMARY_LIMIT = 16
 
 
 def _int_tuple(values: Any) -> tuple[int, ...]:
@@ -46,6 +49,34 @@ def _int_tuple(values: Any) -> tuple[int, ...]:
 
 def _student_model_type(cfg: DictConfig) -> str:
     return str(OmegaConf.select(cfg, "student.model_type", default="mlp"))
+
+
+def _compact_cli_result(value: Any, *, key: str | None = None) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(child_key): _compact_cli_result(child_value, key=str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list):
+        if len(value) <= _CLI_SEQUENCE_SUMMARY_LIMIT:
+            return [_compact_cli_result(item) for item in value]
+        summary: dict[str, Any] = {
+            "count": len(value),
+            "head": [_compact_cli_result(item) for item in value[:4]],
+            "tail": [_compact_cli_result(item) for item in value[-4:]],
+        }
+        if key in {"role_labels", "command_intents", "offline_balanced_labels"} and all(
+            isinstance(item, str) for item in value
+        ):
+            summary["counts"] = dict(Counter(str(item) for item in value))
+        return summary
+    return value
+
+
+def _format_cli_result(result: dict[str, Any]) -> str:
+    return json.dumps(_compact_cli_result(result), ensure_ascii=False, sort_keys=True)
 
 
 def build_teacher_spec(cfg: DictConfig) -> DistillationTeacherSpec:
@@ -970,12 +1001,12 @@ def main(cfg: DictConfig) -> None:
 
     multitask_dataset_path = OmegaConf.select(cfg, "training.multitask_dataset_path")
     if multitask_dataset_path not in (None, ""):
-        print(run_multitask_dataset_assembly(cfg, dataset_path=multitask_dataset_path))
+        print(_format_cli_result(run_multitask_dataset_assembly(cfg, dataset_path=multitask_dataset_path)))
         return
 
     collect_dataset_path = OmegaConf.select(cfg, "training.collect_dataset_path")
     if collect_dataset_path not in (None, ""):
-        print(run_collect_dataset(cfg, dataset_path=collect_dataset_path))
+        print(_format_cli_result(run_collect_dataset(cfg, dataset_path=collect_dataset_path)))
         return
 
     checkpoint_path, _run_dir = resolve_teacher_checkpoint(cfg, root_dir=ROOT_DIR)
@@ -987,12 +1018,16 @@ def main(cfg: DictConfig) -> None:
 
     if bool(OmegaConf.select(cfg, "training.dry_run", default=False)):
         print(
-            run_fake_batch_update(
-                cfg,
-                teacher_checkpoint=checkpoint_path,
-                batch_size=int(OmegaConf.select(cfg, "training.dry_run_batch_size", default=8)),
-                max_updates=int(OmegaConf.select(cfg, "training.dry_run_updates", default=1)),
-                checkpoint_path=OmegaConf.select(cfg, "training.dry_run_checkpoint"),
+            _format_cli_result(
+                run_fake_batch_update(
+                    cfg,
+                    teacher_checkpoint=checkpoint_path,
+                    batch_size=int(
+                        OmegaConf.select(cfg, "training.dry_run_batch_size", default=8)
+                    ),
+                    max_updates=int(OmegaConf.select(cfg, "training.dry_run_updates", default=1)),
+                    checkpoint_path=OmegaConf.select(cfg, "training.dry_run_checkpoint"),
+                )
             )
         )
         return
@@ -1001,25 +1036,37 @@ def main(cfg: DictConfig) -> None:
     if offline_dataset_path not in (None, ""):
         if bool(OmegaConf.select(cfg, "training.formal_run", default=False)):
             print(
-                run_formal_offline_dataset_update(
-                    cfg,
-                    teacher_checkpoint=checkpoint_path,
-                    dataset_path=offline_dataset_path,
-                    batch_size=int(OmegaConf.select(cfg, "training.offline_batch_size", default=256)),
-                    max_updates=int(OmegaConf.select(cfg, "training.offline_max_updates", default=1)),
-                    device=_distill_device(cfg),
+                _format_cli_result(
+                    run_formal_offline_dataset_update(
+                        cfg,
+                        teacher_checkpoint=checkpoint_path,
+                        dataset_path=offline_dataset_path,
+                        batch_size=int(
+                            OmegaConf.select(cfg, "training.offline_batch_size", default=256)
+                        ),
+                        max_updates=int(
+                            OmegaConf.select(cfg, "training.offline_max_updates", default=1)
+                        ),
+                        device=_distill_device(cfg),
+                    )
                 )
             )
             return
         print(
-            run_offline_dataset_update(
-                cfg,
-                teacher_checkpoint=checkpoint_path,
-                dataset_path=offline_dataset_path,
-                batch_size=int(OmegaConf.select(cfg, "training.offline_batch_size", default=256)),
-                max_updates=int(OmegaConf.select(cfg, "training.offline_max_updates", default=1)),
-                checkpoint_path=OmegaConf.select(cfg, "training.offline_checkpoint"),
-                device=_distill_device(cfg),
+            _format_cli_result(
+                run_offline_dataset_update(
+                    cfg,
+                    teacher_checkpoint=checkpoint_path,
+                    dataset_path=offline_dataset_path,
+                    batch_size=int(
+                        OmegaConf.select(cfg, "training.offline_batch_size", default=256)
+                    ),
+                    max_updates=int(
+                        OmegaConf.select(cfg, "training.offline_max_updates", default=1)
+                    ),
+                    checkpoint_path=OmegaConf.select(cfg, "training.offline_checkpoint"),
+                    device=_distill_device(cfg),
+                )
             )
         )
         return

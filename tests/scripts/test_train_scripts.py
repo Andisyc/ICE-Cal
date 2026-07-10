@@ -779,6 +779,40 @@ def _train_distill():
     return _load_script("train_distill")
 
 
+def test_distill_script_cli_result_compacts_large_metadata():
+    mod = _train_distill()
+
+    result = {
+        "distill_source": "offline_dataset",
+        "dataset_metadata": {
+            "role_labels": ["stand"] * 20 + ["walk_flat"] * 20,
+            "command_intents": ["inactive"] * 20 + ["active"] * 20,
+            "source_metadata": [
+                {"command_intents": ["inactive"] * 32},
+                {"role_labels": ["walk_flat"] * 32},
+            ],
+        },
+        "offline_batch_label_counts": [{"stand": 1, "walk_flat": 1}] * 200,
+    }
+
+    compact = mod._compact_cli_result(result)
+    rendered = mod._format_cli_result(result)
+
+    assert compact["dataset_metadata"]["role_labels"] == {
+        "count": 40,
+        "head": ["stand", "stand", "stand", "stand"],
+        "tail": ["walk_flat", "walk_flat", "walk_flat", "walk_flat"],
+        "counts": {"stand": 20, "walk_flat": 20},
+    }
+    assert compact["dataset_metadata"]["command_intents"]["counts"] == {
+        "inactive": 20,
+        "active": 20,
+    }
+    assert compact["dataset_metadata"]["source_metadata"][0]["command_intents"]["count"] == 32
+    assert compact["offline_batch_label_counts"]["count"] == 200
+    assert len(rendered) < 1500
+
+
 class _FakeDistillCollectEnv:
     def __init__(
         self,
