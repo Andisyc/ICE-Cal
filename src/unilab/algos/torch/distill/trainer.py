@@ -247,9 +247,9 @@ class BehaviorDistillationTrainer:
         expert_actions: torch.Tensor | None,
         role_labels: tuple[str, ...] | None,
         command_intents: tuple[str, ...] | None,
-    ) -> tuple[torch.Tensor, str, int]:
+    ) -> tuple[torch.Tensor, str, int, torch.Tensor | None]:
         if self.expert_behavior_loss_source == "none" or expert_actions is None:
-            return student_action, "student_action", 0
+            return student_action, "student_action", 0, None
         if expert_actions.ndim != 3:
             raise ValueError(f"expert_actions must be rank-3, got shape {tuple(expert_actions.shape)}")
         if expert_actions.shape[0] != student_action.shape[0]:
@@ -305,13 +305,23 @@ class BehaviorDistillationTrainer:
             selected_targets = role_targets
             source = "role_expert"
         else:
-            return student_action, "student_action", 0
+            return student_action, "student_action", 0, None
         if selected_targets is None:
-            return student_action, "student_action", 0
+            return student_action, "student_action", 0, None
 
         row_indices = torch.arange(batch_size, device=expert_actions.device)
         selected_action = expert_actions[row_indices, selected_targets]
-        return selected_action, source, int(selected_targets.numel())
+        return selected_action, source, int(selected_targets.numel()), selected_targets
+
+    def _clear_inactive_expert_grads(self, selected_targets: torch.Tensor | None) -> None:
+        if selected_targets is None:
+            return
+        experts = cast(Any, self.student).experts
+        active_experts = {int(index) for index in selected_targets.detach().unique().tolist()}
+        for expert_index, expert in enumerate(experts):
+            if expert_index not in active_experts:
+                for parameter in expert.parameters():
+                    parameter.grad = None
 
     def _role_router_loss(
         self,
@@ -421,7 +431,12 @@ class BehaviorDistillationTrainer:
             batch_size=int(batch.student_obs.shape[0]),
             like=student_action,
         )
-        behavior_action, behavior_action_source, behavior_target_count = (
+        (
+            behavior_action,
+            behavior_action_source,
+            behavior_target_count,
+            selected_expert_targets,
+        ) = (
             self._expert_behavior_action(
                 student_action=student_action,
                 expert_actions=expert_actions,
@@ -439,6 +454,7 @@ class BehaviorDistillationTrainer:
 
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        self._clear_inactive_expert_grads(selected_expert_targets)
         if self.max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(self.student.parameters(), self.max_grad_norm)
         grad_norm = self._grad_norm(self.student)

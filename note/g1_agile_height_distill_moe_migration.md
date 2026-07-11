@@ -5396,6 +5396,34 @@ Evidence (2026-07-11):
 Status: contract-confirmed for the online DAgger training loop. Live MuJoCo
 policy quality remains a separate sentinel and is not inferred from toy tests.
 
+### Sequential DAgger Expert Isolation Fix (2026-07-11)
+
+The first sequential stand-then-walk DAgger path contained an optimizer-state
+leak. Per-expert behavior cloning selected only the requested expert action,
+but autograd still produced zero gradient tensors for the other experts. Adam
+therefore continued applying their stored momentum during later single-role
+updates. A walk-only DAgger stage could silently move the standing expert even
+though the current standing-expert gradient was numerically zero.
+
+The trainer now records which experts contributed behavior actions and sets
+all inactive expert parameter gradients to `None` before gradient clipping and
+`optimizer.step()`. This makes Adam skip inactive experts while preserving
+normal updates for mixed-role batches and router parameters.
+
+Evidence:
+
+- TDD red reproduced the leak by first creating expert-1 Adam momentum and then
+  running five expert-0-only updates; expert-1 weights changed.
+- TDD green proves every expert-1 parameter remains bitwise unchanged across
+  the same expert-0-only update sequence.
+- Focused contract suite: `66 passed`.
+- Distillation script suite: `57 passed, 133 deselected`.
+
+Existing checkpoints produced by the leaking sequential optimizer path remain
+potentially contaminated. The fix does not repair their weights in place. The
+next live checkpoint must be trained from the last known-good checkpoint before
+the role-specific stage, or by rerunning stand DAgger followed by walk DAgger.
+
 ## Validation Ladder
 
 1. Static owner scan:

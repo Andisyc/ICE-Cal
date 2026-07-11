@@ -1690,6 +1690,50 @@ def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
     assert np.max(np.abs(env.action_history[1])) > 0.0
 
 
+def test_moe_expert_optimizer_state_does_not_drift_inactive_expert() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MoEStudentPolicy,
+    )
+
+    student = MoEStudentPolicy(obs_dim=4, action_dim=2, num_experts=3, expert_hidden_dims=(8,))
+    teacher = torch.nn.Linear(4, 2)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=teacher,
+        optimizer=torch.optim.Adam(student.parameters(), lr=1.0e-2),
+        command_intent_expert_targets={"active": 0, "inactive": 1},
+        expert_behavior_loss_source="command_intent",
+    )
+    obs = torch.randn(8, 4)
+
+    trainer.update(
+        DistillationBatch(
+            student_obs=obs,
+            teacher_obs=obs,
+            teacher_actions=torch.full((8, 2), 0.75),
+            command_intents=("inactive",) * 8,
+        )
+    )
+    stand_before = {
+        key: value.detach().clone() for key, value in student.experts[1].state_dict().items()
+    }
+
+    for _ in range(5):
+        trainer.update(
+            DistillationBatch(
+                student_obs=obs,
+                teacher_obs=obs,
+                teacher_actions=torch.full((8, 2), -0.75),
+                command_intents=("active",) * 8,
+            )
+        )
+
+    for key, value in student.experts[1].state_dict().items():
+        assert torch.equal(value, stand_before[key]), key
+
+
 def test_iterative_dagger_moves_collected_dataset_to_student_device(monkeypatch) -> None:
     from types import SimpleNamespace
 
