@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -164,6 +164,19 @@ class DistillationTensorDataset:
         if self.teacher_actions is None:
             return None
         return int(self.teacher_actions.shape[-1])
+
+    def to(self, device: str | torch.device) -> DistillationTensorDataset:
+        """Move every tensor field to one learner device while preserving labels."""
+
+        return replace(
+            self,
+            student_obs=self.student_obs.to(device),
+            teacher_obs=self.teacher_obs.to(device),
+            teacher_actions=(
+                None if self.teacher_actions is None else self.teacher_actions.to(device)
+            ),
+            commands=None if self.commands is None else self.commands.to(device),
+        )
 
     def as_batch(self, *, start: int = 0, batch_size: int | None = None) -> DistillationBatch:
         if start < 0 or start >= self.num_samples:

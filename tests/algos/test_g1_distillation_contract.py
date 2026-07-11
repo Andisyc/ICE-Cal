@@ -824,6 +824,35 @@ def test_distillation_dataset_roundtrip_preserves_obs_batch_contract(tmp_path) -
     assert restored.role_labels is None
 
 
+def test_distillation_dataset_to_moves_all_tensors_and_preserves_labels() -> None:
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    dataset = build_distillation_dataset(
+        torch.zeros(2, 8),
+        torch.ones(2, 8),
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        expected_teacher_action_dim=3,
+        metadata={"source": "device-contract"},
+        role_labels=("stand", "walk_flat"),
+        teacher_actions=torch.full((2, 3), 0.25),
+        commands=torch.zeros(2, 3),
+        command_intents=("inactive", "active"),
+    )
+
+    moved = dataset.to("meta")
+
+    assert moved.student_obs.device.type == "meta"
+    assert moved.teacher_obs.device.type == "meta"
+    assert moved.teacher_actions is not None
+    assert moved.teacher_actions.device.type == "meta"
+    assert moved.commands is not None
+    assert moved.commands.device.type == "meta"
+    assert moved.role_labels == dataset.role_labels
+    assert moved.command_intents == dataset.command_intents
+    assert moved.metadata == dataset.metadata
+
+
 def test_distillation_dataset_roundtrip_preserves_role_labels_contract(tmp_path) -> None:
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
@@ -1659,6 +1688,54 @@ def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
     assert len(env.action_history) == 2
     assert np.allclose(env.action_history[0], 0.0)
     assert np.max(np.abs(env.action_history[1])) > 0.0
+
+
+def test_iterative_dagger_moves_collected_dataset_to_student_device(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import unilab.algos.torch.distill.dagger as dagger_module
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    collected = build_distillation_dataset(
+        torch.zeros(2, 8),
+        torch.ones(2, 8),
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.zeros(2, 3),
+    )
+    student = torch.nn.Linear(8, 3, device="meta")
+    trainer = SimpleNamespace(
+        student=student,
+        teacher=torch.nn.Linear(8, 3),
+        update_count=1,
+    )
+    captured = {}
+
+    monkeypatch.setattr(
+        dagger_module,
+        "collect_distillation_dataset_from_env",
+        lambda *args, **kwargs: collected,
+    )
+
+    def fake_offline(trainer, dataset, **kwargs):
+        captured["device"] = dataset.student_obs.device.type
+        return SimpleNamespace(samples_seen=dataset.num_samples)
+
+    monkeypatch.setattr(dagger_module, "run_offline_distillation_updates", fake_offline)
+
+    dagger_module.run_iterative_dagger_updates(
+        object(),
+        trainer=trainer,
+        num_iterations=1,
+        samples_per_iteration=2,
+        batch_size=2,
+        updates_per_iteration=1,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+    )
+
+    assert captured["device"] == "meta"
 
 
 def test_collect_distillation_dataset_from_env_student_policy_resets_done_rows() -> None:

@@ -5,11 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from .checkpoint import save_distillation_checkpoint
 from .collector import collect_distillation_dataset_from_env
 from .data import DistillationTensorDataset, build_distillation_dataset
 from .offline import OfflineDistillationRunResult, run_offline_distillation_updates
 from .trainer import BehaviorDistillationTrainer
+
+
+def _module_device(module: torch.nn.Module) -> torch.device:
+    try:
+        return next(module.parameters()).device
+    except StopIteration:
+        return torch.device("cpu")
 
 
 @dataclass(frozen=True)
@@ -113,7 +122,7 @@ def run_iterative_dagger_updates(
             max_env_steps=max_env_steps,
             metadata={"dagger_iteration": iteration + 1},
         )
-        dataset = _attach_role_label(dataset, role_label)
+        dataset = _attach_role_label(dataset, role_label).to(_module_device(trainer.student))
         collection_metadata.append(dict(dataset.metadata))
         samples_collected += dataset.num_samples
 
