@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,53 @@ def _attach_role_label(
     )
 
 
+def _aggregate_dagger_datasets(
+    datasets: Sequence[DistillationTensorDataset],
+) -> DistillationTensorDataset:
+    if not datasets:
+        raise ValueError("DAgger aggregation requires at least one dataset")
+
+    def cat_tensor(name: str) -> torch.Tensor | None:
+        values = [getattr(dataset, name) for dataset in datasets]
+        if all(value is None for value in values):
+            return None
+        if any(value is None for value in values):
+            raise ValueError(f"DAgger datasets disagree on optional tensor {name!r}")
+        return torch.cat(values, dim=0)
+
+    def cat_labels(name: str) -> tuple[str, ...] | None:
+        values = [getattr(dataset, name) for dataset in datasets]
+        if all(value is None for value in values):
+            return None
+        if any(value is None for value in values):
+            raise ValueError(f"DAgger datasets disagree on optional labels {name!r}")
+        return tuple(label for labels in values for label in labels)
+
+    first = datasets[0]
+    metadata = dict(datasets[-1].metadata)
+    metadata.update(
+        {
+            "source": "iterative_dagger_aggregate",
+            "dagger_aggregate_iterations": len(datasets),
+            "dagger_aggregate_num_samples": sum(dataset.num_samples for dataset in datasets),
+        }
+    )
+    if len(datasets) == 1:
+        return replace(first, metadata=metadata)
+    return build_distillation_dataset(
+        torch.cat([dataset.student_obs for dataset in datasets], dim=0),
+        torch.cat([dataset.teacher_obs for dataset in datasets], dim=0),
+        expected_student_obs_dim=first.student_obs_dim,
+        expected_teacher_obs_dim=first.teacher_obs_dim,
+        expected_teacher_action_dim=first.teacher_action_dim,
+        metadata=metadata,
+        role_labels=cat_labels("role_labels"),
+        teacher_actions=cat_tensor("teacher_actions"),
+        commands=cat_tensor("commands"),
+        command_intents=cat_labels("command_intents"),
+    )
+
+
 def run_iterative_dagger_updates(
     env: Any,
     *,
@@ -100,6 +147,7 @@ def run_iterative_dagger_updates(
 
     iteration_results: list[OfflineDistillationRunResult] = []
     collection_metadata: list[dict[str, Any]] = []
+    collected_datasets: list[DistillationTensorDataset] = []
     samples_collected = 0
     samples_seen = 0
     for iteration in range(int(num_iterations)):
@@ -123,12 +171,14 @@ def run_iterative_dagger_updates(
             metadata={"dagger_iteration": iteration + 1},
         )
         dataset = _attach_role_label(dataset, role_label).to(_module_device(trainer.student))
-        collection_metadata.append(dict(dataset.metadata))
+        collected_datasets.append(dataset)
+        training_dataset = _aggregate_dagger_datasets(collected_datasets)
+        collection_metadata.append(dict(training_dataset.metadata))
         samples_collected += dataset.num_samples
 
         result = run_offline_distillation_updates(
             trainer,
-            dataset,
+            training_dataset,
             batch_size=int(batch_size),
             max_updates=int(updates_per_iteration),
             repeat_dataset=True,

@@ -547,8 +547,9 @@ def test_distill_playback_hard_routes_moe_by_command_intent(tmp_path: Path) -> N
             "student_squash_action": False,
             "student_routing_mode": "soft",
             "student_router_temperature": 1.0,
-            "command_intent_loss_coef": 0.25,
+            "command_intent_loss_coef": 0.0,
             "command_intent_expert_targets": {"active": 0, "inactive": 1},
+            "expert_behavior_loss_source": "command_intent",
         },
     )
     captured: dict[str, Any] = {}

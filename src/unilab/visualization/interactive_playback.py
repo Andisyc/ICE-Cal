@@ -1113,7 +1113,9 @@ def _distill_effective_command_routing_mode(
         return configured, "none"
     if configured == "auto":
         coef = float(runtime_cfg.get("command_intent_loss_coef") or 0.0)
-        return configured, "hard" if coef > 0.0 else "none"
+        behavior_source = str(runtime_cfg.get("expert_behavior_loss_source") or "none")
+        command_intent_trained = coef > 0.0 or behavior_source == "command_intent"
+        return configured, "hard" if command_intent_trained else "none"
     return configured, configured
 
 

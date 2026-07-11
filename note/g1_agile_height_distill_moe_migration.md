@@ -5424,6 +5424,41 @@ potentially contaminated. The fix does not repair their weights in place. The
 next live checkpoint must be trained from the last known-good checkpoint before
 the role-specific stage, or by rerunning stand DAgger followed by walk DAgger.
 
+### Low-Speed Routing and DAgger Aggregation Fix (2026-07-11)
+
+`walk_stand_moe_fixed.pt` proved that standing survived expert optimizer
+isolation, but its playback log exposed two separate remaining contracts:
+
+- Playback `auto` routing incorrectly became `none` when
+  `command_intent_loss_coef=0`, even though the checkpoint declared
+  `expert_behavior_loss_source=command_intent`. Commands at `vx=0.2`, `0.4`,
+  and `0.6` therefore stayed on the standing expert; only the learned router
+  switched at `vx=0.8`.
+- The iterative DAgger loop recollected student states but trained only the
+  newest dataset. It did not implement the dataset aggregation that defines
+  DAgger, allowing later walk-state batches to forget earlier balance states.
+
+Playback `auto` now selects hard command-intent routing whenever either the
+router loss or expert behavior source was command-intent trained. Iterative
+DAgger now trains iteration `k` on the full union of datasets `1..k`, preserving
+teacher actions, commands, intents, and role labels. Collection metadata records
+`dagger_aggregate_iterations` and `dagger_aggregate_num_samples`.
+
+Evidence:
+
+- Playback regression reproduces the zero-loss-coefficient checkpoint and
+  proves zero command selects stand expert 1 while `vx=0.2` selects walk expert
+  0 under `auto`.
+- Two-iteration DAgger regression proves training dataset sizes progress from
+  4 to 8 samples instead of replacing the first four samples.
+- Distillation contract suite: `66 passed`.
+- Interactive playback suite: `20 passed`.
+- Distillation script suite: `57 passed, 133 deselected`.
+
+The routing fix applies immediately to existing command-intent checkpoints.
+The aggregation fix changes training data exposure and therefore requires a new
+walk DAgger checkpoint to evaluate long-horizon balance.
+
 ## Validation Ladder
 
 1. Static owner scan:

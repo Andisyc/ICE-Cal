@@ -1685,6 +1685,10 @@ def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
     assert result.iteration_count == 2
     assert result.update_count == 2
     assert result.samples_collected == 8
+    assert [metadata["dagger_aggregate_num_samples"] for metadata in result.collection_metadata] == [
+        4,
+        8,
+    ]
     assert len(env.action_history) == 2
     assert np.allclose(env.action_history[0], 0.0)
     assert np.max(np.abs(env.action_history[1])) > 0.0
