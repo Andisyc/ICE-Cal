@@ -5459,6 +5459,38 @@ The routing fix applies immediately to existing command-intent checkpoints.
 The aggregation fix changes training data exposure and therefore requires a new
 walk DAgger checkpoint to evaluate long-horizon balance.
 
+### Expert-Conditioned DAgger Rollout Fix (2026-07-11)
+
+The first aggregated checkpoint still fell immediately under zero command.
+Runtime evidence showed hard routing was correct (`inactive -> expert 1`), but
+expert 1 produced a `0.62` action peak by step 20 and the robot terminated by
+step 60. Optimizer-state inspection showed expert 0 advanced from step 2048 to
+4096 while experts 1 and 2 remained at step 2048, proving walk DAgger did not
+overwrite the standing expert.
+
+The actual mismatch was between collection and deployment. DAgger behavior loss
+updated the intent-selected expert, but student-state rollout executed the
+student's soft MoE mixture. Hard deployment therefore evaluated a pure expert
+on a state distribution that expert had never generated during DAgger.
+
+DAgger now resolves a fixed rollout expert from the owner command filter and
+role mappings. `active` collection executes walk expert 0 and `inactive`
+collection executes stand expert 1. Conflicting role/intent mappings fail
+closed. Checkpoint and collection metadata record the rollout source and expert
+index.
+
+Evidence:
+
+- A regression fixture biases the soft router toward expert 1, then proves an
+  `active` DAgger rollout still executes expert 0 exactly.
+- Distillation contract suite: `67 passed`.
+- Interactive playback suite: `20 passed`.
+- Distillation script suite: `57 passed, 133 deselected`.
+
+Because the old standing DAgger rollout used the mixture, recovery must restart
+at standing DAgger and then proceed to walking DAgger. Re-running walking DAgger
+alone cannot repair the pure standing expert's closed-loop distribution.
+
 ## Validation Ladder
 
 1. Static owner scan:

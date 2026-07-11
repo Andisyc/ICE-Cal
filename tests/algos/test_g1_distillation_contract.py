@@ -1694,6 +1694,43 @@ def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
     assert np.max(np.abs(env.action_history[1])) > 0.0
 
 
+def test_dagger_rollout_uses_command_intent_expert_instead_of_soft_mixture() -> None:
+    from unilab.algos.torch.distill import BehaviorDistillationTrainer, MoEStudentPolicy
+    from unilab.algos.torch.distill.dagger import _resolve_dagger_rollout_policy
+
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    with torch.no_grad():
+        for parameter in student.parameters():
+            parameter.zero_()
+        student.experts[0].net[-1].bias.fill_(0.25)
+        student.experts[1].net[-1].bias.fill_(-0.4)
+        student.router[-1].bias.copy_(torch.tensor([-5.0, 5.0]))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(4, 2),
+        optimizer=torch.optim.Adam(student.parameters()),
+        command_intent_expert_targets={"active": 0, "inactive": 1},
+        expert_behavior_loss_source="command_intent",
+    )
+
+    rollout_policy, expert_index, source = _resolve_dagger_rollout_policy(
+        trainer,
+        command_sample_filter="active",
+        role_label="walk_flat",
+    )
+
+    assert expert_index == 0
+    assert source == "command_intent"
+    assert torch.allclose(rollout_policy(torch.zeros(1, 4)), torch.full((1, 2), 0.25))
+
+
 def test_moe_expert_optimizer_state_does_not_drift_inactive_expert() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,

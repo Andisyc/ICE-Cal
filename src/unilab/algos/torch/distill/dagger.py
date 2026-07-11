@@ -10,6 +10,7 @@ import torch
 from .checkpoint import save_distillation_checkpoint
 from .collector import collect_distillation_dataset_from_env
 from .data import DistillationTensorDataset, build_distillation_dataset
+from .moe_student import MoEStudentPolicy
 from .offline import OfflineDistillationRunResult, run_offline_distillation_updates
 from .trainer import BehaviorDistillationTrainer
 
@@ -32,6 +33,50 @@ class IterativeDaggerRunResult:
     checkpoint_path: Path | None
     iteration_results: tuple[OfflineDistillationRunResult, ...]
     collection_metadata: tuple[dict[str, Any], ...]
+
+
+class _FixedExpertRolloutPolicy(torch.nn.Module):
+    def __init__(self, student: MoEStudentPolicy, expert_index: int) -> None:
+        super().__init__()
+        if not 0 <= int(expert_index) < student.num_experts:
+            raise ValueError(
+                f"DAgger rollout expert index out of range: "
+                f"index={int(expert_index)} num_experts={student.num_experts}"
+            )
+        self.student = student
+        self.expert_index = int(expert_index)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.student.experts[self.expert_index](obs)
+
+
+def _resolve_dagger_rollout_policy(
+    trainer: BehaviorDistillationTrainer,
+    *,
+    command_sample_filter: str,
+    role_label: str | None,
+) -> tuple[torch.nn.Module, int | None, str]:
+    candidates: list[tuple[int, str]] = []
+    if command_sample_filter in {"active", "inactive"}:
+        target = trainer.command_intent_expert_targets.get(command_sample_filter)
+        if target is not None:
+            candidates.append((int(target), "command_intent"))
+    if role_label is not None:
+        target = trainer.role_expert_targets.get(str(role_label))
+        if target is not None:
+            candidates.append((int(target), "role"))
+    if not candidates:
+        return trainer.student, None, "student"
+
+    expert_indices = {index for index, _source in candidates}
+    if len(expert_indices) != 1:
+        raise ValueError(f"DAgger rollout expert targets conflict: {candidates}")
+    if not isinstance(trainer.student, MoEStudentPolicy):
+        raise TypeError("expert-conditioned DAgger rollout requires MoEStudentPolicy")
+    expert_index = candidates[0][0]
+    sources = {source for _index, source in candidates}
+    source = "command_intent+role" if len(sources) > 1 else candidates[0][1]
+    return _FixedExpertRolloutPolicy(trainer.student, expert_index), expert_index, source
 
 
 def _attach_role_label(
@@ -150,6 +195,13 @@ def run_iterative_dagger_updates(
     collected_datasets: list[DistillationTensorDataset] = []
     samples_collected = 0
     samples_seen = 0
+    rollout_policy, rollout_expert_index, rollout_policy_source = (
+        _resolve_dagger_rollout_policy(
+            trainer,
+            command_sample_filter=str(command_sample_filter),
+            role_label=role_label,
+        )
+    )
     for iteration in range(int(num_iterations)):
         dataset = collect_distillation_dataset_from_env(
             env,
@@ -162,13 +214,17 @@ def run_iterative_dagger_updates(
             student_drop_index=student_drop_index,
             action_mode="student_policy",
             teacher_policy=trainer.teacher,
-            rollout_policy=trainer.student,
+            rollout_policy=rollout_policy,
             command_sample_filter=str(command_sample_filter),
             command_info_key=str(command_info_key),
             command_xy_threshold=float(command_xy_threshold),
             command_yaw_threshold=float(command_yaw_threshold),
             max_env_steps=max_env_steps,
-            metadata={"dagger_iteration": iteration + 1},
+            metadata={
+                "dagger_iteration": iteration + 1,
+                "dagger_rollout_policy_source": rollout_policy_source,
+                "dagger_rollout_expert_index": rollout_expert_index,
+            },
         )
         dataset = _attach_role_label(dataset, role_label).to(_module_device(trainer.student))
         collected_datasets.append(dataset)
@@ -200,6 +256,8 @@ def run_iterative_dagger_updates(
                 "dagger_samples_per_iteration": int(samples_per_iteration),
                 "dagger_updates_per_iteration": int(updates_per_iteration),
                 "dagger_role_label": role_label,
+                "dagger_rollout_policy_source": rollout_policy_source,
+                "dagger_rollout_expert_index": rollout_expert_index,
             }
         )
         initial_steps = int(
