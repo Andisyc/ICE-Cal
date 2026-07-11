@@ -28,6 +28,7 @@ from unilab.algos.torch.distill import (
     load_distillation_student_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
+    run_iterative_dagger_updates,
     run_offline_distillation_updates,
     save_distillation_dataset,
     validate_sac_teacher_checkpoint_contract,
@@ -1147,9 +1148,155 @@ def run_collect_dataset(
     }
 
 
+def run_online_dagger_update(
+    cfg: DictConfig,
+    *,
+    teacher_checkpoint: str | Path,
+    create_env_fn: Any | None = None,
+    env_cfg_override_fn: Any | None = None,
+) -> dict[str, Any]:
+    """Assemble the iterative student-rollout DAgger owner loop."""
+
+    _require_owner_command_sample_filter(cfg)
+    _require_teacher_policy_collection_route(cfg)
+    command_distribution_overrides = _apply_collect_command_distribution_overrides(cfg)
+    init_checkpoint = OmegaConf.select(cfg, "training.offline_init_checkpoint")
+    if init_checkpoint in (None, ""):
+        raise ValueError("training.offline_init_checkpoint must be set for online DAgger")
+    output_checkpoint = OmegaConf.select(cfg, "training.dagger_checkpoint")
+    if output_checkpoint in (None, ""):
+        raise ValueError("training.dagger_checkpoint must be set for online DAgger")
+    output_checkpoint = Path(str(output_checkpoint))
+
+    role_label = OmegaConf.select(cfg, "training.dagger_role_label")
+    if float(OmegaConf.select(cfg, "algo.role_loss_coef", default=0.0)) > 0.0 and role_label in (
+        None,
+        "",
+    ):
+        raise ValueError("training.dagger_role_label is required when algo.role_loss_coef > 0")
+
+    device = _distill_device(cfg)
+    trainer = build_distillation_trainer(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        student_init_checkpoint=init_checkpoint,
+        device=device,
+    )
+    if create_env_fn is None:
+        ensure_registries()
+        create_env_fn = create_env
+    if env_cfg_override_fn is None:
+        env_cfg_override_fn = lambda cfg: BackendAdapter(  # noqa: E731
+            cfg,
+            root_dir=ROOT_DIR,
+            algo_name="distill",
+        ).build_task_env_cfg_override()
+
+    env = create_env_fn(
+        cfg,
+        num_envs=int(OmegaConf.select(cfg, "training.collect_num_envs", default=1)),
+        env_cfg_override=env_cfg_override_fn(cfg),
+        sim_backend=str(OmegaConf.select(cfg, "training.sim_backend", default="mujoco")),
+        task_name=str(OmegaConf.select(cfg, "training.task_name")),
+    )
+    try:
+        drop_index = OmegaConf.select(cfg, "training.collect_student_drop_index")
+        max_env_steps = OmegaConf.select(cfg, "training.collect_max_env_steps")
+        result = run_iterative_dagger_updates(
+            env,
+            trainer=trainer,
+            num_iterations=int(OmegaConf.select(cfg, "training.dagger_iterations", default=8)),
+            samples_per_iteration=int(
+                OmegaConf.select(cfg, "training.dagger_samples_per_iteration", default=65536)
+            ),
+            batch_size=int(OmegaConf.select(cfg, "training.dagger_batch_size", default=512)),
+            updates_per_iteration=int(
+                OmegaConf.select(cfg, "training.dagger_updates_per_iteration", default=128)
+            ),
+            expected_student_obs_dim=int(cfg.student.obs_dim),
+            expected_teacher_obs_dim=int(cfg.teacher.obs_dim),
+            teacher_obs_key=str(
+                OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")
+            ),
+            teacher_projection=str(
+                OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity")
+            ),
+            student_projection=str(
+                OmegaConf.select(cfg, "training.collect_student_projection", default="identity")
+            ),
+            student_drop_index=None if drop_index is None else int(drop_index),
+            command_sample_filter=str(
+                OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
+            ),
+            command_info_key=str(
+                OmegaConf.select(cfg, "training.collect_command_info_key", default="commands")
+            ),
+            command_xy_threshold=float(
+                OmegaConf.select(cfg, "training.collect_command_xy_threshold", default=0.05)
+            ),
+            command_yaw_threshold=float(
+                OmegaConf.select(cfg, "training.collect_command_yaw_threshold", default=0.05)
+            ),
+            max_env_steps=None if max_env_steps is None else int(max_env_steps),
+            role_label=None if role_label in (None, "") else str(role_label),
+            shuffle=bool(OmegaConf.select(cfg, "training.dagger_shuffle", default=True)),
+            seed=int(cfg.algo.seed),
+            balance_key=str(
+                OmegaConf.select(cfg, "training.dagger_balance_key", default="none")
+            ),
+            balanced_labels=list(
+                OmegaConf.select(cfg, "training.dagger_balanced_labels", default=[])
+            ),
+            checkpoint_path=output_checkpoint,
+            teacher_metadata=_teacher_metadata(cfg, teacher_checkpoint),
+            distill_runtime_cfg=_distill_runtime_cfg(
+                cfg,
+                distill_source="iterative_dagger",
+                student_init_metadata=dict(getattr(trainer, "student_init_metadata", {})),
+            ),
+        )
+    finally:
+        close = getattr(env, "close", None)
+        if callable(close):
+            close()
+
+    last_result = result.iteration_results[-1]
+    return {
+        "distill_source": "iterative_dagger",
+        "iteration_count": result.iteration_count,
+        "update_count": result.update_count,
+        "samples_collected": result.samples_collected,
+        "samples_seen": result.samples_seen,
+        "loss": last_result.last_loss,
+        "checkpoint_path": str(result.checkpoint_path),
+        "role_label": role_label,
+        "command_sample_filter": str(
+            OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
+        ),
+        "command_distribution_overrides": command_distribution_overrides,
+    }
+
+
 @hydra.main(config_path="../conf/distill", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
-    """Entrypoint guard for the still-offline behavior distillation path."""
+    """Assemble offline, collection, or iterative online DAgger distillation."""
+
+    if bool(OmegaConf.select(cfg, "training.online_dagger", default=False)):
+        checkpoint_path, _run_dir = resolve_teacher_checkpoint(cfg, root_dir=ROOT_DIR)
+        if checkpoint_path is None:
+            raise FileNotFoundError(
+                "No SAC teacher checkpoint resolved for online DAgger. "
+                "Set teacher.checkpoint_path or teacher.load_run/teacher.checkpoint."
+            )
+        print(
+            _format_cli_result(
+                run_online_dagger_update(
+                    cfg,
+                    teacher_checkpoint=checkpoint_path,
+                )
+            )
+        )
+        return
 
     multitask_dataset_path = OmegaConf.select(cfg, "training.multitask_dataset_path")
     if multitask_dataset_path not in (None, ""):
@@ -1224,8 +1371,9 @@ def main(cfg: DictConfig) -> None:
         return
 
     raise NotImplementedError(
-        "Live behavior distillation sampling/training loop is not wired in this offline phase. "
-        "Use training.collect_dataset_path for live dataset collection, training.dry_run=true "
+        "No distillation route selected. Use training.online_dagger=true for the live "
+        "student-rollout loop, training.collect_dataset_path for dataset collection, "
+        "training.dry_run=true "
         "for the fake-batch probe, or set training.offline_dataset_path for saved-dataset "
         "offline updates."
     )

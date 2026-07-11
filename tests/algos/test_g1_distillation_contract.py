@@ -1606,6 +1606,61 @@ def test_collect_distillation_dataset_from_env_student_policy_rollout_mode() -> 
     assert not torch.allclose(dataset.teacher_actions[:2], torch.as_tensor(env.last_actions))
 
 
+def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        run_iterative_dagger_updates,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def __init__(self, value: float, *, trainable: bool) -> None:
+            super().__init__()
+            bias = torch.full((3,), value, dtype=torch.float32)
+            if trainable:
+                self.bias = torch.nn.Parameter(bias)
+            else:
+                self.register_buffer("bias", bias)
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return self.bias.unsqueeze(0).expand(obs.shape[0], -1)
+
+    class ActionHistoryEnv(_FakeDistillEnv):
+        def __init__(self) -> None:
+            super().__init__()
+            self.action_history: list[np.ndarray] = []
+
+        def step(self, actions):
+            self.action_history.append(np.asarray(actions, dtype=np.float32).copy())
+            return super().step(actions)
+
+    student = ConstantPolicy(0.0, trainable=True)
+    teacher = ConstantPolicy(0.5, trainable=False)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=teacher,
+        optimizer=torch.optim.SGD(student.parameters(), lr=0.5),
+    )
+    env = ActionHistoryEnv()
+
+    result = run_iterative_dagger_updates(
+        env,
+        trainer=trainer,
+        num_iterations=2,
+        samples_per_iteration=4,
+        batch_size=4,
+        updates_per_iteration=1,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+    )
+
+    assert result.iteration_count == 2
+    assert result.update_count == 2
+    assert result.samples_collected == 8
+    assert len(env.action_history) == 2
+    assert np.allclose(env.action_history[0], 0.0)
+    assert np.max(np.abs(env.action_history[1])) > 0.0
+
+
 def test_collect_distillation_dataset_from_env_student_policy_resets_done_rows() -> None:
     from unilab.algos.torch.distill import collect_distillation_dataset_from_env
 

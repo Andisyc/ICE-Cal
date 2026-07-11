@@ -76,6 +76,16 @@ training:
   offline_shuffle: false
   offline_balance_key: none
   offline_balanced_labels: []
+  online_dagger: false
+  dagger_iterations: 8
+  dagger_samples_per_iteration: 65536
+  dagger_batch_size: 512
+  dagger_updates_per_iteration: 128
+  dagger_role_label: null
+  dagger_checkpoint: null
+  dagger_shuffle: true
+  dagger_balance_key: none
+  dagger_balanced_labels: []
   formal_run: false
   formal_run_name: null
   formal_run_dir: null

@@ -5335,6 +5335,67 @@ Status: COMPLETE for per-expert BC loss. The next training command should keep
 `behavior_action_source=command_intent_expert` when using the current
 walk/stand command-intent dataset.
 
+### Step DA-4: Iterative Online DAgger Loop
+
+Observed failure: zero-command playback routed correctly to stand expert 1,
+but student-vs-standing-teacher MSE grew from `0.000417` at step 10 to
+`0.038095` at step 100 as the student moved off the teacher rollout
+distribution. The robot then fell. This rules out command routing as the first
+failure and identifies closed-loop state-distribution drift as the owner
+boundary.
+
+Design alignment with agile-demo:
+
+```text
+agile-demo:
+  student action -> env step -> current teacher action -> rollout storage -> update
+
+UniLab DA-4:
+  student action -> env step -> current teacher action -> validated tensor dataset
+  -> immediate per-expert update -> updated student recollects the next iteration
+```
+
+The UniLab path keeps command-intent filters, role labels, per-expert BC, done
+reset guards, checkpoint metadata, and Hydra ownership. It no longer requires a
+human to manually alternate collection, merge, and retraining for every DAgger
+round.
+
+Files:
+
+- Created: `src/unilab/algos/torch/distill/dagger.py`
+  - owns iterative recollection, immediate offline updates, role attachment,
+    and final checkpoint persistence.
+- Modified: `scripts/train_distill.py`
+  - assembles env, teacher, initialized student, and the DAgger owner loop.
+- Modified: `conf/distill/config.yaml`
+  - adds the OFF-by-default `training.online_dagger` route and bounded loop
+    parameters.
+- Modified: algorithm and script contract tests.
+
+Core parameter path:
+
+```text
+initialized MoE student
+ -> student_policy live rollout
+ -> teacher labels current student states
+ -> command intent / role selects expert 0 or 1
+ -> immediate BehaviorDistillationTrainer updates
+ -> updated student becomes the next rollout policy
+ -> final checkpoint preserves prior agent_steps + new samples_seen
+```
+
+Evidence (2026-07-11):
+
+- TDD red: owner test failed because `run_iterative_dagger_updates` did not
+  exist.
+- TDD green: two-iteration toy proves the second rollout uses the updated
+  student (`1 passed`).
+- Entrypoint contract proves Hydra parameters, role label, command filter, and
+  checkpoint path reach the owner loop (`1 passed`).
+
+Status: contract-confirmed for the online DAgger training loop. Live MuJoCo
+policy quality remains a separate sentinel and is not inferred from toy tests.
+
 ## Validation Ladder
 
 1. Static owner scan:

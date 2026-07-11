@@ -7,6 +7,7 @@ from .collector import (
     project_student_obs,
     project_teacher_obs,
 )
+from .dagger import IterativeDaggerRunResult, run_iterative_dagger_updates
 from .data import (
     DistillationTensorDataset,
     build_distillation_dataset,
@@ -46,6 +47,7 @@ __all__ = [
     "DistillationTeacherSpec",
     "DistillationTeacherCheckpointInfo",
     "DistillationTensorDataset",
+    "IterativeDaggerRunResult",
     "LoadedTeacherPolicy",
     "LoadedDistillationStudentPolicy",
     "MLPStudentPolicy",
@@ -69,6 +71,7 @@ __all__ = [
     "project_student_obs",
     "project_teacher_obs",
     "run_offline_distillation_updates",
+    "run_iterative_dagger_updates",
     "save_distillation_checkpoint",
     "save_distillation_dataset",
     "validate_sac_teacher_checkpoint_contract",

@@ -1174,6 +1174,66 @@ def test_distill_script_builds_moe_student_from_owner_config():
     ] == [32, 29]
 
 
+def test_distill_script_wires_iterative_dagger_owner_loop(tmp_path: Path, monkeypatch):
+    from types import SimpleNamespace
+
+    mod = _train_distill()
+    init_checkpoint = tmp_path / "init.pt"
+    output_checkpoint = tmp_path / "dagger.pt"
+    init_checkpoint.touch()
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco",
+            "student.model_type=moe",
+            "training.online_dagger=true",
+            "training.dagger_iterations=3",
+            "training.dagger_samples_per_iteration=64",
+            "training.dagger_batch_size=16",
+            "training.dagger_updates_per_iteration=4",
+            "training.dagger_role_label=walk_flat",
+            "training.collect_command_sample_filter=active",
+            f"training.offline_init_checkpoint={init_checkpoint}",
+            f"training.dagger_checkpoint={output_checkpoint}",
+        ]
+    )
+    trainer = SimpleNamespace(student=object(), teacher=object())
+    captured = {}
+
+    monkeypatch.setattr(mod, "build_distillation_trainer", lambda *args, **kwargs: trainer)
+    monkeypatch.setattr(mod, "_teacher_metadata", lambda *args, **kwargs: {})
+
+    def fake_dagger(env, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            iteration_count=3,
+            update_count=12,
+            samples_collected=192,
+            samples_seen=192,
+            checkpoint_path=output_checkpoint,
+            iteration_results=(SimpleNamespace(last_loss=0.1),),
+            collection_metadata=({},),
+        )
+
+    monkeypatch.setattr(mod, "run_iterative_dagger_updates", fake_dagger)
+    env = SimpleNamespace(close=lambda: None)
+
+    probe = mod.run_online_dagger_update(
+        cfg,
+        teacher_checkpoint=tmp_path / "teacher.pt",
+        create_env_fn=lambda *args, **kwargs: env,
+        env_cfg_override_fn=lambda cfg: {"owner": "distill-test"},
+    )
+
+    assert captured["num_iterations"] == 3
+    assert captured["samples_per_iteration"] == 64
+    assert captured["updates_per_iteration"] == 4
+    assert captured["role_label"] == "walk_flat"
+    assert captured["command_sample_filter"] == "active"
+    assert captured["checkpoint_path"] == output_checkpoint
+    assert probe["distill_source"] == "iterative_dagger"
+    assert probe["checkpoint_path"] == str(output_checkpoint)
+
+
 def test_distill_script_builds_role_conditioned_moe_trainer(tmp_path: Path):
     import torch
 
