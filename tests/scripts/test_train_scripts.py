@@ -813,6 +813,105 @@ def test_distill_script_cli_result_compacts_large_metadata():
     assert len(rendered) < 1500
 
 
+def test_distill_main_routes_enabled_single_entry_workflow(monkeypatch, capsys):
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.workflow.enabled=true"])
+    captured = {}
+
+    def fake_workflow(actual_cfg):
+        captured["cfg"] = actual_cfg
+        return {"distill_source": "single_entry_workflow", "stage": "BOOTSTRAP_COMPLETE"}
+
+    monkeypatch.setattr(mod, "run_single_entry_workflow", fake_workflow)
+
+    mod.main.__wrapped__(cfg)
+
+    assert captured["cfg"] is cfg
+    assert '"distill_source": "single_entry_workflow"' in capsys.readouterr().out
+
+
+def test_distill_walk_stand_workflow_profile_composes_teacher_roles(monkeypatch):
+    monkeypatch.setenv("UNILAB_G1_WALK_TEACHER", "/models/walk.pt")
+    monkeypatch.setenv("UNILAB_G1_STAND_TEACHER", "/models/stand.pt")
+    monkeypatch.setenv("UNILAB_G1_WALK_DATASET", "/data/walk.pt")
+    monkeypatch.setenv("UNILAB_G1_STAND_DATASET", "/data/stand.pt")
+
+    cfg = _distill_cfg(["workflow=g1_walk_stand"])
+
+    roles = OmegaConf.to_container(cfg.training.workflow.roles, resolve=True)
+    assert roles == [
+        {
+            "role": "walk_flat",
+            "task": "g1_walk_flat/mujoco",
+            "teacher_checkpoint_path": "/models/walk.pt",
+            "dataset_path": "/data/walk.pt",
+        },
+        {
+            "role": "stand",
+            "task": "g1_stand_still/mujoco",
+            "teacher_checkpoint_path": "/models/stand.pt",
+            "dataset_path": "/data/stand.pt",
+        },
+    ]
+
+
+def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
+    tmp_path: Path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.workflow.enabled=true"])
+    teacher_path = tmp_path / "teacher.pt"
+    teacher_path.write_bytes(b"teacher")
+    cfg.training.workflow.run_dir = str(tmp_path / "run")
+    cfg.training.workflow.artifact_dir = str(tmp_path / "artifacts")
+    cfg.training.workflow.roles = [
+        {
+            "role": "stand",
+            "task": "g1_stand_still/mujoco",
+            "teacher_checkpoint_path": str(teacher_path),
+        }
+    ]
+    captured = {}
+
+    def fake_bootstrap(**kwargs):
+        captured.update(kwargs)
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            role_decisions={"stand": "COLLECT"},
+            bootstrap_dataset_path=run_dir / "datasets" / "bootstrap_merged.pt",
+            bootstrap_num_samples=8,
+            checkpoint_path=run_dir / "checkpoints" / "bootstrap_student.pt",
+            bootstrap_updates=2,
+        )
+
+    monkeypatch.setattr(mod, "run_bootstrap_workflow", fake_bootstrap)
+
+    def fake_dagger(**kwargs):
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            completed_iterations=8,
+            checkpoint_path=run_dir / "checkpoints" / "dagger_iteration_8.pt",
+            cumulative_num_samples=24,
+        )
+
+    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+
+    result = mod.run_single_entry_workflow(cfg)
+
+    spec = captured["role_specs"][0]
+    assert spec.role == "stand"
+    assert spec.task == "g1_stand_still/mujoco"
+    assert spec.dataset_path == tmp_path / "artifacts" / "stand.pt"
+    assert spec.command_sample_filter == "inactive"
+    assert result["checkpoint_path"].endswith("checkpoints/dagger_iteration_8.pt")
+
+
 class _FakeDistillCollectEnv:
     def __init__(
         self,

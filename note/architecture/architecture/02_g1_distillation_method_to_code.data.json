@@ -1,0 +1,292 @@
+{
+  "title": "02 G1 Distillation Method-to-Code Atlas",
+  "subtitle": "按正式数据与训练顺序阅读多教师蒸馏 owner, 点击先读文件可跳到 VS Code",
+  "layout": "repository_reading_atlas",
+  "defaultZoom": 1.0,
+  "canvasWidth": 7700,
+  "runtimeOrder": [
+    "DT-MOD-ENTRY", "DT-MOD-WORKFLOW", "DT-MOD-TEACHER", "DT-MOD-COLLECTOR", "DT-MOD-DATA",
+    "DT-MOD-MOE", "DT-MOD-TRAINER", "DT-MOD-DAGGER", "DT-MOD-CHECKPOINT",
+    "DT-MOD-PLAYBACK"
+  ],
+  "supportOrder": ["DT-MOD-TESTS"],
+  "systems": [
+    {
+      "id": "DT-SYS-ENTRY",
+      "title": "Entrypoint & Config",
+      "summary": "把人类选择的 task teacher dataset 和训练模式组合成一个正式操作",
+      "color": "#475569",
+      "modules": [
+        {
+          "id": "DT-MOD-ENTRY",
+          "title": "Distill Entrypoint",
+          "summary": "Hydra 入口选择单入口 workflow 或保留的低层诊断操作",
+          "owns": "操作模式 参数组合 teacher/student checkpoint 解析与 owner guard",
+          "mustNot": "不拥有数据语义 loss 物理验收或 checkpoint 质量结论",
+          "objects": ["DictConfig", "operation mode", "teacher checkpoint", "student init"],
+          "files": [
+            {"id":"DT-SRC-001","path":"conf/distill/config.yaml","sourceLine":1,"role":"Hydra defaults","functions":[]},
+            {"id":"DT-SRC-002","path":"scripts/train_distill.py","sourceLine":1382,"role":"distillation assembly","functions":["run_single_entry_workflow()","run_collect_dataset()","run_multitask_dataset_assembly()","run_offline_dataset_update()","run_online_dagger_update()","main()"]},
+            {"id":"DT-SRC-020","path":"conf/distill/workflow/g1_walk_stand.yaml","sourceLine":1,"role":"walk/stand workflow profile","functions":[]}
+          ],
+          "mainRoute": [
+            "B1 train_distill.py::main(): Hydra overrides -> selected operation",
+            "B2 train_distill.py owner guards: selected operation -> validated task/teacher/data route",
+            "B3 operation assembler: validated route -> owner module invocation"
+          ],
+          "mainRouteTitles": ["选择正式操作", "验证 Owner Contract", "调用领域 Owner"],
+          "review": ["先确认本次命令只触发一个正式操作", "检查 checkpoint 参数是否指向预期父模型"],
+          "tests": ["S0 config compose", "S2 train_distill entry connectivity"],
+          "gap": "低层诊断分支仍保留; physical acceptance 尚未并入 promotion stage"
+        },
+        {
+          "id": "DT-MOD-WORKFLOW",
+          "title": "Distillation Workflow",
+          "summary": "按角色复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
+          "owns": "artifact preflight manifest stage machine checkpoint lineage resume 与 fork",
+          "mustNot": "不加载大 tensor 来判断文件存在性, 不把 route pass 当作物理质量",
+          "objects": ["RoleArtifactSpec", "ArtifactDecision", "run_manifest.json", "WorkflowDatasetSource"],
+          "files": [
+            {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","fork_workflow_run()"]},
+            {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]}
+          ],
+          "mainRoute": [
+            "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",
+            "B2 run_bootstrap_workflow(): role decisions -> collected/reused role data + bootstrap checkpoint",
+            "B3 run_multirole_dagger_workflow(): student_k + all roles -> cumulative dataset + student_(k+1)",
+            "B4 run manifest commit: completed stage -> resumable identity chain"
+          ],
+          "mainRouteTitles": ["按角色判定 Artifact", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
+          "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查 iteration k+1 是否加载 iteration k checkpoint"],
+          "tests": ["S1 hash/schema decisions", "S2 Bootstrap connectivity", "S2 DAgger resume/fork probe"],
+          "gap": "walk-to-stop transition scenario 与 physical acceptance owner 仍未实现"
+        }
+      ]
+    },
+    {
+      "id": "DT-SYS-EVIDENCE",
+      "title": "Teacher Evidence & Dataset",
+      "summary": "构造带 teacher action command intent 和 role 的可追踪训练证据",
+      "color": "#2563eb",
+      "modules": [
+        {
+          "id": "DT-MOD-TEACHER",
+          "title": "Teacher Policy",
+          "summary": "加载并冻结 SAC teacher actor",
+          "owns": "teacher input dimension actor architecture optional normalizer 与 detached action",
+          "mustNot": "不决定某个 observation 属于 standing walking 或 height role",
+          "objects": ["DistillationTeacherSpec", "LoadedTeacherPolicy", "29-D action"],
+          "files": [
+            {"id":"DT-SRC-003","path":"src/unilab/algos/torch/distill/teacher.py","sourceLine":140,"role":"teacher checkpoint contract","functions":["validate_sac_teacher_checkpoint_contract()","load_sac_teacher_policy()","LoadedTeacherPolicy.forward()"]}
+          ],
+          "mainRoute": [
+            "B1 teacher.py::validate_sac_teacher_checkpoint_contract(): checkpoint + spec -> verified actor input dim",
+            "B2 teacher.py::load_sac_teacher_policy(): verified checkpoint -> frozen SAC actor",
+            "B3 LoadedTeacherPolicy.forward(): teacher observation -> detached teacher action"
+          ],
+          "mainRouteTitles": ["验证 Teacher 维度", "加载冻结 Actor", "生成监督动作"],
+          "review": ["确认 teacher task 和 checkpoint 语义一致", "确认 normalizer 状态没有被静默忽略"],
+          "tests": ["S1 teacher checkpoint dim guard", "S2 checkpoint load contract"],
+          "gap": "height teacher 尚不存在"
+        },
+        {
+          "id": "DT-MOD-COLLECTOR",
+          "title": "Role Collector",
+          "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态",
+          "owns": "obs projection action source command filter done reset 与 collection metadata",
+          "mustNot": "不训练 student, 不把 finite action 当作物理质量",
+          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents"],
+          "files": [
+            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":282,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()"]},
+            {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":989,"role":"collection connector","functions":["run_collect_dataset()"]}
+          ],
+          "mainRoute": [
+            "B1 collector.py projection: env obs dict -> 98-D student/teacher rows",
+            "B2 collector.py command mask: commands + thresholds -> selected intent rows",
+            "B3 collector.py rollout/label policies: selected states -> teacher targets + executed actions",
+            "B4 build_distillation_dataset(): collected chunks -> persisted semantic dataset"
+          ],
+          "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "生成 Dataset"],
+          "review": ["检查 inactive 数据是否真的零指令", "检查 done/reset 后的行是否仍保持语义"],
+          "tests": ["S1 projection/filter", "S2 teacher/student rollout", "S4 live collection"],
+          "gap": "transition-conditioned walk-to-stop collection 仍缺场景 owner"
+        },
+        {
+          "id": "DT-MOD-DATA",
+          "title": "Distillation Dataset",
+          "summary": "验证 保存 加载并合并 role-labelled tensor evidence",
+          "owns": "tensor shape optional fields label preservation metadata 与 batch slicing",
+          "mustNot": "不改变 teacher action 或重新解释 command intent",
+          "objects": ["DistillationTensorDataset", "role_labels", "command_intents", "source metadata"],
+          "files": [
+            {"id":"DT-SRC-006","path":"src/unilab/algos/torch/distill/data.py","sourceLine":148,"role":"dataset schema","functions":["DistillationTensorDataset","build_distillation_dataset()","build_multitask_distillation_dataset()"]},
+            {"id":"DT-SRC-007","path":"scripts/train_distill.py","sourceLine":622,"role":"multitask assembly connector","functions":["run_multitask_dataset_assembly()"]}
+          ],
+          "mainRoute": [
+            "B1 build_distillation_dataset(): raw tensors + labels -> validated role dataset",
+            "B2 save/load helpers: validated dataset -> roundtrip artifact",
+            "B3 build_multitask_distillation_dataset(): role sources -> merged stand/walk dataset"
+          ],
+          "mainRouteTitles": ["验证 Dataset Schema", "持久化语义字段", "合并多角色数据"],
+          "review": ["检查 98-D contract 与所有 source 一致", "确认 role 与 intent 在 roundtrip 后未丢失"],
+          "tests": ["S1 schema/roundtrip", "S2 multitask merge"],
+          "gap": "通用 schema migration owner 尚未实现; 不兼容扩展会 fail closed"
+        }
+      ]
+    },
+    {
+      "id": "DT-SYS-LEARN",
+      "title": "Student Learning",
+      "summary": "用角色动作监督 MoE expert 并聚合 student-state evidence",
+      "color": "#0f766e",
+      "modules": [
+        {
+          "id": "DT-MOD-MOE",
+          "title": "MoE Student",
+          "summary": "计算所有 expert action 与 router 输出并生成一个 29-D action",
+          "owns": "expert networks router logits route probabilities hard/soft action composition",
+          "mustNot": "不从 checkpoint 文件名推断角色, 不拥有 command threshold",
+          "objects": ["expert_actions[B,E,29]", "route_probs[B,E]", "student_action[B,29]"],
+          "files": [
+            {"id":"DT-SRC-008","path":"src/unilab/algos/torch/distill/moe_student.py","sourceLine":43,"role":"student architecture","functions":["MoEStudentPolicy","forward()"]}
+          ],
+          "mainRoute": [
+            "B1 MoEStudentPolicy._validate_obs(): actor obs -> valid 98-D batch",
+            "B2 expert/router forward: valid obs -> expert actions + route probabilities",
+            "B3 routing composition: expert outputs + mode -> one student action"
+          ],
+          "mainRouteTitles": ["验证 Student Observation", "计算专家与 Router", "组合部署动作"],
+          "review": ["确认 expert 0/1 的语义来自 contract", "确认 soft mixture 不冒充 pure expert 验收"],
+          "tests": ["S1 model shape/routing", "S2 checkpoint reload"],
+          "gap": "expert 2 当前无 accepted teacher role"
+        },
+        {
+          "id": "DT-MOD-TRAINER",
+          "title": "Behavior Trainer",
+          "summary": "把 detached teacher action 监督到 intent-selected expert",
+          "owns": "behavior loss router losses selected expert gradients 与 optimizer step",
+          "mustNot": "不采集 env state, 不决定 checkpoint 是否物理合格",
+          "objects": ["DistillationBatch", "teacher_action", "selected_expert_targets", "BehaviorDistillationStats"],
+          "files": [
+            {"id":"DT-SRC-009","path":"src/unilab/algos/torch/distill/trainer.py","sourceLine":400,"role":"loss and optimizer owner","functions":["BehaviorDistillationTrainer.update()","_expert_behavior_action()","_clear_inactive_expert_grads()"]}
+          ],
+          "mainRoute": [
+            "B1 trainer.update(): batch teacher fields -> detached teacher action",
+            "B2 _expert_behavior_action(): role/intent labels -> selected expert action",
+            "B3 loss composition: selected action + target -> behavior/router losses",
+            "B4 gradient isolation + optimizer: loss -> updated active expert parameters"
+          ],
+          "mainRouteTitles": ["读取 Teacher Target", "选择行为 Expert", "计算监督 Loss", "隔离并更新参数"],
+          "review": ["确认 inactive expert grad=None", "确认 router loss 系数与部署路由语义一致"],
+          "tests": ["S1 loss/grad", "T-regression inactive expert drift"],
+          "gap": "低单步 MSE 仍不能推出闭环稳定"
+        },
+        {
+          "id": "DT-MOD-DAGGER",
+          "title": "Student-State DAgger",
+          "summary": "执行当前角色 expert 查询 teacher 并聚合历轮状态",
+          "owns": "fixed rollout expert iteration aggregation immediate updates 与 DAgger metadata",
+          "mustNot": "不使用 soft mixture 代表 pure role expert, 不覆盖旧迭代数据",
+          "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "samples_seen"],
+          "files": [
+            {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":154,"role":"online DAgger owner","functions":["run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
+            {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1151,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
+          ],
+          "mainRoute": [
+            "B1 _resolve_dagger_rollout_policy(): intent/role mapping -> fixed rollout expert",
+            "B2 collect_distillation_dataset_from_env(): current expert states -> teacher-labelled iteration dataset",
+            "B3 _aggregate_dagger_datasets(): prior + current iterations -> cumulative evidence",
+            "B4 run_offline_distillation_updates(): cumulative evidence -> updated selected expert"
+          ],
+          "mainRouteTitles": ["锁定 Rollout Expert", "采集 Student States", "聚合历轮证据", "更新对应 Expert"],
+          "review": ["检查 rollout/loss/deploy expert 三者一致", "检查每轮数据量与真实 episode 覆盖"],
+          "tests": ["S2 iterative aggregation", "T-regression expert-conditioned rollout", "S4 live DAgger gap"],
+          "gap": "尚无 repeated-reset 与 walk-to-stop acceptance owner"
+        }
+      ]
+    },
+    {
+      "id": "DT-SYS-DEPLOY",
+      "title": "Persistence & Deployment",
+      "summary": "保存一个 student artifact 并在 MuJoCo 中按 command intent 执行",
+      "color": "#dc2626",
+      "modules": [
+        {
+          "id": "DT-MOD-CHECKPOINT",
+          "title": "Checkpoint Payload",
+          "summary": "持久化 student optimizer runtime config 与 teacher metadata",
+          "owns": "state_dict payload serialization strict load 与可选 normalizer",
+          "mustNot": "不根据文件大小判断网络完整性或物理质量",
+          "objects": ["student_state_dict", "optimizer_state_dict", "distill_runtime_cfg", "teacher_metadata"],
+          "files": [
+            {"id":"DT-SRC-012","path":"src/unilab/algos/torch/distill/checkpoint.py","sourceLine":10,"role":"checkpoint IO owner","functions":["save_distillation_checkpoint()","load_distillation_checkpoint()"]}
+          ],
+          "mainRoute": [
+            "B1 save_distillation_checkpoint(): student/runtime metadata -> .pt payload",
+            "B2 load_distillation_checkpoint(): .pt payload -> strict student state",
+            "B3 optional resume: optimizer/normalizer state -> continued training state"
+          ],
+          "mainRouteTitles": ["保存 Student Payload", "严格恢复模型", "恢复可选训练状态"],
+          "review": ["区分推理模型字节与 optimizer 字节", "检查 parent/teacher identity 是否足够"],
+          "tests": ["S1 roundtrip", "S2 init/resume"],
+          "gap": "workflow 已记录 immutable hash 与 parent identity; promoted identity 尚未实现"
+        },
+        {
+          "id": "DT-MOD-PLAYBACK",
+          "title": "Interactive Playback",
+          "summary": "加载 student checkpoint 并把 command intent 映射为部署 expert action",
+          "owns": "checkpoint resolution policy obs extraction command routing session stepping 与 trace",
+          "mustNot": "不把 finite/nonzero action 当作稳定, 不静默替换 checkpoint identity",
+          "objects": ["RslRlPlaybackSession", "current command", "selected expert", "29-D action"],
+          "files": [
+            {"id":"DT-SRC-013","path":"src/unilab/visualization/interactive_playback.py","sourceLine":1143,"role":"distill playback session","functions":["create_distill_playback_session()"]},
+            {"id":"DT-SRC-014","path":"scripts/play_interactive.py","sourceLine":1,"role":"interactive viewer entry","functions":["main()"]},
+            {"id":"DT-SRC-015","path":"start.sh","sourceLine":1,"role":"local launch wrapper","functions":[]}
+          ],
+          "mainRoute": [
+            "B1 checkpoint resolver: launch args -> exact student artifact",
+            "B2 create_distill_playback_session(): checkpoint + task cfg -> policy session",
+            "B3 command-intent routing: current command + runtime mapping -> selected expert action",
+            "B4 RslRlPlaybackSession.step_once(): action -> MuJoCo next state"
+          ],
+          "mainRouteTitles": ["解析 Checkpoint Identity", "创建 Policy Session", "按 Intent 选择 Expert", "推进 MuJoCo"],
+          "review": ["每次首先核对 checkpoint path/agent_steps/hash", "检查 stop command 后是否恢复 stand expert 与平衡"],
+          "tests": ["S2 playback load/routing", "S4 repeated reset and transition PENDING"],
+          "gap": "现有 sentinel 不验证 base height tilt termination 或重复启动"
+        }
+      ]
+    },
+    {
+      "id": "DT-SYS-VERIFY",
+      "title": "Verification",
+      "summary": "保护本地合同并暴露仍需真实物理证明的边界",
+      "color": "#16a34a",
+      "modules": [
+        {
+          "id": "DT-MOD-TESTS",
+          "title": "Contracts & Sentinels",
+          "summary": "测试 tensor dataflow optimizer checkpoint 和 playback route",
+          "owns": "deterministic regression integration probe 与 live evidence inventory",
+          "mustNot": "不把 fake tensor 或一次启动等同于机器人策略质量",
+          "objects": ["S/T matrix", "contract fixtures", "live sentinel output", "evidence ledger"],
+          "files": [
+            {"id":"DT-SRC-016","path":"tests/algos/test_g1_distillation_contract.py","sourceLine":1,"role":"algorithm/data contracts","functions":[]},
+            {"id":"DT-SRC-017","path":"tests/scripts/test_train_scripts.py","sourceLine":1,"role":"entrypoint connectivity","functions":[]},
+            {"id":"DT-SRC-018","path":"tests/visualization/test_interactive_playback.py","sourceLine":1,"role":"playback contracts","functions":[]},
+            {"id":"DT-SRC-019","path":"scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py","sourceLine":166,"role":"current weak live sentinel","functions":["run_check()"]}
+          ],
+          "mainRoute": [
+            "B1 contract tests: semantic fixture -> local invariant result",
+            "B2 integration tests: Hydra/entry route -> owner connectivity result",
+            "B3 live sentinel: real checkpoint/env -> bounded runtime facts",
+            "B4 evidence ledger: observed facts + limitations -> human acceptance state"
+          ],
+          "mainRouteTitles": ["验证局部语义", "验证正式连接", "采集真实运行事实", "更新人类验收状态"],
+          "review": ["区分 PASS route 与 PASS policy quality", "确保失败场景记录 checkpoint identity 和 command schedule"],
+          "tests": ["S0-S2 current suites", "S4 physical acceptance PENDING"],
+          "gap": "缺少 repeated reset 和 walk-to-stop formal acceptance suite"
+        }
+      ]
+    }
+  ]
+}

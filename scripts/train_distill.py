@@ -21,14 +21,20 @@ from unilab.algos.torch.distill import (
     DistillationTeacherSpec,
     MLPStudentPolicy,
     MoEStudentPolicy,
+    RoleArtifactSpec,
+    WorkflowDatasetSource,
+    adopt_legacy_role_artifact,
     build_multitask_distillation_dataset,
     collect_distillation_dataset_from_env,
+    fork_workflow_run,
     load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
+    run_bootstrap_workflow,
     run_iterative_dagger_updates,
+    run_multirole_dagger_workflow,
     run_offline_distillation_updates,
     save_distillation_dataset,
     validate_sac_teacher_checkpoint_contract,
@@ -43,6 +49,106 @@ _OWNER_COMMAND_SAMPLE_FILTERS = {
 }
 _DISTILL_TASK_NAME_HINTS = frozenset(_OWNER_COMMAND_SAMPLE_FILTERS)
 _CLI_SEQUENCE_SUMMARY_LIMIT = 16
+
+
+def _workflow_role_entries(cfg: DictConfig) -> list[dict[str, Any]]:
+    entries = OmegaConf.to_container(
+        OmegaConf.select(cfg, "training.workflow.roles", default=[]),
+        resolve=True,
+    )
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("training.workflow.roles must be a non-empty list")
+    return [dict(cast(dict[str, Any], entry)) for entry in entries]
+
+
+def _workflow_path(value: Any, *, root: Path = ROOT_DIR) -> Path:
+    path = Path(str(value))
+    return path if path.is_absolute() else root / path
+
+
+def _workflow_role_cfg(cfg: DictConfig, entry: dict[str, Any]) -> DictConfig:
+    task = str(entry.get("task", ""))
+    task_path = Path(task)
+    if not task or task_path.is_absolute() or ".." in task_path.parts:
+        raise ValueError(f"workflow role task must be a relative owner selector, got {task!r}")
+    owner_path = ROOT_DIR / "conf" / "distill" / "task" / task_path.with_suffix(".yaml")
+    if not owner_path.is_file():
+        raise FileNotFoundError(f"workflow role task owner does not exist: {owner_path}")
+
+    base = OmegaConf.load(ROOT_DIR / "conf" / "distill" / "config.yaml")
+    if "defaults" in base:
+        del base["defaults"]
+    role_cfg = OmegaConf.merge(
+        base,
+        OmegaConf.load(owner_path),
+        {
+            "algo": OmegaConf.to_container(cfg.algo, resolve=True),
+            "student": OmegaConf.to_container(cfg.student, resolve=True),
+            "training": {
+                "device": OmegaConf.select(cfg, "training.device"),
+                "collect_num_samples": int(
+                    entry.get(
+                        "collect_num_samples",
+                        OmegaConf.select(
+                            cfg,
+                            "training.workflow.collect_num_samples",
+                            default=262144,
+                        ),
+                    )
+                ),
+                "collect_num_envs": int(
+                    entry.get(
+                        "collect_num_envs",
+                        OmegaConf.select(cfg, "training.workflow.collect_num_envs", default=64),
+                    )
+                ),
+                "collect_action_mode": "teacher_policy",
+            },
+            "teacher": {"checkpoint_path": str(entry.get("teacher_checkpoint_path", ""))},
+        },
+    )
+    if not str(OmegaConf.select(role_cfg, "teacher.checkpoint_path", default="")):
+        raise ValueError(
+            f"workflow role {entry.get('role')!r} requires teacher_checkpoint_path"
+        )
+    role_cfg.teacher.checkpoint_path = str(
+        _workflow_path(OmegaConf.select(role_cfg, "teacher.checkpoint_path"))
+    )
+    if "command_sample_filter" in entry:
+        role_cfg.training.collect_command_sample_filter = str(entry["command_sample_filter"])
+    return cast(DictConfig, role_cfg)
+
+
+def _workflow_owner_fingerprint_cfg(role_cfg: DictConfig) -> dict[str, Any]:
+    return {
+        "training": {
+            "task_name": str(role_cfg.training.task_name),
+            "sim_backend": str(role_cfg.training.sim_backend),
+            "collect_action_mode": str(role_cfg.training.collect_action_mode),
+            "collect_command_sample_filter": str(
+                role_cfg.training.collect_command_sample_filter
+            ),
+            "collect_command_xy_threshold": float(
+                role_cfg.training.collect_command_xy_threshold
+            ),
+            "collect_command_yaw_threshold": float(
+                role_cfg.training.collect_command_yaw_threshold
+            ),
+        },
+        "env": OmegaConf.to_container(role_cfg.env, resolve=True),
+        "teacher": {
+            "algo_type": str(role_cfg.teacher.algo_type),
+            "obs_dim": int(role_cfg.teacher.obs_dim),
+            "action_dim": int(role_cfg.teacher.action_dim),
+            "actor_hidden_dim": int(role_cfg.teacher.actor_hidden_dim),
+            "use_layer_norm": bool(role_cfg.teacher.use_layer_norm),
+            "obs_normalization": bool(role_cfg.teacher.obs_normalization),
+        },
+        "student": {
+            "obs_dim": int(role_cfg.student.obs_dim),
+            "action_dim": int(role_cfg.student.action_dim),
+        },
+    }
 
 
 def _int_tuple(values: Any) -> tuple[int, ...]:
@@ -1277,9 +1383,251 @@ def run_online_dagger_update(
     }
 
 
+def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
+    """Adapt role owner configs to the distillation workflow stage owner."""
+
+    entries = _workflow_role_entries(cfg)
+    configured_run_dir = OmegaConf.select(cfg, "training.workflow.run_dir")
+    if configured_run_dir in (None, ""):
+        run_dir = ROOT_DIR / "logs" / "distill_workflow" / datetime.now().strftime(
+            "%Y-%m-%d_%H-%M-%S"
+        )
+    else:
+        run_dir = _workflow_path(configured_run_dir)
+    artifact_dir = _workflow_path(
+        OmegaConf.select(
+            cfg,
+            "training.workflow.artifact_dir",
+            default="logs/distill_role_artifacts",
+        )
+    )
+
+    role_cfgs: dict[str, DictConfig] = {}
+    specs: list[RoleArtifactSpec] = []
+    for entry in entries:
+        role = str(entry.get("role", ""))
+        if not role:
+            raise ValueError("every training.workflow.roles entry requires a role")
+        role_cfg = _workflow_role_cfg(cfg, entry)
+        dataset_value = entry.get("dataset_path")
+        dataset_path = (
+            _workflow_path(dataset_value)
+            if dataset_value not in (None, "")
+            else artifact_dir / f"{role}.pt"
+        )
+        role_cfgs[role] = role_cfg
+        specs.append(
+            RoleArtifactSpec(
+                role=role,
+                task=str(entry["task"]),
+                teacher_checkpoint_path=Path(str(role_cfg.teacher.checkpoint_path)),
+                dataset_path=dataset_path,
+                schema_version=int(
+                    OmegaConf.select(cfg, "training.workflow.schema_version", default=1)
+                ),
+                student_obs_dim=int(role_cfg.student.obs_dim),
+                teacher_obs_dim=int(role_cfg.teacher.obs_dim),
+                teacher_action_dim=int(role_cfg.teacher.action_dim),
+                teacher_obs_key=str(role_cfg.training.collect_teacher_obs_key),
+                teacher_projection=str(role_cfg.training.collect_teacher_projection),
+                student_projection=str(role_cfg.training.collect_student_projection),
+                student_drop_index=(
+                    None
+                    if OmegaConf.select(role_cfg, "training.collect_student_drop_index") is None
+                    else int(role_cfg.training.collect_student_drop_index)
+                ),
+                command_sample_filter=str(role_cfg.training.collect_command_sample_filter),
+                command_info_key=str(role_cfg.training.collect_command_info_key),
+                command_xy_threshold=float(role_cfg.training.collect_command_xy_threshold),
+                command_yaw_threshold=float(role_cfg.training.collect_command_yaw_threshold),
+                owner_config=_workflow_owner_fingerprint_cfg(role_cfg),
+            )
+        )
+
+    if bool(
+        OmegaConf.select(cfg, "training.workflow.adopt_legacy_artifacts", default=False)
+    ):
+        for spec in specs:
+            if spec.dataset_path.is_file() and not spec.manifest_path.is_file():
+                adopt_legacy_role_artifact(spec)
+
+    def collect_role(spec: RoleArtifactSpec) -> int:
+        spec.dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        result = run_collect_dataset(role_cfgs[spec.role], dataset_path=spec.dataset_path)
+        return int(result["dataset_num_samples"])
+
+    def assemble_roles(dataset_paths: tuple[Path, ...], output_path: Path) -> int:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        assembly_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        assembly_cfg.training.multitask_sources = [
+            {"path": str(path), "role": spec.role}
+            for path, spec in zip(dataset_paths, specs, strict=True)
+        ]
+        assembly_cfg.training.multitask_expected_student_obs_dim = specs[0].student_obs_dim
+        assembly_cfg.training.multitask_expected_teacher_obs_dim = specs[0].teacher_obs_dim
+        assembly_cfg.training.multitask_expected_teacher_action_dim = specs[0].teacher_action_dim
+        result = run_multitask_dataset_assembly(assembly_cfg, dataset_path=output_path)
+        return int(result["dataset_num_samples"])
+
+    def update_student(dataset_path: Path, checkpoint_path: Path) -> int:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        updates = int(OmegaConf.select(cfg, "training.workflow.bootstrap_updates", default=20000))
+        run_offline_dataset_update(
+            cfg,
+            teacher_checkpoint=specs[0].teacher_checkpoint_path,
+            dataset_path=dataset_path,
+            batch_size=int(
+                OmegaConf.select(cfg, "training.workflow.bootstrap_batch_size", default=512)
+            ),
+            max_updates=updates,
+            checkpoint_path=checkpoint_path,
+            device=_distill_device(cfg),
+        )
+        return updates
+
+    mode = str(OmegaConf.select(cfg, "training.workflow.mode", default="auto"))
+    if mode not in {"auto", "fresh", "resume", "fork"}:
+        raise ValueError(f"Unsupported training.workflow.mode: {mode!r}")
+    manifest_path = run_dir / "run_manifest.json"
+    if mode == "fork":
+        parent_run_dir = OmegaConf.select(cfg, "training.workflow.parent_run_dir")
+        if parent_run_dir in (None, ""):
+            raise ValueError("training.workflow.mode=fork requires parent_run_dir")
+        fork_workflow_run(
+            parent_run_dir=_workflow_path(parent_run_dir),
+            run_dir=run_dir,
+        )
+        bootstrap_result = None
+    elif mode == "resume" or (mode == "auto" and manifest_path.is_file()):
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"workflow resume manifest does not exist: {manifest_path}")
+        bootstrap_result = None
+    else:
+        bootstrap_result = run_bootstrap_workflow(
+            run_dir=run_dir,
+            role_specs=tuple(specs),
+            collect_role=collect_role,
+            assemble_roles=assemble_roles,
+            update_student=update_student,
+        )
+
+    def collect_dagger_role(
+        output_spec: RoleArtifactSpec,
+        checkpoint_path: Path,
+        _iteration: int,
+        output_path: Path,
+    ) -> int:
+        role_cfg = OmegaConf.create(
+            OmegaConf.to_container(role_cfgs[output_spec.role], resolve=True)
+        )
+        role_cfg.training.collect_action_mode = "student_policy"
+        role_cfg.training.collect_rollout_checkpoint_path = str(checkpoint_path)
+        role_cfg.training.collect_num_samples = int(
+            OmegaConf.select(
+                cfg,
+                "training.workflow.dagger_samples_per_role",
+                default=65536,
+            )
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        collected = run_collect_dataset(role_cfg, dataset_path=output_path)
+        return int(collected["dataset_num_samples"])
+
+    def aggregate_dagger_sources(
+        sources: tuple[WorkflowDatasetSource, ...],
+        output_path: Path,
+    ) -> int:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        assembly_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        assembly_cfg.training.multitask_sources = [
+            {"path": str(source.path), "role": source.role} for source in sources
+        ]
+        assembly_cfg.training.multitask_expected_student_obs_dim = specs[0].student_obs_dim
+        assembly_cfg.training.multitask_expected_teacher_obs_dim = specs[0].teacher_obs_dim
+        assembly_cfg.training.multitask_expected_teacher_action_dim = specs[0].teacher_action_dim
+        assembled = run_multitask_dataset_assembly(assembly_cfg, dataset_path=output_path)
+        return int(assembled["dataset_num_samples"])
+
+    def update_dagger_student(
+        dataset_path: Path,
+        input_checkpoint_path: Path,
+        output_checkpoint_path: Path,
+    ) -> int:
+        update_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        update_cfg.training.offline_init_checkpoint = str(input_checkpoint_path)
+        update_cfg.training.offline_repeat_dataset = True
+        update_cfg.training.offline_shuffle = True
+        update_cfg.training.offline_balance_key = str(
+            OmegaConf.select(cfg, "training.workflow.dagger_balance_key", default="role")
+        )
+        update_cfg.training.offline_balanced_labels = list(
+            OmegaConf.select(cfg, "training.workflow.dagger_balanced_labels", default=[])
+        )
+        updates = int(
+            OmegaConf.select(
+                cfg,
+                "training.workflow.dagger_updates_per_iteration",
+                default=128,
+            )
+        )
+        output_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        run_offline_dataset_update(
+            update_cfg,
+            teacher_checkpoint=specs[0].teacher_checkpoint_path,
+            dataset_path=dataset_path,
+            batch_size=int(
+                OmegaConf.select(cfg, "training.workflow.dagger_batch_size", default=512)
+            ),
+            max_updates=updates,
+            checkpoint_path=output_checkpoint_path,
+            device=_distill_device(cfg),
+        )
+        return updates
+
+    dagger_result = run_multirole_dagger_workflow(
+        run_dir=run_dir,
+        role_specs=tuple(specs),
+        target_iterations=int(
+            OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8)
+        ),
+        collect_role=collect_dagger_role,
+        aggregate_datasets=aggregate_dagger_sources,
+        update_student=update_dagger_student,
+    )
+    return {
+        "distill_source": "single_entry_workflow",
+        "stage": (
+            "BOOTSTRAP_COMPLETE"
+            if dagger_result.completed_iterations == 0
+            else f"DAGGER_ITERATION_{dagger_result.completed_iterations}_COMPLETE"
+        ),
+        "mode": mode,
+        "run_dir": str(dagger_result.run_dir),
+        "manifest_path": str(dagger_result.manifest_path),
+        "role_decisions": (
+            None if bootstrap_result is None else bootstrap_result.role_decisions
+        ),
+        "bootstrap_dataset_path": (
+            None
+            if bootstrap_result is None
+            else str(bootstrap_result.bootstrap_dataset_path)
+        ),
+        "bootstrap_num_samples": (
+            None if bootstrap_result is None else bootstrap_result.bootstrap_num_samples
+        ),
+        "checkpoint_path": str(dagger_result.checkpoint_path),
+        "completed_dagger_iterations": dagger_result.completed_iterations,
+        "cumulative_num_samples": dagger_result.cumulative_num_samples,
+    }
+
+
 @hydra.main(config_path="../conf/distill", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     """Assemble offline, collection, or iterative online DAgger distillation."""
+
+    if bool(OmegaConf.select(cfg, "training.workflow.enabled", default=False)):
+        print(_format_cli_result(run_single_entry_workflow(cfg)))
+        return
 
     if bool(OmegaConf.select(cfg, "training.online_dagger", default=False)):
         checkpoint_path, _run_dir = resolve_teacher_checkpoint(cfg, root_dir=ROOT_DIR)

@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - task: g1_walk_height/mujoco
+  - optional workflow: null
 
 algo:
   algo_log_name: distill
@@ -77,6 +78,25 @@ training:
   offline_balance_key: none
   offline_balanced_labels: []
   online_dagger: false
+  workflow:
+    enabled: false
+    mode: auto
+    run_dir: null
+    parent_run_dir: null
+    artifact_dir: logs/distill_role_artifacts
+    schema_version: 1
+    adopt_legacy_artifacts: false
+    roles: []
+    collect_num_samples: 262144
+    collect_num_envs: 64
+    bootstrap_batch_size: 512
+    bootstrap_updates: 20000
+    dagger_iterations: 8
+    dagger_samples_per_role: 65536
+    dagger_batch_size: 512
+    dagger_updates_per_iteration: 128
+    dagger_balance_key: role
+    dagger_balanced_labels: []
   dagger_iterations: 8
   dagger_samples_per_iteration: 65536
   dagger_batch_size: 512

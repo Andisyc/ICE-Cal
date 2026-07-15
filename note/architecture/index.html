@@ -3,7 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UniLab Architecture Snapshot</title>
+  <title>UniLab Human Control Atlas</title>
+  <script>
+    if (window.location.origin !== "http://127.0.0.1:8766") {
+      window.location.replace("http://127.0.0.1:8766/");
+    }
+  </script>
   <style>
     body {
       margin: 0;
@@ -58,26 +63,22 @@
   </style>
 </head>
 <body>
-  <h1>UniLab Architecture Snapshot</h1>
+  <h1>UniLab Human Control Atlas</h1>
   <p>
-    These maps are meant to be read side by side with code. They share Code Block IDs and concept colors, so a runtime idea can be traced from file ownership to interface boundary.
+    只保留三张活动地图：先按正式顺序阅读 UniLab runtime，再进入蒸馏 Method-to-Code，最后由 Concept Figure 控制方法语义。
   </p>
   <section class="grid">
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/01_unilab_repo_architecture.data.json">
-      <strong>01 UniLab Repo Architecture</strong>
-      <span>Ownership map for UniLab CLI, Hydra configs, registry, backend, env, algorithm, IPC, and asset layers.</span>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json">
+      <strong>01 UniLab Runtime Atlas</strong>
+      <span>按正式运行顺序阅读 CLI、Hydra、registry、backend、task env、collector、learner、run identity 与 playback。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/02_unilab_runtime_flow.data.json">
-      <strong>02 UniLab Runtime Contract Map</strong>
-      <span>Boundary map for CPU physics, collector/IPC transport, and accelerator learner flow.</span>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_distillation_method_to_code.data.json">
+      <strong>02 Method-to-Code Atlas</strong>
+      <span>按运行顺序阅读真实 owner、职责、禁区、测试和源码行；蓝色源码项可直接跳转。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_locomotion_modularization.data.json">
-      <strong>03 G1 Locomotion Modularization</strong>
-      <span>Owner map for separating Walking, Standing, height tracking, gait constraints, observation contracts, and playback compatibility.</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/03_g1_sac_locomotion_flow.data.json">
-      <strong>04 G1 SAC Runtime Flow</strong>
-      <span>Runtime flow for G1 SAC training and interactive playback, including explicit opt-in boundaries and the current live-failure probe target.</span>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json">
+      <strong>03 Concept Figure</strong>
+      <span>站立、行走和未来高度教师如何通过 command intent、role data、MoE 与 DAgger 汇入一个部署策略。</span>
     </a>
   </section>
 </body>

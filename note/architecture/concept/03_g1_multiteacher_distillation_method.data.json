@@ -1,0 +1,121 @@
+{
+  "title": "03 G1 Multi-Teacher Distillation",
+  "layout": "method_figure",
+  "figureWidth": 1370,
+  "figureHeight": 720,
+  "connectorClearance": 18,
+  "showLegend": false,
+  "concepts": {
+    "C-TEACHER": { "name": "Teacher Evidence", "color": "#2563eb" },
+    "C-INTENT": { "name": "Command Intent", "color": "#0891b2" },
+    "C-DATA": { "name": "Role Data", "color": "#7c3aed" },
+    "C-STUDENT": { "name": "Student Policy", "color": "#0f766e" },
+    "C-ADAPT": { "name": "Closed-Loop Adaptation", "color": "#65a30d" },
+    "C-EXTERNAL": { "name": "Robot", "color": "#64748b" }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "DT-M-01",
+      "design_id": "DISTILL-DP-01",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "teacher-policies",
+      "title": "Teacher Policies",
+      "summary": "站立、行走与后续高度教师提供动作监督",
+      "concept": "C-TEACHER",
+      "x": 300, "y": 210, "w": 220, "h": 116
+    },
+    {
+      "id": "DT-M-02",
+      "design_id": "DISTILL-DP-02",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "command-intent",
+      "title": "Command Intent",
+      "summary": "无任务指令站立，任意速度指令行走",
+      "concept": "C-INTENT",
+      "x": 30, "y": 210, "w": 220, "h": 116
+    },
+    {
+      "id": "DT-M-03",
+      "design_id": "DISTILL-DP-03",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "role-data",
+      "title": "Role Data",
+      "summary": "保存角色观测、intent 与教师动作",
+      "concept": "C-DATA",
+      "x": 570, "y": 210, "w": 220, "h": 116
+    },
+    {
+      "id": "DT-M-04",
+      "design_id": "DISTILL-DP-04",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "moe-student",
+      "title": "MoE Student",
+      "summary": "多个专家与 Router 共同输出部署动作",
+      "concept": "C-STUDENT",
+      "x": 840, "y": 210, "w": 220, "h": 116
+    },
+    {
+      "id": "DT-X-01",
+      "design_id": "DISTILL-DP-04",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "moe-student",
+      "title": "Robot Execution",
+      "summary": "闭环执行站立、行走与停止转换",
+      "concept": "C-EXTERNAL",
+      "kind": "external",
+      "x": 1110, "y": 220, "w": 220, "h": 96
+    },
+    {
+      "id": "DT-M-05",
+      "design_id": "DISTILL-DP-05",
+      "contract_id": "DISTILL-METHOD-v001",
+      "contract_anchor": "student-state-dagger",
+      "title": "Student-State DAgger",
+      "summary": "多轮采样、教师重标、累计聚合并更新",
+      "concept": "C-ADAPT",
+      "x": 820, "y": 500, "w": 260, "h": 110
+    }
+  ],
+  "edges": [
+    {
+      "from": "DT-M-02", "to": "DT-M-01", "concept": "C-INTENT", "route": "spine",
+      "fromAnchor": "right", "toAnchor": "left"
+    },
+    {
+      "from": "DT-M-01", "to": "DT-M-03", "concept": "C-TEACHER", "route": "spine",
+      "fromAnchor": "right", "toAnchor": "left"
+    },
+    {
+      "from": "DT-M-03", "to": "DT-M-04", "concept": "C-DATA", "route": "spine",
+      "fromAnchor": "right", "toAnchor": "left"
+    },
+    {
+      "from": "DT-M-04", "to": "DT-X-01", "concept": "C-STUDENT", "route": "spine",
+      "fromAnchor": "right", "toAnchor": "left"
+    },
+    {
+      "from": "DT-M-02", "to": "DT-M-04", "label": "路由条件", "concept": "C-INTENT", "route": "upper",
+      "fromAnchor": "top", "toAnchor": "top",
+      "via": [[140, 110], [950, 110]],
+      "labelDx": 0, "labelDy": -12
+    },
+    {
+      "from": "DT-X-01", "to": "DT-M-05", "label": "Rollout_k + Teacher Relabel", "concept": "C-EXTERNAL", "route": "lower",
+      "fromAnchor": "bottom", "toAnchor": "right",
+      "via": [[1220, 555]],
+      "labelX": 1150, "labelY": 555,
+      "labelDx": 0, "labelDy": -12,
+      "kind": "feedback"
+    },
+    {
+      "from": "DT-M-05", "to": "DT-M-03", "label": "Aggregate 1..k + Update", "concept": "C-ADAPT", "route": "lower",
+      "fromAnchor": "left", "toAnchor": "bottom",
+      "via": [[680, 555]],
+      "labelDx": -42, "labelDy": 0,
+      "kind": "feedback"
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

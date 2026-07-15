@@ -13,16 +13,16 @@ same Code Block ID
 
 ## Current Maps
 
-- `architecture/01_unilab_repo_architecture.data.json`: editable source data for the UniLab repo ownership map.
-- `runtime/02_unilab_runtime_flow.data.json`: editable source data for the UniLab runtime contract map.
-- `architecture/02_g1_locomotion_modularization.data.json`: editable source data for the G1 SAC locomotion modularization owner map.
-- `runtime/03_g1_sac_locomotion_flow.data.json`: editable source data for the G1 SAC locomotion training/playback flow map.
+- `runtime/01_unilab_runtime_atlas.data.json`: formal UniLab runtime reading cards.
+- `architecture/02_g1_distillation_method_to_code.data.json`: distillation design-point-to-owner-code reading atlas.
+- `concept/03_g1_multiteacher_distillation_method.data.json`: active stand/walk multi-teacher distillation Concept Figure.
 - `auxiliary/atlas_app/`: helper viewer, local server, static renderer, checks, and JS dependencies.
 
 ## Folder Contract
 
 ```text
 note/architecture/
+  concept/        method Concept Figure and design-point map
   architecture/   repo/file/block mind map
   runtime/        module interface contract map
   auxiliary/      helper app files kept out of the map folders
@@ -35,8 +35,8 @@ Temporary maps are allowed, including in the main entry page, while they are
 actively guiding a change. After the change lands, a temporary map must be
 either deleted or integrated into one of the active maps.
 
-The main entry should stay small: UniLab repo ownership map and UniLab runtime
-contract map.
+The main entry contains exactly three active maps in numbered order. Superseded
+supporting maps stay in Git history rather than the active Atlas surface.
 
 ## VSCode Workflow
 
@@ -48,11 +48,10 @@ node auxiliary/atlas_app/serve_architecture.mjs
 Open one of these URLs on the right side of VSCode:
 
 ```text
-http://127.0.0.1:8765/
-http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/01_unilab_repo_architecture.data.json
-http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/02_unilab_runtime_flow.data.json
-http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_locomotion_modularization.data.json
-http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/03_g1_sac_locomotion_flow.data.json
+http://127.0.0.1:8766/
+http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json
+http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_distillation_method_to_code.data.json
+http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json
 ```
 
 Open the matching `*.data.json` on the left. Saving the JSON refreshes the graph
@@ -67,6 +66,36 @@ Viewer controls:
 - `Fit Width` also restores auto-fit behavior after manual zooming.
 - Drag the graph canvas to pan. Trackpad horizontal scroll also works on large maps.
 - `Ctrl`/`Cmd` + wheel zooms around the pointer.
+- Blue source rows in Runtime and Method-to-Code open the exact repository file and line through the local server.
+
+## Human / LLM Governance
+
+The distillation atlas is the visual half of the governed document system in
+`note/distillation/`. The control loop is:
+
+```text
+human intent
+  -> Concept Figure and active contract
+  -> Method-to-Code owner map
+  -> runtime branch and current checklist
+  -> code change and focused evidence
+  -> contract/evidence update before the next decision
+```
+
+Start at `../distillation/README.md`. Active method commitments live only under
+`../distillation/contracts/active/`; ideas not yet accepted belong under
+`../distillation/plans/`. Runtime findings belong in `evidence/` or `logs/`, not
+inside the Concept Figure.
+
+## Validation
+
+```bash
+cd note/architecture/auxiliary/atlas_app
+npm run check
+```
+
+This validates the viewer, map schemas, contract/design IDs, owner source paths,
+runtime branches, and the local source-navigation route.
 
 ## HTML Design Contract
 
@@ -79,20 +108,22 @@ auxiliary/atlas_app/architecture_atlas.html
   -> draws rough SVG cards with shared colors, IDs, zoom, pan, editor, and live reload
 ```
 
-The three main pages are data variants, not separate applications:
+The active and supporting pages are data variants, not separate applications:
 
-- Repo Architecture uses `layout: "repo_tree"`.
-  - Source: `architecture/01_unilab_repo_architecture.data.json`.
-  - Purpose: file tree -> code block ownership.
-  - Main schema: `title`, `subtitle`, `layout`, `root`, `concepts`, `files[]`.
-  - Each file has `group`, `path`, `color`, `blocks[]`.
-  - Each block has `id`, `role`, `lines`, `concept`.
+- UniLab Runtime uses `layout: "repository_reading_atlas"`.
+  - Source: `runtime/01_unilab_runtime_atlas.data.json`.
+  - Purpose: runtime-ordered owner cards from CLI through playback.
+  - Main schema: `systems[].modules[]`, `runtimeOrder[]`, internal B-routes.
 
-- Runtime uses `layout: "flow_tree"`.
-  - Source: `runtime/02_unilab_runtime_flow.data.json`.
-  - Purpose: interface boundary -> input / ownership / output / forbidden freedom / diagnostic proof.
-  - Main schema: `title`, `subtitle`, `layout`, `concepts`, `nodes[]`.
-  - Each node has `id`, `title`, `role`, `input`, `output`, `forbidden`, `diagnostic`, `concept`, optional `children[]`.
+- Distillation Method-to-Code uses `layout: "repository_reading_atlas"`.
+  - Source: `architecture/02_g1_distillation_method_to_code.data.json`.
+  - Purpose: runtime-ordered owner cards with navigable source locations.
+  - Main schema: `modules[]`, `runtimeOrder[]`, `supportOrder[]`, internal routes.
+
+- Distillation Concept Figure uses `layout: "method_figure"`.
+  - Source: `concept/03_g1_multiteacher_distillation_method.data.json`.
+  - Purpose: human-controlled method intent and causal closure.
+  - Main schema: `nodes[]`, `edges[]`, stable design/contract mappings.
 
 ## Reuse Contract
 
@@ -137,18 +168,20 @@ node auxiliary/atlas_app/serve_architecture.mjs
 Then open:
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:8766/
 ```
 
 To reuse the current HTML page for a specific map, create or edit a
 `*.data.json` file and open:
 
 ```text
-http://127.0.0.1:8765/auxiliary/atlas_app/architecture_atlas.html?data=../../PATH/TO/MAP.data.json
+http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html?data=../../PATH/TO/MAP.data.json
 ```
 
 Choose the `layout` field by the thinking task:
 
+- Use `method_figure` for the human-controlled method idea and causal closure.
+- Use `repository_reading_atlas` for runtime-ordered module-family reading cards.
 - Use `repo_tree` when the question is "which file owns which code block?".
 - Use `flow_tree` when the question is "what enters a module, what does it own, what exits, and what is forbidden?".
 - Omit `layout` or use `tabs` when the question is conceptual taxonomy rather than code ownership.
@@ -182,7 +215,8 @@ embedded script into:
 ```text
 viewer_shell.js       shared loading, editor, status, zoom, pan
 render_helpers.js    SVG text, cards, colors, wrapping
-layouts/             repo_tree.js, flow_tree.js, tabs.js
+layouts/             method_figure.js, repository_reading_atlas.js,
+                     repo_tree.js, flow_tree.js, tabs.js
 ```
 
 Do not do this split merely because one map changes. Do it only when the HTML

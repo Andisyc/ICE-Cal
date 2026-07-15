@@ -5,7 +5,7 @@ Status: approved layout proposal
 Date: 2026-07-15
 
 Scope: visual and routing revision of
-`note/architecture/concept/05_g1_multiteacher_distillation_method.data.json`
+`note/architecture/concept/03_g1_multiteacher_distillation_method.data.json`
 and its `method_figure` renderer. This proposal does not change the active
 distillation method contract or policy code.
 
@@ -31,7 +31,6 @@ Command Intent
   -> Teacher Policies
   -> Role Data
   -> MoE Student
-  -> Single Policy
   -> Robot Execution
 ```
 
@@ -57,8 +56,7 @@ Each block keeps one title and one short sentence:
 | Command Intent | 无任务指令站立，任意速度指令行走 |
 | Teacher Policies | 站立、行走与后续高度教师提供动作监督 |
 | Role Data | 保存角色观测、intent 与教师动作 |
-| MoE Student | 专家模仿对应教师，Router 学习行为选择 |
-| Single Policy | 一个 checkpoint 输出当前指令所需动作 |
+| MoE Student | 专家模仿对应教师，Router 从一个 checkpoint 输出动作 |
 | Robot Execution | 闭环执行站立、行走与停止转换 |
 | Student-State DAgger | 教师重标学生实际访问的状态 |
 
@@ -93,7 +91,7 @@ Extend `check_distillation_atlas.mjs` with geometry validation:
    non-endpoint rectangle;
 4. reject a connector without explicit source and destination anchors;
 5. reject feedback routes that enter the main-spine routing corridor;
-6. validate that all seven blocks and the required seven interactions remain.
+6. validate that all six blocks and the required seven interactions remain.
 
 Browser acceptance must confirm:
 

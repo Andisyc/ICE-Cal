@@ -1,0 +1,31 @@
+# @package _global_
+
+student:
+  model_type: moe
+  obs_dim: 98
+  action_dim: 29
+  num_experts: 3
+
+algo:
+  role_loss_coef: 0.25
+  role_expert_targets:
+    walk_flat: 0
+    stand: 1
+  command_intent_loss_coef: 0.25
+  command_intent_expert_targets:
+    active: 0
+    inactive: 1
+  expert_behavior_loss_source: selected_expert
+
+training:
+  workflow:
+    roles:
+      - role: walk_flat
+        task: g1_walk_flat/mujoco
+        teacher_checkpoint_path: ${oc.env:UNILAB_G1_WALK_TEACHER}
+        dataset_path: ${oc.env:UNILAB_G1_WALK_DATASET,''}
+      - role: stand
+        task: g1_stand_still/mujoco
+        teacher_checkpoint_path: ${oc.env:UNILAB_G1_STAND_TEACHER}
+        dataset_path: ${oc.env:UNILAB_G1_STAND_DATASET,''}
+    dagger_balanced_labels: [walk_flat, stand]

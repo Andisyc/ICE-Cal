@@ -196,6 +196,33 @@ def test_offpolicy_g1_stage_override_is_forwarded_as_hydra_override(tmp_path: Pa
     ]
 
 
+def test_distill_train_routes_to_single_entry_workflow_owner(tmp_path: Path) -> None:
+    (tmp_path / "scripts").mkdir(parents=True)
+    (tmp_path / "scripts" / "train_distill.py").write_text("", encoding="utf-8")
+    owner_dir = tmp_path / "conf" / "distill" / "task" / "g1_walk_flat"
+    owner_dir.mkdir(parents=True)
+    (owner_dir / "mujoco.yaml").write_text(
+        "training:\n  sim_backend: mujoco\n",
+        encoding="utf-8",
+    )
+
+    command = cli.build_command(
+        mode="train",
+        algo="distill",
+        task="g1_walk_flat",
+        sim="mujoco",
+        overrides=["training.workflow.run_dir=/tmp/distill-run"],
+        root=tmp_path,
+    )
+
+    assert command[1:] == [
+        str(tmp_path / "scripts" / "train_distill.py"),
+        "task=g1_walk_flat/mujoco",
+        "training.workflow.enabled=true",
+        "training.workflow.run_dir=/tmp/distill-run",
+    ]
+
+
 def test_offpolicy_g1_height_and_standing_reward_flags_generate_owner_overrides(
     tmp_path: Path,
 ) -> None:

@@ -1,11 +1,15 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const atlasRoot = path.resolve(__dirname, "../..");
-const port = Number(process.env.PORT || 8765);
+const repoRoot = path.resolve(atlasRoot, "../..");
+const vscodeCli = process.env.VSCODE_CLI_PATH
+  || "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code";
+const port = Number(process.env.PORT || 8766);
 const clients = new Set();
 
 const mimeTypes = new Map([
@@ -48,6 +52,53 @@ function safeResolve(urlPath) {
 }
 
 const server = http.createServer((req, res) => {
+  const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
+  if (requestUrl.pathname === "/open-source") {
+    const relativePath = requestUrl.searchParams.get("path") || "";
+    const line = Number.parseInt(requestUrl.searchParams.get("line") || "1", 10);
+    const absolutePath = path.resolve(repoRoot, relativePath);
+    const insideRepo = absolutePath === repoRoot || absolutePath.startsWith(`${repoRoot}${path.sep}`);
+    if (
+      !insideRepo
+      || !Number.isInteger(line)
+      || line < 1
+      || !fs.existsSync(absolutePath)
+      || !fs.statSync(absolutePath).isFile()
+    ) {
+      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Invalid source location");
+      return;
+    }
+    const gotoTarget = `${absolutePath}:${line}:1`;
+    console.log(`[Atlas Source Link] path=${relativePath} line=${line} dry_run=${requestUrl.searchParams.get("dry_run") === "1"}`);
+    if (requestUrl.searchParams.get("dry_run") === "1") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ absolutePath, line, gotoTarget }));
+      return;
+    }
+    // The VS Code CLI forwards --goto to an already-running editor instance.
+    // macOS `open -a ... --args` may only focus that instance and drop --goto.
+    if (!fs.existsSync(vscodeCli)) {
+      console.error(`[Atlas Source Link] VS Code CLI not found: ${vscodeCli}`);
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(`VS Code CLI not found: ${vscodeCli}`);
+      return;
+    }
+    const opener = spawn(vscodeCli, ["--goto", gotoTarget], {
+      detached: true,
+      stdio: "ignore",
+    });
+    opener.once("error", (error) => {
+      console.error(`[Atlas Source Link] launch failed: ${error.message}`);
+    });
+    opener.once("exit", (code) => {
+      console.log(`[Atlas Source Link] VS Code CLI exit=${code}`);
+    });
+    opener.unref();
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
   if (req.url === "/events") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -84,9 +135,9 @@ const server = http.createServer((req, res) => {
 watchDataFiles();
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`MOSAIC architecture atlas: http://127.0.0.1:${port}/`);
-  console.log(`Repo map: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/01_repo_architecture.data.json`);
-  console.log(`Interface map: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/02_frontres_flow.data.json`);
-  console.log(`Concept tabs: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_frontres_concept_tabs.data.json`);
+  console.log(`UniLab architecture atlas: http://127.0.0.1:${port}/`);
+console.log(`01 UniLab runtime: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json`);
+console.log(`02 Method-to-code: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_distillation_method_to_code.data.json`);
+console.log(`03 Concept figure: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json`);
   console.log(`Watching data folders: architecture/, runtime/, concept/`);
 });

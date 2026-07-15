@@ -15,7 +15,7 @@ from typing import Sequence
 
 from unilab.demo import run_demo
 
-SUPPORTED_ALGOS = ("ppo", "mlx_ppo", "appo", "sac", "td3", "flashsac")
+SUPPORTED_ALGOS = ("ppo", "mlx_ppo", "appo", "sac", "td3", "flashsac", "distill")
 SUPPORTED_SIMS = ("mujoco", "motrix")
 SUPPORTED_RENDER_MODES = ("auto", "interactive", "record", "none")
 OFFPOLICY_ALGOS = {"sac", "td3", "flashsac"}
@@ -24,6 +24,7 @@ RESERVED_OVERRIDE_KEYS = {
     "task",
     "training.sim_backend",
     "training.play_only",
+    "training.workflow.enabled",
 }
 TASK_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_-]*$")
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -202,6 +203,16 @@ def build_route(algo: str, task: str, sim: str, profile: str | None = None) -> R
             owner_task=f"{task}/{owner}.yaml",
             generated_overrides=(f"task={task_choice}",),
         )
+    if algo == "distill":
+        return Route(
+            script_name="train_distill.py",
+            config_group="distill",
+            owner_task=f"{task}/{owner}.yaml",
+            generated_overrides=(
+                f"task={task_choice}",
+                "training.workflow.enabled=true",
+            ),
+        )
     raise SystemExit(f"Unsupported algo={algo!r}; choose one of: {', '.join(SUPPORTED_ALGOS)}")
 
 
@@ -220,6 +231,8 @@ def build_command(
     root: Path | None = None,
 ) -> list[str]:
     selected_root = root or repo_root()
+    if algo == "distill" and mode != "train":
+        raise SystemExit("--algo distill is a training workflow; use start.sh for playback.")
     if height_tracking:
         if algo != "sac" or sim != "mujoco" or task not in {"g1_walk_flat", "g1_walk_height"}:
             raise SystemExit("--height-tracking is only supported for --algo sac --task g1_walk_flat --sim mujoco.")
