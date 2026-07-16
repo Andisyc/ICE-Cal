@@ -11,6 +11,7 @@ from unilab.algos.torch.distill.data import (
     load_distillation_dataset,
     save_distillation_dataset,
 )
+from unilab.algos.torch.distill.offline import required_balanced_replay_updates
 from unilab.algos.torch.distill.workflow import (
     ArtifactDecision,
     RoleArtifactSpec,
@@ -233,6 +234,30 @@ def test_legacy_adoption_repairs_manifest_written_before_role_label_migration(
 
     result = preflight_role_artifacts((spec,), require_row_role_labels=True)[0]
     assert result.decision is ArtifactDecision.REUSE
+
+
+def test_required_balanced_replay_updates_scales_with_transition_rows() -> None:
+    dataset = build_distillation_dataset(
+        torch.zeros(64, 98),
+        torch.zeros(64, 98),
+        teacher_actions=torch.zeros(64, 29),
+        scenario_labels=("walk_to_stop",) * 32 + ("static_stand",) * 16 + ("walk_flat",) * 16,
+        transition_ages=torch.tensor([0] * 32 + [-1] * 32),
+        command_before=torch.zeros(64, 3),
+        command_after=torch.zeros(64, 3),
+    )
+
+    required = required_balanced_replay_updates(
+        dataset,
+        balance_key="scenario",
+        batch_size=8,
+        balanced_labels=("walk_flat", "static_stand", "walk_to_stop"),
+        balance_quotas={"walk_flat": 0.25, "static_stand": 0.25, "walk_to_stop": 0.5},
+        replay_labels=("walk_to_stop",),
+        replay_passes=2,
+    )
+
+    assert required == 16
 
 
 def test_bootstrap_workflow_collects_only_missing_roles_and_owns_paths(

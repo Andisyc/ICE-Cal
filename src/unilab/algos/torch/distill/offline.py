@@ -275,6 +275,29 @@ def _required_balanced_replay_updates(
     return required
 
 
+def required_balanced_replay_updates(
+    dataset: DistillationTensorDataset,
+    *,
+    balance_key: str,
+    batch_size: int,
+    balanced_labels: Sequence[str] | None,
+    balance_quotas: Mapping[str, float] | None,
+    replay_labels: Sequence[str],
+    replay_passes: int,
+) -> int:
+    """Compute the minimum update budget for a balanced replay contract."""
+
+    labels = _labels_for_balance_key(dataset, str(balance_key))
+    return _required_balanced_replay_updates(
+        labels or (),
+        batch_size=int(batch_size),
+        balanced_labels=balanced_labels,
+        balance_quotas=balance_quotas,
+        replay_labels=replay_labels,
+        replay_passes=int(replay_passes),
+    )
+
+
 def run_offline_distillation_updates(
     trainer: BehaviorDistillationTrainer,
     dataset: DistillationTensorDataset,

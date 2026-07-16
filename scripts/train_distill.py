@@ -35,6 +35,7 @@ from unilab.algos.torch.distill import (
     load_distillation_student_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
+    required_balanced_replay_updates,
     resolve_command_intent_rollout_policies,
     run_bootstrap_workflow,
     run_iterative_dagger_updates,
@@ -705,6 +706,7 @@ def run_offline_dataset_update(
     max_updates: int | None = None,
     checkpoint_path: str | Path | None = None,
     device: str | torch.device = "cpu",
+    auto_expand_replay_budget: bool = False,
 ) -> dict[str, Any]:
     """Run bounded offline updates from a saved distillation tensor dataset."""
 
@@ -737,6 +739,37 @@ def run_offline_dataset_update(
         expected_teacher_action_dim=int(cfg.teacher.action_dim),
         device=device,
     )
+    offline_balance_key = str(
+        OmegaConf.select(cfg, "training.offline_balance_key", default="none")
+    )
+    offline_balanced_labels = list(
+        OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
+    )
+    offline_balance_quotas = dict(
+        OmegaConf.to_container(
+            OmegaConf.select(cfg, "training.offline_balance_quotas", default={}),
+            resolve=True,
+        )
+    )
+    offline_replay_passes = int(
+        OmegaConf.select(cfg, "training.offline_min_balanced_replay_passes", default=0)
+    )
+    offline_replay_labels = list(
+        OmegaConf.select(cfg, "training.offline_min_balanced_replay_labels", default=[])
+    )
+    if auto_expand_replay_budget:
+        resolved_max_updates = max(
+            resolved_max_updates,
+            required_balanced_replay_updates(
+                dataset,
+                balance_key=offline_balance_key,
+                batch_size=resolved_batch_size,
+                balanced_labels=offline_balanced_labels,
+                balance_quotas=offline_balance_quotas,
+                replay_labels=offline_replay_labels,
+                replay_passes=offline_replay_passes,
+            ),
+        )
     result = run_offline_distillation_updates(
         trainer,
         dataset,
@@ -753,30 +786,11 @@ def run_offline_dataset_update(
         repeat_dataset=bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)),
         shuffle=bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
         seed=int(cfg.algo.seed),
-        balance_key=str(OmegaConf.select(cfg, "training.offline_balance_key", default="none")),
-        balanced_labels=list(
-            OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
-        ),
-        balance_quotas=dict(
-            OmegaConf.to_container(
-                OmegaConf.select(cfg, "training.offline_balance_quotas", default={}),
-                resolve=True,
-            )
-        ),
-        min_balanced_replay_passes=int(
-            OmegaConf.select(
-                cfg,
-                "training.offline_min_balanced_replay_passes",
-                default=0,
-            )
-        ),
-        min_balanced_replay_labels=list(
-            OmegaConf.select(
-                cfg,
-                "training.offline_min_balanced_replay_labels",
-                default=[],
-            )
-        ),
+        balance_key=offline_balance_key,
+        balanced_labels=offline_balanced_labels,
+        balance_quotas=offline_balance_quotas,
+        min_balanced_replay_passes=offline_replay_passes,
+        min_balanced_replay_labels=offline_replay_labels,
     )
     return _probe_result(
         cfg,
@@ -1839,7 +1853,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             )
         )
         output_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        run_offline_dataset_update(
+        result = run_offline_dataset_update(
             update_cfg,
             teacher_checkpoint=specs[0].teacher_checkpoint_path,
             dataset_path=dataset_path,
@@ -1849,8 +1863,9 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             max_updates=updates,
             checkpoint_path=output_checkpoint_path,
             device=_distill_device(cfg),
+            auto_expand_replay_budget=True,
         )
-        return updates
+        return int(result["update_count"])
 
     dagger_result = run_multirole_dagger_workflow(
         run_dir=run_dir,
