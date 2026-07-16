@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from .data import load_distillation_dataset
+from .data import load_distillation_dataset, save_distillation_dataset
 
 ROLE_ARTIFACT_MANIFEST_VERSION = 1
 
@@ -431,10 +431,16 @@ def preflight_role_artifacts(
 
 
 def adopt_legacy_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactManifest:
-    """Validate an unmanifested dataset once, then bind it to the current role contract."""
+    """Adopt or repair a legacy role dataset under the current role contract."""
 
-    if spec.manifest_path.exists():
-        raise FileExistsError(f"role artifact manifest already exists: {spec.manifest_path}")
+    existing_manifest = spec.manifest_path.is_file()
+    if existing_manifest:
+        preflight = preflight_role_artifact(spec)
+        if preflight.decision is not ArtifactDecision.REUSE:
+            raise ValueError(
+                f"cannot adopt stale role artifact {spec.role!r}: "
+                f"{list(preflight.mismatches)}"
+            )
     dataset = load_distillation_dataset(
         spec.dataset_path,
         expected_student_obs_dim=spec.student_obs_dim,
@@ -444,6 +450,7 @@ def adopt_legacy_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactManifest:
     )
     if dataset.teacher_actions is None:
         raise ValueError(f"legacy role dataset has no cached teacher actions: {spec.dataset_path}")
+    normalized_legacy = False
     metadata = dataset.metadata
     expected_task_name = (
         spec.owner_config.get("training", {}).get("task_name")
@@ -474,6 +481,26 @@ def adopt_legacy_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactManifest:
         raise ValueError(
             f"legacy role dataset metadata is incompatible for {spec.role!r}: {mismatches}"
         )
+    if dataset.role_labels is None:
+        # Legacy collectors did not persist row labels. The workflow already
+        # owns this file as a role-specific artifact, so this is an explicit,
+        # lossless schema migration rather than an inferred router decision.
+        normalized_metadata = dict(metadata)
+        normalized_metadata["legacy_role_labels_adopted"] = True
+        dataset = replace(
+            dataset,
+            metadata=normalized_metadata,
+            role_labels=(spec.role,) * dataset.num_samples,
+        )
+        save_distillation_dataset(spec.dataset_path, dataset)
+        normalized_legacy = True
+    elif any(label != spec.role for label in dataset.role_labels):
+        raise ValueError(
+            f"legacy role dataset labels do not match role {spec.role!r}: "
+            f"{sorted(set(dataset.role_labels))}"
+        )
+    if existing_manifest and not normalized_legacy:
+        return _load_role_artifact_manifest(spec.manifest_path)
     manifest = create_role_artifact_manifest(spec, num_samples=dataset.num_samples)
     write_role_artifact_manifest(spec.manifest_path, manifest)
     return manifest

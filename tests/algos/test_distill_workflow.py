@@ -8,6 +8,7 @@ import torch
 
 from unilab.algos.torch.distill.data import (
     build_distillation_dataset,
+    load_distillation_dataset,
     save_distillation_dataset,
 )
 from unilab.algos.torch.distill.workflow import (
@@ -188,9 +189,50 @@ def test_explicit_legacy_adoption_validates_dataset_before_writing_manifest(
     save_distillation_dataset(spec.dataset_path, dataset)
 
     adopt_legacy_role_artifact(spec)
+    adopt_legacy_role_artifact(spec)
 
     assert spec.manifest_path.is_file()
     assert preflight_role_artifacts((spec,))[0].decision is ArtifactDecision.REUSE
+    adopted = load_distillation_dataset(spec.dataset_path)
+    assert adopted.role_labels == ("stand",) * adopted.num_samples
+    assert adopted.metadata["legacy_role_labels_adopted"] is True
+    assert (
+        preflight_role_artifacts((spec,), require_row_role_labels=True)[0].decision
+        is ArtifactDecision.REUSE
+    )
+
+
+def test_legacy_adoption_repairs_manifest_written_before_role_label_migration(
+    tmp_path: Path,
+) -> None:
+    spec = _spec(tmp_path, "stand")
+    dataset = build_distillation_dataset(
+        torch.zeros(4, 98),
+        torch.zeros(4, 98),
+        teacher_actions=torch.zeros(4, 29),
+        metadata={
+            "task_name": "G1Stand",
+            "teacher_policy_checkpoint_path": str(spec.teacher_checkpoint_path.resolve()),
+            "teacher_projection": "identity",
+            "student_projection": "identity",
+            "teacher_obs_key": "obs",
+            "student_drop_index": None,
+            "command_sample_filter": "inactive",
+            "command_info_key": "commands",
+            "command_xy_threshold": 0.05,
+            "command_yaw_threshold": 0.05,
+        },
+    )
+    save_distillation_dataset(spec.dataset_path, dataset)
+    write_role_artifact_manifest(
+        spec.manifest_path,
+        create_role_artifact_manifest(spec, num_samples=dataset.num_samples),
+    )
+
+    adopt_legacy_role_artifact(spec)
+
+    result = preflight_role_artifacts((spec,), require_row_role_labels=True)[0]
+    assert result.decision is ArtifactDecision.REUSE
 
 
 def test_bootstrap_workflow_collects_only_missing_roles_and_owns_paths(

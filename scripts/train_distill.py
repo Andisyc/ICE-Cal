@@ -1530,7 +1530,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         OmegaConf.select(cfg, "training.workflow.adopt_legacy_artifacts", default=False)
     ):
         for spec in specs:
-            if spec.dataset_path.is_file() and not spec.manifest_path.is_file():
+            if spec.dataset_path.is_file():
                 adopt_legacy_role_artifact(spec)
 
     def collect_role(spec: RoleArtifactSpec) -> int:
@@ -1698,6 +1698,11 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             task_name=str(walk_cfg.training.task_name),
         )
         try:
+            transition_max_env_steps = OmegaConf.select(
+                cfg,
+                "training.workflow.transition_max_env_steps",
+                default=0,
+            )
             dataset = collect_transition_distillation_dataset_from_env(
                 env,
                 num_samples=int(
@@ -1743,14 +1748,11 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
                     "training.collect_student_drop_index",
                 ),
                 command_info_key=str(walk_cfg.training.collect_command_info_key),
-                max_env_steps=int(
-                    OmegaConf.select(
-                        cfg,
-                        "training.workflow.transition_max_env_steps",
-                        default=0,
-                    )
-                )
-                or None,
+                max_env_steps=(
+                    None
+                    if transition_max_env_steps in (None, "")
+                    else int(transition_max_env_steps)
+                ),
                 metadata={
                     "workflow_scenario": scenario.name,
                     **rollout_policy_metadata,
