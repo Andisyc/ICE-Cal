@@ -233,6 +233,17 @@ class TestNpEnvObsSpec:
 
 
 class TestNpEnvInitState:
+    def test_refresh_state_recomputes_without_stepping(self):
+        env = _StubNpEnv(num_envs=2)
+        env.init_state()
+        step_counter = env.step_counter
+
+        state = env.refresh_state()
+
+        assert state is env.state
+        assert env.step_counter == step_counter
+        np.testing.assert_allclose(state.obs["obs"], 1.0)
+
     def test_init_state_returns_np_env_state(self):
         env = _StubNpEnv(num_envs=4)
         state = env.init_state()

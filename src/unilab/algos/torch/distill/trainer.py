@@ -19,6 +19,10 @@ class DistillationBatch:
     teacher_actions: torch.Tensor | None = None
     commands: torch.Tensor | None = None
     command_intents: tuple[str, ...] | None = None
+    scenario_labels: tuple[str, ...] | None = None
+    transition_ages: torch.Tensor | None = None
+    command_before: torch.Tensor | None = None
+    command_after: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)

@@ -76,6 +76,213 @@ def _array_on_cpu(value: Any) -> np.ndarray | None:
         return None
 
 
+def _extract_actor_observation(value: Any) -> np.ndarray | None:
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        for key in ("actor", "policy", "obs"):
+            candidate = getter(key)
+            array = _array_on_cpu(candidate)
+            if array is not None:
+                return array
+            nested_getter = getattr(candidate, "get", None)
+            if callable(nested_getter):
+                array = _array_on_cpu(nested_getter("obs"))
+                if array is not None:
+                    return array
+    array = _array_on_cpu(value)
+    if array is not None:
+        return array
+    return None
+
+
+def _extract_actor_command(env: Any, info: dict[str, Any], actor_obs: np.ndarray | None) -> np.ndarray | None:
+    if actor_obs is None or actor_obs.ndim != 2:
+        return None
+    commands = _array_on_cpu(info.get("commands"))
+    if commands is None or commands.ndim != 2:
+        return None
+    command_observation = commands
+    command_observation_fn = getattr(env, "_command_observation", None)
+    if callable(command_observation_fn):
+        command_observation = _array_on_cpu(
+            command_observation_fn(info, int(actor_obs.shape[0]))
+        )
+    if command_observation is None or command_observation.ndim != 2:
+        return None
+    mode_dim = 0
+    mode_observation_fn = getattr(env, "_mode_observation", None)
+    if callable(mode_observation_fn):
+        mode_observation = _array_on_cpu(mode_observation_fn(info))
+        if mode_observation is not None and mode_observation.ndim == 2:
+            mode_dim = int(mode_observation.shape[1])
+    start = int(actor_obs.shape[1]) - int(command_observation.shape[1]) - 2 - mode_dim
+    end = start + int(command_observation.shape[1])
+    if start < 0 or end > int(actor_obs.shape[1]):
+        return None
+    return actor_obs[:, start:end]
+
+
+def _backend_velocity_norms(env: Any) -> tuple[float | None, float | None]:
+    backend = getattr(env, "_backend", None)
+
+    def read_norm(name: str) -> float | None:
+        getter = getattr(backend, name, None)
+        if not callable(getter):
+            return None
+        values = _array_on_cpu(getter())
+        if values is None or values.size == 0:
+            return None
+        return float(np.linalg.norm(values.reshape(-1, values.shape[-1])[0]))
+
+    return read_norm("get_base_lin_vel"), read_norm("get_base_ang_vel")
+
+
+def _run_repeated_reset_probe(
+    session: Any, env: Any, *, repetitions: int, action_mode: str
+) -> tuple[list[Check], dict[str, Any]]:
+    checks: list[Check] = []
+    details: dict[str, Any] = {}
+    repetitions = max(int(repetitions), 0)
+    if repetitions == 0:
+        return checks, details
+
+    records: list[dict[str, Any]] = []
+    for reset_index in range(repetitions):
+        session.reset()
+        info = session.info
+        command = _array_on_cpu(info.get("commands"))
+        gait_enabled = _array_on_cpu(info.get("gait_enabled"))
+        actor_obs = _extract_actor_observation(session.obs)
+        actor_command = _extract_actor_command(env, info, actor_obs)
+        base_lin_norm, base_ang_norm = _backend_velocity_norms(env)
+        command_row = command[0, :3] if command is not None and command.ndim == 2 else None
+        actor_command_row = (
+            actor_command[0, :3]
+            if actor_command is not None and actor_command.ndim == 2
+            else None
+        )
+        gait_value = (
+            float(gait_enabled.reshape(-1)[0])
+            if gait_enabled is not None and gait_enabled.size > 0
+            else None
+        )
+        record: dict[str, Any] = {
+            "reset_index": reset_index,
+            "command": command_row.tolist() if command_row is not None else None,
+            "actor_obs_command": (
+                actor_command_row.tolist() if actor_command_row is not None else None
+            ),
+            "gait_enabled": gait_value,
+            "base_lin_vel_norm": base_lin_norm,
+            "base_ang_vel_norm": base_ang_norm,
+            "base_qvel_norm": (
+                float(np.hypot(base_lin_norm, base_ang_norm))
+                if base_lin_norm is not None and base_ang_norm is not None
+                else None
+            ),
+        }
+        session.step_once()
+        actions = _array_on_cpu(getattr(session, "actions", None))
+        policy = getattr(session, "policy", None)
+        selected_experts = getattr(policy, "_unilab_distill_last_selected_experts", ())
+        record["action_abs_max"] = (
+            float(np.max(np.abs(actions))) if actions is not None and actions.size else None
+        )
+        record["selected_experts"] = list(selected_experts or ())
+        records.append(record)
+
+    command_abs_max = max(
+        (max(abs(float(item)) for item in record["command"]) for record in records if record["command"]),
+        default=0.0,
+    )
+    actor_command_abs_max = max(
+        (
+            max(abs(float(item)) for item in record["actor_obs_command"])
+            for record in records
+            if record["actor_obs_command"]
+        ),
+        default=0.0,
+    )
+    command_mismatch_abs_max = max(
+        (
+            max(
+                abs(float(left) - float(right))
+                for left, right in zip(record["command"], record["actor_obs_command"], strict=True)
+            )
+            for record in records
+            if record["command"] is not None and record["actor_obs_command"] is not None
+        ),
+        default=float("inf"),
+    )
+    gait_max = max(
+        (float(record["gait_enabled"]) for record in records if record["gait_enabled"] is not None),
+        default=float("inf"),
+    )
+    qvel_max = max(
+        (float(record["base_qvel_norm"]) for record in records if record["base_qvel_norm"] is not None),
+        default=float("inf"),
+    )
+    finite = all(
+        value is not None and np.isfinite(float(value))
+        for record in records
+        for value in (
+            record["gait_enabled"],
+            record["base_lin_vel_norm"],
+            record["base_ang_vel_norm"],
+            record["base_qvel_norm"],
+        )
+    )
+    details.update(
+        {
+            "distill_playback/reset_repetitions": repetitions,
+            "distill_playback/reset_probe_records": records,
+            "distill_playback/reset_command_abs_max": command_abs_max,
+            "distill_playback/reset_actor_command_abs_max": actor_command_abs_max,
+            "distill_playback/reset_command_mismatch_abs_max": command_mismatch_abs_max,
+            "distill_playback/reset_gait_enabled_max": gait_max,
+            "distill_playback/reset_base_qvel_norm_max": qvel_max,
+        }
+    )
+    _add(checks, "PASS" if finite else "FAIL", "distill_playback/reset_finite", str(finite))
+    _add(
+        checks,
+        "PASS" if command_abs_max <= 1.0e-6 else "FAIL",
+        "distill_playback/reset_command_zero",
+        f"max_abs={command_abs_max:.6g}",
+    )
+    _add(
+        checks,
+        "PASS" if actor_command_abs_max <= 1.0e-6 else "FAIL",
+        "distill_playback/reset_actor_command_zero",
+        f"max_abs={actor_command_abs_max:.6g}",
+    )
+    _add(
+        checks,
+        "PASS" if command_mismatch_abs_max <= 1.0e-6 else "FAIL",
+        "distill_playback/reset_command_observation_sync",
+        f"max_abs={command_mismatch_abs_max:.6g}",
+    )
+    _add(
+        checks,
+        "PASS" if gait_max <= 0.5 else "FAIL",
+        "distill_playback/reset_gait_disabled",
+        f"max={gait_max:.6g}",
+    )
+    _add(
+        checks,
+        "PASS" if qvel_max <= 1.0e-6 else "FAIL",
+        "distill_playback/reset_base_qvel_zero",
+        f"max_norm={qvel_max:.6g}",
+    )
+    if action_mode == "policy":
+        action_max = max(
+            (float(record["action_abs_max"]) for record in records if record["action_abs_max"] is not None),
+            default=0.0,
+        )
+        details["distill_playback/reset_first_action_abs_max"] = action_max
+    return checks, details
+
+
 def _make_temp_student_checkpoint(
     cfg: Any,
     run_dir: Path,
@@ -174,6 +381,7 @@ def run_check(
     device: str | None = "cpu",
     make_temp_policy_checkpoint: bool = False,
     temp_student_model_type: str = "mlp",
+    reset_repetitions: int = 0,
     create_session_fn=create_distill_playback_session,
 ) -> tuple[list[Check], dict[str, Any]]:
     cfg = _compose_cfg(task)
@@ -241,6 +449,16 @@ def run_check(
         env = session.env
         action_dim = int(env.action_space.shape[0])
         session.reset()
+        reset_checks, reset_details = _run_repeated_reset_probe(
+            session,
+            env,
+            repetitions=reset_repetitions,
+            action_mode=action_mode,
+        )
+        checks.extend(reset_checks)
+        details.update(reset_details)
+        if reset_repetitions > 0:
+            session.reset()
         for _ in range(steps):
             session.step_once()
         physics = session.physics_state()
@@ -360,6 +578,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--make-temp-policy-checkpoint", action="store_true")
     parser.add_argument("--temp-student-model-type", choices=("mlp", "moe"), default="mlp")
+    parser.add_argument("--reset-repetitions", type=int, default=0)
     return parser.parse_args()
 
 
@@ -375,6 +594,7 @@ def main() -> int:
         device=args.device,
         make_temp_policy_checkpoint=bool(args.make_temp_policy_checkpoint),
         temp_student_model_type=str(args.temp_student_model_type),
+        reset_repetitions=int(args.reset_repetitions),
     )
     print_report(checks, details)
     return 1 if any(check.level == "FAIL" for check in checks) else 0

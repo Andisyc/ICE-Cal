@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import torch
 
 from unilab.algos.torch.distill.data import (
@@ -12,6 +13,7 @@ from unilab.algos.torch.distill.data import (
 from unilab.algos.torch.distill.workflow import (
     ArtifactDecision,
     RoleArtifactSpec,
+    WorkflowScenarioSpec,
     adopt_legacy_role_artifact,
     create_role_artifact_manifest,
     fork_workflow_run,
@@ -57,6 +59,21 @@ def _spec(tmp_path: Path, role: str = "stand") -> RoleArtifactSpec:
 
 def _materialize(spec: RoleArtifactSpec, *, num_samples: int = 8) -> None:
     _write(spec.dataset_path, f"dataset:{spec.role}".encode())
+    manifest = create_role_artifact_manifest(spec, num_samples=num_samples)
+    write_role_artifact_manifest(spec.manifest_path, manifest)
+
+
+def _materialize_with_role_labels(spec: RoleArtifactSpec, *, num_samples: int = 8) -> None:
+    dataset = build_distillation_dataset(
+        torch.zeros(num_samples, spec.student_obs_dim),
+        torch.zeros(num_samples, spec.teacher_obs_dim),
+        expected_student_obs_dim=spec.student_obs_dim,
+        expected_teacher_obs_dim=spec.teacher_obs_dim,
+        expected_teacher_action_dim=spec.teacher_action_dim,
+        teacher_actions=torch.zeros(num_samples, spec.teacher_action_dim),
+        role_labels=(spec.role,) * num_samples,
+    )
+    save_distillation_dataset(spec.dataset_path, dataset)
     manifest = create_role_artifact_manifest(spec, num_samples=num_samples)
     write_role_artifact_manifest(spec.manifest_path, manifest)
 
@@ -120,6 +137,31 @@ def test_role_artifact_preflight_does_not_reuse_file_without_manifest(tmp_path: 
 
     assert result.decision is ArtifactDecision.STALE
     assert result.mismatches == ("manifest_missing",)
+
+
+def test_scenario_preflight_rejects_manifest_without_row_role_labels(tmp_path: Path) -> None:
+    spec = _spec(tmp_path, "walk_flat")
+    dataset = build_distillation_dataset(
+        torch.zeros(4, 98),
+        torch.zeros(4, 98),
+        expected_student_obs_dim=98,
+        expected_teacher_obs_dim=98,
+        expected_teacher_action_dim=29,
+        teacher_actions=torch.zeros(4, 29),
+    )
+    save_distillation_dataset(spec.dataset_path, dataset)
+    write_role_artifact_manifest(
+        spec.manifest_path,
+        create_role_artifact_manifest(spec, num_samples=dataset.num_samples),
+    )
+
+    result = preflight_role_artifacts(
+        (spec,),
+        require_row_role_labels=True,
+    )[0]
+
+    assert result.decision is ArtifactDecision.STALE
+    assert result.mismatches == ("role_labels",)
 
 
 def test_explicit_legacy_adoption_validates_dataset_before_writing_manifest(
@@ -217,7 +259,7 @@ def test_bootstrap_workflow_fails_closed_on_stale_role(tmp_path: Path) -> None:
 def _bootstrap_two_role_run(tmp_path: Path) -> tuple[Path, tuple[RoleArtifactSpec, ...]]:
     specs = (_spec(tmp_path / "artifacts", "stand"), _spec(tmp_path / "artifacts", "walk_flat"))
     for spec in specs:
-        _materialize(spec, num_samples=4)
+        _materialize_with_role_labels(spec, num_samples=4)
     run_dir = tmp_path / "run"
     run_bootstrap_workflow(
         run_dir=run_dir,
@@ -341,3 +383,87 @@ def test_multirole_dagger_resume_runs_only_missing_round_and_fork_preserves_pare
         (run_dir / "run_manifest.json").resolve()
     )
     assert fork_manifest["completed_dagger_iterations"] == 0
+
+
+def test_multirole_dagger_scenario_manifest_and_quota_sources(tmp_path: Path) -> None:
+    scenarios = (
+        WorkflowScenarioSpec("walk_flat", "role", ("walk_flat",), 0.5),
+        WorkflowScenarioSpec("static_stand", "role", ("stand",), 0.25),
+        WorkflowScenarioSpec("walk_to_stop", "transition", ("walk_flat", "stand"), 0.25),
+    )
+    specs = (_spec(tmp_path / "artifacts", "stand"), _spec(tmp_path / "artifacts", "walk_flat"))
+    for spec in specs:
+        _materialize_with_role_labels(spec, num_samples=4)
+    run_dir = tmp_path / "scenario_run"
+
+    run_bootstrap_workflow(
+        run_dir=run_dir,
+        role_specs=specs,
+        scenario_specs=scenarios,
+        collect_role=lambda _spec: (_ for _ in ()).throw(AssertionError("must reuse")),
+        assemble_roles=lambda _paths, output: (_write(output, b"bootstrap-data") and 8),
+        update_student=lambda _dataset, checkpoint: (_write(checkpoint, b"student-0") and 2),
+    )
+    collected: list[tuple[int, str, str]] = []
+    aggregate_sizes: list[int] = []
+
+    def collect_scenario(
+        scenario: WorkflowScenarioSpec,
+        checkpoint_path: Path,
+        iteration: int,
+        output_path: Path,
+    ) -> int:
+        collected.append((iteration, scenario.name, checkpoint_path.name))
+        _write(output_path, f"{iteration}:{scenario.name}".encode())
+        return 3
+
+    def aggregate(sources, output_path: Path) -> int:
+        aggregate_sizes.append(len(sources))
+        _write(output_path, f"sources={len(sources)}".encode())
+        return len(sources) * 3
+
+    def update(_dataset: Path, input_checkpoint: Path, output_checkpoint: Path) -> int:
+        _write(output_checkpoint, input_checkpoint.read_bytes() + b"+")
+        return 2
+
+    result = run_multirole_dagger_workflow(
+        run_dir=run_dir,
+        role_specs=specs,
+        target_iterations=2,
+        scenario_specs=scenarios,
+        collect_role=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("scenario callback should own collection")
+        ),
+        collect_scenario=collect_scenario,
+        aggregate_datasets=aggregate,
+        update_student=update,
+    )
+
+    assert collected == [
+        (1, "walk_flat", "bootstrap_student.pt"),
+        (1, "static_stand", "bootstrap_student.pt"),
+        (1, "walk_to_stop", "bootstrap_student.pt"),
+        (2, "walk_flat", "dagger_iteration_1.pt"),
+        (2, "static_stand", "dagger_iteration_1.pt"),
+        (2, "walk_to_stop", "dagger_iteration_1.pt"),
+    ]
+    assert aggregate_sizes == [5, 8]
+    manifest = json.loads((run_dir / "run_manifest.json").read_text())
+    assert manifest["scenario_specs"] == [scenario.as_dict() for scenario in scenarios]
+    assert len(manifest["dagger_iterations"][0]["scenario_artifacts"]) == 3
+    assert result.completed_iterations == 2
+
+    with pytest.raises(ValueError, match="scenario specs do not match"):
+        run_multirole_dagger_workflow(
+            run_dir=run_dir,
+            role_specs=specs,
+            target_iterations=2,
+            scenario_specs=(
+                WorkflowScenarioSpec("walk_flat", "role", ("walk_flat",), 0.25),
+                *scenarios[1:],
+            ),
+            collect_role=lambda *_args: 1,
+            collect_scenario=collect_scenario,
+            aggregate_datasets=aggregate,
+            update_student=update,
+        )

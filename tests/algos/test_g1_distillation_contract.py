@@ -42,6 +42,44 @@ def test_behavior_distillation_update_detaches_teacher_and_updates_student() -> 
     )
 
 
+def test_command_intent_rollout_resolves_deployment_experts() -> None:
+    from unilab.algos.torch.distill import (
+        MoEStudentPolicy,
+        resolve_command_intent_rollout_policies,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=3,
+        num_experts=3,
+        expert_hidden_dims=(4,),
+    )
+    policies, targets = resolve_command_intent_rollout_policies(
+        student,
+        {"command_intent_expert_targets": {"active": 0, "inactive": 1}},
+    )
+
+    assert targets == {"active": 0, "inactive": 1}
+    assert policies["active"] is student.experts[0]
+    assert policies["inactive"] is student.experts[1]
+
+
+def test_command_intent_rollout_rejects_missing_target() -> None:
+    from unilab.algos.torch.distill import MoEStudentPolicy, resolve_command_intent_rollout_policies
+
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=3,
+        num_experts=3,
+        expert_hidden_dims=(4,),
+    )
+    with pytest.raises(ValueError, match="missing intents"):
+        resolve_command_intent_rollout_policies(
+            student,
+            {"command_intent_expert_targets": {"active": 0}},
+        )
+
+
 def test_behavior_distillation_update_uses_cached_teacher_actions() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,
@@ -1052,6 +1090,121 @@ def test_distillation_dataset_roundtrip_preserves_cached_teacher_actions(tmp_pat
     assert torch.equal(restored.teacher_actions, teacher_actions)
 
 
+def test_distillation_dataset_roundtrip_preserves_transition_schema(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    student_obs = torch.arange(20, dtype=torch.float32).reshape(4, 5)
+    teacher_obs = torch.arange(28, dtype=torch.float32).reshape(4, 7)
+    transition_ages = torch.tensor([-1, -1, 0, 1], dtype=torch.int64)
+    command_before = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.2, 0.0, 0.0], [0.4, 0.0, 0.0], [0.4, 0.0, 0.0]],
+        dtype=torch.float32,
+    )
+    command_after = torch.zeros(4, 3, dtype=torch.float32)
+    dataset = build_distillation_dataset(
+        student_obs,
+        teacher_obs,
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.arange(12, dtype=torch.float32).reshape(4, 3),
+        role_labels=("stand", "walk_flat", "walk_flat", "stand"),
+        scenario_labels=("static_stand", "walk_flat", "walk_to_stop", "walk_to_stop"),
+        transition_ages=transition_ages,
+        command_before=command_before,
+        command_after=command_after,
+    )
+
+    batch = dataset.as_batch(start=2, batch_size=2)
+    assert batch.scenario_labels == ("walk_to_stop", "walk_to_stop")
+    assert batch.transition_ages is not None
+    assert torch.equal(batch.transition_ages, transition_ages[2:])
+    assert batch.command_before is not None
+    assert torch.equal(batch.command_before, command_before[2:])
+    assert batch.command_after is not None
+    assert torch.equal(batch.command_after, command_after[2:])
+
+    checkpoint_path = tmp_path / "transition_distill_dataset.pt"
+    save_distillation_dataset(checkpoint_path, dataset)
+    restored = load_distillation_dataset(
+        checkpoint_path,
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+        expected_teacher_action_dim=3,
+    )
+
+    assert restored.scenario_labels == dataset.scenario_labels
+    assert restored.transition_ages is not None
+    assert torch.equal(restored.transition_ages, transition_ages)
+    assert restored.command_before is not None
+    assert torch.equal(restored.command_before, command_before)
+    assert restored.command_after is not None
+    assert torch.equal(restored.command_after, command_after)
+    assert restored.metadata["transition_schema"] == "DISTILL-TRAIN-v002"
+    assert restored.metadata["scenario_counts"] == {
+        "static_stand": 1,
+        "walk_flat": 1,
+        "walk_to_stop": 2,
+    }
+
+
+def test_distillation_dataset_rejects_malformed_transition_schema() -> None:
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    base_kwargs = {
+        "expected_student_obs_dim": 5,
+        "expected_teacher_obs_dim": 7,
+    }
+    with pytest.raises(ValueError, match="require scenario_labels"):
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            transition_ages=torch.tensor([-1, 0], dtype=torch.int64),
+            **base_kwargs,
+        )
+    with pytest.raises(ValueError, match="integer dtype"):
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            scenario_labels=("walk_to_stop", "walk_to_stop"),
+            transition_ages=torch.tensor([0.0, 1.0]),
+            command_before=torch.ones(2, 3),
+            command_after=torch.zeros(2, 3),
+            **base_kwargs,
+        )
+    with pytest.raises(ValueError, match="transition_age=-1"):
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            scenario_labels=("static_stand", "walk_flat"),
+            transition_ages=torch.tensor([0, -1], dtype=torch.int64),
+            **base_kwargs,
+        )
+    with pytest.raises(ValueError, match="provided together"):
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            scenario_labels=("walk_to_stop", "walk_to_stop"),
+            transition_ages=torch.tensor([0, 1], dtype=torch.int64),
+            command_before=torch.ones(2, 3),
+            **base_kwargs,
+        )
+    with pytest.raises(ValueError, match="command_after must be zero"):
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            scenario_labels=("walk_to_stop", "walk_to_stop"),
+            transition_ages=torch.tensor([0, 1], dtype=torch.int64),
+            command_before=torch.ones(2, 3),
+            command_after=torch.ones(2, 3),
+            **base_kwargs,
+        )
+
+
 def test_distillation_dataset_rejects_bad_obs_contract() -> None:
     from unilab.algos.torch.distill import build_distillation_dataset
 
@@ -1378,6 +1531,144 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
         )
 
 
+def test_multitask_distillation_dataset_merges_transition_fields(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    stand_path = tmp_path / "stand_transition.pt"
+    transition_path = tmp_path / "transition.pt"
+    common = {
+        "expected_student_obs_dim": 5,
+        "expected_teacher_obs_dim": 5,
+        "expected_teacher_action_dim": 3,
+        "teacher_actions": torch.zeros(2, 3),
+        "transition_ages": torch.tensor([-1, -1], dtype=torch.int64),
+        "command_before": torch.zeros(2, 3),
+        "command_after": torch.zeros(2, 3),
+    }
+    save_distillation_dataset(
+        stand_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 5),
+            role_labels=("stand", "stand"),
+            scenario_labels=("static_stand", "static_stand"),
+            **common,
+        ),
+    )
+    save_distillation_dataset(
+        transition_path,
+        build_distillation_dataset(
+            torch.ones(2, 5),
+            torch.ones(2, 5),
+            role_labels=("walk_flat", "stand"),
+            scenario_labels=("walk_to_stop", "walk_to_stop"),
+            transition_ages=torch.tensor([0, 1], dtype=torch.int64),
+            command_before=torch.full((2, 3), 0.4),
+            command_after=torch.zeros(2, 3),
+            teacher_actions=torch.ones(2, 3),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+        ),
+    )
+
+    merged = build_multitask_distillation_dataset(
+        [
+            {"path": stand_path, "role": "stand"},
+            {"path": transition_path, "role": "walk_to_stop"},
+        ],
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=5,
+        expected_teacher_action_dim=3,
+    )
+
+    assert merged.scenario_labels == (
+        "static_stand",
+        "static_stand",
+        "walk_to_stop",
+        "walk_to_stop",
+    )
+    assert merged.transition_ages is not None
+    assert torch.equal(merged.transition_ages, torch.tensor([-1, -1, 0, 1]))
+    assert merged.command_before is not None
+    assert torch.equal(merged.command_before[:2], torch.zeros(2, 3))
+    assert merged.command_after is not None
+    assert torch.equal(merged.command_after[2:], torch.zeros(2, 3))
+
+
+def test_multitask_workflow_scenario_annotation_preserves_row_roles(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    stand_path = tmp_path / "stand_legacy.pt"
+    walk_path = tmp_path / "walk_legacy.pt"
+    save_distillation_dataset(
+        stand_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.empty(2, 0),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=0,
+            expected_teacher_action_dim=3,
+            teacher_actions=torch.zeros(2, 3),
+            role_labels=("stand", "stand"),
+            command_intents=("inactive", "inactive"),
+        ),
+    )
+    save_distillation_dataset(
+        walk_path,
+        build_distillation_dataset(
+            torch.ones(2, 5),
+            torch.empty(2, 0),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=0,
+            expected_teacher_action_dim=3,
+            teacher_actions=torch.ones(2, 3),
+            role_labels=("walk_flat", "walk_flat"),
+            commands=torch.full((2, 3), 0.4),
+            command_intents=("active", "active"),
+        ),
+    )
+
+    merged = build_multitask_distillation_dataset(
+        [
+            {
+                "path": stand_path,
+                "role": "stand",
+                "scenario": "static_stand",
+                "preserve_row_role_labels": True,
+            },
+            {
+                "path": walk_path,
+                "role": "walk_flat",
+                "scenario": "walk_flat",
+                "preserve_row_role_labels": True,
+            },
+        ],
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+    )
+
+    assert merged.role_labels == ("stand", "stand", "walk_flat", "walk_flat")
+    assert merged.scenario_labels == (
+        "static_stand",
+        "static_stand",
+        "walk_flat",
+        "walk_flat",
+    )
+    assert merged.transition_ages is not None
+    assert torch.equal(merged.transition_ages, torch.full((4,), -1, dtype=torch.int64))
+    assert merged.metadata["source_scenarios"] == ["static_stand", "walk_flat"]
+
+
 def test_command_active_mask_marks_any_velocity_command_active() -> None:
     from unilab.algos.torch.distill import command_active_mask
 
@@ -1487,6 +1778,66 @@ class _CommandInfoDistillEnv(_FakeDistillEnv):
         )()
 
 
+class _TransitionDistillEnv:
+    def __init__(self, *, done_at_step: int | None = None) -> None:
+        self.num_envs = 2
+        self.action_space = type("ActionSpace", (), {"shape": (3,)})()
+        self.done_at_step = done_at_step
+        self.step_calls = 0
+        self.reset_calls = 0
+        self.commands = np.zeros((self.num_envs, 3), dtype=np.float32)
+        self.command_history: list[np.ndarray] = []
+        self.action_history: list[np.ndarray] = []
+        self.state = None
+
+    def _obs(self, offset: int) -> dict[str, np.ndarray]:
+        base = np.arange(16, dtype=np.float32).reshape(self.num_envs, 8)
+        return {"obs": base + float(offset)}
+
+    def _state(self, *, terminated: np.ndarray | None = None):
+        return type(
+            "State",
+            (),
+            {
+                "obs": self._obs(self.step_calls),
+                "info": {"commands": self.commands},
+                "terminated": (
+                    np.zeros((self.num_envs,), dtype=np.bool_)
+                    if terminated is None
+                    else terminated
+                ),
+                "truncated": np.zeros((self.num_envs,), dtype=np.bool_),
+                "final_observation": None,
+            },
+        )()
+
+    def init_state(self) -> None:
+        self.state = self._state()
+
+    def reset(self, env_indices):
+        indices = np.asarray(env_indices, dtype=np.int32).reshape(-1)
+        self.reset_calls += 1
+        self.commands[indices] = 0.0
+        self.state = self._state()
+        reset_obs = {key: value[indices] for key, value in self._obs(0).items()}
+        return reset_obs, {"commands": self.commands[indices].copy()}
+
+    def refresh_state(self):
+        self.command_history.append(self.commands.copy())
+        self.state = self._state()
+        return self.state
+
+    def step(self, actions):
+        assert actions.shape == (self.num_envs, 3)
+        self.action_history.append(np.asarray(actions, dtype=np.float32).copy())
+        self.step_calls += 1
+        terminated = np.zeros((self.num_envs,), dtype=np.bool_)
+        if self.done_at_step == self.step_calls:
+            terminated[0] = True
+        self.state = self._state(terminated=terminated)
+        return self.state
+
+
 def test_collect_distillation_dataset_from_env_projects_student_obs() -> None:
     from unilab.algos.torch.distill import collect_distillation_dataset_from_env
 
@@ -1517,6 +1868,176 @@ def test_collect_distillation_dataset_from_env_projects_student_obs() -> None:
         dataset.student_obs[0],
         torch.tensor([0.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0]),
     )
+
+
+def test_collect_transition_distillation_dataset_switches_teacher_and_command() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def __init__(self, value: float) -> None:
+            super().__init__()
+            self.value = float(value)
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full((obs.shape[0], 3), self.value, dtype=obs.dtype, device=obs.device)
+
+    env = _TransitionDistillEnv()
+    dataset = collect_transition_distillation_dataset_from_env(
+        env,
+        num_samples=8,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        walking_teacher_policy=ConstantPolicy(0.1),
+        standing_teacher_policy=ConstantPolicy(0.2),
+        rollout_policy=ConstantPolicy(-0.3),
+        pre_switch_steps=2,
+        walk_command=np.asarray([0.4, 0.0, 0.0], dtype=np.float32),
+    )
+
+    assert dataset.scenario_labels == ("walk_to_stop",) * 8
+    assert dataset.role_labels == ("walk_flat",) * 4 + ("stand",) * 4
+    assert dataset.command_intents == ("active",) * 4 + ("inactive",) * 4
+    assert dataset.transition_ages is not None
+    assert torch.equal(dataset.transition_ages, torch.tensor([-1, -1, -1, -1, 0, 0, 1, 1]))
+    assert dataset.teacher_actions is not None
+    assert torch.allclose(dataset.teacher_actions[:4], torch.full((4, 3), 0.1))
+    assert torch.allclose(dataset.teacher_actions[4:], torch.full((4, 3), 0.2))
+    assert dataset.command_before is not None
+    assert torch.allclose(dataset.command_before, torch.tensor([[0.4, 0.0, 0.0]] * 8))
+    assert dataset.command_after is not None
+    assert torch.allclose(dataset.command_after[:4], torch.tensor([[0.4, 0.0, 0.0]] * 4))
+    assert torch.equal(dataset.command_after[4:], torch.zeros(4, 3))
+    assert len(env.command_history) == 2
+    assert np.array_equal(
+        env.command_history[0],
+        np.full((2, 3), [0.4, 0.0, 0.0], dtype=np.float32),
+    )
+    assert np.array_equal(env.command_history[1], np.zeros((2, 3), dtype=np.float32))
+    assert dataset.metadata["switch_count"] == 2
+    assert dataset.metadata["post_switch_rows"] == 4
+
+
+def test_collect_transition_distillation_dataset_switches_rollout_expert() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def __init__(self, value: float) -> None:
+            super().__init__()
+            self.value = float(value)
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full((obs.shape[0], 3), self.value, dtype=obs.dtype, device=obs.device)
+
+    env = _TransitionDistillEnv()
+    dataset = collect_transition_distillation_dataset_from_env(
+        env,
+        num_samples=8,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        walking_teacher_policy=ConstantPolicy(0.1),
+        standing_teacher_policy=ConstantPolicy(0.2),
+        rollout_policies_by_intent={
+            "active": ConstantPolicy(0.3),
+            "inactive": ConstantPolicy(0.4),
+        },
+        pre_switch_steps=2,
+    )
+
+    assert dataset.metadata["rollout_policy"] == "command_intent_experts"
+    assert len(env.action_history) == 3
+    assert np.allclose(env.action_history[0], 0.3)
+    assert np.allclose(env.action_history[1], 0.3)
+    assert np.allclose(env.action_history[2], 0.4)
+
+
+def test_collect_transition_distillation_dataset_resets_done_rows() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 3), dtype=obs.dtype, device=obs.device)
+
+    env = _TransitionDistillEnv(done_at_step=3)
+    dataset = collect_transition_distillation_dataset_from_env(
+        env,
+        num_samples=10,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        walking_teacher_policy=ConstantPolicy(),
+        standing_teacher_policy=ConstantPolicy(),
+        rollout_policy=ConstantPolicy(),
+        pre_switch_steps=2,
+    )
+
+    assert dataset.num_samples == 10
+    assert dataset.metadata["done_seen_samples"] == 1
+    assert env.reset_calls >= 2
+    assert dataset.transition_ages is not None
+    assert torch.any(dataset.transition_ages == -1)
+    assert torch.any(dataset.transition_ages >= 0)
+
+
+def test_collect_transition_distillation_dataset_enforces_post_switch_horizon() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 3), dtype=obs.dtype, device=obs.device)
+
+    with pytest.raises(ValueError, match="minimum=10"):
+        collect_transition_distillation_dataset_from_env(
+            _TransitionDistillEnv(),
+            num_samples=8,
+            expected_student_obs_dim=8,
+            expected_teacher_obs_dim=8,
+            walking_teacher_policy=ConstantPolicy(),
+            standing_teacher_policy=ConstantPolicy(),
+            rollout_policy=ConstantPolicy(),
+            pre_switch_steps=2,
+            min_post_switch_steps=3,
+        )
+
+    dataset = collect_transition_distillation_dataset_from_env(
+        _TransitionDistillEnv(),
+        num_samples=10,
+        expected_student_obs_dim=8,
+        expected_teacher_obs_dim=8,
+        walking_teacher_policy=ConstantPolicy(),
+        standing_teacher_policy=ConstantPolicy(),
+        rollout_policy=ConstantPolicy(),
+        pre_switch_steps=2,
+        min_post_switch_steps=3,
+    )
+
+    assert dataset.metadata["min_post_switch_steps"] == 3
+    assert dataset.metadata["max_post_switch_age"] == 2
+
+
+def test_collect_distillation_dataset_from_env_attaches_role_label() -> None:
+    from unilab.algos.torch.distill import collect_distillation_dataset_from_env
+
+    dataset = collect_distillation_dataset_from_env(
+        _FakeDistillEnv(),
+        num_samples=3,
+        expected_student_obs_dim=7,
+        expected_teacher_obs_dim=8,
+        teacher_obs_key="obs",
+        student_projection="drop_index",
+        student_drop_index=3,
+        action_mode="zero",
+        role_label="walk_flat",
+    )
+
+    assert dataset.role_labels == ("walk_flat", "walk_flat", "walk_flat")
+    assert dataset.metadata["role_label"] == "walk_flat"
 
 
 def test_collect_distillation_dataset_from_env_pads_teacher_obs_tail() -> None:
@@ -2247,6 +2768,114 @@ def test_offline_distillation_run_balances_command_intent_batches() -> None:
     )
     assert result.last_balance_label_counts == {"inactive": 2, "active": 2}
     assert result.samples_seen == 8
+
+
+def test_offline_distillation_run_applies_scenario_quotas() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    torch.manual_seed(43)
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    scenario_labels = ("walk_flat",) * 10 + ("static_stand",) * 10 + ("walk_to_stop",) * 10
+    role_labels = ("walk_flat",) * 10 + ("stand",) * 20
+    command_intents = ("active",) * 10 + ("inactive",) * 20
+    transition_ages = torch.full((30,), -1, dtype=torch.int64)
+    transition_ages[20:] = 0
+    command_before = torch.zeros(30, 3)
+    command_before[:10] = 0.4
+    command_after = torch.zeros(30, 3)
+    dataset = build_distillation_dataset(
+        torch.randn(30, 5),
+        torch.empty(30, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(30, 3),
+        role_labels=role_labels,
+        command_intents=command_intents,
+        scenario_labels=scenario_labels,
+        transition_ages=transition_ages,
+        command_before=command_before,
+        command_after=command_after,
+    )
+
+    result = run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=20,
+        max_updates=1,
+        balance_key="scenario",
+        balanced_labels=("walk_flat", "static_stand", "walk_to_stop"),
+        balance_quotas={"walk_flat": 0.5, "static_stand": 0.25, "walk_to_stop": 0.25},
+        seed=17,
+    )
+
+    assert result.batch_label_counts == (
+        {"walk_flat": 10, "static_stand": 5, "walk_to_stop": 5},
+    )
+    assert result.last_balance_label_counts == {
+        "walk_flat": 10,
+        "static_stand": 5,
+        "walk_to_stop": 5,
+    }
+
+
+def test_offline_distillation_run_enforces_transition_replay_budget() -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(10, 5),
+        torch.empty(10, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(10, 3),
+        role_labels=("walk_flat",) * 4 + ("stand",) * 4 + ("stand",) * 2,
+        command_intents=("active",) * 4 + ("inactive",) * 6,
+        scenario_labels=("walk_flat",) * 4
+        + ("static_stand",) * 4
+        + ("walk_to_stop",) * 2,
+        transition_ages=torch.tensor([-1] * 8 + [0, 1], dtype=torch.int64),
+        command_before=torch.tensor([[0.4, 0.0, 0.0]] * 4 + [[0.0, 0.0, 0.0]] * 6),
+        command_after=torch.zeros(10, 3),
+    )
+
+    with pytest.raises(ValueError, match="required_updates=3"):
+        run_offline_distillation_updates(
+            trainer,
+            dataset,
+            batch_size=10,
+            max_updates=2,
+            balance_key="scenario",
+            balanced_labels=("walk_flat", "static_stand", "walk_to_stop"),
+            balance_quotas={
+                "walk_flat": 0.4,
+                "static_stand": 0.4,
+                "walk_to_stop": 0.2,
+            },
+            min_balanced_replay_passes=3,
+            min_balanced_replay_labels=("walk_to_stop",),
+        )
 
 
 def test_offline_distillation_run_balanced_sampler_fails_closed() -> None:

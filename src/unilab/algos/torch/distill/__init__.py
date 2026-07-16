@@ -3,13 +3,19 @@
 from .checkpoint import load_distillation_checkpoint, save_distillation_checkpoint
 from .collector import (
     collect_distillation_dataset_from_env,
+    collect_transition_distillation_dataset_from_env,
     command_active_mask,
     project_student_obs,
     project_teacher_obs,
 )
-from .dagger import IterativeDaggerRunResult, run_iterative_dagger_updates
+from .dagger import (
+    IterativeDaggerRunResult,
+    resolve_command_intent_rollout_policies,
+    run_iterative_dagger_updates,
+)
 from .data import (
     DistillationTensorDataset,
+    annotate_distillation_dataset_scenario,
     build_distillation_dataset,
     build_multitask_distillation_dataset,
     load_distillation_dataset,
@@ -47,6 +53,7 @@ from .workflow import (
     RoleArtifactPreflight,
     RoleArtifactSpec,
     WorkflowDatasetSource,
+    WorkflowScenarioSpec,
     adopt_legacy_role_artifact,
     config_fingerprint,
     create_role_artifact_manifest,
@@ -71,9 +78,11 @@ __all__ = [
     "RoleArtifactPreflight",
     "RoleArtifactSpec",
     "WorkflowDatasetSource",
+    "WorkflowScenarioSpec",
     "adopt_legacy_role_artifact",
     "DistillationTeacherCheckpointInfo",
     "DistillationTensorDataset",
+    "annotate_distillation_dataset_scenario",
     "IterativeDaggerRunResult",
     "LoadedTeacherPolicy",
     "LoadedDistillationStudentPolicy",
@@ -86,6 +95,7 @@ __all__ = [
     "build_distillation_dataset",
     "build_multitask_distillation_dataset",
     "collect_distillation_dataset_from_env",
+    "collect_transition_distillation_dataset_from_env",
     "config_fingerprint",
     "create_role_artifact_manifest",
     "command_active_mask",
@@ -101,6 +111,7 @@ __all__ = [
     "moe_diagnostics_to_dict",
     "project_student_obs",
     "project_teacher_obs",
+    "resolve_command_intent_rollout_policies",
     "preflight_role_artifact",
     "preflight_role_artifacts",
     "run_offline_distillation_updates",

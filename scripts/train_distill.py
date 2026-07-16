@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -23,15 +24,18 @@ from unilab.algos.torch.distill import (
     MoEStudentPolicy,
     RoleArtifactSpec,
     WorkflowDatasetSource,
+    WorkflowScenarioSpec,
     adopt_legacy_role_artifact,
     build_multitask_distillation_dataset,
     collect_distillation_dataset_from_env,
+    collect_transition_distillation_dataset_from_env,
     fork_workflow_run,
     load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
+    resolve_command_intent_rollout_policies,
     run_bootstrap_workflow,
     run_iterative_dagger_updates,
     run_multirole_dagger_workflow,
@@ -59,6 +63,42 @@ def _workflow_role_entries(cfg: DictConfig) -> list[dict[str, Any]]:
     if not isinstance(entries, list) or not entries:
         raise ValueError("training.workflow.roles must be a non-empty list")
     return [dict(cast(dict[str, Any], entry)) for entry in entries]
+
+
+def _workflow_scenario_specs(
+    cfg: DictConfig,
+    role_names: set[str],
+) -> tuple[WorkflowScenarioSpec, ...] | None:
+    entries = OmegaConf.to_container(
+        OmegaConf.select(cfg, "training.workflow.scenarios", default=[]),
+        resolve=True,
+    )
+    if entries in (None, []):
+        return None
+    if not isinstance(entries, list):
+        raise ValueError("training.workflow.scenarios must be a list")
+    specs: list[WorkflowScenarioSpec] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("every workflow scenario entry must be a mapping")
+        name = str(entry.get("name", entry.get("scenario", "")))
+        source_roles = entry.get("source_roles")
+        if source_roles is None and entry.get("role") not in (None, ""):
+            source_roles = [entry["role"]]
+        specs.append(
+            WorkflowScenarioSpec(
+                name=name,
+                kind=str(entry.get("kind", "role")),
+                source_roles=tuple(str(role) for role in (source_roles or ())),
+                quota=float(entry.get("quota", 1.0)),
+            )
+        )
+    missing = sorted(
+        {role for spec in specs for role in spec.source_roles} - set(role_names)
+    )
+    if missing:
+        raise ValueError(f"workflow scenarios reference unknown roles: {missing}")
+    return tuple(specs)
 
 
 def _workflow_path(value: Any, *, root: Path = ROOT_DIR) -> Path:
@@ -424,6 +464,26 @@ def _distill_runtime_cfg(
         "offline_balanced_labels": list(
             OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
         ),
+        "offline_balance_quotas": dict(
+            OmegaConf.to_container(
+                OmegaConf.select(cfg, "training.offline_balance_quotas", default={}),
+                resolve=True,
+            )
+        ),
+        "offline_min_balanced_replay_passes": int(
+            OmegaConf.select(
+                cfg,
+                "training.offline_min_balanced_replay_passes",
+                default=0,
+            )
+        ),
+        "offline_min_balanced_replay_labels": list(
+            OmegaConf.select(
+                cfg,
+                "training.offline_min_balanced_replay_labels",
+                default=[],
+            )
+        ),
         **_student_runtime_cfg(cfg),
         "teacher_obs_dim": int(cfg.teacher.obs_dim),
     }
@@ -696,6 +756,26 @@ def run_offline_dataset_update(
         balance_key=str(OmegaConf.select(cfg, "training.offline_balance_key", default="none")),
         balanced_labels=list(
             OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
+        ),
+        balance_quotas=dict(
+            OmegaConf.to_container(
+                OmegaConf.select(cfg, "training.offline_balance_quotas", default={}),
+                resolve=True,
+            )
+        ),
+        min_balanced_replay_passes=int(
+            OmegaConf.select(
+                cfg,
+                "training.offline_min_balanced_replay_passes",
+                default=0,
+            )
+        ),
+        min_balanced_replay_labels=list(
+            OmegaConf.select(
+                cfg,
+                "training.offline_min_balanced_replay_labels",
+                default=[],
+            )
         ),
     )
     return _probe_result(
@@ -1204,6 +1284,7 @@ def run_collect_dataset(
                 OmegaConf.select(cfg, "training.collect_command_yaw_threshold", default=0.05)
             ),
             max_env_steps=None if collect_max_env_steps is None else int(collect_max_env_steps),
+            role_label=OmegaConf.select(cfg, "training.collect_role_label"),
             metadata=metadata,
         )
         _require_collected_command_intent_contract(cfg, dataset)
@@ -1444,6 +1525,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             )
         )
 
+    scenario_specs = _workflow_scenario_specs(cfg, {spec.role for spec in specs})
     if bool(
         OmegaConf.select(cfg, "training.workflow.adopt_legacy_artifacts", default=False)
     ):
@@ -1453,14 +1535,32 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
 
     def collect_role(spec: RoleArtifactSpec) -> int:
         spec.dataset_path.parent.mkdir(parents=True, exist_ok=True)
-        result = run_collect_dataset(role_cfgs[spec.role], dataset_path=spec.dataset_path)
+        role_cfg = OmegaConf.create(OmegaConf.to_container(role_cfgs[spec.role], resolve=True))
+        role_cfg.training.collect_role_label = spec.role
+        result = run_collect_dataset(role_cfg, dataset_path=spec.dataset_path)
         return int(result["dataset_num_samples"])
 
     def assemble_roles(dataset_paths: tuple[Path, ...], output_path: Path) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         assembly_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        role_scenarios = {
+            scenario.source_roles[0]: scenario.name
+            for scenario in (scenario_specs or ())
+            if scenario.kind == "role"
+        }
         assembly_cfg.training.multitask_sources = [
-            {"path": str(path), "role": spec.role}
+            {
+                "path": str(path),
+                "role": spec.role,
+                **(
+                    {
+                        "scenario": role_scenarios[spec.role],
+                        "preserve_row_role_labels": True,
+                    }
+                    if spec.role in role_scenarios
+                    else {}
+                ),
+            }
             for path, spec in zip(dataset_paths, specs, strict=True)
         ]
         assembly_cfg.training.multitask_expected_student_obs_dim = specs[0].student_obs_dim
@@ -1509,6 +1609,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             collect_role=collect_role,
             assemble_roles=assemble_roles,
             update_student=update_student,
+            scenario_specs=scenario_specs,
         )
 
     def collect_dagger_role(
@@ -1522,6 +1623,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         )
         role_cfg.training.collect_action_mode = "student_policy"
         role_cfg.training.collect_rollout_checkpoint_path = str(checkpoint_path)
+        role_cfg.training.collect_role_label = output_spec.role
         role_cfg.training.collect_num_samples = int(
             OmegaConf.select(
                 cfg,
@@ -1533,6 +1635,135 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         collected = run_collect_dataset(role_cfg, dataset_path=output_path)
         return int(collected["dataset_num_samples"])
 
+    def collect_dagger_scenario(
+        scenario: WorkflowScenarioSpec,
+        checkpoint_path: Path,
+        _iteration: int,
+        output_path: Path,
+    ) -> int:
+        if scenario.kind == "role":
+            role_spec = next(spec for spec in specs if spec.role == scenario.source_roles[0])
+            return collect_dagger_role(
+                replace(role_spec, dataset_path=output_path),
+                checkpoint_path,
+                _iteration,
+                output_path,
+            )
+        if scenario.name != "walk_to_stop":
+            raise ValueError(f"unsupported transition workflow scenario: {scenario.name!r}")
+        if set(("walk_flat", "stand")) - set(role_cfgs):
+            raise ValueError("walk_to_stop scenario requires walk_flat and stand role owners")
+        device = _distill_device(cfg)
+        walk_cfg = role_cfgs["walk_flat"]
+        stand_cfg = role_cfgs["stand"]
+        loaded_student = load_distillation_student_policy(checkpoint_path, device=device)
+        student = loaded_student.policy
+        rollout_policy: torch.nn.Module | None = student
+        rollout_policies_by_intent: dict[str, torch.nn.Module] | None = None
+        rollout_policy_metadata: dict[str, Any] = {}
+        if isinstance(student, MoEStudentPolicy):
+            rollout_policies_by_intent, expert_targets = (
+                resolve_command_intent_rollout_policies(
+                    student,
+                    loaded_student.distill_runtime_cfg,
+                )
+            )
+            rollout_policy = None
+            rollout_policy_metadata = {
+                "rollout_policy_expert_targets": expert_targets,
+                "rollout_policy_source": "checkpoint_command_intent_experts",
+            }
+        walking_teacher = load_sac_teacher_policy(
+            walk_cfg.teacher.checkpoint_path,
+            build_teacher_spec(walk_cfg),
+            device=device,
+        )
+        standing_teacher = load_sac_teacher_policy(
+            stand_cfg.teacher.checkpoint_path,
+            build_teacher_spec(stand_cfg),
+            device=device,
+        )
+        ensure_registries()
+        env = create_env(
+            walk_cfg,
+            num_envs=int(
+                OmegaConf.select(cfg, "training.workflow.collect_num_envs", default=64)
+            ),
+            env_cfg_override=BackendAdapter(
+                walk_cfg,
+                root_dir=ROOT_DIR,
+                algo_name="distill",
+            ).build_task_env_cfg_override(),
+            sim_backend=str(walk_cfg.training.sim_backend),
+            task_name=str(walk_cfg.training.task_name),
+        )
+        try:
+            dataset = collect_transition_distillation_dataset_from_env(
+                env,
+                num_samples=int(
+                    OmegaConf.select(
+                        cfg,
+                        "training.workflow.dagger_samples_per_role",
+                        default=65536,
+                    )
+                ),
+                expected_student_obs_dim=int(walk_cfg.student.obs_dim),
+                expected_teacher_obs_dim=int(walk_cfg.teacher.obs_dim),
+                walking_teacher_policy=walking_teacher,
+                standing_teacher_policy=standing_teacher,
+                rollout_policy=rollout_policy,
+                rollout_policies_by_intent=rollout_policies_by_intent,
+                pre_switch_steps=int(
+                    OmegaConf.select(
+                        cfg,
+                        "training.workflow.transition_pre_switch_steps",
+                        default=8,
+                    )
+                ),
+                min_post_switch_steps=int(
+                    OmegaConf.select(
+                        cfg,
+                        "training.workflow.transition_min_post_switch_steps",
+                        default=0,
+                    )
+                ),
+                walk_command=tuple(
+                    float(value)
+                    for value in OmegaConf.select(
+                        cfg,
+                        "training.workflow.transition_walk_command",
+                        default=[0.4, 0.0, 0.0],
+                    )
+                ),
+                teacher_obs_key=str(walk_cfg.training.collect_teacher_obs_key),
+                teacher_projection=str(walk_cfg.training.collect_teacher_projection),
+                student_projection=str(walk_cfg.training.collect_student_projection),
+                student_drop_index=OmegaConf.select(
+                    walk_cfg,
+                    "training.collect_student_drop_index",
+                ),
+                command_info_key=str(walk_cfg.training.collect_command_info_key),
+                max_env_steps=int(
+                    OmegaConf.select(
+                        cfg,
+                        "training.workflow.transition_max_env_steps",
+                        default=0,
+                    )
+                )
+                or None,
+                metadata={
+                    "workflow_scenario": scenario.name,
+                    **rollout_policy_metadata,
+                },
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            save_distillation_dataset(output_path, dataset)
+            return dataset.num_samples
+        finally:
+            close = getattr(env, "close", None)
+            if callable(close):
+                close()
+
     def aggregate_dagger_sources(
         sources: tuple[WorkflowDatasetSource, ...],
         output_path: Path,
@@ -1540,7 +1771,19 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         assembly_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
         assembly_cfg.training.multitask_sources = [
-            {"path": str(source.path), "role": source.role} for source in sources
+            {
+                "path": str(source.path),
+                "role": source.role,
+                **(
+                    {
+                        "scenario": source.scenario,
+                        "preserve_row_role_labels": source.preserve_row_role_labels,
+                    }
+                    if source.scenario is not None
+                    else {}
+                ),
+            }
+            for source in sources
         ]
         assembly_cfg.training.multitask_expected_student_obs_dim = specs[0].student_obs_dim
         assembly_cfg.training.multitask_expected_teacher_obs_dim = specs[0].teacher_obs_dim
@@ -1561,8 +1804,31 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             OmegaConf.select(cfg, "training.workflow.dagger_balance_key", default="role")
         )
         update_cfg.training.offline_balanced_labels = list(
-            OmegaConf.select(cfg, "training.workflow.dagger_balanced_labels", default=[])
+            (
+                [scenario.name for scenario in scenario_specs]
+                if scenario_specs is not None
+                else OmegaConf.select(cfg, "training.workflow.dagger_balanced_labels", default=[])
+            )
         )
+        if scenario_specs is not None:
+            update_cfg.training.offline_balance_key = "scenario"
+            update_cfg.training.offline_balance_quotas = {
+                scenario.name: scenario.quota for scenario in scenario_specs
+            }
+            update_cfg.training.offline_min_balanced_replay_passes = int(
+                OmegaConf.select(
+                    cfg,
+                    "training.workflow.dagger_min_transition_replay_passes",
+                    default=0,
+                )
+            )
+            update_cfg.training.offline_min_balanced_replay_labels = list(
+                OmegaConf.select(
+                    cfg,
+                    "training.workflow.dagger_min_transition_replay_labels",
+                    default=["walk_to_stop"],
+                )
+            )
         updates = int(
             OmegaConf.select(
                 cfg,
@@ -1593,6 +1859,8 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         collect_role=collect_dagger_role,
         aggregate_datasets=aggregate_dagger_sources,
         update_student=update_dagger_student,
+        scenario_specs=scenario_specs,
+        collect_scenario=collect_dagger_scenario if scenario_specs is not None else None,
     )
     return {
         "distill_source": "single_entry_workflow",

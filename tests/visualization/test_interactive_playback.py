@@ -103,6 +103,56 @@ def test_playback_session_advance_respects_pause_and_single_step() -> None:
     assert session.advance(controls) is False
 
 
+def test_rt2_playback_session_set_external_command_refreshes_observation() -> None:
+    class FakeEnv:
+        def __init__(self) -> None:
+            self.refresh_calls = 0
+            self.state = SimpleNamespace(
+                info={"commands": np.zeros((1, 3), dtype=np.float32)},
+                obs={"obs": np.zeros((1, 4), dtype=np.float32)},
+            )
+
+        def refresh_state(self) -> None:
+            self.refresh_calls += 1
+            self.state.obs["obs"][:, :3] = self.state.info["commands"][:, :3]
+
+        def get_physics_state_snapshot(self):
+            return np.zeros((1, 4), dtype=np.float32)
+
+    class FakeWrapper:
+        def __init__(self, env: FakeEnv) -> None:
+            self.env = env
+
+        def reset(self):
+            return torch.zeros((1, 4), dtype=torch.float32), {}
+
+        def get_observations(self):
+            return torch.as_tensor(self.env.state.obs["obs"])
+
+        def step(self, actions):
+            return torch.zeros((1, 4), dtype=torch.float32), torch.zeros((1,)), False, {}
+
+    env = FakeEnv()
+    session = RslRlPlaybackSession(
+        env=env,
+        wrapped_env=FakeWrapper(env),
+        device="cpu",
+        action_mode="zero",
+        policy=None,
+        num_envs=1,
+    )
+    session.reset()
+    session.set_external_command(np.asarray([0.2, 0.0, 0.0], dtype=np.float32))
+    print(
+        "[RT-2 command_sync_probe] "
+        f"refresh_calls={env.refresh_calls} "
+        f"session_obs_command={session.obs[0, :3].tolist()}"
+    )
+
+    assert env.refresh_calls == 1
+    torch.testing.assert_close(session.obs[0, :3], torch.tensor([0.2, 0.0, 0.0]))
+
+
 def test_create_rsl_rl_playback_session_loads_checkpoint_and_runner_log_dir() -> None:
     env = SimpleNamespace(
         obs_groups_spec={"obs": 5},
@@ -629,6 +679,127 @@ def test_distill_playback_hard_routes_moe_by_command_intent(tmp_path: Path) -> N
     assert torch.allclose(captured["actions"], torch.full((1, 2), 0.25))
     assert getattr(session.policy, "_unilab_distill_last_command_intents") == ("active",)
     assert getattr(session.policy, "_unilab_distill_last_expected_experts") == (0,)
+
+
+def test_rt1_playback_probe_exposes_command_observation_skew(tmp_path: Path) -> None:
+    """Expose route=active while the session still feeds inactive obs."""
+
+    from unilab.algos.torch.distill import MoEStudentPolicy, save_distillation_checkpoint
+
+    checkpoint_path = tmp_path / "moe_student.pt"
+    student = MoEStudentPolicy(
+        obs_dim=4,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    with torch.no_grad():
+        for param in student.parameters():
+            param.zero_()
+        student.router[-1].bias.copy_(torch.tensor([5.0, -5.0]))
+        student.experts[0].net[-1].weight[0, 0] = 1.0
+    save_distillation_checkpoint(
+        checkpoint_path,
+        student=student,
+        agent_steps=8,
+        teacher_metadata={"task_name": "G1WalkFlat"},
+        distill_runtime_cfg={
+            "student_model_type": "moe",
+            "student_obs_dim": 4,
+            "student_action_dim": 2,
+            "student_num_experts": 2,
+            "student_expert_hidden_dims": [],
+            "student_router_hidden_dims": [],
+            "student_activation": "elu",
+            "student_squash_action": False,
+            "student_routing_mode": "soft",
+            "student_router_temperature": 1.0,
+            "command_intent_loss_coef": 0.0,
+            "command_intent_expert_targets": {"active": 0, "inactive": 1},
+            "expert_behavior_loss_source": "command_intent",
+        },
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeEnv:
+        action_space = SimpleNamespace(
+            shape=(2,),
+            low=np.full((2,), -1.0),
+            high=np.full((2,), 1.0),
+        )
+
+        def __init__(self) -> None:
+            self.state = SimpleNamespace(
+                info={"commands": np.zeros((1, 3), dtype=np.float32)}
+            )
+
+        def get_physics_state_snapshot(self):
+            return np.zeros((1, 4), dtype=np.float32)
+
+    class FakeWrapper:
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str):
+            self.env = env
+
+        def reset(self):
+            return torch.zeros((1, 4), dtype=torch.float32), {}
+
+        def step(self, actions):
+            captured["actions"] = actions.detach().clone()
+            return torch.zeros((1, 4), dtype=torch.float32), torch.zeros((1,)), False, {}
+
+    deps = {
+        "resolve_checkpoint": lambda playback_cfg, cfg, root_dir: checkpoint_path,
+        "create_env": lambda cfg, *, num_envs: FakeEnv(),
+        "wrapper_cls": FakeWrapper,
+    }
+    cfg = SimpleNamespace(
+        training=SimpleNamespace(task_name="G1WalkFlat"),
+        interactive=SimpleNamespace(
+            distill_command_routing="hard",
+            distill_command_xy_threshold=0.05,
+            distill_command_yaw_threshold=0.05,
+            distill_command_routing_bias=10.0,
+        ),
+        algo=SimpleNamespace(
+            command_intent_expert_targets={"active": 0, "inactive": 1},
+        ),
+    )
+    session, _policy_obs_mode, _checkpoint = create_distill_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run=str(checkpoint_path),
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            num_envs=1,
+        ),
+        cfg=cfg,
+        root_dir=tmp_path,
+        device="cpu",
+        deps=deps,
+        log=lambda message: None,
+    )
+
+    session.reset()
+    cached_obs_command = session.obs[0, :3].detach().clone()
+    session.env.state.info["commands"] = np.asarray([[0.2, 0.0, 0.0]], dtype=np.float32)
+    runtime_command = torch.tensor(session.env.state.info["commands"], dtype=torch.float32)
+    session.step_once()
+    print(
+        "[RT-1 command_obs_probe] "
+        f"routing={getattr(session.policy, '_unilab_distill_last_command_intents')} "
+        f"runtime_command={runtime_command[0].tolist()} "
+        f"cached_obs_command={cached_obs_command.tolist()} "
+        f"action={captured['actions'][0].tolist()}"
+    )
+
+    assert getattr(session.policy, "_unilab_distill_last_command_intents") == ("active",)
+    assert not torch.allclose(cached_obs_command, runtime_command[0])
+    assert torch.allclose(captured["actions"][0], torch.zeros(2))
 
 
 def test_distill_playback_resolves_explicit_student_checkpoint_path(

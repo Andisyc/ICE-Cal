@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,26 @@ def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) ->
             if dataset.command_intents is None
             else tuple(dataset.command_intents[int(index)] for index in indices.detach().cpu())
         ),
+        scenario_labels=(
+            None
+            if dataset.scenario_labels is None
+            else tuple(dataset.scenario_labels[int(index)] for index in indices.detach().cpu())
+        ),
+        transition_ages=(
+            None
+            if dataset.transition_ages is None
+            else dataset.transition_ages.index_select(0, indices)
+        ),
+        command_before=(
+            None
+            if dataset.command_before is None
+            else dataset.command_before.index_select(0, indices)
+        ),
+        command_after=(
+            None
+            if dataset.command_after is None
+            else dataset.command_after.index_select(0, indices)
+        ),
     )
 
 
@@ -84,8 +105,12 @@ def _labels_for_balance_key(
                 "offline balance_key='command_intent' requires dataset.command_intents"
             )
         return dataset.command_intents
+    if balance_key == "scenario":
+        if dataset.scenario_labels is None:
+            raise ValueError("offline balance_key='scenario' requires dataset.scenario_labels")
+        return dataset.scenario_labels
     raise ValueError(
-        "offline balance_key must be one of 'none', 'role', or 'command_intent', "
+        "offline balance_key must be one of 'none', 'role', 'command_intent', or 'scenario', "
         f"got {balance_key!r}"
     )
 
@@ -95,6 +120,7 @@ def _balanced_batch_indices(
     *,
     batch_size: int,
     balanced_labels: Sequence[str] | None,
+    balance_quotas: Mapping[str, float] | None,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, dict[str, int]]:
     selected_labels = (
@@ -123,12 +149,41 @@ def _balanced_batch_indices(
     if missing:
         raise ValueError(f"offline balanced sampler missing labels: {missing}")
 
-    base_quota = int(batch_size) // len(selected_labels)
-    remainder = int(batch_size) % len(selected_labels)
+    if balance_quotas:
+        quota_values = {str(label): float(value) for label, value in balance_quotas.items()}
+        unknown = sorted(set(quota_values) - set(selected_labels))
+        missing = sorted(set(selected_labels) - set(quota_values))
+        if unknown or missing:
+            raise ValueError(
+                "offline balance_quotas labels must match balanced_labels: "
+                f"unknown={unknown} missing={missing}"
+            )
+        if any(not math.isfinite(value) or value <= 0.0 for value in quota_values.values()):
+            raise ValueError("offline balance_quotas must contain finite positive weights")
+        total_weight = sum(quota_values[label] for label in selected_labels)
+        exact_quotas = [int(batch_size) * quota_values[label] / total_weight for label in selected_labels]
+        counts_list = [int(quota) for quota in exact_quotas]
+        if any(count < 1 for count in counts_list):
+            raise ValueError(
+                "offline balance_quotas must allocate at least one sample per label: "
+                f"batch_size={int(batch_size)} quotas={quota_values}"
+            )
+        remainder = int(batch_size) - sum(counts_list)
+        order = sorted(
+            range(len(selected_labels)),
+            key=lambda index: exact_quotas[index] - counts_list[index],
+            reverse=True,
+        )
+        for index in order[:remainder]:
+            counts_list[index] += 1
+    else:
+        base_quota = int(batch_size) // len(selected_labels)
+        remainder = int(batch_size) % len(selected_labels)
+        counts_list = [base_quota + (1 if index < remainder else 0) for index in range(len(selected_labels))]
     chunks: list[torch.Tensor] = []
     counts: dict[str, int] = {}
     for label_idx, label in enumerate(selected_labels):
-        quota = base_quota + (1 if label_idx < remainder else 0)
+        quota = counts_list[label_idx]
         source = label_to_indices[label]
         picks = torch.randint(
             int(source.numel()),
@@ -141,6 +196,83 @@ def _balanced_batch_indices(
     indices = torch.cat(chunks, dim=0)
     order = torch.randperm(int(indices.numel()), generator=generator)
     return indices.index_select(0, order), counts
+
+
+def _required_balanced_replay_updates(
+    labels: tuple[str, ...],
+    *,
+    batch_size: int,
+    balanced_labels: Sequence[str] | None,
+    balance_quotas: Mapping[str, float] | None,
+    replay_labels: Sequence[str],
+    replay_passes: int,
+) -> int:
+    """Return updates needed for expected replay passes of selected labels."""
+
+    if int(replay_passes) <= 0 or not replay_labels:
+        return 0
+    selected_labels = (
+        tuple(str(label) for label in balanced_labels)
+        if balanced_labels
+        else tuple(sorted(set(labels)))
+    )
+    if not selected_labels:
+        raise ValueError("offline replay requires at least one balanced label")
+    replay_label_set = {str(label) for label in replay_labels}
+    unknown = sorted(replay_label_set - set(selected_labels))
+    if unknown:
+        raise ValueError(
+            "offline replay labels must be present in balanced_labels: "
+            f"unknown={unknown}"
+        )
+    if not balance_quotas:
+        base = int(batch_size) // len(selected_labels)
+        remainder = int(batch_size) % len(selected_labels)
+        batch_counts = {
+            label: base + int(index < remainder)
+            for index, label in enumerate(selected_labels)
+        }
+    else:
+        quota_values = {str(label): float(value) for label, value in balance_quotas.items()}
+        unknown = sorted(set(quota_values) - set(selected_labels))
+        missing = sorted(set(selected_labels) - set(quota_values))
+        if unknown or missing:
+            raise ValueError(
+                "offline balance_quotas labels must match balanced_labels: "
+                f"unknown={unknown} missing={missing}"
+            )
+        if any(not math.isfinite(value) or value <= 0.0 for value in quota_values.values()):
+            raise ValueError("offline balance_quotas must contain finite positive weights")
+        total_weight = sum(quota_values[label] for label in selected_labels)
+        exact = {
+            label: int(batch_size * quota_values[label] / total_weight)
+            for label in selected_labels
+        }
+        remainder = int(batch_size) - sum(exact.values())
+        order = sorted(
+            selected_labels,
+            key=lambda label: batch_size * quota_values[label] / total_weight - exact[label],
+            reverse=True,
+        )
+        for label in order[:remainder]:
+            exact[label] += 1
+        batch_counts = exact
+
+    required = 0
+    for label in sorted(replay_label_set):
+        dataset_count = sum(value == label for value in labels)
+        samples_per_update = int(batch_counts[label])
+        if dataset_count <= 0 or samples_per_update <= 0:
+            raise ValueError(
+                "offline replay label has no usable samples: "
+                f"label={label!r} dataset_count={dataset_count} "
+                f"batch_count={samples_per_update}"
+            )
+        required = max(
+            required,
+            int(math.ceil(dataset_count * int(replay_passes) / samples_per_update)),
+        )
+    return required
 
 
 def run_offline_distillation_updates(
@@ -157,6 +289,9 @@ def run_offline_distillation_updates(
     seed: int | None = None,
     balance_key: str = "none",
     balanced_labels: Sequence[str] | None = None,
+    balance_quotas: Mapping[str, float] | None = None,
+    min_balanced_replay_passes: int = 0,
+    min_balanced_replay_labels: Sequence[str] | None = None,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -189,6 +324,23 @@ def run_offline_distillation_updates(
     last_route_entropy: float | None = None
     resolved_balance_key = str(balance_key)
     balance_labels = _labels_for_balance_key(dataset, resolved_balance_key)
+    replay_labels = tuple(str(label) for label in (min_balanced_replay_labels or ()))
+    required_updates = _required_balanced_replay_updates(
+        balance_labels or (),
+        batch_size=int(batch_size),
+        balanced_labels=balanced_labels,
+        balance_quotas=balance_quotas,
+        replay_labels=replay_labels,
+        replay_passes=int(min_balanced_replay_passes),
+    )
+    if int(max_updates) < required_updates:
+        raise ValueError(
+            "offline balanced replay budget is too small: "
+            f"max_updates={int(max_updates)} required_updates={required_updates} "
+            f"replay_labels={list(replay_labels)} "
+            f"replay_passes={int(min_balanced_replay_passes)} "
+            f"batch_size={int(batch_size)}"
+        )
     batch_label_counts: list[dict[str, int]] = []
     generator = torch.Generator()
     if seed is not None:
@@ -209,6 +361,7 @@ def run_offline_distillation_updates(
                 balance_labels,
                 batch_size=int(batch_size),
                 balanced_labels=balanced_labels,
+                balance_quotas=balance_quotas,
                 generator=generator,
             )
             batch = _indexed_batch(dataset, indices)

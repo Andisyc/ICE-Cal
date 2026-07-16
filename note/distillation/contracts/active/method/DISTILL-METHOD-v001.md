@@ -113,7 +113,7 @@ student policy.
   `training.dagger_updates_per_iteration` counts inner optimizer updates within
   each cycle.
 - Formal multi-role workflow semantics, role artifact reuse, resume, and fork
-  are owned by `DISTILL-TRAIN-v001`. The low-level single-role route remains a
+  are owned by `DISTILL-TRAIN-v002`. The low-level single-role route remains a
   diagnostic primitive and is not the default human workflow.
 - Forbidden: collecting with a soft mixture while training/deploying a pure
   expert; replacing prior DAgger evidence instead of aggregating it; treating a

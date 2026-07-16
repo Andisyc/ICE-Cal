@@ -50,6 +50,43 @@ class _FixedExpertRolloutPolicy(torch.nn.Module):
         return self.student.experts[self.expert_index](obs)
 
 
+def resolve_command_intent_rollout_policies(
+    student: MoEStudentPolicy,
+    runtime_cfg: Mapping[str, Any],
+) -> tuple[dict[str, torch.nn.Module], dict[str, int]]:
+    """Resolve deployment-aligned active/inactive expert modules for rollout."""
+
+    raw_targets = runtime_cfg.get("command_intent_expert_targets")
+    if not isinstance(raw_targets, Mapping):
+        raise ValueError(
+            "command-intent rollout requires command_intent_expert_targets"
+        )
+    missing_intents = {"active", "inactive"} - set(raw_targets)
+    if missing_intents:
+        raise ValueError(
+            "command-intent rollout targets are missing intents: "
+            f"{sorted(missing_intents)}"
+        )
+    expert_targets = {
+        intent: int(raw_targets[intent]) for intent in ("active", "inactive")
+    }
+    if any(
+        target < 0 or target >= int(student.num_experts)
+        for target in expert_targets.values()
+    ):
+        raise ValueError(
+            "command-intent rollout expert target out of range: "
+            f"targets={expert_targets} num_experts={int(student.num_experts)}"
+        )
+    return (
+        {
+            intent: student.experts[target]
+            for intent, target in expert_targets.items()
+        },
+        expert_targets,
+    )
+
+
 def _resolve_dagger_rollout_policy(
     trainer: BehaviorDistillationTrainer,
     *,

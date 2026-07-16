@@ -566,6 +566,48 @@ def test_g1_standing_reset_zeros_base_qvel_without_touching_walk_samples() -> No
     )
 
 
+def test_rt1_playback_reset_probe_exposes_active_walk_reset() -> None:
+    """Expose the reset distribution that playback inherits before RT-2."""
+
+    class _Spawn:
+        def apply_spawn(self, env_ids, qpos_xyz, *, yaw=None):
+            return qpos_xyz
+
+        def record_episode_start(self, env_ids, qpos_xyz) -> None:
+            pass
+
+    provider = G1WalkDomainRandomizationProvider()
+    commands = np.asarray([[0.2, 0.0, 0.0]], dtype=np.float32)
+    provider._sample_commands = lambda env, num_reset: commands.copy()  # type: ignore[method-assign]
+    env = SimpleNamespace(
+        cfg=SimpleNamespace(
+            commands=SimpleNamespace(heading_command=False),
+            gait_phase_init_mode="offset_phase",
+            reset_base_qvel_limit=0.5,
+            standing_reset_base_qvel_limit=0.0,
+            domain_rand=None,
+        ),
+        _init_qpos=np.zeros((36,), dtype=np.float32),
+        _init_qvel=np.zeros((35,), dtype=np.float32),
+        _spawn=_Spawn(),
+        _num_action=29,
+    )
+
+    plan = provider.build_reset_plan(env, np.asarray([0], dtype=np.int32))
+    reset_command = plan.info_updates["commands"][0]
+    gait_enabled = float(plan.info_updates["gait_enabled"][0])
+    base_qvel_norm = float(np.linalg.norm(plan.qvel[0, :6]))
+    print(
+        "[RT-1 reset_probe] "
+        f"command={reset_command.tolist()} gait_enabled={gait_enabled:.1f} "
+        f"base_qvel_norm={base_qvel_norm:.6f}"
+    )
+
+    np.testing.assert_allclose(reset_command, commands[0])
+    assert gait_enabled == 1.0
+    assert base_qvel_norm > 0.0
+
+
 def test_standing_reset_observation_is_idle_consistent() -> None:
     reward_cfg = _reward_config(
         freeze_phase_in_stand_mode=True,

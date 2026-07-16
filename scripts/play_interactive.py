@@ -67,6 +67,7 @@ from unilab.visualization.interactive_playback import (
     PlaybackControls,
     RslRlPlaybackConfig,
     _actor_input_dim_from_state_dict,
+    _apply_distill_playback_reset_contract,
     _load_playback_checkpoint,
     create_appo_playback_session,
     create_distill_playback_session,
@@ -1091,6 +1092,18 @@ def _build_keyboard_commander(env: Any, args) -> KeyboardCommander | None:
     return commander
 
 
+def _apply_playback_command(playback_session: Any, env: Any, command: np.ndarray) -> None:
+    setter = getattr(playback_session, "set_external_command", None)
+    if callable(setter):
+        setter(np.asarray(command, dtype=np.float32))
+        return
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    commands = info.get("commands") if isinstance(info, dict) else None
+    if isinstance(commands, np.ndarray) and commands.ndim == 2 and commands.shape[1] >= 3:
+        commands[:, :3] = np.asarray(command, dtype=commands.dtype)
+
+
 def _state_has_velocity_commands(env: Any) -> bool:
     state = getattr(env, "state", None)
     info = getattr(state, "info", None) if state is not None else None
@@ -1571,6 +1584,10 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
             env_cfg_override = _apply_checkpoint_env_contract(env_cfg_override, args)
         else:
             env_cfg_override = _backend_adapter(cfg, algo_name=algo).build_task_env_cfg_override()
+            if algo == "distill":
+                env_cfg_override = _apply_distill_playback_reset_contract(
+                    env_cfg_override, args.task
+                )
         try:
             return create_env(
                 cfg,
@@ -1734,6 +1751,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
                 "policy obs does not contain the velocity command."
             )
             return
+        playback_session.refresh_observation()
     controls = PlaybackControls(
         paused=bool(getattr(args, "start_paused", False)),
         speed=float(getattr(args, "speed", 1.0)),
@@ -1741,6 +1759,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
 
     commander = _build_keyboard_commander(env, args)
     if commander is not None:
+        _apply_playback_command(playback_session, env, commander.command)
         env.set_autoreset(False)
     trace_distill_actions = (
         algo == "distill"
@@ -1780,6 +1799,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
         elif commander is not None and keycode == _KEY_BACKSPACE:
             playback_session.reset()
             commander.zero()
+            _apply_playback_command(playback_session, env, commander.command)
             print("[play_interactive] reset (backspace)")
         elif commander is not None:
             _handle_command_key(commander, keycode)
@@ -1816,7 +1836,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
 
                 # Write the command before stepping so this step's obs follow it.
                 if commander is not None and env.state is not None:
-                    env.state.info["commands"][:] = commander.command
+                    _apply_playback_command(playback_session, env, commander.command)
 
                 advanced = playback_session.advance(controls)
 

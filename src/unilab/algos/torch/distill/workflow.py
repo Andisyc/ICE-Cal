@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import pickle
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -151,6 +153,43 @@ class BootstrapWorkflowResult:
 class WorkflowDatasetSource:
     path: Path
     role: str
+    scenario: str | None = None
+    preserve_row_role_labels: bool = False
+
+
+@dataclass(frozen=True)
+class WorkflowScenarioSpec:
+    name: str
+    kind: str
+    source_roles: tuple[str, ...]
+    quota: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", str(self.name))
+        object.__setattr__(self, "kind", str(self.kind))
+        object.__setattr__(self, "source_roles", tuple(str(role) for role in self.source_roles))
+        object.__setattr__(self, "quota", float(self.quota))
+        if not self.name:
+            raise ValueError("workflow scenario name must be non-empty")
+        if self.kind not in {"role", "transition"}:
+            raise ValueError(
+                "workflow scenario kind must be 'role' or 'transition', "
+                f"got {self.kind!r}"
+            )
+        if not self.source_roles:
+            raise ValueError(f"workflow scenario {self.name!r} requires source_roles")
+        if self.kind == "role" and len(self.source_roles) != 1:
+            raise ValueError("role workflow scenarios require exactly one source role")
+        if not math.isfinite(self.quota) or self.quota <= 0.0:
+            raise ValueError("workflow scenario quota must be finite and positive")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "source_roles": list(self.source_roles),
+            "quota": self.quota,
+        }
 
 
 @dataclass(frozen=True)
@@ -198,6 +237,24 @@ def create_role_artifact_manifest(
         owner_config_sha256=config_fingerprint(spec.owner_config),
         num_samples=int(num_samples),
     )
+
+
+def _validate_workflow_scenarios(
+    scenario_specs: Sequence[WorkflowScenarioSpec],
+    role_specs: Sequence[RoleArtifactSpec],
+) -> tuple[WorkflowScenarioSpec, ...]:
+    scenarios = tuple(scenario_specs)
+    names = [scenario.name for scenario in scenarios]
+    if len(names) != len(set(names)):
+        raise ValueError(f"workflow scenario names must be unique, got {names}")
+    roles = {spec.role for spec in role_specs}
+    for scenario in scenarios:
+        missing = sorted(set(scenario.source_roles) - roles)
+        if missing:
+            raise ValueError(
+                f"workflow scenario {scenario.name!r} references unknown roles: {missing}"
+            )
+    return scenarios
 
 
 def write_role_artifact_manifest(
@@ -274,7 +331,11 @@ def _expected_manifest_values(spec: RoleArtifactSpec) -> dict[str, Any]:
     }
 
 
-def preflight_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactPreflight:
+def preflight_role_artifact(
+    spec: RoleArtifactSpec,
+    *,
+    require_row_role_labels: bool = False,
+) -> RoleArtifactPreflight:
     if not spec.dataset_path.is_file():
         return RoleArtifactPreflight(
             role=spec.role,
@@ -326,6 +387,19 @@ def preflight_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactPreflight:
         mismatches.append("teacher_checkpoint_sha256")
     if file_sha256(spec.dataset_path) != manifest.dataset_sha256:
         mismatches.append("dataset_sha256")
+    if require_row_role_labels:
+        try:
+            dataset = load_distillation_dataset(
+                spec.dataset_path,
+                expected_student_obs_dim=spec.student_obs_dim,
+                expected_teacher_obs_dim=spec.teacher_obs_dim,
+                expected_teacher_action_dim=spec.teacher_action_dim,
+            )
+        except (OSError, TypeError, ValueError, KeyError, pickle.UnpicklingError):
+            mismatches.append("dataset_schema")
+        else:
+            if dataset.role_labels is None:
+                mismatches.append("role_labels")
     if mismatches:
         return RoleArtifactPreflight(
             role=spec.role,
@@ -344,11 +418,16 @@ def preflight_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactPreflight:
 
 def preflight_role_artifacts(
     specs: Sequence[RoleArtifactSpec],
+    *,
+    require_row_role_labels: bool = False,
 ) -> tuple[RoleArtifactPreflight, ...]:
     roles = [spec.role for spec in specs]
     if len(roles) != len(set(roles)):
         raise ValueError(f"workflow roles must be unique, got {roles}")
-    return tuple(preflight_role_artifact(spec) for spec in specs)
+    return tuple(
+        preflight_role_artifact(spec, require_row_role_labels=require_row_role_labels)
+        for spec in specs
+    )
 
 
 def adopt_legacy_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactManifest:
@@ -407,6 +486,7 @@ def run_bootstrap_workflow(
     collect_role: Callable[[RoleArtifactSpec], int],
     assemble_roles: Callable[[tuple[Path, ...], Path], int],
     update_student: Callable[[Path, Path], int],
+    scenario_specs: Sequence[WorkflowScenarioSpec] | None = None,
 ) -> BootstrapWorkflowResult:
     resolved_run_dir = Path(run_dir)
     manifest_path = resolved_run_dir / "run_manifest.json"
@@ -416,8 +496,19 @@ def run_bootstrap_workflow(
         )
     if not role_specs:
         raise ValueError("bootstrap workflow requires at least one role")
+    active_scenarios = (
+        None
+        if scenario_specs is None
+        else _validate_workflow_scenarios(scenario_specs, role_specs)
+    )
 
-    preflight = preflight_role_artifacts(role_specs)
+    require_row_role_labels = active_scenarios is not None and any(
+        scenario.kind == "role" for scenario in active_scenarios
+    )
+    preflight = preflight_role_artifacts(
+        role_specs,
+        require_row_role_labels=require_row_role_labels,
+    )
     blocked = [
         result
         for result in preflight
@@ -472,28 +563,40 @@ def run_bootstrap_workflow(
     role_artifacts = [
         asdict(_load_role_artifact_manifest(spec.manifest_path)) for spec in role_specs
     ]
+    scenario_by_role = {
+        scenario.source_roles[0]: scenario.name
+        for scenario in (active_scenarios or ())
+        if scenario.kind == "role"
+    }
+    bootstrap_sources = []
+    for spec in role_specs:
+        source = {"path": str(spec.dataset_path.resolve()), "role": spec.role}
+        if spec.role in scenario_by_role:
+            source["scenario"] = scenario_by_role[spec.role]
+            source["preserve_row_role_labels"] = True
+        bootstrap_sources.append(source)
+    manifest_payload = {
+        "manifest_version": 1,
+        "run_id": resolved_run_dir.name,
+        "mode": "fresh",
+        "stage": "BOOTSTRAP_COMPLETE",
+        "role_decisions": role_decisions,
+        "role_artifacts": role_artifacts,
+        "bootstrap_dataset_path": str(bootstrap_dataset_path.resolve()),
+        "bootstrap_dataset_sha256": file_sha256(bootstrap_dataset_path),
+        "bootstrap_num_samples": bootstrap_num_samples,
+        "bootstrap_checkpoint_path": str(checkpoint_path.resolve()),
+        "bootstrap_checkpoint_sha256": file_sha256(checkpoint_path),
+        "bootstrap_updates": bootstrap_updates,
+        "completed_dagger_iterations": 0,
+        "dagger_iterations": [],
+        "bootstrap_sources": bootstrap_sources,
+    }
+    if active_scenarios is not None:
+        manifest_payload["scenario_specs"] = [scenario.as_dict() for scenario in active_scenarios]
     _write_json_atomic(
         manifest_path,
-        {
-            "manifest_version": 1,
-            "run_id": resolved_run_dir.name,
-            "mode": "fresh",
-            "stage": "BOOTSTRAP_COMPLETE",
-            "role_decisions": role_decisions,
-            "role_artifacts": role_artifacts,
-            "bootstrap_dataset_path": str(bootstrap_dataset_path.resolve()),
-            "bootstrap_dataset_sha256": file_sha256(bootstrap_dataset_path),
-            "bootstrap_num_samples": bootstrap_num_samples,
-            "bootstrap_checkpoint_path": str(checkpoint_path.resolve()),
-            "bootstrap_checkpoint_sha256": file_sha256(checkpoint_path),
-            "bootstrap_updates": bootstrap_updates,
-            "completed_dagger_iterations": 0,
-            "dagger_iterations": [],
-            "bootstrap_sources": [
-                {"path": str(spec.dataset_path.resolve()), "role": spec.role}
-                for spec in role_specs
-            ],
-        },
+        manifest_payload,
     )
     return BootstrapWorkflowResult(
         run_dir=resolved_run_dir,
@@ -524,10 +627,26 @@ def _verified_current_checkpoint(manifest: Mapping[str, Any]) -> Path:
 
 def _manifest_sources(manifest: Mapping[str, Any]) -> list[WorkflowDatasetSource]:
     sources = [
-        WorkflowDatasetSource(path=Path(str(item["path"])), role=str(item["role"]))
+        WorkflowDatasetSource(
+            path=Path(str(item["path"])),
+            role=str(item["role"]),
+            scenario=item.get("scenario"),
+            preserve_row_role_labels=bool(item.get("preserve_row_role_labels", False)),
+        )
         for item in manifest.get("bootstrap_sources", [])
     ]
     for iteration in manifest.get("dagger_iterations", []):
+        if iteration.get("scenario_artifacts"):
+            sources.extend(
+                WorkflowDatasetSource(
+                    path=Path(str(item["dataset_path"])),
+                    role=str(item["source_roles"][0]),
+                    scenario=str(item["scenario"]),
+                    preserve_row_role_labels=True,
+                )
+                for item in iteration["scenario_artifacts"]
+            )
+            continue
         sources.extend(
             WorkflowDatasetSource(
                 path=Path(str(item["dataset_path"])),
@@ -549,6 +668,8 @@ def run_multirole_dagger_workflow(
     collect_role: Callable[[RoleArtifactSpec, Path, int, Path], int],
     aggregate_datasets: Callable[[tuple[WorkflowDatasetSource, ...], Path], int],
     update_student: Callable[[Path, Path, Path], int],
+    scenario_specs: Sequence[WorkflowScenarioSpec] | None = None,
+    collect_scenario: Callable[[WorkflowScenarioSpec, Path, int, Path], int] | None = None,
 ) -> DaggerWorkflowResult:
     resolved_run_dir = Path(run_dir)
     manifest_path = resolved_run_dir / "run_manifest.json"
@@ -557,12 +678,27 @@ def run_multirole_dagger_workflow(
     if target_iterations < 0:
         raise ValueError(f"target_iterations must be non-negative, got {target_iterations}")
     manifest = _load_json(manifest_path)
+    active_scenarios = (
+        None
+        if scenario_specs is None
+        else _validate_workflow_scenarios(scenario_specs, role_specs)
+    )
+    if active_scenarios is not None:
+        expected_scenarios = [scenario.as_dict() for scenario in active_scenarios]
+        if manifest.get("scenario_specs") != expected_scenarios:
+            raise ValueError("workflow scenario specs do not match run manifest")
     completed = int(manifest.get("completed_dagger_iterations", 0))
     if target_iterations < completed:
         raise ValueError(
             f"target_iterations {target_iterations} is below completed iterations {completed}"
         )
-    role_preflight = preflight_role_artifacts(role_specs)
+    require_row_role_labels = active_scenarios is not None and any(
+        scenario.kind == "role" for scenario in active_scenarios
+    )
+    role_preflight = preflight_role_artifacts(
+        role_specs,
+        require_row_role_labels=require_row_role_labels,
+    )
     not_reusable = [item for item in role_preflight if item.decision is not ArtifactDecision.REUSE]
     if not_reusable:
         details = ", ".join(
@@ -579,23 +715,71 @@ def run_multirole_dagger_workflow(
     for iteration in range(completed + 1, target_iterations + 1):
         iteration_dir = resolved_run_dir / "datasets" / f"dagger_iteration_{iteration}"
         role_artifacts: list[dict[str, Any]] = []
-        for spec in role_specs:
-            output_path = iteration_dir / f"{spec.role}.pt"
-            output_spec = replace(spec, dataset_path=output_path)
-            num_samples = int(
-                collect_role(output_spec, current_checkpoint, iteration, output_path)
-            )
-            if num_samples <= 0:
-                raise ValueError(
-                    f"DAgger collector for role {spec.role!r} returned {num_samples} samples"
+        scenario_artifacts: list[dict[str, Any]] = []
+        if active_scenarios is None:
+            for spec in role_specs:
+                output_path = iteration_dir / f"{spec.role}.pt"
+                output_spec = replace(spec, dataset_path=output_path)
+                num_samples = int(
+                    collect_role(output_spec, current_checkpoint, iteration, output_path)
                 )
-            artifact_manifest = create_role_artifact_manifest(
-                output_spec,
-                num_samples=num_samples,
-            )
-            write_role_artifact_manifest(output_spec.manifest_path, artifact_manifest)
-            role_artifacts.append(asdict(artifact_manifest))
-            cumulative_sources.append(WorkflowDatasetSource(output_path, spec.role))
+                if num_samples <= 0:
+                    raise ValueError(
+                        f"DAgger collector for role {spec.role!r} returned {num_samples} samples"
+                    )
+                artifact_manifest = create_role_artifact_manifest(
+                    output_spec,
+                    num_samples=num_samples,
+                )
+                write_role_artifact_manifest(output_spec.manifest_path, artifact_manifest)
+                role_artifacts.append(asdict(artifact_manifest))
+                cumulative_sources.append(WorkflowDatasetSource(output_path, spec.role))
+        else:
+            role_specs_by_name = {spec.role: spec for spec in role_specs}
+            if collect_scenario is None:
+                raise ValueError("scenario workflow requires collect_scenario callback")
+            for scenario in active_scenarios:
+                output_path = iteration_dir / f"{scenario.name}.pt"
+                num_samples = int(
+                    collect_scenario(scenario, current_checkpoint, iteration, output_path)
+                )
+                if num_samples <= 0:
+                    raise ValueError(
+                        f"DAgger collector for scenario {scenario.name!r} returned {num_samples} samples"
+                    )
+                if scenario.kind == "role":
+                    source_role = scenario.source_roles[0]
+                    output_spec = replace(
+                        role_specs_by_name[source_role],
+                        dataset_path=output_path,
+                    )
+                    artifact_manifest = create_role_artifact_manifest(
+                        output_spec,
+                        num_samples=num_samples,
+                    )
+                    write_role_artifact_manifest(output_spec.manifest_path, artifact_manifest)
+                    role_artifacts.append(asdict(artifact_manifest))
+                scenario_artifacts.append(
+                    {
+                        "scenario": scenario.name,
+                        "kind": scenario.kind,
+                        "source_roles": list(scenario.source_roles),
+                        "quota": scenario.quota,
+                        "dataset_path": str(output_path.resolve()),
+                        "dataset_sha256": file_sha256(output_path),
+                        "num_samples": num_samples,
+                        "input_checkpoint_path": str(current_checkpoint.resolve()),
+                        "input_checkpoint_sha256": file_sha256(current_checkpoint),
+                    }
+                )
+                cumulative_sources.append(
+                    WorkflowDatasetSource(
+                        output_path,
+                        scenario.source_roles[0],
+                        scenario=scenario.name,
+                        preserve_row_role_labels=True,
+                    )
+                )
 
         aggregate_path = (
             resolved_run_dir / "datasets" / f"dagger_iteration_{iteration}_aggregate.pt"
@@ -629,6 +813,8 @@ def run_multirole_dagger_workflow(
             "checkpoint_sha256": file_sha256(output_checkpoint),
             "updates": updates,
         }
+        if active_scenarios is not None:
+            iteration_record["scenario_artifacts"] = scenario_artifacts
         manifest.setdefault("dagger_iterations", []).append(iteration_record)
         manifest["completed_dagger_iterations"] = iteration
         manifest["stage"] = f"DAGGER_ITERATION_{iteration}_COMPLETE"
@@ -691,6 +877,7 @@ def fork_workflow_run(*, parent_run_dir: str | Path, run_dir: str | Path) -> Pat
         "bootstrap_updates": 0,
         "completed_dagger_iterations": 0,
         "dagger_iterations": [],
+        "scenario_specs": list(parent.get("scenario_specs", [])),
     }
     _write_json_atomic(manifest_path, payload)
     return manifest_path

@@ -63,6 +63,15 @@ class NpEnv(ABEnv):
     def state(self) -> Optional[NpEnvState]:
         return self._state
 
+    def refresh_state(self) -> NpEnvState:
+        """Recompute observations from the current physics without stepping."""
+
+        if self._state is None:
+            self.init_state()
+        assert self._state is not None
+        self._state = self.update_state(self._state)
+        return self._state
+
     @property
     def obs_groups_spec(self) -> dict[str, int]:
         """Return observation group dimensions, e.g. {"obs": 98, "critic": 101}.

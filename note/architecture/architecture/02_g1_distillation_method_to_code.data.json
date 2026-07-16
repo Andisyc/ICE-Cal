@@ -42,24 +42,25 @@
         {
           "id": "DT-MOD-WORKFLOW",
           "title": "Distillation Workflow",
-          "summary": "按角色复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
-          "owns": "artifact preflight manifest stage machine checkpoint lineage resume 与 fork",
+          "summary": "按角色与 scenario 复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
+          "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage resume 与 fork",
           "mustNot": "不加载大 tensor 来判断文件存在性, 不把 route pass 当作物理质量",
-          "objects": ["RoleArtifactSpec", "ArtifactDecision", "run_manifest.json", "WorkflowDatasetSource"],
+          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
           "files": [
-            {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","fork_workflow_run()"]},
+            {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
             {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]}
           ],
           "mainRoute": [
             "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",
-            "B2 run_bootstrap_workflow(): role decisions -> collected/reused role data + bootstrap checkpoint",
-            "B3 run_multirole_dagger_workflow(): student_k + all roles -> cumulative dataset + student_(k+1)",
-            "B4 run manifest commit: completed stage -> resumable identity chain"
+            "B2 WorkflowScenarioSpec: scenario roles + quota -> manifest contract",
+            "B3 run_bootstrap_workflow(): role decisions -> collected/reused role data + bootstrap checkpoint",
+            "B4 run_multirole_dagger_workflow(): student_k + scenarios -> cumulative dataset + student_(k+1)",
+            "B5 run manifest commit: completed stage -> resumable identity chain"
           ],
-          "mainRouteTitles": ["按角色判定 Artifact", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
+          "mainRouteTitles": ["按角色判定 Artifact", "定义 Scenario Quota", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
           "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查 iteration k+1 是否加载 iteration k checkpoint"],
           "tests": ["S1 hash/schema decisions", "S2 Bootstrap connectivity", "S2 DAgger resume/fork probe"],
-          "gap": "walk-to-stop transition scenario 与 physical acceptance owner 仍未实现"
+          "gap": "E27 已完成 real checkpoint formal workflow 与 manifest lineage; E28 physical acceptance blocked"
         }
       ]
     },
@@ -92,34 +93,35 @@
         {
           "id": "DT-MOD-COLLECTOR",
           "title": "Role Collector",
-          "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态",
-          "owns": "obs projection action source command filter done reset 与 collection metadata",
+          "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态; transition collector 作为独立场景 owner",
+          "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection 与 collection metadata",
           "mustNot": "不训练 student, 不把 finite action 当作物理质量",
-          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents"],
+          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after"],
           "files": [
-            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":282,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()"]},
+            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":282,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_set_transition_command_rows()"]},
             {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":989,"role":"collection connector","functions":["run_collect_dataset()"]}
           ],
           "mainRoute": [
             "B1 collector.py projection: env obs dict -> 98-D student/teacher rows",
             "B2 collector.py command mask: commands + thresholds -> selected intent rows",
             "B3 collector.py rollout/label policies: selected states -> teacher targets + executed actions",
-            "B4 build_distillation_dataset(): collected chunks -> persisted semantic dataset"
+            "B4 transition owner: student-state rows -> atomic active/zero command switch -> command-intent rollout expert -> role-labelled targets",
+            "B5 build_distillation_dataset(): collected chunks -> persisted semantic dataset"
           ],
-          "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "生成 Dataset"],
+          "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "执行 Transition Scenario", "生成 Dataset"],
           "review": ["检查 inactive 数据是否真的零指令", "检查 done/reset 后的行是否仍保持语义"],
           "tests": ["S1 projection/filter", "S2 teacher/student rollout", "S4 live collection"],
-          "gap": "transition-conditioned walk-to-stop collection 仍缺场景 owner"
+          "gap": "E27 已完成 real G1 transition collection; E28 student walk-to-stop physical gate failed; E32/E33 track rollout authority repair"
         },
         {
           "id": "DT-MOD-DATA",
           "title": "Distillation Dataset",
-          "summary": "验证 保存 加载并合并 role-labelled tensor evidence",
-          "owns": "tensor shape optional fields label preservation metadata 与 batch slicing",
+          "summary": "验证 保存 加载并合并 role-labelled 与 transition-labelled tensor evidence",
+          "owns": "tensor shape optional fields label preservation transition chronology metadata 与 batch slicing",
           "mustNot": "不改变 teacher action 或重新解释 command intent",
-          "objects": ["DistillationTensorDataset", "role_labels", "command_intents", "source metadata"],
+          "objects": ["DistillationTensorDataset", "role_labels", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "source metadata"],
           "files": [
-            {"id":"DT-SRC-006","path":"src/unilab/algos/torch/distill/data.py","sourceLine":148,"role":"dataset schema","functions":["DistillationTensorDataset","build_distillation_dataset()","build_multitask_distillation_dataset()"]},
+            {"id":"DT-SRC-006","path":"src/unilab/algos/torch/distill/data.py","sourceLine":148,"role":"dataset schema","functions":["DistillationTensorDataset","build_distillation_dataset()","annotate_distillation_dataset_scenario()","build_multitask_distillation_dataset()"]},
             {"id":"DT-SRC-007","path":"scripts/train_distill.py","sourceLine":622,"role":"multitask assembly connector","functions":["run_multitask_dataset_assembly()"]}
           ],
           "mainRoute": [
@@ -130,7 +132,7 @@
           "mainRouteTitles": ["验证 Dataset Schema", "持久化语义字段", "合并多角色数据"],
           "review": ["检查 98-D contract 与所有 source 一致", "确认 role 与 intent 在 roundtrip 后未丢失"],
           "tests": ["S1 schema/roundtrip", "S2 multitask merge"],
-          "gap": "通用 schema migration owner 尚未实现; 不兼容扩展会 fail closed"
+          "gap": "E27 real-artifact schema/collector/workflow merge passed; E28 physical candidate acceptance failed, incompatible extensions continue fail closed"
         }
       ]
     },
@@ -185,11 +187,11 @@
           "id": "DT-MOD-DAGGER",
           "title": "Student-State DAgger",
           "summary": "执行当前角色 expert 查询 teacher 并聚合历轮状态",
-          "owns": "fixed rollout expert iteration aggregation immediate updates 与 DAgger metadata",
+          "owns": "fixed and command-conditioned rollout expert iteration aggregation immediate updates 与 DAgger metadata",
           "mustNot": "不使用 soft mixture 代表 pure role expert, 不覆盖旧迭代数据",
           "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "samples_seen"],
           "files": [
-            {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":154,"role":"online DAgger owner","functions":["run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
+            {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":38,"role":"online DAgger owner","functions":["resolve_command_intent_rollout_policies()","run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
             {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1151,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
           ],
           "mainRoute": [
@@ -283,8 +285,8 @@
           ],
           "mainRouteTitles": ["验证局部语义", "验证正式连接", "采集真实运行事实", "更新人类验收状态"],
           "review": ["区分 PASS route 与 PASS policy quality", "确保失败场景记录 checkpoint identity 和 command schedule"],
-          "tests": ["S0-S2 current suites", "S4 physical acceptance PENDING"],
-          "gap": "缺少 repeated reset 和 walk-to-stop formal acceptance suite"
+          "tests": ["S0-S2 current suites", "S4 E28 physical acceptance BLOCKED"],
+          "gap": "E28 已有 repeated reset 与 walk-to-stop live suite, 但 candidate done_count=19 且 stop-speed decay failed"
         }
       ]
     }

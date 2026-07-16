@@ -15,7 +15,7 @@ algo:
   command_intent_expert_targets:
     active: 0
     inactive: 1
-  expert_behavior_loss_source: selected_expert
+  expert_behavior_loss_source: auto
 
 training:
   workflow:
@@ -28,4 +28,21 @@ training:
         task: g1_stand_still/mujoco
         teacher_checkpoint_path: ${oc.env:UNILAB_G1_STAND_TEACHER}
         dataset_path: ${oc.env:UNILAB_G1_STAND_DATASET,''}
-    dagger_balanced_labels: [walk_flat, stand]
+    scenarios:
+      - name: walk_flat
+        kind: role
+        source_roles: [walk_flat]
+        quota: 0.5
+      - name: static_stand
+        kind: role
+        source_roles: [stand]
+        quota: 0.25
+      - name: walk_to_stop
+        kind: transition
+        source_roles: [walk_flat, stand]
+        quota: 0.25
+    dagger_balance_key: scenario
+    dagger_balanced_labels: [walk_flat, static_stand, walk_to_stop]
+    transition_min_post_switch_steps: 20
+    dagger_min_transition_replay_passes: 8
+    dagger_min_transition_replay_labels: [walk_to_stop]

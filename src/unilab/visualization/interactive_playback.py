@@ -213,6 +213,48 @@ class RslRlPlaybackSession:
         self.step_count = 0
         return self.obs
 
+    def refresh_observation(self) -> Any:
+        """Reload the current env observation without advancing the session."""
+
+        get_observations = getattr(self.wrapped_env, "get_observations", None)
+        if not callable(get_observations):
+            raise RuntimeError(
+                "Playback observation refresh requires wrapped_env.get_observations()."
+            )
+        self.obs = get_observations()
+        return self.obs
+
+    def set_external_command(self, command: np.ndarray) -> Any:
+        """Apply a velocity command and refresh every policy-facing observation."""
+
+        state = getattr(self.env, "state", None)
+        info = getattr(state, "info", None)
+        commands = info.get("commands") if isinstance(info, dict) else None
+        if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
+            raise RuntimeError(
+                "Playback command synchronization requires env.state.info['commands'] "
+                "with shape (num_envs, >=3)."
+            )
+        command_arr = np.asarray(command, dtype=commands.dtype)
+        if command_arr.shape == (3,):
+            command_arr = np.broadcast_to(command_arr, (commands.shape[0], 3))
+        if command_arr.shape != (commands.shape[0], 3):
+            raise ValueError(
+                "Playback command synchronization expects command shape "
+                f"(3,) or ({commands.shape[0]}, 3), got {command_arr.shape}."
+            )
+        if np.array_equal(commands[:, :3], command_arr):
+            return self.obs
+
+        commands[:, :3] = command_arr
+        refresh_state = getattr(self.env, "refresh_state", None)
+        if not callable(refresh_state):
+            raise RuntimeError(
+                "Playback command synchronization requires env.refresh_state()."
+            )
+        refresh_state()
+        return self.refresh_observation()
+
     def step_once(self) -> Any:
         actions = self._build_actions()
         self.actions = actions
@@ -986,6 +1028,26 @@ def _resolve_distill_checkpoint_from_playback_cfg(
     return checkpoint_path
 
 
+def _apply_distill_playback_reset_contract(
+    env_cfg_override: Mapping[str, Any] | None, task_name: str
+) -> dict[str, Any] | None:
+    """Force standing-only reset sampling for G1 distill playback owners."""
+
+    task_key = str(task_name).lower().split("/", 1)[0].replace("-", "_")
+    task_key = task_key.replace("_", "")
+    if task_key not in {"g1walkflat", "g1walkheight"}:
+        return dict(env_cfg_override) if env_cfg_override is not None else None
+    merged = dict(env_cfg_override or {})
+    commands_override = dict(merged.get("commands") or {})
+    commands_override["rel_standing_envs"] = 1.0
+    if "rel_transition_envs" in commands_override:
+        commands_override["rel_transition_envs"] = 0.0
+    merged["commands"] = commands_override
+    if "standing_reset_base_qvel_limit" in merged:
+        merged["standing_reset_base_qvel_limit"] = 0.0
+    return merged
+
+
 def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
     _ensure_scripts_dir(root_dir)
     from unilab.algos.torch.distill import load_distillation_student_policy
@@ -1163,6 +1225,7 @@ def create_distill_playback_session(
     task_name = str(getattr(cfg.training, "task_name", playback_cfg.task))
     build_env_cfg_override = resolved_deps.get("build_env_cfg_override")
     env_cfg_override = build_env_cfg_override(cfg) if build_env_cfg_override is not None else {}
+    env_cfg_override = _apply_distill_playback_reset_contract(env_cfg_override, task_name)
     try:
         env = create_env(
             cfg,

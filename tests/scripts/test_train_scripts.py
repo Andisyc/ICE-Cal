@@ -163,6 +163,61 @@ def test_g1_distill_playback_live_sentinel_contract(capsys):
     assert "[PASS] distill_playback/actions: (1, 29)" in out
 
 
+def test_g1_distill_repeated_reset_probe_reports_standing_contract() -> None:
+    import torch
+
+    mod = _load_deploy_script("check_unilab_g1_distill_playback_live_sentinel")
+
+    class FakeBackend:
+        def get_base_lin_vel(self):
+            return np.zeros((1, 3), dtype=np.float32)
+
+        def get_base_ang_vel(self):
+            return np.zeros((1, 3), dtype=np.float32)
+
+    class FakeEnv:
+        def __init__(self) -> None:
+            self._backend = FakeBackend()
+            self.state = types.SimpleNamespace(
+                info={
+                    "commands": np.zeros((1, 3), dtype=np.float32),
+                    "gait_enabled": np.zeros((1,), dtype=np.float32),
+                }
+            )
+
+        def _command_observation(self, info, num_obs):
+            return np.asarray(info["commands"], dtype=np.float32)
+
+    class FakeSession:
+        def __init__(self, env: FakeEnv) -> None:
+            self.env = env
+            self.obs = torch.zeros((1, 98), dtype=torch.float32)
+            self.actions = None
+            self.policy = None
+
+        @property
+        def info(self):
+            return self.env.state.info
+
+        def reset(self):
+            self.obs.zero_()
+            self.actions = None
+
+        def step_once(self):
+            self.actions = torch.zeros((1, 29), dtype=torch.float32)
+
+    env = FakeEnv()
+    session = FakeSession(env)
+    checks, details = mod._run_repeated_reset_probe(
+        session, env, repetitions=2, action_mode="zero"
+    )
+
+    assert all(check.level == "PASS" for check in checks)
+    assert details["distill_playback/reset_repetitions"] == 2
+    assert details["distill_playback/reset_base_qvel_norm_max"] == 0.0
+    assert len(details["distill_playback/reset_probe_records"]) == 2
+
+
 def test_g1_distill_viewer_path_preflight_reaches_viewer_model(tmp_path: Path, monkeypatch, capsys):
     mod = _load_deploy_script("check_unilab_g1_distill_viewer_path")
     checkpoint = tmp_path / "model_2.pt"
@@ -839,6 +894,10 @@ def test_distill_walk_stand_workflow_profile_composes_teacher_roles(monkeypatch)
     cfg = _distill_cfg(["workflow=g1_walk_stand"])
 
     roles = OmegaConf.to_container(cfg.training.workflow.roles, resolve=True)
+    assert cfg.algo.expert_behavior_loss_source == "auto"
+    assert cfg.training.workflow.transition_min_post_switch_steps == 20
+    assert cfg.training.workflow.dagger_min_transition_replay_passes == 8
+    assert cfg.training.workflow.dagger_min_transition_replay_labels == ["walk_to_stop"]
     assert roles == [
         {
             "role": "walk_flat",
@@ -5524,6 +5583,39 @@ def test_play_interactive_warns_about_hard_gated_standing_checkpoint() -> None:
     )
 
     assert any("stand_action_authority=true" in issue for issue in issues)
+
+
+def test_play_interactive_distill_playback_forces_standing_reset() -> None:
+    mod = _play_interactive()
+    env_cfg_override = {
+        "commands": {
+            "rel_standing_envs": 0.0,
+            "rel_transition_envs": 1.0,
+            "vel_limit": [[0.4, 0.0, 0.0], [0.7, 0.0, 0.0]],
+        },
+        "standing_reset_base_qvel_limit": 0.5,
+    }
+
+    for task_name in (
+        "g1_walk_flat",
+        "g1_walk_flat/mujoco",
+        "G1WalkFlat",
+        "g1-walk-flat",
+    ):
+        resolved = mod._apply_distill_playback_reset_contract(
+            env_cfg_override, task_name
+        )
+
+        assert resolved is not env_cfg_override
+        assert resolved["commands"]["rel_standing_envs"] == 1.0
+        assert resolved["commands"]["rel_transition_envs"] == 0.0
+        assert resolved["standing_reset_base_qvel_limit"] == 0.0
+
+    untouched = mod._apply_distill_playback_reset_contract(
+        env_cfg_override, "g1_stand_still"
+    )
+    assert untouched == env_cfg_override
+    assert env_cfg_override["commands"]["rel_standing_envs"] == 0.0
 
 
 def test_play_interactive_command_obs_probe_disables_standing_sampling() -> None:
