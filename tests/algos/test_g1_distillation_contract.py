@@ -2726,6 +2726,110 @@ def test_offline_distillation_run_balances_role_batches() -> None:
     assert result.last_student_grad_norm > 0.0
 
 
+def test_balanced_label_pool_cache_is_immutable_bounded_and_rng_equivalent() -> None:
+    from unilab.algos.torch.distill.offline import (
+        BalancedLabelIndexPools,
+        _build_balanced_label_pools,
+        _sample_balanced_batch_indices_from_pools,
+    )
+
+    labels = ("walk", "stand", "walk", "transition", "stand", "walk")
+    selected = ("walk", "stand", "transition")
+    cached = _build_balanced_label_pools(labels, selected, balance_key="scenario")
+
+    assert isinstance(cached, BalancedLabelIndexPools)
+    assert cached.source_labels is labels
+    assert cached.balance_key == "scenario"
+    assert cached.selected_labels == selected
+    assert all(indices.device.type == "cpu" for indices in cached.row_indices)
+    assert all(indices.dtype == torch.int64 for indices in cached.row_indices)
+    assert all(indices.is_contiguous() for indices in cached.row_indices)
+    assert cached.payload_bytes == 8 * len(labels)
+    assert cached.payload_bytes <= 8 * len(labels)
+
+    rebuilt_generator = torch.Generator().manual_seed(23)
+    cached_generator = torch.Generator().manual_seed(23)
+    for _ in range(5):
+        rebuilt = _build_balanced_label_pools(labels, selected, balance_key="scenario")
+        rebuilt_indices, rebuilt_counts = _sample_balanced_batch_indices_from_pools(
+            rebuilt,
+            batch_size=6,
+            balance_quotas={"walk": 0.5, "stand": 0.25, "transition": 0.25},
+            generator=rebuilt_generator,
+        )
+        cached_indices, cached_counts = _sample_balanced_batch_indices_from_pools(
+            cached,
+            batch_size=6,
+            balance_quotas={"walk": 0.5, "stand": 0.25, "transition": 0.25},
+            generator=cached_generator,
+        )
+        assert torch.equal(rebuilt_indices, cached_indices)
+        assert rebuilt_counts == cached_counts
+    assert torch.equal(rebuilt_generator.get_state(), cached_generator.get_state())
+
+    with pytest.raises(ValueError, match="does not match source labels"):
+        BalancedLabelIndexPools(
+            source_labels=labels,
+            balance_key="scenario",
+            selected_labels=selected,
+            row_indices=(
+                torch.tensor([0, 1, 2]),
+                torch.tensor([1, 4]),
+                torch.tensor([3]),
+            ),
+        )
+
+
+def test_offline_distillation_builds_balanced_label_pools_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        offline,
+        run_offline_distillation_updates,
+    )
+
+    dataset = build_distillation_dataset(
+        torch.randn(6, 5),
+        torch.empty(6, 0),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(6, 3),
+        role_labels=("stand", "walk", "walk", "walk", "walk", "walk"),
+    )
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Linear(0, 3),
+        optimizer=torch.optim.Adam(student.parameters(), lr=1e-2),
+    )
+    original = offline._build_balanced_label_pools
+    build_count = 0
+
+    def counted_build(*args: object, **kwargs: object) -> object:
+        nonlocal build_count
+        build_count += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(offline, "_build_balanced_label_pools", counted_build)
+
+    result = run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=4,
+        max_updates=3,
+        balance_key="role",
+        balanced_labels=("stand", "walk"),
+        seed=11,
+    )
+
+    assert result.update_count == 3
+    assert build_count == 1
+
+
 def test_offline_distillation_run_balances_command_intent_batches() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,

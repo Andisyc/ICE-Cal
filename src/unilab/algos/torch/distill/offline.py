@@ -52,6 +52,59 @@ class OfflineDistillationRunResult:
     performance_stage_observations: tuple[DistillationStageObservation, ...] = ()
 
 
+@dataclass(frozen=True)
+class BalancedLabelIndexPools:
+    """为一次 offline invocation 持有 immutable CPU balanced-row pools.
+
+    Status: active, HP-7c owner path locally verified.
+    Upstream: run_offline_distillation_updates 从当前 loaded dataset 构建一次.
+    Downstream: 每个 update 的 balanced sampler 复用 pools, 不预生成 schedule.
+    Evidence: S1/S2 contract-confirmed; CUDA 与 bounded persistent live pending.
+    Gap: 不证明端到端 speedup, default-on 或 promotion.
+    """
+
+    source_labels: tuple[str, ...]
+    balance_key: str
+    selected_labels: tuple[str, ...]
+    row_indices: tuple[torch.Tensor, ...]
+
+    def __post_init__(self) -> None:
+        if not self.selected_labels:
+            raise ValueError("offline balanced sampler requires at least one label")
+        if len(set(self.selected_labels)) != len(self.selected_labels):
+            raise ValueError(f"offline balanced labels must be unique: {self.selected_labels}")
+        if len(self.selected_labels) != len(self.row_indices):
+            raise ValueError("offline balanced label pools must match selected labels")
+        for label, indices in zip(self.selected_labels, self.row_indices, strict=True):
+            if indices.device.type != "cpu" or indices.dtype != torch.int64:
+                raise ValueError(
+                    "offline balanced label pools must be CPU int64 tensors: "
+                    f"label={label!r} device={indices.device} dtype={indices.dtype}"
+                )
+            if indices.ndim != 1 or not indices.is_contiguous():
+                raise ValueError(
+                    "offline balanced label pools must be contiguous rank-1 tensors: "
+                    f"label={label!r} shape={tuple(indices.shape)}"
+                )
+            if indices.numel() == 0:
+                raise ValueError(f"offline balanced sampler missing labels: [{label!r}]")
+            expected = tuple(
+                index
+                for index, source_label in enumerate(self.source_labels)
+                if source_label == label
+            )
+            if tuple(int(index) for index in indices) != expected:
+                raise ValueError(
+                    f"offline balanced label pool does not match source labels: label={label!r}"
+                )
+        if self.payload_bytes > 8 * len(self.source_labels):
+            raise ValueError("offline balanced label pool exceeds the 8N payload bound")
+
+    @property
+    def payload_bytes(self) -> int:
+        return sum(indices.numel() * indices.element_size() for indices in self.row_indices)
+
+
 def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) -> DistillationBatch:
     indices = indices.to(device=dataset.student_obs.device)
     role_labels = None
@@ -129,6 +182,26 @@ def _balanced_batch_indices(
     balance_quotas: Mapping[str, float] | None,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, dict[str, int]]:
+    selected_labels = _resolve_balanced_labels(
+        labels, batch_size=batch_size, balanced_labels=balanced_labels
+    )
+    label_to_indices = _build_balanced_label_pools(
+        labels, selected_labels, balance_key="unspecified"
+    )
+    return _sample_balanced_batch_indices_from_pools(
+        label_to_indices,
+        batch_size=batch_size,
+        balance_quotas=balance_quotas,
+        generator=generator,
+    )
+
+
+def _resolve_balanced_labels(
+    labels: tuple[str, ...],
+    *,
+    batch_size: int,
+    balanced_labels: Sequence[str] | None,
+) -> tuple[str, ...]:
     selected_labels = (
         tuple(str(label) for label in balanced_labels)
         if balanced_labels
@@ -143,43 +216,42 @@ def _balanced_batch_indices(
             "offline balanced sampler requires batch_size >= number of labels: "
             f"batch_size={int(batch_size)} labels={len(selected_labels)}"
         )
-
-    label_to_indices = _build_balanced_label_pools(labels, selected_labels)
-    return _sample_balanced_batch_indices_from_pools(
-        label_to_indices,
-        batch_size=batch_size,
-        balance_quotas=balance_quotas,
-        generator=generator,
-    )
+    return selected_labels
 
 
 def _build_balanced_label_pools(
     labels: tuple[str, ...],
     selected_labels: Sequence[str],
-) -> dict[str, torch.Tensor]:
+    *,
+    balance_key: str = "unspecified",
+) -> BalancedLabelIndexPools:
     """Build immutable CPU row-index pools for the selected balance labels."""
-    label_to_indices = {
-        label: torch.as_tensor(
+    resolved_labels = tuple(str(label) for label in selected_labels)
+    row_indices = tuple(
+        torch.as_tensor(
             [idx for idx, value in enumerate(labels) if value == label],
             dtype=torch.long,
         )
-        for label in selected_labels
-    }
-    missing = [label for label, indices in label_to_indices.items() if indices.numel() == 0]
-    if missing:
-        raise ValueError(f"offline balanced sampler missing labels: {missing}")
-    return label_to_indices
+        for label in resolved_labels
+    )
+    return BalancedLabelIndexPools(
+        source_labels=labels,
+        balance_key=str(balance_key),
+        selected_labels=resolved_labels,
+        row_indices=row_indices,
+    )
 
 
 def _sample_balanced_batch_indices_from_pools(
-    label_to_indices: Mapping[str, torch.Tensor],
+    label_to_indices: BalancedLabelIndexPools,
     *,
     batch_size: int,
     balance_quotas: Mapping[str, float] | None,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, dict[str, int]]:
     """Sample one balanced CPU index batch from prevalidated label pools."""
-    selected_labels = tuple(label_to_indices)
+    selected_labels = label_to_indices.selected_labels
+    pools_by_label = dict(zip(selected_labels, label_to_indices.row_indices, strict=True))
 
     if balance_quotas:
         quota_values = {str(label): float(value) for label, value in balance_quotas.items()}
@@ -220,7 +292,7 @@ def _sample_balanced_batch_indices_from_pools(
     counts: dict[str, int] = {}
     for label_idx, label in enumerate(selected_labels):
         quota = counts_list[label_idx]
-        source = label_to_indices[label]
+        source = pools_by_label[label]
         picks = torch.randint(
             int(source.numel()),
             (quota,),
@@ -400,6 +472,18 @@ def run_offline_distillation_updates(
             f"replay_passes={int(min_balanced_replay_passes)} "
             f"batch_size={int(batch_size)}"
         )
+    balanced_label_pools: BalancedLabelIndexPools | None = None
+    if balance_labels is not None:
+        selected_balance_labels = _resolve_balanced_labels(
+            balance_labels,
+            batch_size=int(batch_size),
+            balanced_labels=balanced_labels,
+        )
+        balanced_label_pools = _build_balanced_label_pools(
+            balance_labels,
+            selected_balance_labels,
+            balance_key=resolved_balance_key,
+        )
     batch_label_counts: list[dict[str, int]] = []
     generator = torch.Generator()
     if seed is not None:
@@ -428,10 +512,11 @@ def run_offline_distillation_updates(
         )
         with staging_span:
             if balance_labels is not None:
-                indices, label_counts = _balanced_batch_indices(
-                    balance_labels,
+                if balanced_label_pools is None:
+                    raise RuntimeError("offline balanced label pools were not materialized")
+                indices, label_counts = _sample_balanced_batch_indices_from_pools(
+                    balanced_label_pools,
                     batch_size=int(batch_size),
-                    balanced_labels=balanced_labels,
                     balance_quotas=balance_quotas,
                     generator=generator,
                 )

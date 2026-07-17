@@ -32,6 +32,14 @@ Current status: **integration complete, promotion deferred, default off**.
  across scenarios/iterations with weight versions 1/2/3. Iteration-2 staging
  is 515.90 s and dominates workflow time; source inspection identifies
  per-update full label-pool reconstruction and device-to-CPU label recovery.
+- E92: HP-7a server discriminator PASS: `31.8345 s` current versus `1.3357 s`
+  cached, `23.8338x`; pool construction owns `93.8%` and all semantic
+  differentials pass.
+- E93: HP-7b freezes one invocation-local immutable CPU label-pool cache bound
+  to the exact loaded dataset; HP-7c remains unauthorized.
+- E94: HP-7c1 owner implementation and HP-7c2 formal integration PASS: one
+  cache build per invocation, exact RNG/index/count equivalence, `8N` bound,
+  301 affected tests, targeted Ruff/mypy/Pyright, and Atlas contracts pass.
 
 ## Current Owners
 
@@ -59,10 +67,10 @@ Current status: **integration complete, promotion deferred, default off**.
 - The manual collect/offline route is intended as diagnostic-only, but its
   explicit formal labeling remains a checklist item.
 - The live persistent run confirms the runtime route but exposes a new learner
-  staging bottleneck. Individual staging sub-owner costs and attainable speedup
-  remain unconfirmed; HP-7a is authorized and its local probe implementation
-  passes E91, but the server CUDA discriminator remains pending and does not
-  reopen default-on promotion.
+  staging bottleneck. HP-7a passes E92: current staging is 31.835 s, cached
+  candidate staging is 1.336 s (23.83x), label-pool construction owns 93.8%,
+  and semantic differential passes. End-to-end speedup remains unconfirmed and
+  this does not reopen default-on promotion.
 
 ## Current Documents
 
@@ -85,10 +93,8 @@ Current status: **integration complete, promotion deferred, default off**.
 
 ## Next Human Decision
 
-No automatic production optimization, training, promotion, default-on, commit,
-or PR action is active. The next human action is to run the E91 HP-7a probe on
-the existing iteration-2 aggregate dataset, preferably after the active GPU is
-idle. HP-7a separates label-pool construction, balanced sampling, CPU-to-GPU
-index transfer, GPU index-select, and Python-label recovery. Its fastest
-falsifier is that cached pools leave staging near 515.90 s. Return with the JSON
-artifact before HP-7b.
+No automatic server benchmark, training, promotion, default-on, commit, or PR
+action is active. HP-7c1/HP-7c2 pass E94; HP-7c remains partial. The next human
+decision is whether to authorize HP-7c3: sync the exact source identity, rerun
+the frozen HP-7a CUDA discriminator, then separately run one bounded persistent
+workflow. Return control before server execution.

@@ -1517,4 +1517,70 @@ Date: 2026-07-15
   indices, quota counts, string labels, and tensor batches on semantic CPU
   fixtures. The probe never constructs a trainer.
 - Open: server CUDA substage timing, dataset-scale ratio, and peak allocation.
-  HP-7a remains partial; HP-7b and production caching remain unauthorized.
+  At the E91 boundary HP-7a remained partial and HP-7b was unauthorized; E92
+  below closes the server discriminator and records the later human decision.
+
+## E92: HP-7a Server Learner-Staging Discriminator PASS
+
+- Date: 2026-07-17.
+- Artifact: `/ssd1/cyx/UniLab/hp7a_iteration2_staging.json` over the existing
+  iteration-2 aggregate dataset; no learner update was executed.
+- Runtime result: current `31.8345 s`, cached candidate `1.3357 s`, ratio
+  `23.8338x`, CUDA peak allocation `622215168` bytes.
+- Dominant owner: label-pool construction consumes `29.8662 s`, approximately
+  `93.8%` of current staging. GPU index-select and H2D are secondary.
+- Semantic differential: sampled indices, label counts, string labels, and
+  tensor batches are all exactly equal; `pass=true`.
+- Verdict: HP-7a PASS. The microbenchmark-supported HP-7b direction is one
+  immutable label-index pool construction per loaded cumulative dataset with
+  explicit invalidation when dataset identity changes.
+- Human decision: authorize HP-7b design only. HP-7c implementation,
+  batch-schedule expansion, training, end-to-end speedup claims, promotion, and
+  default-on remain unauthorized.
+
+## E93: HP-7b Immutable Label-Pool Cache Design Freeze
+
+- Date: 2026-07-17.
+- Scope: design and governance synchronization only; no production code, test,
+  config, training, or Architecture modification.
+- Semantic object: one immutable CPU `torch.int64` label-to-row-index mapping
+  for the active balance key and ordered labels.
+- Unique owner: the offline sampler in `offline.py`; `data.py` retains dataset
+  schema/loading ownership and no global/process/workflow/IPC cache is allowed.
+- Identity/lifetime: constructed from the exact loaded dataset labels inside
+  one offline invocation, reused only by that invocation, released on return,
+  and rebuilt for every new dataset/iteration/resume/fork or balance identity.
+- RNG invariant: pool construction consumes no RNG; the existing per-update
+  `torch.randint` and `torch.randperm` order and generator state must remain
+  exactly equal. No batch schedule is generated.
+- Memory bound: persistent pool payload is `8 * sum(n_k) <= 8N` bytes plus
+  `O(K)` headers, CPU-only, with no label copy or per-update schedule retention.
+- Acceptance: S1 owner equivalence/memory tests, S2 formal offline integration,
+  then frozen HP-7a plus one bounded persistent S3/S4 differential. Local
+  staging speedup alone does not authorize an end-to-end or promotion claim.
+- Decision: HP-7b PASS. Return control before separately authorizing HP-7c;
+  batch scheduling, pinned memory, GPU-native labels, replay/quota/semantic/
+  default/promotion changes remain outside the frozen design.
+
+## E94: HP-7c Owner Implementation And Formal Integration PASS
+
+- Date: 2026-07-17.
+- Scope: HP-7c1 owner implementation and HP-7c2 local/formal integration; no
+  server CUDA probe, bounded training, default, or promotion action.
+- Owner implementation: `offline.py::BalancedLabelIndexPools` stores one
+  invocation-local CPU/int64 pool tuple bound to the loaded labels, balance key,
+  and ordered selected labels. `run_offline_distillation_updates()` constructs
+  it once after replay-budget validation and reuses it for every update.
+- S1 facts: three updates invoke the builder once; five fixed-seed iterations
+  match the rebuild path in sampled indices, counts, and final generator state;
+  malformed source membership fails closed; payload is `<=8N`.
+- S2 facts: complete distillation/probe and workflow/script affected suites
+  report 301 passed. Targeted Ruff, mypy, and Pyright pass.
+- Architecture: Method-to-Code and Runtime Atlas now expose the offline cache
+  owner and mark bounded live evidence pending. Concept Figure is unchanged
+  because method and training semantics did not change. Atlas checker and
+  viewer/data contracts pass with the bundled modern Node runtime.
+- Exclusions confirmed: no batch schedule, pinned memory, GPU-native labels,
+  replay budget, quota, execution default, or promotion change.
+- Decision boundary: HP-7c remains partial. Frozen HP-7a production-path CUDA
+  rerun and one bounded persistent workflow require separate server authority.

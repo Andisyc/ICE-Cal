@@ -105,10 +105,10 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | HP mainline owner-aware merge | mainline integration owner | S0/S1/S2/S3 / T-merge+full-sweep | PASS | E87 commit `06d31ad6`; 1578 passed, 30 skipped, 256 deselected; Ruff/mypy/Pyright pass |
 | Persistent server runtime identity | workflow/runtime metrics owners | S3/S4 / T-live+persist+identity | PASS | E88 stable collector PID `1127593`; workflow PID `1127462`; per-iteration weight versions 1/2/3 |
 | Persistent live learner bottleneck | offline learner + metrics owners | S3/S4 / T-live+profile | PARTIAL | E89 batch staging 515.90 s and about 61% of iteration-2 workflow; staging sub-owner split unmeasured |
-| HP-7 advanced learner-staging optimization | offline/data/performance owners | S0/S3 / T-plan+live-owner | PENDING | E89-E90 identify a new live owner; A/B/C human gate remains open; no promotion implication |
-| HP-7a learner-staging discriminator | offline/data owners | S1/S3 / T-benchmark+semantic-diff | PARTIAL | E91 probe implementation and CPU semantic differential PASS; server CUDA timing on the existing aggregate dataset remains pending; no training |
-| HP-7b cached-pool/batch-schedule design | offline/data owners | S0/S1 / T-design+memory-bound | PENDING | starts only after HP-7a or explicit option B; preserve replay semantics and deterministic sampling |
-| HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PENDING | starts only after accepted owner design; no default-on or speedup claim without fresh end-to-end evidence |
+| HP-7 advanced learner-staging optimization | offline/data/performance owners | S0/S3 / T-plan+live-owner | PARTIAL | E92/E93/E94 close discriminator, design, owner implementation, and S2 integration; HP-7c3 CUDA/bounded persistent evidence remains open |
+| HP-7a learner-staging discriminator | offline/data owners | S1/S3 / T-benchmark+semantic-diff | PASS | E92: current 31.835 s, cached 1.336 s, 23.83x; pool build is 93.8%; all four semantic differentials pass |
+| HP-7b immutable label-pool cache design | offline sampler owner | S0/S1 / T-design+memory-bound | PASS | E93 freezes one invocation-local CPU/int64 pool cache per loaded dataset, exact RNG equivalence, `8N` payload bound, owner files, three evidence gates, and HP-7c stop |
+| HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PARTIAL | E94: S1 owner and S2 integration PASS, 301 tests plus Ruff/mypy/Pyright/Atlas; HP-7c3 frozen HP-7a rerun and bounded persistent workflow pending |
 
 ## Current Stop Condition
 
