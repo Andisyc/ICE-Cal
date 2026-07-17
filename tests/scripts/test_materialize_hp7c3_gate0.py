@@ -18,7 +18,7 @@ def test_generated_oracle_reads_materializer_identity_schema() -> None:
     module = _load_materializer()
     source = module.oracle_source()
 
-    compile(source, "hp7c3_bounded_persistent_oracle_v3.py", "exec")
+    compile(source, "hp7c3_bounded_persistent_oracle_v4.py", "exec")
     assert 'freeze["compose"]["observed_sha256"]' in source
     assert 'freeze["compose"]["sha256"]' not in source
     assert 'freeze["hard_artifacts"]' in source

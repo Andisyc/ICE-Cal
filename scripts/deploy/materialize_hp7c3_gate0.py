@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-EXPECTED_HEAD = "4fd2f67c08bb5372221ee1347561145b27238a75"
+EXPECTED_HEAD = "d4cdf843f5917e97f1051bcdb17042c234450981"
 EXPECTED_COMPOSE_SHA256 = "741676aca03cbed11f9ad6e37105216b3acb545b35ebc86690202b2c0798798d"
 EXPECTED_UPDATES = 12320
 
@@ -195,9 +195,9 @@ def materialize(root: Path) -> dict[str, Any]:
     compose = root / "hp7c3_gate0_compose_r2.yaml"
     compose_stderr = root / "hp7c3_gate0_compose_r2.stderr"
     probe_path = root / "hp7c3_gate0_identity_probe_r1.json"
-    freeze_path = root / "hp7c3_bounded_persistent_freeze_r3.json"
-    oracle_path = root / "hp7c3_bounded_persistent_oracle_v3.py"
-    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r3.json"
+    freeze_path = root / "hp7c3_bounded_persistent_freeze_r4.json"
+    oracle_path = root / "hp7c3_bounded_persistent_oracle_v4.py"
+    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r4.json"
     output_paths = [
         run_dir,
         root / "hp7c3_bounded_persistent_oracle_result_r1.json",
