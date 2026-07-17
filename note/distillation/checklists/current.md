@@ -37,7 +37,7 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | External command / policy obs atomicity | G1 env + playback session | S1-S2 / T-dataflow+regression | PARTIAL | E16 `258 passed`; live route/expert synchronization still pending |
 | Repeated standing reset sentinel | playback live probe | S4 / T-live | PASS | E18: 32/32 reset command/qvel/obs/gait records pass |
 | Standing-teacher recovery authority | differential probe | S4 / T-live+differential | PASS | E21: final exact post-walk snapshot, WT/WS 80-step differential, all 14 checks pass |
-| Transition training contract v002 | docs governance | S0 / T-contract | PASS | E23; active registry points to v002 and v001 is archived |
+| Transition training contract inheritance | docs governance | S0 / T-contract | PASS | E23 established v002 transition semantics; active registry points to v003, which supersedes and inherits v002; v002 is archived |
 | Transition dataset scenario schema | `data.py` + batch transport | S1 / T-contract+roundtrip | PASS | E24; 70 distillation contract tests |
 | Transition collector owner | `collector.py` | S2 / T-connect+probe | PASS | E25; atomic switch, teacher role change, age chronology, and done-row reset probe |
 | Transition DAgger workflow integration | workflow owner | S2 / T-connect+regression | PASS | E26; scenario dispatch, cumulative lineage, quota balancing, resume mismatch, and legacy OFF-path regression |
@@ -102,6 +102,13 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | HP-6b12 uv env test isolation | CLI test owner | S0/S1 / T-env+contract | PASS | E84 target passes under frozen outer env; Ruff/diff pass |
 | HP-6b13 combined 14-regression closure | G1/Stewart/docs/CLI owners | S1/S2/S3 / T-regression+integration | PASS | E85 12 passed, 2 expected provider skips |
 | HP-6b14 final repository rerun | repository Makefile owner | S0/S1/S2/S3 / T-full-sweep+type+coverage | PASS | E86 1556 passed, 51 skipped; mypy/Pyright/Ruff pass; coverage 70% |
+| HP mainline owner-aware merge | mainline integration owner | S0/S1/S2/S3 / T-merge+full-sweep | PASS | E87 commit `06d31ad6`; 1578 passed, 30 skipped, 256 deselected; Ruff/mypy/Pyright pass |
+| Persistent server runtime identity | workflow/runtime metrics owners | S3/S4 / T-live+persist+identity | PASS | E88 stable collector PID `1127593`; workflow PID `1127462`; per-iteration weight versions 1/2/3 |
+| Persistent live learner bottleneck | offline learner + metrics owners | S3/S4 / T-live+profile | PARTIAL | E89 batch staging 515.90 s and about 61% of iteration-2 workflow; staging sub-owner split unmeasured |
+| HP-7 advanced learner-staging optimization | offline/data/performance owners | S0/S3 / T-plan+live-owner | PENDING | E89-E90 identify a new live owner; A/B/C human gate remains open; no promotion implication |
+| HP-7a learner-staging discriminator | offline/data owners | S1/S3 / T-benchmark+semantic-diff | PARTIAL | E91 probe implementation and CPU semantic differential PASS; server CUDA timing on the existing aggregate dataset remains pending; no training |
+| HP-7b cached-pool/batch-schedule design | offline/data owners | S0/S1 / T-design+memory-bound | PENDING | starts only after HP-7a or explicit option B; preserve replay semantics and deterministic sampling |
+| HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PENDING | starts only after accepted owner design; no default-on or speedup claim without fresh end-to-end evidence |
 
 ## Current Stop Condition
 

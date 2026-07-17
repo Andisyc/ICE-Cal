@@ -1472,3 +1472,49 @@ Date: 2026-07-15
 - Open boundaries: RT-10 physical acceptance, optional Motrix runtime,
   slow/S4, height teacher, promoted checkpoint, and explicit diagnostic-only
   labeling of the manual route.
+
+## E87-E90: Mainline Merge And Persistent Live Learner Bottleneck
+
+- E87: local main merge commit `06d31ad6` combines `0abed823` High Speed
+  DAgger and `f882431b` HP persistent runtime. The exact merged snapshot passes
+  `make test-all`: 1578 passed, 30 skipped, 256 deselected; Ruff, mypy, and
+  Pyright pass.
+- E88: server artifact
+  `/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_persistent_test01/distillation_metrics.json`
+  records `persistent_async`, one collector PID `1127593` across all observed
+  scenarios and iterations, workflow PID `1127462`, and weight versions 1/2/3
+  for outer iterations 1/2/3.
+- E89: iteration 2 spends approximately 26.64 s collecting three scenarios,
+  while workflow stages include 515.90 s batch staging, 144.59 s forward,
+  165.44 s backward, 12.81 s optimizer, and 2.10 s aggregation. Learner work
+  accounts for about 97% of the observed iteration and staging is the largest
+  owner.
+- E90: `offline.py` rebuilds label index pools from the full Python label tuple
+  inside every balanced update, then `_indexed_batch()` transfers indices to
+  the dataset device and repeatedly synchronizes them back to CPU for string
+  labels. This is code-confirmed; the individual runtime shares remain
+  unconfirmed.
+- Decision boundary: persistent reuse is runtime-confirmed, but there is no new
+  speedup or promotion claim. The proposed advanced performance phase is
+  `HP-7`, documented in `plans/dagger_learner_staging_optimization.md`.
+  Main-conversation control resumes at three options: A/recommended executes
+  HP-7a no-training staging discrimination; B designs cached pools plus a batch
+  schedule without implementation; C implements immediately. At the E90
+  boundary none was authorized; E91 below records the later authorization and
+  local implementation gate. HP-7a's fastest falsifier is that cached pools
+  leave staging near 515.90 s, redirecting ownership toward GPU index-select,
+  synchronization, or pinned-CPU/GPU-native staging.
+
+## E91: HP-7a Learner-Staging Probe Implementation
+
+- Date: 2026-07-17.
+- Scope: local no-training probe implementation; no server CUDA benchmark.
+- Owner path: workflow manifest aggregate dataset -> `data.py` loader ->
+  `offline.py` pool/sampling helpers -> deploy probe timing/differential.
+- Result: six focused probe/sampler tests pass; targeted Ruff format/check and
+  mypy pass; CLI help exits zero.
+- Confirmed: current and cached benchmark paths produce identical sampled
+  indices, quota counts, string labels, and tensor batches on semantic CPU
+  fixtures. The probe never constructs a trainer.
+- Open: server CUDA substage timing, dataset-scale ratio, and peak allocation.
+  HP-7a remains partial; HP-7b and production caching remain unauthorized.

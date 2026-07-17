@@ -144,6 +144,20 @@ def _balanced_batch_indices(
             f"batch_size={int(batch_size)} labels={len(selected_labels)}"
         )
 
+    label_to_indices = _build_balanced_label_pools(labels, selected_labels)
+    return _sample_balanced_batch_indices_from_pools(
+        label_to_indices,
+        batch_size=batch_size,
+        balance_quotas=balance_quotas,
+        generator=generator,
+    )
+
+
+def _build_balanced_label_pools(
+    labels: tuple[str, ...],
+    selected_labels: Sequence[str],
+) -> dict[str, torch.Tensor]:
+    """Build immutable CPU row-index pools for the selected balance labels."""
     label_to_indices = {
         label: torch.as_tensor(
             [idx for idx, value in enumerate(labels) if value == label],
@@ -154,6 +168,18 @@ def _balanced_batch_indices(
     missing = [label for label, indices in label_to_indices.items() if indices.numel() == 0]
     if missing:
         raise ValueError(f"offline balanced sampler missing labels: {missing}")
+    return label_to_indices
+
+
+def _sample_balanced_batch_indices_from_pools(
+    label_to_indices: Mapping[str, torch.Tensor],
+    *,
+    batch_size: int,
+    balance_quotas: Mapping[str, float] | None,
+    generator: torch.Generator,
+) -> tuple[torch.Tensor, dict[str, int]]:
+    """Sample one balanced CPU index batch from prevalidated label pools."""
+    selected_labels = tuple(label_to_indices)
 
     if balance_quotas:
         quota_values = {str(label): float(value) for label, value in balance_quotas.items()}

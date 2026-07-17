@@ -25,7 +25,13 @@ Current status: **integration complete, promotion deferred, default off**.
   `NO_STABLE_SPEEDUP`.
 - E70-E71: production-readiness and Architecture consistency PASS.
 - E86: exact `make test-all` PASS: Ruff/mypy/Pyright green; 1556 passed,
-  51 skipped, 256 deselected; 70% coverage.
+ 51 skipped, 256 deselected; 70% coverage.
+- E87: local `main` merge `06d31ad6` preserves High Speed DAgger plus HP;
+ exact merged gate passes with 1578 passed, 30 skipped, 256 deselected.
+- E88-E90: the server persistent live run reuses collector PID `1127593`
+ across scenarios/iterations with weight versions 1/2/3. Iteration-2 staging
+ is 515.90 s and dominates workflow time; source inspection identifies
+ per-update full label-pool reconstruction and device-to-CPU label recovery.
 
 ## Current Owners
 
@@ -52,6 +58,11 @@ Current status: **integration complete, promotion deferred, default off**.
   owner.
 - The manual collect/offline route is intended as diagnostic-only, but its
   explicit formal labeling remains a checklist item.
+- The live persistent run confirms the runtime route but exposes a new learner
+  staging bottleneck. Individual staging sub-owner costs and attainable speedup
+  remain unconfirmed; HP-7a is authorized and its local probe implementation
+  passes E91, but the server CUDA discriminator remains pending and does not
+  reopen default-on promotion.
 
 ## Current Documents
 
@@ -65,10 +76,19 @@ Current status: **integration complete, promotion deferred, default off**.
   `note/distillation/checklists/current.md`
 - Current evidence:
   `note/distillation/evidence/current.md`
+- Current performance evidence:
+  `note/distillation/evidence/2026-07-17-persistent-live-learner-staging-bottleneck.md`
+- Candidate optimization plan:
+  `note/distillation/plans/dagger_learner_staging_optimization.md`
 - Runtime/owner views: `note/architecture/runtime/` and
   `note/architecture/architecture/`.
 
 ## Next Human Decision
 
-No automatic implementation, training, promotion, default-on, commit, or PR
-action is active. The next action must be separately selected by the user.
+No automatic production optimization, training, promotion, default-on, commit,
+or PR action is active. The next human action is to run the E91 HP-7a probe on
+the existing iteration-2 aggregate dataset, preferably after the active GPU is
+idle. HP-7a separates label-pool construction, balanced sampling, CPU-to-GPU
+index transfer, GPU index-select, and Python-label recovery. Its fastest
+falsifier is that cached pools leave staging near 515.90 s. Return with the JSON
+artifact before HP-7b.
