@@ -4,7 +4,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 
@@ -315,6 +315,8 @@ def run_offline_distillation_updates(
     balance_quotas: Mapping[str, float] | None = None,
     min_balanced_replay_passes: int = 0,
     min_balanced_replay_labels: Sequence[str] | None = None,
+    progress_interval: int = 0,
+    progress_callback: Callable[[int, int, Any], None] | None = None,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -368,6 +370,9 @@ def run_offline_distillation_updates(
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(int(seed))
+    progress_interval = int(progress_interval)
+    if progress_interval < 0:
+        raise ValueError(f"progress_interval must be non-negative, got {progress_interval}")
 
     def _order() -> torch.Tensor:
         if shuffle:
@@ -404,6 +409,21 @@ def run_offline_distillation_updates(
             batch = dataset.as_batch(start=start, batch_size=int(batch_size))
         batch_label_counts.append(label_counts)
         stats = trainer.update(batch)
+
+        completed_updates = update_idx + 1
+        if progress_interval > 0 and (
+            completed_updates % progress_interval == 0
+            or completed_updates == int(max_updates)
+        ):
+            if progress_callback is not None:
+                progress_callback(completed_updates, int(max_updates), stats)
+            else:
+                print(
+                    "[distill-progress] "
+                    f"updates={completed_updates}/{int(max_updates)} "
+                    f"loss={stats.loss:.6f}",
+                    flush=True,
+                )
 
         samples_seen += int(batch.student_obs.shape[0])
         losses.append(stats.loss)

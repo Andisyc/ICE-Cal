@@ -78,6 +78,7 @@ class OffPolicyLogger(BaseTrainingLogger):
         wandb_job_type: str | None = None,
         wandb_tags: list[str] | None = None,
         wandb_notes: str | None = None,
+        display_title: str = "🚀 UniLab Off-Policy Training",
     ):
         super().__init__(
             algo_name=algo_name,
@@ -103,6 +104,7 @@ class OffPolicyLogger(BaseTrainingLogger):
         )
         self.obs_dim = obs_dim
         self.action_dim = action_dim
+        self.display_title = str(display_title)
         self._total_steps: int = 0
         self._buffer_size: int = 0
         self._buffer_target: int = 0
@@ -330,10 +332,10 @@ class OffPolicyLogger(BaseTrainingLogger):
             log_dict["perf/iter_ms"] = self._get_iter_pipeline_time() * 1000
             wandb.log(log_dict, step=global_step)
 
-    def log_status(self, status: str):
+    def log_status(self, status: str, *, force: bool = False):
         self._status = status
-        if not self._terminal_refresh_started or "[red]" in status or "ERROR" in status:
-            self._refresh(force=True)
+        if force or not self._terminal_refresh_started or "[red]" in status or "ERROR" in status:
+            self._refresh(force=force)
 
     def _build_display(self) -> Panel:
         header = self._build_compact_header(include_status=True)
@@ -347,7 +349,7 @@ class OffPolicyLogger(BaseTrainingLogger):
         grid.add_row(left, "", right)
         return Panel(
             Group(header, Text(""), grid, Text(""), bottom),
-            title="[bold] 🚀 UniLab Off-Policy Training [/]",
+            title=f"[bold] {self.display_title} [/]",
             border_style="bright_blue",
             padding=(0, 1),
         )

@@ -7,11 +7,12 @@ assembles the configured entrypoint routes.
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import hydra
 import torch
@@ -44,6 +45,7 @@ from unilab.algos.torch.distill import (
     save_distillation_dataset,
     validate_sac_teacher_checkpoint_contract,
 )
+from unilab.logging import OffPolicyLogger
 from unilab.training import BackendAdapter, ExperimentTracker, create_env, ensure_registries
 from unilab.training.run import resolve_task_checkpoint_path
 
@@ -707,6 +709,7 @@ def run_offline_dataset_update(
     checkpoint_path: str | Path | None = None,
     device: str | torch.device = "cpu",
     auto_expand_replay_budget: bool = False,
+    progress_callback: Callable[[int, int, Any], None] | None = None,
 ) -> dict[str, Any]:
     """Run bounded offline updates from a saved distillation tensor dataset."""
 
@@ -770,6 +773,22 @@ def run_offline_dataset_update(
                 replay_passes=offline_replay_passes,
             ),
         )
+    progress_enabled = os.environ.get("UNILAB_DISTILL_PROGRESS", "0").lower() not in {
+        "",
+        "0",
+        "false",
+        "off",
+    }
+    progress_interval = int(os.environ.get("UNILAB_DISTILL_PROGRESS_INTERVAL", "0") or 0)
+    if progress_callback is not None and progress_interval <= 0:
+        progress_interval = max(1, resolved_max_updates // 20)
+    if progress_enabled:
+        print(
+            "[distill-progress] "
+            f"dataset={dataset_path} samples={dataset.num_samples} "
+            f"updates={resolved_max_updates} batch_size={resolved_batch_size}",
+            flush=True,
+        )
     result = run_offline_distillation_updates(
         trainer,
         dataset,
@@ -791,6 +810,10 @@ def run_offline_dataset_update(
         balance_quotas=offline_balance_quotas,
         min_balanced_replay_passes=offline_replay_passes,
         min_balanced_replay_labels=offline_replay_labels,
+        progress_interval=(
+            progress_interval if progress_enabled or progress_callback is not None else 0
+        ),
+        progress_callback=progress_callback,
     )
     return _probe_result(
         cfg,
@@ -1626,6 +1649,52 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             scenario_specs=scenario_specs,
         )
 
+    target_iterations = int(
+        OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8)
+    )
+    current_iteration = 0
+    dagger_logger = OffPolicyLogger(
+        algo_name="distill",
+        max_iterations=target_iterations,
+        num_envs=int(
+            OmegaConf.select(cfg, "training.workflow.collect_num_envs", default=64)
+        ),
+        env_name=str(OmegaConf.select(cfg, "training.task_name", default="G1WalkStand")),
+        obs_dim=specs[0].student_obs_dim,
+        action_dim=specs[0].teacher_action_dim,
+        log_dir=str(run_dir),
+        log_backend=str(OmegaConf.select(cfg, "training.logger", default="tensorboard")),
+        display_title="UniLab Distillation / DAgger",
+    )
+    dagger_logger.start(status="Preparing DAgger workflow...")
+
+    def on_iteration(iteration: int, total: int) -> None:
+        nonlocal current_iteration
+        current_iteration = int(iteration)
+        dagger_logger.log_step(current_iteration)
+        dagger_logger.log_status(f"Iteration {iteration}/{total}: collecting scenarios", force=True)
+
+    def on_status(status: str) -> None:
+        dagger_logger.log_status(status, force=True)
+
+    def on_update_progress(update: int, total: int, stats: Any) -> None:
+        metrics = {
+            "loss/total": float(stats.loss),
+            "loss/behavior": float(stats.behavior_loss),
+            "loss/aux": float(stats.aux_loss),
+            "loss/role": float(stats.role_loss),
+            "loss/command_intent": float(stats.command_intent_loss),
+            "train/grad_norm": float(stats.student_grad_norm),
+            "train/update": float(update),
+        }
+        if stats.route_entropy is not None:
+            metrics["router/route_entropy"] = float(stats.route_entropy)
+        dagger_logger.log_step(current_iteration, metrics=metrics)
+        dagger_logger.log_status(
+            f"Iteration {current_iteration}: update {update:,}/{total:,}",
+            force=True,
+        )
+
     def collect_dagger_role(
         output_spec: RoleArtifactSpec,
         checkpoint_path: Path,
@@ -1864,20 +1933,33 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             checkpoint_path=output_checkpoint_path,
             device=_distill_device(cfg),
             auto_expand_replay_budget=True,
+            progress_callback=on_update_progress,
         )
         return int(result["update_count"])
 
-    dagger_result = run_multirole_dagger_workflow(
-        run_dir=run_dir,
-        role_specs=tuple(specs),
-        target_iterations=int(
-            OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8)
+    try:
+        dagger_result = run_multirole_dagger_workflow(
+            run_dir=run_dir,
+            role_specs=tuple(specs),
+            target_iterations=target_iterations,
+            collect_role=collect_dagger_role,
+            aggregate_datasets=aggregate_dagger_sources,
+            update_student=update_dagger_student,
+            scenario_specs=scenario_specs,
+            collect_scenario=collect_dagger_scenario if scenario_specs is not None else None,
+            status_callback=on_status,
+            iteration_callback=on_iteration,
+        )
+    except BaseException:
+        dagger_logger.close()
+        raise
+    dagger_logger.log_save(str(dagger_result.checkpoint_path))
+    dagger_logger.finish(
+        title="Distillation Summary",
+        extra_summary=(
+            f"  DAgger iterations: [yellow]{dagger_result.completed_iterations}[/]/{target_iterations}\n"
+            f"  Cumulative samples: [yellow]{dagger_result.cumulative_num_samples:,}[/]"
         ),
-        collect_role=collect_dagger_role,
-        aggregate_datasets=aggregate_dagger_sources,
-        update_student=update_dagger_student,
-        scenario_specs=scenario_specs,
-        collect_scenario=collect_dagger_scenario if scenario_specs is not None else None,
     )
     return {
         "distill_source": "single_entry_workflow",

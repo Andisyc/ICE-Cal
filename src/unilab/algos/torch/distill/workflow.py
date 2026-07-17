@@ -15,6 +15,16 @@ from .data import load_distillation_dataset, save_distillation_dataset
 ROLE_ARTIFACT_MANIFEST_VERSION = 1
 
 
+def _progress(message: str) -> None:
+    if os.environ.get("UNILAB_DISTILL_PROGRESS", "0").lower() not in {
+        "",
+        "0",
+        "false",
+        "off",
+    }:
+        print(f"[distill-workflow] {message}", flush=True)
+
+
 class ArtifactDecision(str, Enum):
     REUSE = "REUSE"
     COLLECT = "COLLECT"
@@ -697,6 +707,8 @@ def run_multirole_dagger_workflow(
     update_student: Callable[[Path, Path, Path], int],
     scenario_specs: Sequence[WorkflowScenarioSpec] | None = None,
     collect_scenario: Callable[[WorkflowScenarioSpec, Path, int, Path], int] | None = None,
+    status_callback: Callable[[str], None] | None = None,
+    iteration_callback: Callable[[int, int], None] | None = None,
 ) -> DaggerWorkflowResult:
     resolved_run_dir = Path(run_dir)
     manifest_path = resolved_run_dir / "run_manifest.json"
@@ -739,10 +751,19 @@ def run_multirole_dagger_workflow(
     cumulative_num_samples = int(
         manifest.get("bootstrap_num_samples", sum(1 for _ in cumulative_sources))
     )
+
+    def emit_status(message: str) -> None:
+        _progress(message)
+        if status_callback is not None:
+            status_callback(message)
+
     for iteration in range(completed + 1, target_iterations + 1):
         iteration_dir = resolved_run_dir / "datasets" / f"dagger_iteration_{iteration}"
         role_artifacts: list[dict[str, Any]] = []
         scenario_artifacts: list[dict[str, Any]] = []
+        if iteration_callback is not None:
+            iteration_callback(iteration, target_iterations)
+        emit_status(f"iteration={iteration}/{target_iterations} collecting datasets")
         if active_scenarios is None:
             for spec in role_specs:
                 output_path = iteration_dir / f"{spec.role}.pt"
@@ -754,6 +775,9 @@ def run_multirole_dagger_workflow(
                     raise ValueError(
                         f"DAgger collector for role {spec.role!r} returned {num_samples} samples"
                     )
+                emit_status(
+                    f"iteration={iteration} collected role={spec.role} samples={num_samples}"
+                )
                 artifact_manifest = create_role_artifact_manifest(
                     output_spec,
                     num_samples=num_samples,
@@ -774,6 +798,10 @@ def run_multirole_dagger_workflow(
                     raise ValueError(
                         f"DAgger collector for scenario {scenario.name!r} returned {num_samples} samples"
                     )
+                emit_status(
+                    f"iteration={iteration} collected scenario={scenario.name} "
+                    f"samples={num_samples}"
+                )
                 if scenario.kind == "role":
                     source_role = scenario.source_roles[0]
                     output_spec = replace(
@@ -815,6 +843,10 @@ def run_multirole_dagger_workflow(
         cumulative_num_samples = int(
             aggregate_datasets(tuple(cumulative_sources), aggregate_path)
         )
+        emit_status(
+            f"iteration={iteration} aggregated samples={cumulative_num_samples} "
+            f"path={aggregate_path}"
+        )
         if cumulative_num_samples <= 0 or not aggregate_path.is_file():
             raise RuntimeError(
                 "DAgger aggregator must create the cumulative dataset and return a positive count"
@@ -823,11 +855,16 @@ def run_multirole_dagger_workflow(
             resolved_run_dir / "checkpoints" / f"dagger_iteration_{iteration}.pt"
         )
         output_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        emit_status(f"iteration={iteration} updating student checkpoint={output_checkpoint}")
         updates = int(update_student(aggregate_path, current_checkpoint, output_checkpoint))
         if updates <= 0 or not output_checkpoint.is_file():
             raise RuntimeError(
                 "DAgger updater must create the next checkpoint and return a positive count"
             )
+        emit_status(
+            f"iteration={iteration} update complete updates={updates} "
+            f"checkpoint={output_checkpoint}"
+        )
         iteration_record = {
             "iteration": iteration,
             "input_checkpoint_path": str(current_checkpoint.resolve()),
