@@ -104,14 +104,18 @@ def _constant_leg_pitch(
     right_ankle: float | None = None,
 ) -> np.ndarray:
     action = _zero_action(env)
-    return _set_joint_offsets(env, action, {
-        "left_hip_pitch_joint": left_hip,
-        "left_knee_joint": left_knee,
-        "left_ankle_pitch_joint": left_ankle,
-        "right_hip_pitch_joint": left_hip if right_hip is None else right_hip,
-        "right_knee_joint": left_knee if right_knee is None else right_knee,
-        "right_ankle_pitch_joint": left_ankle if right_ankle is None else right_ankle,
-    })
+    return _set_joint_offsets(
+        env,
+        action,
+        {
+            "left_hip_pitch_joint": left_hip,
+            "left_knee_joint": left_knee,
+            "left_ankle_pitch_joint": left_ankle,
+            "right_hip_pitch_joint": left_hip if right_hip is None else right_hip,
+            "right_knee_joint": left_knee if right_knee is None else right_knee,
+            "right_ankle_pitch_joint": left_ankle if right_ankle is None else right_ankle,
+        },
+    )
 
 
 def _hip_roll_action(env: Any, left: float, right: float) -> np.ndarray:
@@ -338,9 +342,7 @@ def _force_command(state: Any, command: np.ndarray) -> None:
 def _sync_envs_to_reference_state(env: Any, state: Any, ref_index: int = 0) -> None:
     backend = env._backend
     qpos = np.repeat(backend._qpos_view[ref_index : ref_index + 1], env.num_envs, axis=0)
-    qvel_view = backend._physics_state[
-        :, backend._idx_qvel : backend._idx_qvel + backend.nv
-    ]
+    qvel_view = backend._physics_state[:, backend._idx_qvel : backend._idx_qvel + backend.nv]
     qvel = np.repeat(qvel_view[ref_index : ref_index + 1], env.num_envs, axis=0)
     backend.set_state(np.arange(env.num_envs, dtype=np.int32), qpos, qvel)
 
@@ -362,9 +364,7 @@ def _apply_reference_qvel_disturbance(
 ) -> None:
     backend = env._backend
     qpos = np.repeat(backend._qpos_view[ref_index : ref_index + 1], env.num_envs, axis=0)
-    qvel_view = backend._physics_state[
-        :, backend._idx_qvel : backend._idx_qvel + backend.nv
-    ]
+    qvel_view = backend._physics_state[:, backend._idx_qvel : backend._idx_qvel + backend.nv]
     qvel = np.repeat(qvel_view[ref_index : ref_index + 1], env.num_envs, axis=0)
     qvel[:, 0] = float(lin_xy[0])
     qvel[:, 1] = float(lin_xy[1])
@@ -452,7 +452,9 @@ def _section_contributions(env: Any, state: Any) -> dict[str, Any]:
             scale = float(scale_overrides.get(name, env.cfg.reward_config.scales.get(name, 0.0)))
             if scale == 0.0 or name not in env._reward_fns:
                 continue
-            values = np.asarray(env._reward_fns[name](ctx) * scale * mask * env.cfg.ctrl_dt, dtype=np.float32)
+            values = np.asarray(
+                env._reward_fns[name](ctx) * scale * mask * env.cfg.ctrl_dt, dtype=np.float32
+            )
             total += values
             section_terms[name] = [float(v) for v in values]
         out["sections"][section] = [float(v) for v in total]
@@ -467,7 +469,9 @@ def _section_contributions(env: Any, state: Any) -> dict[str, Any]:
     return out
 
 
-def _candidate_term_contributions(contributions: dict[str, Any], index: int) -> dict[str, dict[str, float]]:
+def _candidate_term_contributions(
+    contributions: dict[str, Any], index: int
+) -> dict[str, dict[str, float]]:
     return {
         section: {name: float(values[index]) for name, values in terms.items()}
         for section, terms in contributions["terms"].items()
@@ -490,14 +494,16 @@ def _add_contributions(total: dict[str, Any], step: dict[str, Any]) -> None:
     for section, values in step["sections"].items():
         total["sections"].setdefault(section, [0.0 for _ in values])
         total["sections"][section] = [
-            float(lhs) + float(rhs) for lhs, rhs in zip(total["sections"][section], values, strict=True)
+            float(lhs) + float(rhs)
+            for lhs, rhs in zip(total["sections"][section], values, strict=True)
         ]
     for section, terms in step["terms"].items():
         section_total = total["terms"].setdefault(section, {})
         for name, values in terms.items():
             section_total.setdefault(name, [0.0 for _ in values])
             section_total[name] = [
-                float(lhs) + float(rhs) for lhs, rhs in zip(section_total[name], values, strict=True)
+                float(lhs) + float(rhs)
+                for lhs, rhs in zip(section_total[name], values, strict=True)
             ]
 
 
@@ -854,7 +860,9 @@ def _row(results: dict[str, Any], name: str) -> dict[str, Any]:
     raise KeyError(name)
 
 
-def _preference(results: dict[str, Any], better: str, worse: str, metric: str = "total_reward") -> dict[str, Any]:
+def _preference(
+    results: dict[str, Any], better: str, worse: str, metric: str = "total_reward"
+) -> dict[str, Any]:
     lhs = _row(results, better)
     rhs = _row(results, worse)
     return {
@@ -921,9 +929,7 @@ def _quality(name: str, passed: bool, *, value: float, expected: str) -> dict[st
     }
 
 
-def _diagnostic_quality(
-    name: str, passed: bool, *, value: float, expected: str
-) -> dict[str, Any]:
+def _diagnostic_quality(name: str, passed: bool, *, value: float, expected: str) -> dict[str, Any]:
     check = _quality(name, passed, value=value, expected=expected)
     check["kind"] = "diagnostic_quality"
     check["gating"] = False
@@ -940,7 +946,8 @@ def _standing_quality_checks(results: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         _quality(
             "standing_deployable_high_clean",
-            deployable["first_terminated_step"] is None and float(deployable["max_tilt_deg"]) < 15.0,
+            deployable["first_terminated_step"] is None
+            and float(deployable["max_tilt_deg"]) < 15.0,
             value=float(deployable["max_tilt_deg"]),
             expected="default stand should stay upright without early termination",
         ),
@@ -1374,9 +1381,7 @@ def _print_section_summary(section: dict[str, Any], *, indent: str = "") -> None
     rows = section.get("rows", [])
     for row in rows:
         print(
-            indent
-            + "  "
-            + f"{row['name']}: total={row['total_reward']:.3f}, "
+            indent + "  " + f"{row['name']}: total={row['total_reward']:.3f}, "
             f"standing={row['standing']:.3f}, recovery={row['standing_recovery']:.3f}, "
             f"walking={row['walking']:.3f}, gait={row['gait_constraint']:.3f}, "
             f"x={row['x_displacement']:.3f}, tilt={row['max_tilt_deg']:.2f}, "
@@ -1395,9 +1400,7 @@ def _print_section_summary(section: dict[str, Any], *, indent: str = "") -> None
         )
         for item in delta["top"]:
             print(
-                indent
-                + "    "
-                + f"{item['term']}: lhs={item['lhs']:.6f}, "
+                indent + "    " + f"{item['term']}: lhs={item['lhs']:.6f}, "
                 f"rhs={item['rhs']:.6f}, delta={item['delta']:.6f}"
             )
     for child in _child_sections(section):
@@ -1440,11 +1443,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     requested = args.section or ["all"]
-    sections = (
-        ["standing", "walking_0p1", "isolation"]
-        if "all" in requested
-        else requested
-    )
+    sections = ["standing", "walking_0p1", "isolation"] if "all" in requested else requested
     runners = {
         "standing": _run_standing,
         "standing_recovery": _run_standing_recovery,
@@ -1452,14 +1451,17 @@ def main() -> int:
         "transition_recovery": _run_transition_recovery,
         "isolation": _run_isolation,
     }
-    report = {"steps": args.steps, "seed": args.seed, "sections": [runners[name](args) for name in sections]}
+    report = {
+        "steps": args.steps,
+        "seed": args.seed,
+        "sections": [runners[name](args) for name in sections],
+    }
     _print_summary(report)
     failed = [
         check
         for section in report["sections"]
         for check in _iter_checks(section)
-        if not bool(check["pass"])
-        and bool(check.get("gating", True))
+        if not bool(check["pass"]) and bool(check.get("gating", True))
     ]
     return 1 if failed else 0
 

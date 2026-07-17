@@ -612,9 +612,7 @@ def test_distill_playback_hard_routes_moe_by_command_intent(tmp_path: Path) -> N
         )
 
         def __init__(self) -> None:
-            self.state = SimpleNamespace(
-                info={"commands": np.zeros((1, 3), dtype=np.float32)}
-            )
+            self.state = SimpleNamespace(info={"commands": np.zeros((1, 3), dtype=np.float32)})
 
         def get_physics_state_snapshot(self):
             return np.zeros((1, 4), dtype=np.float32)
@@ -731,9 +729,7 @@ def test_rt1_playback_probe_exposes_command_observation_skew(tmp_path: Path) -> 
         )
 
         def __init__(self) -> None:
-            self.state = SimpleNamespace(
-                info={"commands": np.zeros((1, 3), dtype=np.float32)}
-            )
+            self.state = SimpleNamespace(info={"commands": np.zeros((1, 3), dtype=np.float32)})
 
         def get_physics_state_snapshot(self):
             return np.zeros((1, 4), dtype=np.float32)
@@ -813,9 +809,7 @@ def test_distill_playback_resolves_explicit_student_checkpoint_path(
     cfg = SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat"))
 
     def fail_resolve_task_checkpoint_path(*args, **kwargs):
-        raise AssertionError(
-            "training.play_checkpoint_path must bypass run/checkpoint resolution"
-        )
+        raise AssertionError("training.play_checkpoint_path must bypass run/checkpoint resolution")
 
     monkeypatch.setattr(
         training_run,
@@ -1240,7 +1234,9 @@ def test_sac_playback_rejects_checkpoint_obs_dim_mismatch(
         }
     )
 
-    monkeypatch.setattr(train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu")
+    monkeypatch.setattr(
+        train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu"
+    )
     monkeypatch.setattr(train_offpolicy, "resolve_play_obs_dims", lambda spec: (98, 98))
     monkeypatch.setattr(
         train_offpolicy,
@@ -1328,7 +1324,9 @@ def test_sac_playback_loads_legacy_tar_checkpoint_with_warning(
             )
         return {"actor": {"net.0.weight": torch.zeros((4, 3))}}
 
-    monkeypatch.setattr(train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu")
+    monkeypatch.setattr(
+        train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu"
+    )
     monkeypatch.setattr(train_offpolicy, "resolve_play_obs_dims", lambda spec: (3, 3))
     monkeypatch.setattr(
         train_offpolicy,
@@ -1389,7 +1387,9 @@ def test_sac_playback_reports_corrupt_legacy_checkpoint(
     monkeypatch.setattr(playback.torch, "load", fake_torch_load)
 
     with pytest.raises(RuntimeError, match="corrupted, incomplete, or not a PyTorch checkpoint"):
-        playback._load_playback_checkpoint(str(checkpoint), device_name="cpu", log=lambda message: None)
+        playback._load_playback_checkpoint(
+            str(checkpoint), device_name="cpu", log=lambda message: None
+        )
     assert captured["load_calls"] == [True, False]
 
 

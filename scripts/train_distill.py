@@ -7,28 +7,41 @@ assembles the configured entrypoint routes.
 from __future__ import annotations
 
 import json
+import os
+import time
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 
 from unilab.algos.torch.distill import (
+    COLLECTOR_REQUEST_STAGE_NAMES,
+    DISTILLATION_METRICS_SCHEMA_VERSION,
+    LEGACY_REQUEST_STAGE_NAMES,
     BehaviorDistillationTrainer,
+    DistillationPerformanceRunContext,
+    DistillationStageObservation,
     DistillationTeacherSpec,
     MLPStudentPolicy,
     MoEStudentPolicy,
     RoleArtifactSpec,
     WorkflowDatasetSource,
+    WorkflowScenarioCollectionResult,
     WorkflowScenarioSpec,
+    WorkflowStudentUpdateResult,
     adopt_legacy_role_artifact,
     build_multitask_distillation_dataset,
     collect_distillation_dataset_from_env,
     collect_transition_distillation_dataset_from_env,
+    config_fingerprint,
+    file_sha256,
+    finalize_workflow_performance,
     fork_workflow_run,
     load_distillation_checkpoint,
     load_distillation_dataset,
@@ -43,6 +56,9 @@ from unilab.algos.torch.distill import (
     run_offline_distillation_updates,
     save_distillation_dataset,
     validate_sac_teacher_checkpoint_contract,
+)
+from unilab.algos.torch.distill.g1_persistent_worker import (
+    build_persistent_g1_distillation_runtime,
 )
 from unilab.training import BackendAdapter, ExperimentTracker, create_env, ensure_registries
 from unilab.training.run import resolve_task_checkpoint_path
@@ -94,9 +110,7 @@ def _workflow_scenario_specs(
                 quota=float(entry.get("quota", 1.0)),
             )
         )
-    missing = sorted(
-        {role for spec in specs for role in spec.source_roles} - set(role_names)
-    )
+    missing = sorted({role for spec in specs for role in spec.source_roles} - set(role_names))
     if missing:
         raise ValueError(f"workflow scenarios reference unknown roles: {missing}")
     return tuple(specs)
@@ -149,9 +163,7 @@ def _workflow_role_cfg(cfg: DictConfig, entry: dict[str, Any]) -> DictConfig:
         },
     )
     if not str(OmegaConf.select(role_cfg, "teacher.checkpoint_path", default="")):
-        raise ValueError(
-            f"workflow role {entry.get('role')!r} requires teacher_checkpoint_path"
-        )
+        raise ValueError(f"workflow role {entry.get('role')!r} requires teacher_checkpoint_path")
     role_cfg.teacher.checkpoint_path = str(
         _workflow_path(OmegaConf.select(role_cfg, "teacher.checkpoint_path"))
     )
@@ -166,15 +178,9 @@ def _workflow_owner_fingerprint_cfg(role_cfg: DictConfig) -> dict[str, Any]:
             "task_name": str(role_cfg.training.task_name),
             "sim_backend": str(role_cfg.training.sim_backend),
             "collect_action_mode": str(role_cfg.training.collect_action_mode),
-            "collect_command_sample_filter": str(
-                role_cfg.training.collect_command_sample_filter
-            ),
-            "collect_command_xy_threshold": float(
-                role_cfg.training.collect_command_xy_threshold
-            ),
-            "collect_command_yaw_threshold": float(
-                role_cfg.training.collect_command_yaw_threshold
-            ),
+            "collect_command_sample_filter": str(role_cfg.training.collect_command_sample_filter),
+            "collect_command_xy_threshold": float(role_cfg.training.collect_command_xy_threshold),
+            "collect_command_yaw_threshold": float(role_cfg.training.collect_command_yaw_threshold),
         },
         "env": OmegaConf.to_container(role_cfg.env, resolve=True),
         "teacher": {
@@ -289,12 +295,8 @@ def _student_runtime_cfg(cfg: DictConfig) -> dict[str, Any]:
         payload.update(
             {
                 "student_num_experts": int(cfg.student.num_experts),
-                "student_expert_hidden_dims": [
-                    int(dim) for dim in cfg.student.expert_hidden_dims
-                ],
-                "student_router_hidden_dims": [
-                    int(dim) for dim in cfg.student.router_hidden_dims
-                ],
+                "student_expert_hidden_dims": [int(dim) for dim in cfg.student.expert_hidden_dims],
+                "student_router_hidden_dims": [int(dim) for dim in cfg.student.router_hidden_dims],
                 "student_routing_mode": str(cfg.student.routing_mode),
                 "student_router_temperature": float(cfg.student.router_temperature),
             }
@@ -496,9 +498,7 @@ def _distill_runtime_cfg(
         payload["student_init_optimizer_requested"] = bool(
             student_init_metadata.get("optimizer_requested", False)
         )
-        payload["student_init_optimizer_loaded"] = bool(
-            student_init_metadata["optimizer_loaded"]
-        )
+        payload["student_init_optimizer_loaded"] = bool(student_init_metadata["optimizer_loaded"])
     return payload
 
 
@@ -543,13 +543,14 @@ def _probe_result(
         "update_count": result.update_count,
         "samples_seen": result.samples_seen,
         "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
+        "performance_stage_observations": [
+            observation.as_dict() for observation in result.performance_stage_observations
+        ],
     }
     if isinstance(student_init_metadata, dict):
         probe["student_init_checkpoint_path"] = student_init_metadata.get("path")
         probe["student_init_agent_steps"] = student_init_metadata.get("agent_steps")
-        probe["student_init_optimizer_requested"] = student_init_metadata.get(
-            "optimizer_requested"
-        )
+        probe["student_init_optimizer_requested"] = student_init_metadata.get("optimizer_requested")
         probe["student_init_optimizer_loaded"] = student_init_metadata.get("optimizer_loaded")
     if dataset_path is not None:
         probe["dataset_path"] = str(dataset_path)
@@ -707,6 +708,7 @@ def run_offline_dataset_update(
     checkpoint_path: str | Path | None = None,
     device: str | torch.device = "cpu",
     auto_expand_replay_budget: bool = False,
+    performance_clock: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Run bounded offline updates from a saved distillation tensor dataset."""
 
@@ -739,9 +741,7 @@ def run_offline_dataset_update(
         expected_teacher_action_dim=int(cfg.teacher.action_dim),
         device=device,
     )
-    offline_balance_key = str(
-        OmegaConf.select(cfg, "training.offline_balance_key", default="none")
-    )
+    offline_balance_key = str(OmegaConf.select(cfg, "training.offline_balance_key", default="none"))
     offline_balanced_labels = list(
         OmegaConf.select(cfg, "training.offline_balanced_labels", default=[])
     )
@@ -783,7 +783,9 @@ def run_offline_dataset_update(
             dataset_path=dataset_path,
             student_init_metadata=student_init_metadata,
         ),
-        repeat_dataset=bool(OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)),
+        repeat_dataset=bool(
+            OmegaConf.select(cfg, "training.offline_repeat_dataset", default=False)
+        ),
         shuffle=bool(OmegaConf.select(cfg, "training.offline_shuffle", default=False)),
         seed=int(cfg.algo.seed),
         balance_key=offline_balance_key,
@@ -791,6 +793,7 @@ def run_offline_dataset_update(
         balance_quotas=offline_balance_quotas,
         min_balanced_replay_passes=offline_replay_passes,
         min_balanced_replay_labels=offline_replay_labels,
+        performance_clock=performance_clock,
     )
     return _probe_result(
         cfg,
@@ -1036,8 +1039,7 @@ def _teacher_task_name_for_collection(cfg: DictConfig) -> str:
         return teacher_task_name
     if len(hinted_task_names) > 1:
         raise ValueError(
-            "teacher.checkpoint_path contains multiple distill task hints: "
-            f"{hinted_task_names}"
+            f"teacher.checkpoint_path contains multiple distill task hints: {hinted_task_names}"
         )
     hinted_task_name = hinted_task_names[0]
     if teacher_task_name != hinted_task_name:
@@ -1063,7 +1065,9 @@ def _require_owner_command_sample_filter(cfg: DictConfig) -> None:
     expected_filter = _expected_owner_command_sample_filter(cfg)
     if expected_filter is None:
         return
-    actual_filter = str(OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none"))
+    actual_filter = str(
+        OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
+    )
     if actual_filter != expected_filter:
         task_name = str(OmegaConf.select(cfg, "training.task_name"))
         raise ValueError(
@@ -1097,7 +1101,9 @@ def _require_collected_command_intent_contract(cfg: DictConfig, dataset: Any) ->
     seen_samples = dataset.metadata.get("command_seen_samples")
     selected_samples = dataset.metadata.get("command_selected_samples")
     if seen_samples is None or selected_samples is None:
-        raise ValueError("owner command-intent collection must record command_seen/selected samples")
+        raise ValueError(
+            "owner command-intent collection must record command_seen/selected samples"
+        )
     if int(selected_samples) < int(dataset.num_samples):
         raise ValueError(
             "owner command-intent collection selected too few samples: "
@@ -1107,7 +1113,9 @@ def _require_collected_command_intent_contract(cfg: DictConfig, dataset: Any) ->
 
 def _collect_command_distribution_overrides(cfg: DictConfig) -> dict[str, Any]:
     expected_filter = _expected_owner_command_sample_filter(cfg)
-    actual_filter = str(OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none"))
+    actual_filter = str(
+        OmegaConf.select(cfg, "training.collect_command_sample_filter", default="none")
+    )
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
     teacher_task_name = _teacher_task_name_for_collection(cfg)
     if (
@@ -1160,9 +1168,15 @@ def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
         raise ValueError("teacher target collection requires 98-D teacher and student obs")
     if str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")) != "obs":
         raise ValueError("teacher target collection requires training.collect_teacher_obs_key=obs")
-    if str(OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity")) != "identity":
+    if (
+        str(OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity"))
+        != "identity"
+    ):
         raise ValueError("teacher target collection requires identity teacher projection")
-    if str(OmegaConf.select(cfg, "training.collect_student_projection", default="identity")) != "identity":
+    if (
+        str(OmegaConf.select(cfg, "training.collect_student_projection", default="identity"))
+        != "identity"
+    ):
         raise ValueError("teacher target collection requires identity student projection")
     if OmegaConf.select(cfg, "training.collect_student_drop_index") is not None:
         raise ValueError("teacher target collection does not support collect_student_drop_index")
@@ -1182,7 +1196,9 @@ def _resolve_collect_rollout_checkpoint(cfg: DictConfig) -> Path:
     path = Path(str(checkpoint_path))
     resolved_path = path if path.is_absolute() else ROOT_DIR / path
     if not resolved_path.is_file():
-        raise FileNotFoundError(f"training.collect_rollout_checkpoint_path does not exist: {resolved_path}")
+        raise FileNotFoundError(
+            f"training.collect_rollout_checkpoint_path does not exist: {resolved_path}"
+        )
     return resolved_path
 
 
@@ -1192,9 +1208,11 @@ def run_collect_dataset(
     dataset_path: str | Path | None = None,
     create_env_fn: Any | None = None,
     env_cfg_override_fn: Any | None = None,
+    performance_clock: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Collect and save a small live-env distillation observation dataset."""
 
+    request_start = None if performance_clock is None else float(performance_clock())
     resolved_dataset_path = dataset_path or OmegaConf.select(cfg, "training.collect_dataset_path")
     if resolved_dataset_path in (None, ""):
         raise ValueError("training.collect_dataset_path must be set for live dataset collection")
@@ -1208,7 +1226,9 @@ def run_collect_dataset(
     rollout_policy_checkpoint_path: Path | None = None
     if action_mode in {"teacher_policy", "student_policy"}:
         _require_teacher_policy_collection_route(cfg)
-        teacher_policy_checkpoint_path, _run_dir = resolve_teacher_checkpoint(cfg, root_dir=ROOT_DIR)
+        teacher_policy_checkpoint_path, _run_dir = resolve_teacher_checkpoint(
+            cfg, root_dir=ROOT_DIR
+        )
         if teacher_policy_checkpoint_path is None:
             raise FileNotFoundError(
                 "No SAC teacher checkpoint resolved for teacher target collection. "
@@ -1255,6 +1275,12 @@ def run_collect_dataset(
         sim_backend=str(OmegaConf.select(cfg, "training.sim_backend", default="mujoco")),
         task_name=str(OmegaConf.select(cfg, "training.task_name")),
     )
+    cold_start_seconds = (
+        None
+        if performance_clock is None or request_start is None
+        else float(performance_clock()) - request_start
+    )
+    request_observations: tuple[DistillationStageObservation, ...] | None = None
     try:
         drop_index = OmegaConf.select(cfg, "training.collect_student_drop_index")
         collect_max_env_steps = OmegaConf.select(cfg, "training.collect_max_env_steps")
@@ -1273,7 +1299,9 @@ def run_collect_dataset(
             num_samples=int(OmegaConf.select(cfg, "training.collect_num_samples", default=1024)),
             expected_student_obs_dim=int(cfg.student.obs_dim),
             expected_teacher_obs_dim=int(cfg.teacher.obs_dim),
-            teacher_obs_key=str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")),
+            teacher_obs_key=str(
+                OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")
+            ),
             teacher_projection=str(
                 OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity")
             ),
@@ -1300,15 +1328,67 @@ def run_collect_dataset(
             max_env_steps=None if collect_max_env_steps is None else int(collect_max_env_steps),
             role_label=OmegaConf.select(cfg, "training.collect_role_label"),
             metadata=metadata,
+            performance_clock=performance_clock,
         )
         _require_collected_command_intent_contract(cfg, dataset)
+        write_start = None if performance_clock is None else float(performance_clock())
         save_distillation_dataset(resolved_dataset_path, dataset)
+        if performance_clock is not None:
+            assert request_start is not None
+            assert cold_start_seconds is not None
+            assert write_start is not None
+            artifact_write_seconds = float(performance_clock()) - write_start
+            collector_payloads = dataset.metadata.get("performance_stage_observations")
+            if not isinstance(collector_payloads, list):
+                raise ValueError("legacy collector performance observations are missing")
+            collector_observations = tuple(
+                DistillationStageObservation.from_dict(payload) for payload in collector_payloads
+            )
+            collector_stages = tuple(item.stage for item in collector_observations)
+            if collector_stages != COLLECTOR_REQUEST_STAGE_NAMES:
+                raise ValueError(
+                    "legacy collector performance stage order mismatch: "
+                    f"expected={COLLECTOR_REQUEST_STAGE_NAMES} "
+                    f"observed={collector_stages}"
+                )
+            total_elapsed_seconds = float(performance_clock()) - request_start
+            env_steps = int(dataset.metadata.get("env_steps", 0))
+            request_observations = (
+                DistillationStageObservation(
+                    stage="cold_start",
+                    duration_seconds=cold_start_seconds,
+                    row_count=0,
+                    env_step_count=0,
+                    success=True,
+                    error=None,
+                    cleanup_state="not_applicable",
+                ),
+                *collector_observations,
+                DistillationStageObservation(
+                    stage="artifact_write",
+                    duration_seconds=artifact_write_seconds,
+                    row_count=dataset.num_samples,
+                    env_step_count=0,
+                    success=True,
+                    error=None,
+                    cleanup_state="not_applicable",
+                ),
+                DistillationStageObservation(
+                    stage="total_elapsed",
+                    duration_seconds=total_elapsed_seconds,
+                    row_count=dataset.num_samples,
+                    env_step_count=env_steps,
+                    success=True,
+                    error=None,
+                    cleanup_state="pending",
+                ),
+            )
     finally:
         close = getattr(env, "close", None)
         if callable(close):
             close()
 
-    return {
+    result = {
         "distill_source": "live_env_rollout",
         "dataset_path": str(resolved_dataset_path),
         "dataset_num_samples": dataset.num_samples,
@@ -1322,14 +1402,18 @@ def run_collect_dataset(
         "collect_action_seed": OmegaConf.select(cfg, "training.collect_action_seed"),
         "collect_action_abs_max": float(dataset.metadata.get("action_abs_max", 0.0)),
         "teacher_policy_checkpoint_path": (
-            str(teacher_policy_checkpoint_path) if teacher_policy_checkpoint_path is not None else None
+            str(teacher_policy_checkpoint_path)
+            if teacher_policy_checkpoint_path is not None
+            else None
         ),
         "rollout_policy_checkpoint_path": (
             str(rollout_policy_checkpoint_path)
             if rollout_policy_checkpoint_path is not None
             else None
         ),
-        "teacher_obs_key": str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")),
+        "teacher_obs_key": str(
+            OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")
+        ),
         "teacher_projection": str(
             OmegaConf.select(cfg, "training.collect_teacher_projection", default="identity")
         ),
@@ -1337,9 +1421,7 @@ def run_collect_dataset(
             OmegaConf.select(cfg, "training.collect_student_projection", default="identity")
         ),
         "student_drop_index": None if drop_index is None else int(drop_index),
-        "collect_command_sample_filter": str(
-            dataset.metadata.get("command_sample_filter", "none")
-        ),
+        "collect_command_sample_filter": str(dataset.metadata.get("command_sample_filter", "none")),
         "collect_command_seen_samples": dataset.metadata.get("command_seen_samples"),
         "collect_command_selected_samples": dataset.metadata.get("command_selected_samples"),
         "collect_command_intent_counts": dataset.metadata.get("command_intent_counts"),
@@ -1347,6 +1429,12 @@ def run_collect_dataset(
             "command_distribution_overrides"
         ),
     }
+    if request_observations is not None:
+        result["performance_metrics_schema_version"] = DISTILLATION_METRICS_SCHEMA_VERSION
+        result["performance_stage_observations"] = [
+            observation.as_dict() for observation in request_observations
+        ]
+    return result
 
 
 def run_online_dagger_update(
@@ -1442,9 +1530,7 @@ def run_online_dagger_update(
             role_label=None if role_label in (None, "") else str(role_label),
             shuffle=bool(OmegaConf.select(cfg, "training.dagger_shuffle", default=True)),
             seed=int(cfg.algo.seed),
-            balance_key=str(
-                OmegaConf.select(cfg, "training.dagger_balance_key", default="none")
-            ),
+            balance_key=str(OmegaConf.select(cfg, "training.dagger_balance_key", default="none")),
             balanced_labels=list(
                 OmegaConf.select(cfg, "training.dagger_balanced_labels", default=[])
             ),
@@ -1478,14 +1564,34 @@ def run_online_dagger_update(
     }
 
 
-def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
+def run_single_entry_workflow(
+    cfg: DictConfig,
+    *,
+    persistent_scenario_collector_factory: Callable[..., Any] | None = None,
+    performance_clock: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
     """Adapt role owner configs to the distillation workflow stage owner."""
+
+    execution_mode = str(
+        OmegaConf.select(
+            cfg,
+            "training.workflow.execution_mode",
+            default="legacy",
+        )
+    )
+    if execution_mode not in {"legacy", "persistent_async"}:
+        raise ValueError(
+            "training.workflow.execution_mode must be 'legacy' or "
+            f"'persistent_async', got {execution_mode!r}"
+        )
+    if execution_mode == "legacy" and persistent_scenario_collector_factory is not None:
+        raise ValueError("legacy execution_mode forbids persistent_scenario_collector_factory")
 
     entries = _workflow_role_entries(cfg)
     configured_run_dir = OmegaConf.select(cfg, "training.workflow.run_dir")
     if configured_run_dir in (None, ""):
-        run_dir = ROOT_DIR / "logs" / "distill_workflow" / datetime.now().strftime(
-            "%Y-%m-%d_%H-%M-%S"
+        run_dir = (
+            ROOT_DIR / "logs" / "distill_workflow" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         )
     else:
         run_dir = _workflow_path(configured_run_dir)
@@ -1540,9 +1646,12 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         )
 
     scenario_specs = _workflow_scenario_specs(cfg, {spec.role for spec in specs})
-    if bool(
-        OmegaConf.select(cfg, "training.workflow.adopt_legacy_artifacts", default=False)
-    ):
+    if execution_mode == "persistent_async":
+        if scenario_specs is None:
+            raise ValueError("persistent_async execution_mode requires training.workflow.scenarios")
+        if persistent_scenario_collector_factory is None:
+            persistent_scenario_collector_factory = build_persistent_g1_distillation_runtime
+    if bool(OmegaConf.select(cfg, "training.workflow.adopt_legacy_artifacts", default=False)):
         for spec in specs:
             if spec.dataset_path.is_file():
                 adopt_legacy_role_artifact(spec)
@@ -1631,7 +1740,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         checkpoint_path: Path,
         _iteration: int,
         output_path: Path,
-    ) -> int:
+    ) -> int | WorkflowScenarioCollectionResult:
         role_cfg = OmegaConf.create(
             OmegaConf.to_container(role_cfgs[output_spec.role], resolve=True)
         )
@@ -1646,15 +1755,31 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             )
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        collected = run_collect_dataset(role_cfg, dataset_path=output_path)
-        return int(collected["dataset_num_samples"])
+        collected = run_collect_dataset(
+            role_cfg,
+            dataset_path=output_path,
+            performance_clock=(performance_clock if execution_mode == "legacy" else None),
+        )
+        if execution_mode != "legacy":
+            return int(collected["dataset_num_samples"])
+        payloads = collected.get("performance_stage_observations")
+        if not isinstance(payloads, list):
+            raise ValueError("legacy role request performance observations are missing")
+        return WorkflowScenarioCollectionResult(
+            num_samples=int(collected["dataset_num_samples"]),
+            worker_pid=os.getpid(),
+            performance_metrics_schema_version=int(collected["performance_metrics_schema_version"]),
+            performance_stage_observations=tuple(
+                DistillationStageObservation.from_dict(payload) for payload in payloads
+            ),
+        )
 
     def collect_dagger_scenario(
         scenario: WorkflowScenarioSpec,
         checkpoint_path: Path,
         _iteration: int,
         output_path: Path,
-    ) -> int:
+    ) -> int | WorkflowScenarioCollectionResult:
         if scenario.kind == "role":
             role_spec = next(spec for spec in specs if spec.role == scenario.source_roles[0])
             return collect_dagger_role(
@@ -1667,6 +1792,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             raise ValueError(f"unsupported transition workflow scenario: {scenario.name!r}")
         if set(("walk_flat", "stand")) - set(role_cfgs):
             raise ValueError("walk_to_stop scenario requires walk_flat and stand role owners")
+        request_start = float(performance_clock())
         device = _distill_device(cfg)
         walk_cfg = role_cfgs["walk_flat"]
         stand_cfg = role_cfgs["stand"]
@@ -1676,11 +1802,9 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         rollout_policies_by_intent: dict[str, torch.nn.Module] | None = None
         rollout_policy_metadata: dict[str, Any] = {}
         if isinstance(student, MoEStudentPolicy):
-            rollout_policies_by_intent, expert_targets = (
-                resolve_command_intent_rollout_policies(
-                    student,
-                    loaded_student.distill_runtime_cfg,
-                )
+            rollout_policies_by_intent, expert_targets = resolve_command_intent_rollout_policies(
+                student,
+                loaded_student.distill_runtime_cfg,
             )
             rollout_policy = None
             rollout_policy_metadata = {
@@ -1700,9 +1824,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         ensure_registries()
         env = create_env(
             walk_cfg,
-            num_envs=int(
-                OmegaConf.select(cfg, "training.workflow.collect_num_envs", default=64)
-            ),
+            num_envs=int(OmegaConf.select(cfg, "training.workflow.collect_num_envs", default=64)),
             env_cfg_override=BackendAdapter(
                 walk_cfg,
                 root_dir=ROOT_DIR,
@@ -1711,6 +1833,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             sim_backend=str(walk_cfg.training.sim_backend),
             task_name=str(walk_cfg.training.task_name),
         )
+        cold_start_seconds = float(performance_clock()) - request_start
         try:
             transition_max_env_steps = OmegaConf.select(
                 cfg,
@@ -1771,10 +1894,60 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
                     "workflow_scenario": scenario.name,
                     **rollout_policy_metadata,
                 },
+                performance_clock=performance_clock,
             )
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            write_start = float(performance_clock())
             save_distillation_dataset(output_path, dataset)
-            return dataset.num_samples
+            artifact_write_seconds = float(performance_clock()) - write_start
+            collector_payloads = dataset.metadata.get("performance_stage_observations")
+            if not isinstance(collector_payloads, list):
+                raise ValueError("legacy transition performance observations are missing")
+            collector_observations = tuple(
+                DistillationStageObservation.from_dict(payload) for payload in collector_payloads
+            )
+            collector_stages = tuple(item.stage for item in collector_observations)
+            if collector_stages != COLLECTOR_REQUEST_STAGE_NAMES:
+                raise ValueError(
+                    "legacy transition performance stage order mismatch: "
+                    f"expected={COLLECTOR_REQUEST_STAGE_NAMES} "
+                    f"observed={collector_stages}"
+                )
+            return WorkflowScenarioCollectionResult(
+                num_samples=dataset.num_samples,
+                worker_pid=os.getpid(),
+                performance_metrics_schema_version=(DISTILLATION_METRICS_SCHEMA_VERSION),
+                performance_stage_observations=(
+                    DistillationStageObservation(
+                        stage="cold_start",
+                        duration_seconds=cold_start_seconds,
+                        row_count=0,
+                        env_step_count=0,
+                        success=True,
+                        error=None,
+                        cleanup_state="not_applicable",
+                    ),
+                    *collector_observations,
+                    DistillationStageObservation(
+                        stage="artifact_write",
+                        duration_seconds=artifact_write_seconds,
+                        row_count=dataset.num_samples,
+                        env_step_count=0,
+                        success=True,
+                        error=None,
+                        cleanup_state="not_applicable",
+                    ),
+                    DistillationStageObservation(
+                        stage="total_elapsed",
+                        duration_seconds=float(performance_clock()) - request_start,
+                        row_count=dataset.num_samples,
+                        env_step_count=int(dataset.metadata.get("env_steps", 0)),
+                        success=True,
+                        error=None,
+                        cleanup_state="pending",
+                    ),
+                ),
+            )
         finally:
             close = getattr(env, "close", None)
             if callable(close):
@@ -1811,7 +1984,7 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
         dataset_path: Path,
         input_checkpoint_path: Path,
         output_checkpoint_path: Path,
-    ) -> int:
+    ) -> WorkflowStudentUpdateResult:
         update_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
         update_cfg.training.offline_init_checkpoint = str(input_checkpoint_path)
         update_cfg.training.offline_repeat_dataset = True
@@ -1864,21 +2037,88 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             checkpoint_path=output_checkpoint_path,
             device=_distill_device(cfg),
             auto_expand_replay_budget=True,
+            performance_clock=performance_clock,
         )
-        return int(result["update_count"])
+        return WorkflowStudentUpdateResult(
+            updates=int(result["update_count"]),
+            performance_stage_observations=tuple(
+                DistillationStageObservation.from_dict(observation)
+                for observation in result["performance_stage_observations"]
+            ),
+        )
 
-    dagger_result = run_multirole_dagger_workflow(
-        run_dir=run_dir,
-        role_specs=tuple(specs),
-        target_iterations=int(
-            OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8)
+    scenario_collector = None
+    resolved_config = OmegaConf.to_container(cfg, resolve=True)
+    if not isinstance(resolved_config, dict):
+        raise TypeError("resolved distillation config must be a mapping")
+    performance_context = DistillationPerformanceRunContext(
+        execution_mode=execution_mode,
+        teacher_checkpoint_sha256=tuple(
+            sorted({file_sha256(spec.teacher_checkpoint_path) for spec in specs})
         ),
-        collect_role=collect_dagger_role,
-        aggregate_datasets=aggregate_dagger_sources,
-        update_student=update_dagger_student,
-        scenario_specs=scenario_specs,
-        collect_scenario=collect_dagger_scenario if scenario_specs is not None else None,
+        config_sha256=config_fingerprint(resolved_config),
+        seed=int(cfg.algo.seed),
+        device=_distill_device(cfg),
+        num_envs=int(
+            OmegaConf.select(
+                cfg,
+                "training.workflow.collect_num_envs",
+                default=64,
+            )
+        ),
     )
+    if execution_mode == "persistent_async":
+        assert persistent_scenario_collector_factory is not None
+        scenario_collector = persistent_scenario_collector_factory(
+            cfg=cfg,
+            role_cfgs=role_cfgs,
+            role_specs=tuple(specs),
+            scenario_specs=scenario_specs,
+        )
+        if not callable(getattr(scenario_collector, "close", None)):
+            raise TypeError("persistent runtime factory result must provide close()")
+    cleanup_duration_seconds = 0.0
+    cleanup_report: Mapping[str, Any] = {
+        "execution_mode": "legacy",
+        "resource_scope": "per_request",
+    }
+    try:
+        dagger_result = run_multirole_dagger_workflow(
+            run_dir=run_dir,
+            role_specs=tuple(specs),
+            target_iterations=int(
+                OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8)
+            ),
+            collect_role=collect_dagger_role,
+            aggregate_datasets=aggregate_dagger_sources,
+            update_student=update_dagger_student,
+            scenario_specs=scenario_specs,
+            collect_scenario=(
+                collect_dagger_scenario
+                if execution_mode == "legacy" and scenario_specs is not None
+                else None
+            ),
+            execution_mode=execution_mode,
+            scenario_collector=scenario_collector,
+            performance_context=performance_context,
+            performance_clock=performance_clock,
+        )
+    finally:
+        if scenario_collector is not None:
+            cleanup_start = float(performance_clock())
+            scenario_collector.close()
+            cleanup_duration_seconds = float(performance_clock()) - cleanup_start
+            close_report = getattr(scenario_collector, "close_report", None)
+            if not isinstance(close_report, Mapping):
+                raise ValueError("persistent runtime close() must publish close_report mapping")
+            cleanup_report = close_report
+    if dagger_result.completed_iterations > 0:
+        finalize_workflow_performance(
+            run_dir=run_dir,
+            performance_context=performance_context,
+            cleanup_duration_seconds=cleanup_duration_seconds,
+            cleanup_report=cleanup_report,
+        )
     return {
         "distill_source": "single_entry_workflow",
         "stage": (
@@ -1887,15 +2127,12 @@ def run_single_entry_workflow(cfg: DictConfig) -> dict[str, Any]:
             else f"DAGGER_ITERATION_{dagger_result.completed_iterations}_COMPLETE"
         ),
         "mode": mode,
+        "execution_mode": execution_mode,
         "run_dir": str(dagger_result.run_dir),
         "manifest_path": str(dagger_result.manifest_path),
-        "role_decisions": (
-            None if bootstrap_result is None else bootstrap_result.role_decisions
-        ),
+        "role_decisions": (None if bootstrap_result is None else bootstrap_result.role_decisions),
         "bootstrap_dataset_path": (
-            None
-            if bootstrap_result is None
-            else str(bootstrap_result.bootstrap_dataset_path)
+            None if bootstrap_result is None else str(bootstrap_result.bootstrap_dataset_path)
         ),
         "bootstrap_num_samples": (
             None if bootstrap_result is None else bootstrap_result.bootstrap_num_samples
@@ -1933,7 +2170,11 @@ def main(cfg: DictConfig) -> None:
 
     multitask_dataset_path = OmegaConf.select(cfg, "training.multitask_dataset_path")
     if multitask_dataset_path not in (None, ""):
-        print(_format_cli_result(run_multitask_dataset_assembly(cfg, dataset_path=multitask_dataset_path)))
+        print(
+            _format_cli_result(
+                run_multitask_dataset_assembly(cfg, dataset_path=multitask_dataset_path)
+            )
+        )
         return
 
     collect_dataset_path = OmegaConf.select(cfg, "training.collect_dataset_path")
@@ -1954,9 +2195,7 @@ def main(cfg: DictConfig) -> None:
                 run_fake_batch_update(
                     cfg,
                     teacher_checkpoint=checkpoint_path,
-                    batch_size=int(
-                        OmegaConf.select(cfg, "training.dry_run_batch_size", default=8)
-                    ),
+                    batch_size=int(OmegaConf.select(cfg, "training.dry_run_batch_size", default=8)),
                     max_updates=int(OmegaConf.select(cfg, "training.dry_run_updates", default=1)),
                     checkpoint_path=OmegaConf.select(cfg, "training.dry_run_checkpoint"),
                 )

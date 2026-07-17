@@ -31,9 +31,7 @@ COHORTS = ("WT", "WS", "SS")
 
 
 def _compose_cfg(task: str = "g1_walk_flat/mujoco") -> Any:
-    with initialize_config_dir(
-        config_dir=str(ROOT_DIR / "conf" / "distill"), version_base="1.3"
-    ):
+    with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "distill"), version_base="1.3"):
         return compose(config_name="config", overrides=[f"task={task}"])
 
 
@@ -155,9 +153,7 @@ def _load_teacher(checkpoint: Path, device: str) -> torch.nn.Module:
     return teacher
 
 
-def _teacher_action(
-    teacher: torch.nn.Module, observations: np.ndarray, device: str
-) -> np.ndarray:
+def _teacher_action(teacher: torch.nn.Module, observations: np.ndarray, device: str) -> np.ndarray:
     with torch.no_grad():
         action = teacher(torch.as_tensor(observations, dtype=torch.float32, device=device))
     result = _as_array(action)
@@ -173,9 +169,7 @@ def _state_metrics(env: Any) -> dict[str, float | bool]:
     base_pos = np.asarray(backend.get_base_pos(), dtype=np.float32)
     base_lin_vel = np.asarray(backend.get_base_lin_vel(), dtype=np.float32)
     base_ang_vel = np.asarray(backend.get_base_ang_vel(), dtype=np.float32)
-    upvector = np.asarray(
-        backend.get_sensor_data(env.cfg.sensor.upvector), dtype=np.float32
-    )
+    upvector = np.asarray(backend.get_sensor_data(env.cfg.sensor.upvector), dtype=np.float32)
     tilt_deg = float(np.rad2deg(np.arccos(np.clip(upvector[0, 2], -1.0, 1.0))))
     return {
         "base_height": float(base_pos[0, 2]),
@@ -200,9 +194,7 @@ def _summary(records: list[dict[str, float | bool]]) -> dict[str, Any]:
     tilts = np.asarray([float(row["tilt_deg"]) for row in records], dtype=np.float32)
     lin_vels = np.asarray([float(row["lin_vel_norm"]) for row in records], dtype=np.float32)
     ang_vels = np.asarray([float(row["ang_vel_norm"]) for row in records], dtype=np.float32)
-    terminated_steps = [
-        int(row["step"]) for row in records if bool(row["terminated"])
-    ]
+    terminated_steps = [int(row["step"]) for row in records if bool(row["terminated"])]
     return {
         "count": len(records),
         "min_base_height": float(np.min(heights)),
@@ -276,12 +268,9 @@ def run_probe(
         initial_snapshot = _capture_snapshot(session.env)
         initial_obs = _actor_obs(session)
         initial_command_sync = bool(
-            np.max(np.abs(initial_obs[:, COMMAND_START : COMMAND_START + COMMAND_DIM]))
-            <= 1.0e-5
+            np.max(np.abs(initial_obs[:, COMMAND_START : COMMAND_START + COMMAND_DIM])) <= 1.0e-5
         )
-        initial_gait_disabled = bool(
-            _as_array(session.env.state.info["gait_enabled"])[0] <= 0.5
-        )
+        initial_gait_disabled = bool(_as_array(session.env.state.info["gait_enabled"])[0] <= 0.5)
 
         _restore_snapshot(session, initial_snapshot)
         static_command_sync, static_gait_active = _set_command(session, zero_command)
@@ -385,14 +374,12 @@ def main() -> int:
     parser.add_argument(
         "--walking-checkpoint",
         type=Path,
-        default=ROOT_DIR
-        / "logs/fast_sac/G1WalkFlat/2026-07-09_02-48-58_mujoco/model_5000.pt",
+        default=ROOT_DIR / "logs/fast_sac/G1WalkFlat/2026-07-09_02-48-58_mujoco/model_5000.pt",
     )
     parser.add_argument(
         "--standing-checkpoint",
         type=Path,
-        default=ROOT_DIR
-        / "logs/fast_sac/G1StandStill/2026-07-09_22-55-05_mujoco/model_5000.pt",
+        default=ROOT_DIR / "logs/fast_sac/G1StandStill/2026-07-09_22-55-05_mujoco/model_5000.pt",
     )
     parser.add_argument("--walk-vx", type=float, default=0.4)
     parser.add_argument("--pre-switch-steps", type=int, default=80)

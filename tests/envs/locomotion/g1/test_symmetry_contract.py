@@ -94,7 +94,9 @@ def test_g1_walk_height_symmetry_keeps_height_command_scalar():
     with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "offpolicy"), version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])
     assert "mode_observation" not in cfg.env
-    env_override = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name="sac").build_task_env_cfg_override()
+    env_override = BackendAdapter(
+        cfg, root_dir=ROOT_DIR, algo_name="sac"
+    ).build_task_env_cfg_override()
     env = create_env(cfg, num_envs=1, env_cfg_override=env_override, sim_backend="mujoco")
 
     try:
@@ -122,7 +124,9 @@ def test_g1_stand_still_symmetry_keeps_walking_actor_obs_dim():
         cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
     assert "mode_observation" not in cfg.env
     assert "observe_height_command" not in cfg.env.commands
-    env_override = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name="sac").build_task_env_cfg_override()
+    env_override = BackendAdapter(
+        cfg, root_dir=ROOT_DIR, algo_name="sac"
+    ).build_task_env_cfg_override()
     env = create_env(cfg, num_envs=1, env_cfg_override=env_override, sim_backend="mujoco")
 
     try:

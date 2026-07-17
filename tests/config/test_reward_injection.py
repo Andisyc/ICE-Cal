@@ -49,7 +49,9 @@ def test_offpolicy_g1_env_override_preserves_upstream_walking_contract():
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_flat/mujoco"])
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
 
     assert override["commands"] == {"small_xy_threshold": 0.0}
     assert "mode_observation" not in override
@@ -106,7 +108,9 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert "stand_support_height_margin" not in cfg.reward
     assert cfg.reward.base_height_target == 0.754
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
     assert override["commands"]["height_range"] == [0.3, 0.754]
     assert override["commands"]["default_height"] == 0.754
     assert override["commands"]["random_height_during_walking"] is True
@@ -124,7 +128,9 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_stand_still/mujoco"])
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
 
     assert cfg.training.task_name == "G1StandStill"
     assert cfg.training.sim_backend == "mujoco"
@@ -237,7 +243,9 @@ def test_offpolicy_g1_action_authority_ablation_does_not_enable_standing_path():
             ],
         )
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
 
     assert cfg.env.stand_action_authority is False
     assert "mode_observation" not in cfg.env
@@ -259,7 +267,9 @@ def test_offpolicy_g1_standing_reward_is_explicit_stage_contract():
             ],
         )
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
 
     assert "mode" not in cfg.reward
     assert "mode" not in override["reward_config"]
@@ -363,7 +373,9 @@ def test_offpolicy_g1_training_stage_configs_reach_env_override(
             ],
         )
 
-    override = BackendAdapter(cfg, root_dir=Path.cwd(), algo_name="sac").build_task_env_cfg_override()
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
 
     if mode_enabled:
         assert override["mode_observation"] is True

@@ -7,13 +7,14 @@ This registry is the only default contract entrypoint.
 | Contract | Status | Scope | Supersedes |
 | --- | --- | --- | --- |
 | [DISTILL-METHOD-v001](active/method/DISTILL-METHOD-v001.md) | active | G1 multi-teacher command-intent MoE distillation | none |
-| [DISTILL-TRAIN-v002](active/training/DISTILL-TRAIN-v002.md) | active | Single-entry multi-role workflow with transition-state evidence | DISTILL-TRAIN-v001 |
+| [DISTILL-TRAIN-v003](active/training/DISTILL-TRAIN-v003.md) | active | Integrated persistent DAgger runtime; promotion deferred; legacy default | DISTILL-TRAIN-v002 |
 
 ## History
 
 | Contract | Status | Scope |
 | --- | --- | --- |
 | [DISTILL-TRAIN-v001](history/training/DISTILL-TRAIN-v001.md) | superseded | Single-entry, resumable multi-role training workflow |
+| [DISTILL-TRAIN-v002](history/training/DISTILL-TRAIN-v002.md) | superseded | Transition-state scenario and schema contract |
 
 ## Recall Rule
 

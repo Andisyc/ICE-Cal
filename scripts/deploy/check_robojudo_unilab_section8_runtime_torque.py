@@ -23,7 +23,6 @@ import mujoco
 import numpy as np
 import onnxruntime as ort
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_ROBOJUDO_XML_REL = Path("assets/robots/g1/g1_29dof_rev_1_0.xml")
@@ -161,9 +160,11 @@ def build_obs(
 def run_onnx(session: ort.InferenceSession, obs: np.ndarray) -> np.ndarray:
     input_name = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name
-    return np.asarray(
-        session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0]
-    ).squeeze().astype(np.float32)
+    return (
+        np.asarray(session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0])
+        .squeeze()
+        .astype(np.float32)
+    )
 
 
 def step_robojudo_motor(
@@ -377,8 +378,6 @@ def main() -> int:
     mujoco.mj_forward(model, data)
 
     session = ort.InferenceSession(policy_path.as_posix(), providers=["CPUExecutionProvider"])
-    last_action = np.zeros(EXPECTED_DOF, dtype=np.float32)
-    gait_phase = initial_gait_phase.copy()
 
     print("== Section 8: Runtime Torque Trace ==")
     print(f"robojudo_root: {robojudo_root}")
@@ -415,20 +414,50 @@ def main() -> int:
     )
 
     if robojudo_trace["max_torque_l2"] < 1.0e-5 or robojudo_trace["max_ctrl_l2"] < 1.0e-5:
-        _add(checks, "FAIL", "runtime_torque_nonzero", f"max_torque_l2={robojudo_trace['max_torque_l2']:.3e}, max_ctrl_l2={robojudo_trace['max_ctrl_l2']:.3e}")
+        _add(
+            checks,
+            "FAIL",
+            "runtime_torque_nonzero",
+            f"max_torque_l2={robojudo_trace['max_torque_l2']:.3e}, max_ctrl_l2={robojudo_trace['max_ctrl_l2']:.3e}",
+        )
     else:
-        _add(checks, "PASS", "runtime_torque_nonzero", f"max_torque_l2={robojudo_trace['max_torque_l2']:.3f}, max_ctrl_l2={robojudo_trace['max_ctrl_l2']:.3f}")
+        _add(
+            checks,
+            "PASS",
+            "runtime_torque_nonzero",
+            f"max_torque_l2={robojudo_trace['max_torque_l2']:.3f}, max_ctrl_l2={robojudo_trace['max_ctrl_l2']:.3f}",
+        )
 
     if unilab_trace["max_force_l2"] < 1.0e-5:
-        _add(checks, "FAIL", "unilab_native_force_nonzero", f"max_force_l2={unilab_trace['max_force_l2']:.3e}")
+        _add(
+            checks,
+            "FAIL",
+            "unilab_native_force_nonzero",
+            f"max_force_l2={unilab_trace['max_force_l2']:.3e}",
+        )
     else:
-        _add(checks, "PASS", "unilab_native_force_nonzero", f"max_force_l2={unilab_trace['max_force_l2']:.3f}")
+        _add(
+            checks,
+            "PASS",
+            "unilab_native_force_nonzero",
+            f"max_force_l2={unilab_trace['max_force_l2']:.3f}",
+        )
 
     height_gap = robojudo_trace["min_base_z"] - unilab_trace["min_base_z"]
     if abs(height_gap) > 0.05:
-        _add(checks, "WARN", "robojudo_unilab_height_gap", f"robojudo_min_z={robojudo_trace['min_base_z']:.3f}, unilab_min_z={unilab_trace['min_base_z']:.3f}, gap={height_gap:.3f}")
+        _add(
+            checks,
+            "WARN",
+            "robojudo_unilab_height_gap",
+            f"robojudo_min_z={robojudo_trace['min_base_z']:.3f}, unilab_min_z={unilab_trace['min_base_z']:.3f}, gap={height_gap:.3f}",
+        )
     else:
-        _add(checks, "PASS", "robojudo_unilab_height_gap", f"robojudo_min_z={robojudo_trace['min_base_z']:.3f}, unilab_min_z={unilab_trace['min_base_z']:.3f}, gap={height_gap:.3f}")
+        _add(
+            checks,
+            "PASS",
+            "robojudo_unilab_height_gap",
+            f"robojudo_min_z={robojudo_trace['min_base_z']:.3f}, unilab_min_z={unilab_trace['min_base_z']:.3f}, gap={height_gap:.3f}",
+        )
 
     print()
     fail_count = sum(c.level == "FAIL" for c in checks)

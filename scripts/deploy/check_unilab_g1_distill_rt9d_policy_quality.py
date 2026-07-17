@@ -80,12 +80,15 @@ def _group_metrics(
         "count": int(indices.numel()),
         "role_counts": _label_counts(tuple(labels[int(i)] for i in indices.tolist())),
         "raw_router_argmax_fraction": [
-            float((route == expert).float().mean().item()) for expert in range(forced_actions.shape[1])
+            float((route == expert).float().mean().item())
+            for expert in range(forced_actions.shape[1])
         ],
         "raw_router_probability_mean": [
             float(value) for value in probs.mean(dim=0).detach().cpu().tolist()
         ],
-        "raw_router_top2_margin_mean": float((sorted_probs[:, 0] - sorted_probs[:, 1]).mean().item()),
+        "raw_router_top2_margin_mean": float(
+            (sorted_probs[:, 0] - sorted_probs[:, 1]).mean().item()
+        ),
         "expected_expert_fraction": [
             float((expected_experts[indices] == expert).float().mean().item())
             for expert in range(forced_actions.shape[1])
@@ -122,7 +125,9 @@ def inspect_dataset(
     if dataset.role_labels is None or dataset.command_intents is None:
         raise ValueError("RT-9d probe requires role_labels and command_intents")
     if student_obs.shape[1] != policy.obs_dim:
-        raise ValueError(f"student obs dim mismatch: dataset={student_obs.shape[1]} policy={policy.obs_dim}")
+        raise ValueError(
+            f"student obs dim mismatch: dataset={student_obs.shape[1]} policy={policy.obs_dim}"
+        )
 
     with torch.no_grad():
         output = policy(student_obs, return_diagnostics=True)
@@ -185,7 +190,11 @@ def inspect_dataset(
             for expert in range(policy.num_experts)
         },
         "raw_router_route_entropy_mean": float(
-            (-(output.route_probs.clamp_min(1e-12) * output.route_probs.clamp_min(1e-12).log()).sum(dim=-1))
+            (
+                -(
+                    output.route_probs.clamp_min(1e-12) * output.route_probs.clamp_min(1e-12).log()
+                ).sum(dim=-1)
+            )
             .mean()
             .item()
         ),

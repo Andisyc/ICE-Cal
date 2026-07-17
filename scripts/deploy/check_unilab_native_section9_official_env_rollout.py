@@ -31,12 +31,10 @@ from unilab.base.observations import split_obs_dict
 from unilab.base.registry import ensure_registries
 from unilab.training.seed import apply_training_seed
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_RUN_DIR = (
-    DEFAULT_ROBOJUDO_ROOT
-    / "assets/models/g1/unilab/g1_walk_flat/2026-06-12_15-46-01_mujoco"
+    DEFAULT_ROBOJUDO_ROOT / "assets/models/g1/unilab/g1_walk_flat/2026-06-12_15-46-01_mujoco"
 )
 DEFAULT_ONNX = DEFAULT_ROBOJUDO_ROOT / "assets/models/g1/unilab/g1_walk_flat/policy.onnx"
 
@@ -382,9 +380,19 @@ def main() -> int:
         if r["done_total"] == 0 and (r["min_height"] is None or float(r["min_height"]) > 0.3)
     ]
     if stable_results:
-        _add(checks, "PASS", "official_env_stable_candidate", ", ".join(f"{r['label']}/{r['lifecycle']}" for r in stable_results))
+        _add(
+            checks,
+            "PASS",
+            "official_env_stable_candidate",
+            ", ".join(f"{r['label']}/{r['lifecycle']}" for r in stable_results),
+        )
     else:
-        _add(checks, "WARN", "official_env_stable_candidate", "No rollout stayed termination-free above min height.")
+        _add(
+            checks,
+            "WARN",
+            "official_env_stable_candidate",
+            "No rollout stayed termination-free above min height.",
+        )
 
     for r in results:
         if r["lifecycle"] == "play_reset_call" and r["state_was_none_after_init"]:
@@ -407,9 +415,19 @@ def main() -> int:
                 if a["lifecycle"] == o["lifecycle"]
             )
             if max_gap > 0.05:
-                _add(checks, "WARN", "checkpoint_onnx_rollout_gap", f"max_min_height_gap={max_gap:.3f}")
+                _add(
+                    checks,
+                    "WARN",
+                    "checkpoint_onnx_rollout_gap",
+                    f"max_min_height_gap={max_gap:.3f}",
+                )
             else:
-                _add(checks, "PASS", "checkpoint_onnx_rollout_gap", f"max_min_height_gap={max_gap:.3f}")
+                _add(
+                    checks,
+                    "PASS",
+                    "checkpoint_onnx_rollout_gap",
+                    f"max_min_height_gap={max_gap:.3f}",
+                )
 
     fail_count = sum(c.level == "FAIL" for c in checks)
     warn_count = sum(c.level == "WARN" for c in checks)

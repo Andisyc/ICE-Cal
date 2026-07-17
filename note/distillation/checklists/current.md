@@ -14,7 +14,7 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | DAgger outer rollout/update iteration | `dagger.py::run_iterative_dagger_updates` | S2 / T-regression | PASS | `tests/algos/test_g1_distillation_contract.py` multi-iteration fixture |
 | Formal online DAgger route | `train_distill.py::run_online_dagger_update` | S2 / T-connect | PASS | `tests/scripts/test_train_scripts.py` online-dagger routing fixture |
 | Manual collect/offline path isolation | workflow owner | S2 / T-contract | PENDING | formal workflow must label it diagnostic-only |
-| Active single-entry training contract | distillation contract registry | S0 / T-contract | PASS | `contracts/active/training/DISTILL-TRAIN-v002.md`; v001 archived |
+| Active single-entry training contract | distillation contract registry | S0 / T-contract | PASS | `contracts/active/training/DISTILL-TRAIN-v003.md`; integration complete, promotion deferred, legacy default |
 | Concept Figure outer-loop alignment | Concept Figure | S0 / T-contract | PASS | DAgger edges name rollout/relabel/aggregate/update cycle |
 | Role-aware teacher dataset reuse | `workflow.py` artifact manifest owner | S2 / T-contract+connect | PASS | stand/walk `REUSE`; absent height `COLLECT` fixture |
 | Role artifact content identity | `workflow.py` | S1 / T-contract | PASS | teacher/dataset/config/schema hash tests |
@@ -60,7 +60,48 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | RT-9c student physical acceptance | playback + MuJoCo acceptance owner | S4 / T-live | BLOCKED | E31; 26/32 episodes terminate and stop-speed decay fails |
 | RT-9d policy-quality isolation probe | MoE policy + dataset metadata owner | S1/S2 / T-dataflow+probe | PASS | E32; transition workflow passes full soft student, while deployment uses command-selected expert |
 | RT-9e command-conditioned transition rollout | `train_distill.py` + transition collector owner | S2 / T-connect+probe | PASS | E33; transition collector and workflow resolve active->0/inactive->1, fixture and connector suite pass |
-| RT-10 bounded retrain with repaired transition rollout | workflow + checkpoint + MuJoCo gate | S2/S4 / T-formal+live | PENDING | Reuse role artifacts, collect new transition data, then rerun the physical grid |
+| RT-10 bounded retrain artifact | workflow + checkpoint owner | S2 / T-formal+persist | PASS | local manifest reached `DAGGER_ITERATION_1_COMPLETE`; final checkpoint exists; physical quality not implied |
+| RT-10 physical acceptance | MuJoCo acceptance owner | S4 / T-live | PENDING | bounded retrain artifact exists, but no accepted repeated-reset/walk-to-stop physical grid is recorded |
+| HP-1 DAgger persistent collector protocol | distill runtime + UniLab IPC interfaces | S1/S2 / T-contract+connect | PASS | E34; 4 protocol tests, 53 IPC/runtime tests, and 280 distill/workflow/script tests pass |
+| HP-2 DAgger outer barrier adapter | workflow owner + persistent service interface | S1/S2 / T-contract+connect | PASS | E35; OFF manifest unchanged, ON barrier trace and real spawned-runner connector pass |
+| HP-3 persistent distillation runtime connector | Hydra/script + distill runtime owner | S0/S2/S4 / T-contract+connect+live | PASS | E36-E40; OFF-default connector, resident student, exact resource cache, dataset differential, real G1 lifecycle |
+| HP-3a Hydra/script connector | config + entrypoint owner | S0/S2 / T-contract+connect | PASS | E36; default legacy, injected ON route, cleanup, and missing production factory fail-closed |
+| HP-3b real persistent runtime | distill runtime + SharedWeightSync | S1/S2/S4 / T-order+connect+live | PASS | E37-E40; one resident student plus exact cached G1 teacher/env resources and cleanup report |
+| HP-3b1 shared resident student | persistent runtime + SharedWeightSync | S1/S2 / T-order+connect | PASS | E37; versions 1/2 and exact worker weight sums 3/9 in same spawned PID |
+| HP-3b2 persistent role resources | distill runtime + collector/env owners | S2/S4 / T-connect+live | PASS | E38-E40; exact identities, reset isolation, semantic differential, production factory, bounded MuJoCo and close counters |
+| HP-4a structured metrics contract | `distill/performance.py` | S1/S3 / T-contract+persist | PASS | E41; 16 fake-clock, identity, strict reload, roundtrip, duplicate, missing-stage, and derived-rate tests |
+| HP-4 runtime metrics integration | collector/worker/workflow/offline/trainer connectors | S2/S3/S4 / T-connect+persist+live | PASS | E61 eight formal runs persist complete request/workflow/learner/checkpoint/cleanup timing with lifecycle counters |
+| HP-4 entry identity gate | governance + run artifact owner | S0/S3 / T-persist+oracle | PASS | E60 binds deterministic r8 source/output identity to oracle v2 before execution; output absent |
+| HP-4a2 request artifact connector | runtime/collector/workflow/offline/trainer + metrics owner | S1/S2/S3 / T-connect+persist | PASS | E42-E46; both request modes plus workflow/learner/cleanup -> full identity -> atomic JSON/reload/resume |
+| HP-4b bounded legacy/persistent A/B | formal entrypoint + workflow/runtime owners | S2/S4 / T-connect+live+diff | PARTIAL | E61 8/8 execution, oracle, semantic, lifecycle and timing artifacts pass; paired direction is unstable, so no stable speedup conclusion |
+| HP-4b fork scenario identity repair | workflow fork + data annotation owners | S1/S2 / T-contract+connect | PASS | E51 preserves scenario/row-role identity, source hashes unchanged, 288 passed and 8 skipped; refreeze remains separate |
+| HP-4 Gate 0B r8 executable freeze | governance + frozen run artifact owner | S0/S2/S3 / T-persist+oracle | PASS | E60 deterministic bundle/identity, frozen oracle, build/import/teacher/compose/493-test preflight, no training |
+| HP-4b persistent output materialization | workflow owner | S1/S2/S4 / T-contract+connect+live | PASS | E60 no-mkdir spawned RED/GREEN proves iteration parent exists before persistent dispatch; live formal rerun remains HP-4b |
+| HP-4c bottleneck verdict | evidence/governance owner | S3 / T-diff+scale | PASS | E62 no stable recurring owner: cleanup is once/invocation, two resource cache misses are once/worker, warm residual ~2.25 ms |
+| HP-4c two-iteration discriminator | governance + formal runtime owners | S3/S4 / T-diff+scale+oracle | PASS | E65 accepted pair confirms cold/cache/cleanup amortization; no warm HP-5 owner or stable speedup claim |
+| HP-4c iteration-aware oracle v4 repair | acceptance-oracle owner | S0/S3 / T-oracle+persist | PASS | E64 frozen v4/amendment, accepted existing order 1, all 16 training files unchanged, order 2 absent |
+| HP-4c r9 persistent order-2 resume | formal runtime + acceptance owners | S0/S4 / T-persist+live+oracle | PASS | E65 exact preflight, persistent exit zero, oracle v4 accepted, execution complete, no legacy rerun |
+| HP-4c r10 repeated two-iteration freeze | governance + benchmark identity owner | S0/S3 / T-diff+persist+oracle | PASS | E66 8 balanced orders, per-order compose/oracle identity, frozen decision rule, empty output, no-training preflight |
+| HP-4c r10 eight-run execution | formal runtime + acceptance owners | S4 / T-live+persist+oracle+diff | PASS | E67 8/8 command+oracle acceptance; primary verdict NO_STABLE_SPEEDUP; no HP-5/default-on |
+| HP-6a production readiness | repository + governance owners | S1/S2/S3 / T-review+contract+lint | PASS | E69/E71 resolve status drift; E70 owner probe, 537 pass/24 skip, targeted Ruff |
+| HP-6a1 runtime audit-status repair | async/performance + current atlas evidence owners | S0/S1 / T-static+lint+atlas | PASS | E69 source/Method-to-Code plus E71 whole-Architecture closure |
+| HP-6a production readiness restart | repository + governance owners | S1/S2/S3 / T-review+contract+lint | PASS | E70 executable gates green; E71 resolves U-RT-06/U-RT-08 cross-file blocker |
+| HP-6a2 Runtime Atlas status repair | runtime atlas + checker owners | S0/S1 / T-static+contract+atlas | PASS | E71 durable semantic RED/GREEN, zero stale current-atlas hits, registry consistency |
+| HP-6b repository-wide production gate | repository Makefile owners | S0/S1/S2/S3 / T-full-sweep+type+persist | PASS | E86 exact make test-all: 1556 passed, 51 skipped; static gates pass; coverage 70% |
+| HP-6b1 repository lint-owner repair | section-8 diagnostic owner | S0 / T-static+lint | PASS | E73 two dead main locals removed; compile/Ruff/AST owner assertion pass |
+| HP-6b2 mechanical diff review + full rerun | repository formatter + Makefile owners | S0/S1/S2/S3 / T-diff+type+full-sweep | BLOCKED | E74 AST review pass, format/Ruff pass, mypy 20 errors/8 files; pyright/coverage not run |
+| HP-6b3 branch-owned type repair | DAgger collector/runtime/workflow/G1 owners | S0/S1/S2 / T-type+connect+oracle | PASS | E75 zero scoped mypy errors; Ruff pass; 111 affected tests pass |
+| HP-6b4 HEAD-baseline type repair | distill model/playback/data + G1 config owners | S0/S1/S2/S3 / T-type+persist+connect | PASS | E76 mypy/Ruff pass; 442 passed, 3 skipped |
+| HP-6b5 final repository rerun | repository Makefile owners | S0/S1/S2/S3 / T-full-sweep+type+persist | BLOCKED | E77 format/Ruff/mypy pass; Pyright 6 collector errors; coverage not run |
+| HP-6b6 collector Pyright narrowing | distillation collector owner | S0/S1/S2 / T-type+contract | PASS | E78 Pyright 0; mypy/Ruff pass; 86 collector tests pass |
+| HP-6b7 final repository rerun | repository Makefile owners | S0/S1/S2/S3 / T-full-sweep+type+persist | BLOCKED | E79 static gates pass; test-cov 14 failed, 1544 passed, 49 skipped |
+| HP-6b8 G1 gait-config compatibility repair | G1 reward-config accessor owner | S0/S1/S2 / T-type+compat+contract | PASS | E80 exact ten G1 failures pass; mypy/Pyright/Ruff pass |
+| HP-6b9 remaining four-failure diagnosis | Stewart/docs/CLI owners | S0/S1/S2 / T-diagnostic+diff | PASS | E81 provider, generated-doc, and execution-env owners separated |
+| HP-6b10 Motrix provider/test selection | Stewart test owner | S1/S2 / T-provider+integration | PASS | E82 4 passed, 2 optional-provider skips; Ruff pass |
+| HP-6b11 generated support matrix | derived docs owner | S0/S1 / T-generated+docs | PASS | E83 exact two generated SAC rows; docs contract pass |
+| HP-6b12 uv env test isolation | CLI test owner | S0/S1 / T-env+contract | PASS | E84 target passes under frozen outer env; Ruff/diff pass |
+| HP-6b13 combined 14-regression closure | G1/Stewart/docs/CLI owners | S1/S2/S3 / T-regression+integration | PASS | E85 12 passed, 2 expected provider skips |
+| HP-6b14 final repository rerun | repository Makefile owner | S0/S1/S2/S3 / T-full-sweep+type+coverage | PASS | E86 1556 passed, 51 skipped; mypy/Pyright/Ruff pass; coverage 70% |
 
 ## Current Stop Condition
 
@@ -75,3 +116,11 @@ this candidate or start an unbounded run. E21 confirms standing-teacher
 authority; it does not prove student recovery.
 Dataset reuse must remain role- and manifest-validated. A large offline update
 count is not evidence of multiple DAgger iterations.
+
+Current closure: E61/E65/E67 complete the formal A/B, two-iteration
+amortization, and repeated discriminator. The verdict is `NO_STABLE_SPEEDUP`,
+so no HP-5 owner or default-on promotion is authorized. E86 passes the complete
+repository S0-S3 gate. `DISTILL-TRAIN-v003` records the integrated runtime as
+active contract semantics while promotion is deferred and `legacy` remains the
+default. RT-10 physical acceptance, optional Motrix runtime, and slow/S4 tests
+remain separate open boundaries.

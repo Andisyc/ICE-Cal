@@ -1,12 +1,78 @@
+"""Distillation role/transition collection and opt-in stage observations.
+
+状态: active collector owner, HP-4a2b observations wired behind an explicit clock.
+上游: legacy collection and persistent G1 worker.
+下游: DistillationTensorDataset rows, metadata, and worker pass-through.
+证据: S1/S2 semantic collector, differential, and fake-clock tests.
+缺口: reset/resource live timing and live A/B.
+"""
+
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import nullcontext
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
 import torch
 
 from .data import DistillationTensorDataset, build_distillation_dataset
+from .performance import (
+    DISTILLATION_METRICS_SCHEMA_VERSION,
+    DistillationStageObservationAccumulator,
+)
+
+
+def _performance_span(
+    accumulator: DistillationStageObservationAccumulator | None,
+    stage: str,
+):
+    return nullcontext() if accumulator is None else accumulator.measure(stage)
+
+
+def _attach_collector_performance(
+    dataset: DistillationTensorDataset,
+    *,
+    accumulator: DistillationStageObservationAccumulator | None,
+    teacher_inference_rows: int,
+    student_inference_rows: int,
+    env_steps: int,
+) -> DistillationTensorDataset:
+    if accumulator is None:
+        return dataset
+    observations = (
+        accumulator.observation(
+            stage="teacher_inference",
+            row_count=teacher_inference_rows,
+            env_step_count=0,
+        ),
+        accumulator.observation(
+            stage="student_inference",
+            row_count=student_inference_rows,
+            env_step_count=0,
+        ),
+        accumulator.observation(
+            stage="env_step",
+            row_count=0,
+            env_step_count=env_steps,
+        ),
+        accumulator.observation(
+            stage="tensor_pack",
+            row_count=dataset.num_samples,
+            env_step_count=0,
+        ),
+    )
+    return replace(
+        dataset,
+        metadata={
+            **dataset.metadata,
+            "performance_metrics_schema_version": DISTILLATION_METRICS_SCHEMA_VERSION,
+            "performance_stage_observations": [
+                observation.as_dict() for observation in observations
+            ],
+        },
+    )
 
 
 def _obs_array(obs: Mapping[str, Any], key: str) -> np.ndarray:
@@ -304,7 +370,7 @@ def _set_transition_command_rows(
         )
     if not np.all(np.isfinite(command_rows)):
         raise ValueError("transition command rows must contain only finite values")
-    commands[:, :3] = command_rows.astype(commands.dtype, copy=False)
+    commands_np[:, :3] = command_rows.astype(commands_np.dtype, copy=False)
     refresh_state = getattr(env, "refresh_state", None)
     if not callable(refresh_state):
         raise RuntimeError("transition collection requires env.refresh_state()")
@@ -317,6 +383,24 @@ def _set_transition_command_rows(
     if not isinstance(refreshed_obs, dict) or not isinstance(refreshed_info, Mapping):
         raise RuntimeError("transition command refresh must return dict obs and info")
     return refreshed_obs, dict(refreshed_info)
+
+
+def _resolve_collection_reset(
+    env: Any,
+    *,
+    num_envs: int,
+    initial_reset: tuple[Any, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if initial_reset is None:
+        reset_output = env.reset(np.arange(num_envs, dtype=np.int32))
+    else:
+        reset_output = initial_reset
+    if not isinstance(reset_output, tuple) or len(reset_output) != 2:
+        raise ValueError("collection reset must be a two-item (obs_dict, info_dict) tuple")
+    obs, info = reset_output
+    if not isinstance(obs, dict) or not isinstance(info, Mapping):
+        raise ValueError("collection reset must contain dict obs and mapping info")
+    return obs, dict(info)
 
 
 def collect_transition_distillation_dataset_from_env(
@@ -339,6 +423,8 @@ def collect_transition_distillation_dataset_from_env(
     command_info_key: str = "commands",
     max_env_steps: int | None = None,
     metadata: Mapping[str, Any] | None = None,
+    initial_reset: tuple[Any, Any] | None = None,
+    performance_clock: Callable[[], float] | None = None,
 ) -> DistillationTensorDataset:
     """Collect one opt-in walk-to-stop student-state DAgger scenario.
 
@@ -358,16 +444,12 @@ def collect_transition_distillation_dataset_from_env(
     if int(pre_switch_steps) <= 0:
         raise ValueError(f"pre_switch_steps must be positive, got {pre_switch_steps}")
     if int(min_post_switch_steps) < 0:
-        raise ValueError(
-            f"min_post_switch_steps must be non-negative, got {min_post_switch_steps}"
-        )
+        raise ValueError(f"min_post_switch_steps must be non-negative, got {min_post_switch_steps}")
     action_shape = getattr(getattr(env, "action_space", None), "shape", None)
     if action_shape is None:
         raise ValueError("env.action_space.shape must be defined for transition collection")
     num_envs = int(getattr(env, "num_envs"))
-    minimum_samples = int(num_envs) * (
-        int(pre_switch_steps) + int(min_post_switch_steps)
-    )
+    minimum_samples = int(num_envs) * (int(pre_switch_steps) + int(min_post_switch_steps))
     if int(min_post_switch_steps) > 0 and int(num_samples) < minimum_samples:
         raise ValueError(
             "transition collection requires enough samples to cover the configured "
@@ -378,19 +460,15 @@ def collect_transition_distillation_dataset_from_env(
         )
     if rollout_policy is None and rollout_policies_by_intent is None:
         raise ValueError(
-            "transition collection requires rollout_policy or "
-            "rollout_policies_by_intent"
+            "transition collection requires rollout_policy or rollout_policies_by_intent"
         )
     if rollout_policy is not None and rollout_policies_by_intent is not None:
-        raise ValueError(
-            "transition collection accepts only one rollout policy contract"
-        )
+        raise ValueError("transition collection accepts only one rollout policy contract")
     if rollout_policies_by_intent is not None:
         missing_intents = {"active", "inactive"} - set(rollout_policies_by_intent)
         if missing_intents:
             raise ValueError(
-                "rollout_policies_by_intent is missing intents: "
-                f"{sorted(missing_intents)}"
+                f"rollout_policies_by_intent is missing intents: {sorted(missing_intents)}"
             )
     action_dim = int(action_shape[0])
     walk_command_np = np.asarray(walk_command, dtype=np.float32)
@@ -398,11 +476,13 @@ def collect_transition_distillation_dataset_from_env(
         raise ValueError(f"walk_command must have shape (3,), got {walk_command_np.shape}")
     if not np.all(np.isfinite(walk_command_np)):
         raise ValueError("walk_command must contain only finite values")
-    if not np.any(command_active_mask(
-        walk_command_np.reshape(1, 3),
-        xy_threshold=0.05,
-        yaw_threshold=0.05,
-    )):
+    if not np.any(
+        command_active_mask(
+            walk_command_np.reshape(1, 3),
+            xy_threshold=0.05,
+            yaw_threshold=0.05,
+        )
+    ):
         raise ValueError("walk_command must be active under the command thresholds")
     effective_max_env_steps = (
         int(max_env_steps)
@@ -417,8 +497,11 @@ def collect_transition_distillation_dataset_from_env(
 
     if getattr(env, "state", None) is None and callable(getattr(env, "init_state", None)):
         env.init_state()
-    env_indices = np.arange(num_envs, dtype=np.int32)
-    obs, current_info = env.reset(env_indices)
+    obs, current_info = _resolve_collection_reset(
+        env,
+        num_envs=num_envs,
+        initial_reset=initial_reset,
+    )
     active_command_rows = np.broadcast_to(walk_command_np, (num_envs, 3)).copy()
     zero_command_rows = np.zeros((num_envs, 3), dtype=np.float32)
     obs, current_info = _set_transition_command_rows(
@@ -447,6 +530,13 @@ def collect_transition_distillation_dataset_from_env(
     done_seen_samples = 0
     action_abs_max = 0.0
     synthetic_teacher_tail = False
+    performance = (
+        None
+        if performance_clock is None
+        else DistillationStageObservationAccumulator(clock=performance_clock)
+    )
+    teacher_inference_rows = 0
+    student_inference_rows = 0
 
     while collected_count < int(num_samples):
         source_np = _obs_array(obs, teacher_obs_key)
@@ -467,74 +557,78 @@ def collect_transition_distillation_dataset_from_env(
             str(command_info_key),
             expected_rows=num_envs,
         )[:, :3]
-        walking_actions = _policy_actions(
-            walking_teacher_policy,
-            teacher_np,
-            action_dim=action_dim,
-            policy_name="walking_teacher_policy",
-        )
-        standing_actions = _policy_actions(
-            standing_teacher_policy,
-            teacher_np,
-            action_dim=action_dim,
-            policy_name="standing_teacher_policy",
-        )
+        with _performance_span(performance, "teacher_inference"):
+            walking_actions = _policy_actions(
+                walking_teacher_policy,
+                teacher_np,
+                action_dim=action_dim,
+                policy_name="walking_teacher_policy",
+            )
+            standing_actions = _policy_actions(
+                standing_teacher_policy,
+                teacher_np,
+                action_dim=action_dim,
+                policy_name="standing_teacher_policy",
+            )
+        teacher_inference_rows += 2 * int(teacher_np.shape[0])
         teacher_actions = np.where(post_switch[:, None], standing_actions, walking_actions)
-        if rollout_policies_by_intent is None:
-            rollout_actions = _policy_actions(
-                rollout_policy,
-                student_np,
-                action_dim=action_dim,
-                policy_name="rollout_policy",
-            )
-        else:
-            active_actions = _policy_actions(
-                rollout_policies_by_intent["active"],
-                student_np,
-                action_dim=action_dim,
-                policy_name="active_rollout_policy",
-            )
-            inactive_actions = _policy_actions(
-                rollout_policies_by_intent["inactive"],
-                student_np,
-                action_dim=action_dim,
-                policy_name="inactive_rollout_policy",
-            )
-            rollout_actions = np.where(
-                post_switch[:, None], inactive_actions, active_actions
-            )
+        with _performance_span(performance, "student_inference"):
+            if rollout_policies_by_intent is None:
+                if rollout_policy is None:
+                    raise RuntimeError("transition rollout policy contract was not materialized")
+                rollout_actions = _policy_actions(
+                    rollout_policy,
+                    student_np,
+                    action_dim=action_dim,
+                    policy_name="rollout_policy",
+                )
+                student_inference_rows += int(student_np.shape[0])
+            else:
+                active_actions = _policy_actions(
+                    rollout_policies_by_intent["active"],
+                    student_np,
+                    action_dim=action_dim,
+                    policy_name="active_rollout_policy",
+                )
+                inactive_actions = _policy_actions(
+                    rollout_policies_by_intent["inactive"],
+                    student_np,
+                    action_dim=action_dim,
+                    policy_name="inactive_rollout_policy",
+                )
+                rollout_actions = np.where(post_switch[:, None], inactive_actions, active_actions)
+                student_inference_rows += 2 * int(student_np.shape[0])
         if not np.all(np.isfinite(teacher_actions)) or not np.all(np.isfinite(rollout_actions)):
             raise ValueError("transition collection produced non-finite actions")
 
-        remaining = int(num_samples) - collected_count
-        take = min(remaining, num_envs)
-        student_chunks.append(
-            torch.as_tensor(student_np[:take], dtype=torch.float32).clone()
-        )
-        teacher_chunks.append(
-            torch.as_tensor(teacher_np[:take], dtype=torch.float32).clone()
-        )
-        teacher_action_chunks.append(
-            torch.as_tensor(teacher_actions[:take], dtype=torch.float32).clone()
-        )
-        command_chunks.append(
-            torch.as_tensor(current_commands[:take], dtype=torch.float32).clone()
-        )
-        command_before_chunks.append(
-            torch.as_tensor(active_command_rows[:take], dtype=torch.float32).clone()
-        )
-        command_after_chunks.append(
-            torch.as_tensor(current_commands[:take], dtype=torch.float32).clone()
-        )
-        transition_age_chunks.append(
-            torch.as_tensor(transition_ages[:take], dtype=torch.int64).clone()
-        )
-        role_labels.extend("stand" if value else "walk_flat" for value in post_switch[:take])
-        command_intents.extend("inactive" if value else "active" for value in post_switch[:take])
-        scenario_labels.extend("walk_to_stop" for _ in range(take))
-        post_switch_rows += int(np.count_nonzero(post_switch[:take]))
-        collected_count += take
-        action_abs_max = max(action_abs_max, float(np.max(np.abs(rollout_actions))))
+        with _performance_span(performance, "tensor_pack"):
+            remaining = int(num_samples) - collected_count
+            take = min(remaining, num_envs)
+            student_chunks.append(torch.as_tensor(student_np[:take], dtype=torch.float32).clone())
+            teacher_chunks.append(torch.as_tensor(teacher_np[:take], dtype=torch.float32).clone())
+            teacher_action_chunks.append(
+                torch.as_tensor(teacher_actions[:take], dtype=torch.float32).clone()
+            )
+            command_chunks.append(
+                torch.as_tensor(current_commands[:take], dtype=torch.float32).clone()
+            )
+            command_before_chunks.append(
+                torch.as_tensor(active_command_rows[:take], dtype=torch.float32).clone()
+            )
+            command_after_chunks.append(
+                torch.as_tensor(current_commands[:take], dtype=torch.float32).clone()
+            )
+            transition_age_chunks.append(
+                torch.as_tensor(transition_ages[:take], dtype=torch.int64).clone()
+            )
+            role_labels.extend("stand" if value else "walk_flat" for value in post_switch[:take])
+            command_intents.extend(
+                "inactive" if value else "active" for value in post_switch[:take]
+            )
+            scenario_labels.extend("walk_to_stop" for _ in range(take))
+            post_switch_rows += int(np.count_nonzero(post_switch[:take]))
+            collected_count += take
+            action_abs_max = max(action_abs_max, float(np.max(np.abs(rollout_actions))))
         if collected_count >= int(num_samples):
             break
         if env_steps >= effective_max_env_steps:
@@ -543,7 +637,8 @@ def collect_transition_distillation_dataset_from_env(
                 f"{num_samples} samples; collected={collected_count}"
             )
 
-        state = env.step(rollout_actions)
+        with _performance_span(performance, "env_step"):
+            state = env.step(rollout_actions)
         done_mask = _state_done_mask(state, expected_rows=num_envs)
         done_seen_samples += int(np.count_nonzero(done_mask))
         obs, current_info, done_count, _autoreset_count, _manual_reset_count = (
@@ -577,13 +672,8 @@ def collect_transition_distillation_dataset_from_env(
         )
     transition_ages_tensor = torch.cat(transition_age_chunks, dim=0)[: int(num_samples)]
     post_switch_ages = transition_ages_tensor[transition_ages_tensor >= 0]
-    max_post_switch_age = (
-        int(post_switch_ages.max().item()) if post_switch_ages.numel() else -1
-    )
-    if (
-        int(min_post_switch_steps) > 0
-        and max_post_switch_age < int(min_post_switch_steps) - 1
-    ):
+    max_post_switch_age = int(post_switch_ages.max().item()) if post_switch_ages.numel() else -1
+    if int(min_post_switch_steps) > 0 and max_post_switch_age < int(min_post_switch_steps) - 1:
         raise RuntimeError(
             "transition collection did not reach the configured post-switch horizon: "
             f"max_post_switch_age={max_post_switch_age} "
@@ -617,21 +707,29 @@ def collect_transition_distillation_dataset_from_env(
             "synthetic_teacher_tail": bool(synthetic_teacher_tail),
         }
     )
-    return build_distillation_dataset(
-        torch.cat(student_chunks, dim=0)[: int(num_samples)],
-        torch.cat(teacher_chunks, dim=0)[: int(num_samples)],
-        expected_student_obs_dim=int(expected_student_obs_dim),
-        expected_teacher_obs_dim=int(expected_teacher_obs_dim),
-        expected_teacher_action_dim=action_dim,
-        metadata=payload,
-        role_labels=tuple(role_labels[: int(num_samples)]),
-        teacher_actions=torch.cat(teacher_action_chunks, dim=0)[: int(num_samples)],
-        commands=torch.cat(command_chunks, dim=0)[: int(num_samples)],
-        command_intents=tuple(command_intents[: int(num_samples)]),
-        scenario_labels=tuple(scenario_labels[: int(num_samples)]),
-        transition_ages=transition_ages_tensor,
-        command_before=torch.cat(command_before_chunks, dim=0)[: int(num_samples)],
-        command_after=torch.cat(command_after_chunks, dim=0)[: int(num_samples)],
+    with _performance_span(performance, "tensor_pack"):
+        dataset = build_distillation_dataset(
+            torch.cat(student_chunks, dim=0)[: int(num_samples)],
+            torch.cat(teacher_chunks, dim=0)[: int(num_samples)],
+            expected_student_obs_dim=int(expected_student_obs_dim),
+            expected_teacher_obs_dim=int(expected_teacher_obs_dim),
+            expected_teacher_action_dim=action_dim,
+            metadata=payload,
+            role_labels=tuple(role_labels[: int(num_samples)]),
+            teacher_actions=torch.cat(teacher_action_chunks, dim=0)[: int(num_samples)],
+            commands=torch.cat(command_chunks, dim=0)[: int(num_samples)],
+            command_intents=tuple(command_intents[: int(num_samples)]),
+            scenario_labels=tuple(scenario_labels[: int(num_samples)]),
+            transition_ages=transition_ages_tensor,
+            command_before=torch.cat(command_before_chunks, dim=0)[: int(num_samples)],
+            command_after=torch.cat(command_after_chunks, dim=0)[: int(num_samples)],
+        )
+    return _attach_collector_performance(
+        dataset,
+        accumulator=performance,
+        teacher_inference_rows=teacher_inference_rows,
+        student_inference_rows=student_inference_rows,
+        env_steps=env_steps,
     )
 
 
@@ -656,6 +754,8 @@ def collect_distillation_dataset_from_env(
     max_env_steps: int | None = None,
     role_label: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    initial_reset: tuple[Any, Any] | None = None,
+    performance_clock: Callable[[], float] | None = None,
 ) -> DistillationTensorDataset:
     """Collect a small observation-only distillation dataset from a UniLab env."""
 
@@ -703,7 +803,11 @@ def collect_distillation_dataset_from_env(
     action_abs_max = 0.0
     if getattr(env, "state", None) is None and callable(getattr(env, "init_state", None)):
         env.init_state()
-    obs, current_info = env.reset(np.arange(num_envs, dtype=np.int32))
+    obs, current_info = _resolve_collection_reset(
+        env,
+        num_envs=num_envs,
+        initial_reset=initial_reset,
+    )
 
     student_chunks: list[torch.Tensor] = []
     teacher_chunks: list[torch.Tensor] = []
@@ -718,6 +822,13 @@ def collect_distillation_dataset_from_env(
     done_seen_samples = 0
     autoreset_done_count = 0
     manual_done_reset_count = 0
+    performance = (
+        None
+        if performance_clock is None
+        else DistillationStageObservationAccumulator(clock=performance_clock)
+    )
+    teacher_inference_rows = 0
+    student_inference_rows = 0
 
     while collected_count < int(num_samples):
         source_np = _obs_array(obs, teacher_obs_key)
@@ -768,50 +879,65 @@ def collect_distillation_dataset_from_env(
             command_selected_samples += int(np.count_nonzero(row_mask))
         label_actions = None
         if teacher_policy is not None:
-            label_actions = _policy_actions(
-                teacher_policy,
-                teacher_np,
-                action_dim=action_dim,
-                policy_name="teacher_policy",
-            )
+            with _performance_span(performance, "teacher_inference"):
+                label_actions = _policy_actions(
+                    teacher_policy,
+                    teacher_np,
+                    action_dim=action_dim,
+                    policy_name="teacher_policy",
+                )
+            teacher_inference_rows += int(teacher_np.shape[0])
             if not np.all(np.isfinite(label_actions)):
                 raise ValueError("teacher_policy produced non-finite target actions")
         if action_mode == "teacher_policy":
             actions = label_actions
         elif action_mode == "student_policy":
-            actions = _policy_actions(
-                rollout_policy,
-                student_np,
-                action_dim=action_dim,
-                policy_name="rollout_policy",
-            )
+            if rollout_policy is None:
+                raise RuntimeError("student rollout policy contract was not materialized")
+            with _performance_span(performance, "student_inference"):
+                actions = _policy_actions(
+                    rollout_policy,
+                    student_np,
+                    action_dim=action_dim,
+                    policy_name="rollout_policy",
+                )
+            student_inference_rows += int(student_np.shape[0])
             if not np.all(np.isfinite(actions)):
                 raise ValueError("rollout_policy produced non-finite rollout actions")
         else:
             actions = None
-        selected_teacher_np = teacher_np[row_mask]
-        selected_student_np = student_np[row_mask]
-        selected_actions = label_actions[row_mask] if label_actions is not None else None
-        selected_commands = commands_np[row_mask] if commands_np is not None else None
-        selected_command_active = command_active[row_mask] if command_active is not None else None
-        remaining = int(num_samples) - collected_count
-        take = min(remaining, selected_teacher_np.shape[0])
-        if take > 0:
-            teacher_chunks.append(torch.as_tensor(selected_teacher_np[:take], dtype=torch.float32))
-            student_chunks.append(torch.as_tensor(selected_student_np[:take], dtype=torch.float32))
-            if selected_actions is not None:
-                teacher_action_chunks.append(
-                    torch.as_tensor(selected_actions[:take], dtype=torch.float32)
+        with _performance_span(performance, "tensor_pack"):
+            selected_teacher_np = teacher_np[row_mask]
+            selected_student_np = student_np[row_mask]
+            selected_actions = label_actions[row_mask] if label_actions is not None else None
+            selected_commands = commands_np[row_mask] if commands_np is not None else None
+            selected_command_active = (
+                command_active[row_mask] if command_active is not None else None
+            )
+            remaining = int(num_samples) - collected_count
+            take = min(remaining, selected_teacher_np.shape[0])
+            if take > 0:
+                teacher_chunks.append(
+                    torch.as_tensor(selected_teacher_np[:take], dtype=torch.float32)
                 )
-            if selected_commands is not None and selected_command_active is not None:
-                command_chunks.append(torch.as_tensor(selected_commands[:take], dtype=torch.float32))
-                command_intent_chunks.extend(
-                    "active" if bool(value) else "inactive"
-                    for value in selected_command_active[:take]
+                student_chunks.append(
+                    torch.as_tensor(selected_student_np[:take], dtype=torch.float32)
                 )
-            collected_count += int(take)
-        if actions is not None:
-            action_abs_max = max(action_abs_max, float(np.max(np.abs(actions))))
+                if selected_actions is not None:
+                    teacher_action_chunks.append(
+                        torch.as_tensor(selected_actions[:take], dtype=torch.float32)
+                    )
+                if selected_commands is not None and selected_command_active is not None:
+                    command_chunks.append(
+                        torch.as_tensor(selected_commands[:take], dtype=torch.float32)
+                    )
+                    command_intent_chunks.extend(
+                        "active" if bool(value) else "inactive"
+                        for value in selected_command_active[:take]
+                    )
+                collected_count += int(take)
+            if actions is not None:
+                action_abs_max = max(action_abs_max, float(np.max(np.abs(actions))))
         if collected_count >= int(num_samples):
             break
         if effective_max_env_steps is not None and env_steps >= effective_max_env_steps:
@@ -825,10 +951,13 @@ def collect_distillation_dataset_from_env(
             actions = np.zeros((num_envs, action_dim), dtype=np.float32)
         elif action_mode == "random":
             actions = rng.uniform(-1.0, 1.0, size=(num_envs, action_dim)).astype(np.float32)
+        if actions is None:
+            raise RuntimeError(f"collect action_mode={action_mode!r} did not materialize actions")
         if not np.all(np.isfinite(actions)):
             raise ValueError(f"collect action_mode={action_mode!r} produced non-finite actions")
         action_abs_max = max(action_abs_max, float(np.max(np.abs(actions))))
-        state = env.step(actions)
+        with _performance_span(performance, "env_step"):
+            state = env.step(actions)
         env_steps += 1
         obs, current_info, done_count, autoreset_count, manual_reset_count = (
             _reset_done_rows_after_step(env, state, num_envs=num_envs)
@@ -873,19 +1002,27 @@ def collect_distillation_dataset_from_env(
         )
     if action_mode == "student_policy":
         payload["rollout_policy"] = "distillation_student"
-    return build_distillation_dataset(
-        torch.cat(student_chunks, dim=0),
-        torch.cat(teacher_chunks, dim=0),
-        expected_student_obs_dim=int(expected_student_obs_dim),
-        expected_teacher_obs_dim=int(expected_teacher_obs_dim),
-        expected_teacher_action_dim=action_dim,
-        metadata=payload,
-        teacher_actions=(
-            torch.cat(teacher_action_chunks, dim=0) if teacher_action_chunks else None
-        ),
-        commands=torch.cat(command_chunks, dim=0) if command_chunks else None,
-        command_intents=tuple(command_intent_chunks) if command_intent_chunks else None,
-        role_labels=(normalized_role_label,) * int(num_samples)
-        if normalized_role_label is not None
-        else None,
+    with _performance_span(performance, "tensor_pack"):
+        dataset = build_distillation_dataset(
+            torch.cat(student_chunks, dim=0),
+            torch.cat(teacher_chunks, dim=0),
+            expected_student_obs_dim=int(expected_student_obs_dim),
+            expected_teacher_obs_dim=int(expected_teacher_obs_dim),
+            expected_teacher_action_dim=action_dim,
+            metadata=payload,
+            teacher_actions=(
+                torch.cat(teacher_action_chunks, dim=0) if teacher_action_chunks else None
+            ),
+            commands=torch.cat(command_chunks, dim=0) if command_chunks else None,
+            command_intents=(tuple(command_intent_chunks) if command_intent_chunks else None),
+            role_labels=(normalized_role_label,) * int(num_samples)
+            if normalized_role_label is not None
+            else None,
+        )
+    return _attach_collector_performance(
+        dataset,
+        accumulator=performance,
+        teacher_inference_rows=teacher_inference_rows,
+        student_inference_rows=student_inference_rows,
+        env_steps=env_steps,
     )

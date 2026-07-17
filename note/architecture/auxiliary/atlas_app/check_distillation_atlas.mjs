@@ -350,6 +350,33 @@ for (const expected of [
   if (!runtimeIds.has(expected)) throw new Error(`01 Runtime Atlas missing ${expected}`);
 }
 
+const stalePerformanceGapPatterns = [
+  /(?:reset\/resource|MuJoCo|live)\s+timing[^;,.]*(?:尚缺|尚未|未连接|absent)/i,
+  /A\/B[^;,.]*(?:尚缺|尚未|未执行|absent)/i,
+  /(?:尚缺|尚未|未连接|未执行|absent)[^;,.]*(?:A\/B|timing)/i,
+];
+for (const atlas of [runtime, methodToCode]) {
+  for (const system of atlas.systems || []) {
+    for (const mod of system.modules || []) {
+      for (const pattern of stalePerformanceGapPatterns) {
+        if (pattern.test(String(mod.gap || ""))) {
+          throw new Error(`${mod.id} contains stale timing/A/B gap: ${mod.gap}`);
+        }
+      }
+    }
+  }
+}
+for (const requiredId of ["U-RT-06", "U-RT-08"]) {
+  const runtimeModule = (runtime.systems || [])
+    .flatMap((system) => system.modules || [])
+    .find((mod) => mod.id === requiredId);
+  for (const requiredFact of ["E67", "NO_STABLE_SPEEDUP", "HP-6"]) {
+    if (!String(runtimeModule?.gap || "").includes(requiredFact)) {
+      throw new Error(`${requiredId} gap missing current fact ${requiredFact}`);
+    }
+  }
+}
+
 const indexAtlasLinks = [...index.matchAll(/architecture_atlas\.html\?data=/g)];
 if (indexAtlasLinks.length !== 3) throw new Error("Atlas index must expose exactly three maps");
 for (const forbidden of ["Supporting:", "Distillation Runtime", "Distillation Control Room"]) {

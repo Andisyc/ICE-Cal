@@ -824,3 +824,651 @@ Date: 2026-07-15
 - Limitation: the new route has not yet generated a real replacement
   `walk_to_stop.pt`, and no physical claim follows from these tests. RT-10
   must run one bounded retrain and the same MuJoCo gate before promotion.
+
+## E34: DAgger Persistent Runtime HP-1
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-persistent-runtime-hp1.md`.
+- Class: S1/S2 protocol and spawned-process lifecycle evidence; no real G1
+  collection, training throughput, or physical behavior claim.
+- Facts: one `AsyncRunner`-owned worker serves sequential typed requests;
+  request/result and weight-version identity fail closed; worker exceptions
+  propagate; cleanup reaps the process. The HP-1 test passes `4 passed`, the
+  IPC/runtime group passes `53 passed`, the distill/workflow/script group
+  passes `280 passed, 8 skipped`, the final ordered affected gate passes
+  `341 passed`, and Ruff passes.
+- Decision: HP-1 is complete. HP-2 may connect this service interface to the
+  workflow while preserving the outer iteration barrier.
+- Limitation: `SharedWeightSync` is represented by explicit expected/observed
+  version identity but real shared-weight attachment remains HP-3. No speedup
+  claim is authorized before structured HP-4 timing evidence.
+
+## E35: DAgger Workflow Barrier HP-2
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-workflow-barrier-hp2.md`.
+- Class: S1/S2 core-parameter and offline-connectivity evidence; no real G1
+  collection or speedup claim.
+- Facts: `execution_mode=legacy` preserves the callback and old manifest
+  shape; `persistent_async` activates one checkpoint/version per outer
+  iteration, passes it through every scenario request/result, and activates
+  the next checkpoint only after the updater writes it. A real spawned HP-1
+  runner crosses the workflow connector. The affected gate passes `345
+  passed`, Ruff passes, and the atlas contract check passes.
+- Decision: HP-2 is complete. HP-3 owns the Hydra/script connector, reusable
+  real distillation runtime, and actual `SharedWeightSync` attachment.
+- Limitation: no live env/teacher/student persistence, throughput, Motrix, or
+  physical-quality claim follows from HP-2.
+
+## E36: DAgger Hydra Connector HP-3a
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-hydra-connector-hp3a.md`.
+- Class: S0/S2 config and entrypoint connectivity; no real runtime claim.
+- Facts: the Hydra owner defaults to `legacy`; OFF forwards only the existing
+  scenario callback; ON requires an injected service factory, forwards only
+  the service, records the mode, and closes the service. Missing production
+  factory fails closed. The affected distill group passes `70 passed` and Ruff
+  passes.
+- Decision: HP-3a is complete. HP-3b must replace the injection-only production
+  gap with the real runtime owner before ON commands are authorized.
+- Limitation: no real env/model reuse, shared weights, throughput, or policy
+  behavior is proven.
+
+## E37: DAgger Shared Student Runtime HP-3b1
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-shared-student-hp3b1.md`.
+- Class: S1/S2 shared-memory and spawned-runtime connectivity; no G1/live
+  collection claim.
+- Facts: actual `SharedWeightSync` publishes versions 1 and 2 from two tiny
+  checkpoints; the same spawned worker observes exact weight sums 3 and 9 in
+  one resident model. Shape drift fails before publication. The impact group
+  passes `53 passed`; the final split isolation gate passes `372 + 1` tests;
+  Ruff and atlas validation pass.
+- Decision: HP-3b1 is complete. HP-3b2 owns real teachers/envs and scenario
+  dataset collection before production ON wiring.
+- Limitation: no real checkpoint family, G1 resource, throughput, or physical
+  behavior is proven.
+
+## E38: DAgger Resource Lifecycle HP-3b2a
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-resource-lifecycle-hp3b2a.md`.
+- Class: S1 fake-resource lifecycle; no G1/MuJoCo claim.
+- Facts: complete owner identity keys cache resources; role strings do not.
+  Every request resets command/done/transition-age state. Reuse, init, reset,
+  error, and close counters are deterministic; normal and exceptional cleanup
+  close each resource once. Tests pass `2 passed` and Ruff passes.
+- Decision: HP-3b2a passes. Dataset differential is the next gate.
+- Limitation: real env/teacher construction and collector semantics remain
+  unconfirmed.
+
+## E39: DAgger Dataset Differential HP-3b2b
+
+- Date: 2026-07-16.
+- Source: `evidence/2026-07-16-dagger-dataset-differential-hp3b2b.md`.
+- Class: S1 deterministic collector/data differential; no MuJoCo claim.
+- Facts: legacy self-reset and persistent pre-reset role/transition paths match
+  schema dimensions, labels, intent/scenario/transition-age schedules, teacher
+  actions, and teacher identity. Each resets exactly once. The collector impact
+  group passes `17 passed`.
+- Decision: HP-3b2b passes; production factory wiring may proceed.
+
+## E40: DAgger Production Persistent Runtime HP-3b2
+
+- Artifact: `evidence/2026-07-16-dagger-production-runtime-hp3b2.md`.
+- Owner route: OFF-default Hydra/script connector -> persistent runtime ->
+  exact-identity G1 resource cache -> existing collectors/data owner.
+- Differential: role/intent/scenario/age/teacher-action semantics pass with
+  exactly one reset per legacy or persistent request.
+- Live sequence: one worker PID `62266`, weight version `1`, four requests,
+  student init `1`, teacher/env init `2/2`, reset `4`, errors `0`.
+- Cleanup: final teacher/env close counters are `2/2`; both exact resources
+  were reaped after the walk/stand/transition/walk sequence.
+- Regression: IPC/runtime `59 passed`; distill/workflow/config/script
+  `419 passed`; fail-closed summary validation `2 passed`; Ruff and atlas pass.
+- Decision: HP-3b2 passes connectivity and lifecycle. Control returns to the
+  user before bounded persistent training; no speedup or policy-quality claim.
+
+## E41: DAgger Performance Metrics Contract HP-4a
+
+- Artifact: `evidence/2026-07-16-dagger-performance-contract-hp4a.md`.
+- Owner: `src/unilab/algos/torch/distill/performance.py`; generic trace events
+  remain separate and runtime owners are not instrumented in HP-4a.
+- Contract: required DAgger run/request/checkpoint/teacher/config identity,
+  canonical seconds/count stages, rows/second, outcome and cleanup state.
+- Fail closed: bad hashes/counts/durations, mode/version mismatch, run/request
+  identity drift, missing stages, incompatible duplicates, and persisted-rate
+  drift.
+- Evidence: test-first import failure, then focused `16 passed`; runtime impact
+  `39 passed`; entry/config `70 passed, 250 deselected`; Ruff and atlas pass.
+- Decision: schema is `implemented-not-integrated`. Return control before
+  runtime connectors, Gate 0B, HP-4b, or any performance claim.
+
+## E42: Persistent Worker Metrics Connector HP-4a2a
+
+- Artifact: `evidence/2026-07-16-dagger-worker-metrics-connector-hp4a2a.md`.
+- Boundary: worker emits identity-free observations; parent config/checkpoint
+  identity and JSON persistence remain HP-4a2c.
+- Envelope: schema version `1`; stages are exactly `weight_sync`,
+  `artifact_write`, and request-wide `total_elapsed`.
+- Fake clock: durations `0.1/0.25/4.0`; row counts `0/4/4`; role env steps `2`,
+  transition env steps `3`; cleanup remains `pending`.
+- Compatibility: existing flat result metrics remain unchanged.
+- Evidence: focused `18 passed`, impact `30 passed`, factory `2 passed`, Ruff
+  passes. A mistyped no-test command is explicitly excluded from evidence.
+- Decision: HP-4a2a passes; HP-4 integration is partial and HP-4a2b/2c remain
+  blocked. No runtime artifact or performance claim exists.
+
+## E43: Collector Metrics Connector HP-4a2b
+
+- Artifact: `evidence/2026-07-16-dagger-collector-metrics-connector-hp4a2b.md`.
+- Owner stages: teacher/student inference, direct env step, and tensor packing;
+  cached reset/resource timing is explicitly excluded.
+- Default isolation: `performance_clock=None` emits no performance metadata.
+- Role golden: durations `2/2/1/3`, rows `4/4/0/4`, env steps `0/0/1/0`.
+- Transition golden: durations `4/4/3/5`, rows `16/8/0/8`, env steps
+  `0/0/3/0`; double teacher rows reflect two actual forwards.
+- Transport: observations use copied dataset metadata and worker validates
+  schema version and exact stage order before pass-through.
+- Evidence: focused `23 passed`, full collector contract `80 passed`, runtime
+  impact `33 passed`; Ruff passes.
+- Decision: HP-4a2b passes S1/S2. Parent identity/artifact, cleanup-final,
+  resource/reset and live timing remain blocked; no performance claim.
+- Limitation: real resource construction and nondeterministic simulator values
+  remain unconfirmed.
+
+## E44: Parent Metrics Artifact HP-4a2c
+
+- Artifact: `evidence/2026-07-16-dagger-parent-metrics-artifact-hp4a2c.md`.
+- Owner route: resolved cfg + all role teacher hashes -> run context -> exact
+  worker observations -> parent request/checkpoint/version identity -> atomic
+  run-local JSON -> reload -> manifest path/hash/count.
+- Resume: completed-iteration artifacts validate identity/hash/count and append
+  idempotently; crash-mid-iteration and pre-contract completed runs fail closed.
+- OFF isolation: legacy passes no context and writes no metrics artifact; the
+  default remains `legacy`.
+- Evidence: 2c1 `22 passed`; 2c2 `38 passed`; final affected `373 passed`;
+  distinct-two-teacher connector `2 passed`; Ruff, compile, and atlas pass.
+- Decision: HP-4a2c passes S1/S2/S3. Reset/resources, cleanup-final, Gate 0B,
+  live A/B, bottleneck verdict, speedup, and policy quality remain unconfirmed.
+
+## E45: Gate 0B A/B Identity Freeze
+
+- Artifact: `evidence/2026-07-16-dagger-gate0b-identity-freeze.md`.
+- Assets: RT-10 parent/final student, both teachers, and both reusable role
+  datasets exist and their recomputed hashes agree with recorded identities.
+- Compose: legacy/persistent candidate configs match on parent, roles,
+  scenarios, seed `1`, CPU, four envs, 128 rows/scenario, one iteration, and
+  eight updates; only execution mode and output directory differ.
+- Blockers: legacy writes no structured metrics; aggregation/learner/checkpoint
+  stages are not connected; final cleanup is not persisted; worktree is not an
+  immutable commit/bundle.
+- Decision: Gate 0B is BLOCKED. No HP-4b command ran and no performance claim
+  follows. A separately authorized measurement-symmetry step is required.
+
+## E46: HP-4a2d Measurement Symmetry Repair
+
+- Artifact: `evidence/2026-07-16-dagger-measurement-symmetry-hp4a2d.md`.
+- Legacy: formal scenario collection now emits exact mode-specific request
+  stages while integer callbacks without context remain artifact-free.
+- Workflow/learner: aggregation, batch staging, forward, backward, optimizer,
+  and checkpoint save are measured at their actual owners and enriched with
+  workflow identity.
+- Cleanup: both modes append a post-close cleanup record; persistent reports
+  require worker PID and resource counters, then atomically refresh manifest
+  metrics path/hash/count.
+- Evidence: HP-4a2d1 `238 passed`; owner golden `25 passed`; final affected
+  `312 passed, 8 skipped`; Ruff passes.
+- Decision: HP-4a2d passes S1/S2/S3. No live timing or training ran. Gate 0B
+  remains blocked until a separately authorized rerun freezes immutable source
+  identity; HP-4b and speedup claims remain unauthorized.
+
+## E47: Gate 0B Rerun Pass
+
+- Artifact: `evidence/2026-07-16-dagger-gate0b-rerun-pass.md`.
+- Raw identity manifest SHA-256:
+  `2f53362f04ff41d63049004a629410f79de4116ba7983afe240dd4c64e3df1d0`.
+- Deterministic source bundle SHA-256:
+  `b75f100e212d7edfe09d3c5920918265eafb12eb5cc3c41b3d4d664104d0e779`;
+  740 files and identical hash across two generations.
+- Seven canonical asset hashes match E45. Read-only compose differs only by
+  execution mode and unique run directory; shared config hash is `d6e047...`.
+- Eight balanced, unique-output runs and their exact environment/argv/overrides
+  are frozen but not executed. Fresh affected suite: `312 passed, 8 skipped`.
+- Decision: Gate 0B rerun passes S0/S3. HP-4b remains a separate human decision;
+  no training, simulator, server mutation, or performance claim occurred.
+
+## E48: HP-4b Frozen Preflight Blocked
+
+- Artifact: `evidence/2026-07-16-hp4b-frozen-preflight-blocked.md`.
+- Command: `uv run python /private/tmp/hp4b_frozen_preflight.py` from E47's
+  extracted cwd.
+- Runtime fact: package build exits 1 because frozen `README.md` is absent;
+  `pyproject.toml:9` requires `readme = "README.md"`.
+- Root cause: E47's deterministic source scope omitted one package-build input.
+- Isolation: all eight output directories remain absent; no env, collection,
+  update, A/B timing, server mutation, or HP-4c action occurred.
+- Decision: current Gate 0B executable identity and HP-4b are BLOCKED. Do not
+  copy the mutable README into the frozen cwd; regenerate and reverify a new
+  bundle under separate authorization.
+
+## E49: Gate 0B Bundle Repair Pass
+
+- Artifact: `evidence/2026-07-16-gate0b-bundle-repair-pass.md`.
+- Repair: replace E47's fragile allowlist with all 1241 Git-visible files;
+  explicitly require README, LICENSE, pyproject, uv.lock, and `src/unilab`.
+- r2 bundle SHA-256: `f7d87a155462955efb300fff6f369fad38886faae6c6d11dc4cf1abca77ac632`;
+  identical across two generations.
+- r2 identity manifest SHA-256:
+  `256da8cf279b7283144565005731e4e94c0d8ab1ac56c27d019dfd5cf00732ab`.
+- Frozen-cwd evidence: uv build/import succeeds, 1241 source and seven external
+  asset hashes match, G1 XML loads with nq/nv/nu 36/35/29, compose symmetry
+  passes, and the r2 HP-4b output root remains absent.
+- Decision: Gate 0B executable freeze is restored to PASS. Zero A/B runs
+  started; HP-4b execution remains a separate human gate.
+
+## E50: HP-4b Order 1 Schema Block
+
+- Artifact: `evidence/2026-07-16-hp4b-order1-schema-blocked.md`.
+- Frozen route: order 1 legacy r1 from E49's r2 cwd; exit 1 during cumulative
+  aggregation.
+- Runtime fact: role scenario datasets lack `scenario_labels`, while
+  `walk_to_stop` has them; parent and new cumulative sources both have mixed
+  transition-field presence.
+- Owner boundary: `workflow.py` carries source scenario identity, but `data.py`
+  fail-closed presence validation runs before source annotation can normalize
+  the cumulative inputs.
+- Partial evidence: three collections and 21 request records complete;
+  aggregation, learner, checkpoint, cleanup, and orders 2-8 are absent.
+- Decision: HP-4b is BLOCKED at order 1. No speed or HP-4c claim. An explicitly
+  authorized schema-owner repair and new freeze are required before rerun.
+
+## E51: HP-4b Fork Scenario Identity Repair
+
+- Artifact: `evidence/2026-07-16-hp4b-fork-scenario-identity-repair.md`.
+- Root cause: `fork_workflow_run()` discarded `scenario` and
+  `preserve_row_role_labels` while reconstructing completed-parent cumulative
+  sources; the existing data-owner annotation route therefore had no explicit
+  scenario identity with which to upgrade legacy role rows in memory.
+- Repair: preserve both `WorkflowDatasetSource` fields at the workflow fork
+  owner. Strict merge validation, collectors, scripts, scenario semantics, and
+  existing `.pt` artifacts remain unchanged.
+- Evidence: red `KeyError: 'scenario'`; focused owner chain `3 passed`; affected
+  suite `288 passed, 8 skipped`; Ruff passes. The fork fixture also proves every
+  parent source hash is unchanged.
+- Decision: bounded schema repair passes. E49's source freeze is stale after
+  this code change, so Gate 0B and HP-4b remain BLOCKED pending separately
+  authorized refreeze and rerun. No server or frozen-r2 mutation occurred.
+
+## E52: Gate 0B Refreeze r3 Pass
+
+- Artifact: `evidence/2026-07-16-gate0b-refreeze-r3-pass.md`.
+- Determinism: two generations produce the same 1244-file bundle SHA-256
+  `f66ab818...7191` and source-manifest SHA-256 `69ce41e3...f87b`.
+- Identity: r3 manifest SHA-256 `1f9e447c...87d7`, state
+  `FROZEN_NOT_EXECUTED`, `execution_authorized=false`; seven external artifact
+  hashes and the balanced eight-run workload remain fixed.
+- Frozen cwd: `/private/tmp/unilab-hp4b-f66ab818`; build succeeds, import is
+  asserted to load frozen source, all source/asset hashes match, G1 XML reports
+  36/35/29, compose differs only by allowed fields, and output root is absent.
+- Evidence: frozen-cwd affected suite `312 passed, 8 skipped`.
+- Decision: Gate 0B r3 passes. Zero HP-4b runs started; execution remains a
+  separate human gate and must use only the r3 identity/cwd/order.
+
+## E53: HP-4b r3 Order 1 Execution-Environment Block
+
+- Artifact: `evidence/2026-07-17-hp4b-r3-order1-exec-env-blocked.md`.
+- Attempt: r3 order 1 legacy from `/private/tmp/unilab-hp4b-f66ab818`.
+- Runtime fact: nested frozen `uv run` selects the default
+  `/Users/chengyuxuan/.cache/uv` because outer `--cache-dir` is not inherited;
+  cache initialization exits 2 before Python/Hydra.
+- Root boundary: r3 freezes source/config/assets/workload but omits the formal
+  nested dependency/cache environment identity. E52's direct preflight did not
+  exercise this exact subprocess boundary.
+- Isolation: formal A/B output root absent; zero manifest/dataset/aggregate/
+  checkpoint/metrics/cleanup artifacts; orders 2-8 absent; no simulator or
+  training ran.
+- Decision: Gate 0B executable identity and HP-4b are BLOCKED. A separately
+  authorized execution-env repair/refreeze is required; no retry occurred.
+
+## E54: Gate 0B Execution Environment r6 Pass
+
+- Artifact: `evidence/2026-07-17-gate0b-execution-env-r6-pass.md`.
+- Accepted identity: r6 SHA-256 `cbf054a8...b778`; r3 source bundle/cwd remain
+  unchanged. r4/r5 are explicitly rejected candidates.
+- Environment: absolute uv launcher/hash/version; explicit venv/provider,
+  cache, no-sync, frozen PYTHONPATH, and progress variables; 171-package
+  provider snapshot SHA-256 `dfa668fd...6bd`.
+- Exact nested facts: provider snapshot live match; nested import resolves the
+  provider venv and frozen `unilab`; nested `scripts/train_distill.py --help`
+  exits 0; preflight artifact SHA-256 `b135a94c...92f4`.
+- Isolation: r6 formal output root absent and `training_started=false`.
+- Decision: Gate 0B r6 passes. HP-4b remains separately authorized; no A/B run
+  or server mutation occurred.
+
+## E55: HP-4b r6 Order 1 Teacher Contract Block
+
+- Artifact: `evidence/2026-07-17-hp4b-r6-order1-teacher-contract-blocked.md`.
+- Runtime route: r6 nested environment succeeds; three 128-row scenarios and a
+  1024-row transition-aware aggregate are created.
+- Failure: learner preflight rejects a 98-D teacher checkpoint against composed
+  `teacher.obs_dim=99` before trainer/optimizer construction.
+- Owner: workflow YAML overrides student to 98 but omits teacher; generic
+  `config.yaml` supplies 99 while both task role specs/checkpoints are 98.
+- Partial evidence: 21 request records; no learner stages, checkpoint,
+  cleanup-final, acceptance, or orders 2-8.
+- Decision: HP-4b remains BLOCKED. A separately authorized config-owner repair
+  and new freeze are required; no override or retry occurred.
+
+## E56: Workflow Teacher Config Repair And r7 Refreeze
+
+- Artifact: `evidence/2026-07-17-workflow-teacher-config-r7-pass.md`.
+- TDD: workflow compose regression fails 99 vs 98, then passes after the Hydra
+  workflow owner declares `teacher.obs_dim=98`; generic default remains 99.
+- Real contract: walk and stand task specs/checkpoint actor inputs are all 98-D
+  and both production guards pass.
+- Tests: affected suite `313 passed, 8 skipped`; Ruff passes.
+- r7: deterministic 1248-file bundle SHA-256 `3ae830b2...4819`; identity
+  SHA-256 `9b180b46...9718`; frozen cwd `/private/tmp/unilab-hp4b-3ae830b2`.
+- Frozen evidence: build, source/assets, XML 36/35/29, compose symmetry, real
+  teacher probe, exact nested env/import/help, and frozen 313+8 suite pass.
+- Decision: Gate 0B r7 passes with output absent and execution false. HP-4b
+  remains a separate human decision; r6 partial output is not resumed.
+
+## E57: HP-4b r7 Order 1 Acceptance Oracle Block
+
+- Artifact: `evidence/2026-07-17-hp4b-r7-order1-acceptance-oracle-blocked.md`.
+- Formal run: order 1 legacy exits 0; complete manifest, 1024-row aggregate,
+  16 actual updates, checkpoint, 28 metrics records, and cleanup persist.
+- Oracle failure: external harness incorrectly requires raw legacy role files
+  to contain scenario labels; E51 assigns scenario identity through source
+  mappings and validates it on the aggregate.
+- Runtime proof: raw walk/stand retain role schema, transition is native, and
+  aggregate scenario counts are 384/384/256.
+- Isolation: acceptance absent; orders 2-8 absent; no rerun or speedup claim.
+- Decision: HP-4b and final Gate 0B acceptance identity are BLOCKED pending a
+  separately authorized, frozen acceptance-oracle repair.
+
+## E58: Acceptance Oracle v2 And Existing Order 1 Pass
+
+- Artifact: `evidence/2026-07-17-hp4b-acceptance-oracle-v2-order1-pass.md`.
+- Frozen oracle SHA-256 `9e62b678...b631`; contract SHA-256
+  `d46aefd4...a6a2`; both bind r7 identity `9b180b46...9718`.
+- Semantics: raw roles validate role/hash/count without scenario fields;
+  transition validates native fields; aggregate validates complete 384/384/256
+  scenario identity; run validates checkpoint/28 records/cleanup/lifecycle.
+- Existing order 1 acceptance SHA-256 `5096ac20...adcf`, `accepted=true`.
+- Attestation: seven tracked training artifact hashes unchanged,
+  `training_rerun=false`, order 2 absent.
+- Decision: oracle repair and order 1 pass. HP-4b remains partial with orders
+  2-8 absent; resume requires separate authorization and must not rerun order 1.
+
+## E59: HP-4b r7 Order 2 Persistent Output Directory Block
+
+- Artifact: `evidence/2026-07-17-hp4b-r7-order2-persistent-output-dir-blocked.md`.
+- Preflight: r7 identity/oracle hashes and all seven immutable order-1 artifact
+  hashes match; order 1 remains accepted and is not rerun.
+- Runtime: with shared memory available, persistent order 2 reaches the spawned
+  G1 worker and first scenario collection, then `torch.save` fails because
+  `datasets/dagger_iteration_1` was never materialized.
+- Owner: workflow constructs `iteration_dir` but does not create it; legacy
+  script callbacks create their own parent while the real persistent worker
+  writes the request path directly. Test `_write()` helpers mask this gap.
+- Isolation: partial manifest is `BOOTSTRAP_COMPLETE`; no dataset, aggregate,
+  checkpoint, metrics, cleanup-final, oracle output, or acceptance. No matching
+  child process remains, and orders 3-8 are absent.
+- Decision: HP-4b is BLOCKED at order 2. Repair the workflow materialization
+  boundary, add a persistent pre-dispatch regression, refreeze source/output
+  identity, and return for separate execution authorization.
+
+## E60: Workflow Materialization Repair And r8 Refreeze
+
+- Artifact: `evidence/2026-07-17-workflow-materialization-repair-r8-refreeze-pass.md`.
+- RED/GREEN: spawned no-mkdir collector fails on the absent request parent,
+  then passes after `workflow.py` materializes `iteration_dir` before dispatch.
+- Scope: one workflow-owner line and one regression boundary; scripts, worker,
+  data, method, teacher, checkpoint, workload, and oracle semantics unchanged.
+- Tests: focused `1 passed`; workflow `18 passed`; persistent/IPC `40 passed`;
+  full affected suite `493 passed`; Ruff and diff check pass.
+- r8: two equal bundle generations SHA-256 `ea1d4f7a...b25e`, 1252 files,
+  identity SHA-256 `0dc04b35...240e`, frozen cwd
+  `/private/tmp/unilab-hp4b-ea1d4f7a`.
+- Preflight: source/assets/build/provider/import/help/XML/compose/two real teacher
+  contracts/frozen 493-test suite pass; oracle v2 is bound before execution.
+- Isolation: `training_started=false`; r8 output root absent. A future formal
+  A/B requires separate authorization and starts at r8 order 1, not r7 order 2.
+
+## E61: HP-4b r8 Eight-Run A/B Complete, Timing Partial
+
+- Artifact: `evidence/2026-07-17-hp4b-r8-eight-run-ab-complete-partial-timing.md`.
+- Execution: exact frozen orders 1-8 complete without retry; eight train commands
+  exit zero and eight oracle v2 outputs report `accepted=true`.
+- Semantics/lifecycle: all runs have 28 records, 16 updates, 1024-row aggregate,
+  equal 384/384/256 scenario signatures, complete checkpoints/cleanup; persistent
+  counters are 3 requests, 3 resets, 2 resource init/close, 2 cache hits, 0 errors.
+- Raw e2e: legacy `[0.617251, 0.489405, 0.458731, 0.593628]`; persistent
+  `[0.589469, 0.543215, 0.667084, 0.562266]` seconds.
+- Medians: request total 0.396478 legacy vs 0.255483 persistent; complete e2e
+  0.541516 legacy vs 0.575867 persistent; persistent cleanup median 0.176112.
+- Uncertainty: paired legacy/persistent ratios `[1.047, 0.901, 0.688, 1.056]`
+  cross 1; range 0.368 and sample stdev 0.172. No stable speedup claim.
+- Decision: HP-4b execution/semantic/lifecycle/timing-artifact gates pass, but
+  performance conclusion is PARTIAL. Return control before separately gated
+  HP-4c/HP-5.
+
+## E62: HP-4c Finds No Recurring Owner
+
+- Artifact: `evidence/2026-07-17-hp4c-no-recurring-owner-two-iteration-discriminator.md`.
+- Cleanup: median 0.176112 s, CV 5.57%, median e2e share 30.03%; stable but a
+  composite `scenario_collector.close()` interval that occurs once per invocation.
+- Request residual: median 0.154255 s, CV 7.74%, median e2e share 26.07%; walk
+  and stand consume 0.119814/0.030430 s on two cache misses, while the warm
+  transition request consumes only 0.002251 s with both identities hit.
+- Source trace: `PersistentResourceCache.acquire/run_request` owns cold
+  teacher/env materialization and reset; formal cleanup wraps runtime/process/
+  IPC/resource/weight-sync close after all outer iterations.
+- Verdict: `NO_HP5_OWNER`. Stable material costs are once-per-worker/invocation,
+  while confirmed recurring residuals are negligible.
+- Next discriminator: one newly frozen legacy/persistent pair at two outer
+  iterations with an iteration-aware oracle; no timer/code change unless that
+  pair fails to distinguish cold from warm behavior.
+
+## E63: r9 Order 1 Complete, Oracle v3 Blocked
+
+- Artifact: `evidence/2026-07-17-hp4c-r9-order1-oracle-v3-blocked.md`.
+- Freeze: r9 identity `894e1d30...83f7`, oracle v3 `44175d63...d821`,
+  unchanged r8 source bundle `ea1d4f7a...b25e`; exact no-training preflight
+  passes before execution.
+- Runtime: legacy order 1 exits zero with two complete iterations, 55 timing
+  records, aggregate rows `1024 -> 1408`, checkpoint lineage intact, and actual
+  updates `16 -> 24`.
+- Blocker: oracle v3 wrongly requires an explicit null legacy
+  `input_weight_version` key and wrongly freezes actual updates as `16 -> 16`.
+  Source proves the key is persistent-only; replay-budget auto-expansion proves
+  the second iteration legitimately executes 24 updates.
+- Diagnostic: a temporary corrected oracle accepts all existing order-1
+  artifacts. Formal v3 acceptance remains absent; training was not rerun.
+- Isolation: persistent order 2 and its output/log/acceptance remain absent.
+  A separately authorized oracle v4/amendment must accept existing order 1 and
+  return control before order 2.
+
+## E64: Oracle v4 Accepts Immutable Existing Order 1
+
+- Artifact: `evidence/2026-07-17-hp4c-oracle-v4-order1-pass.md`.
+- Freeze: oracle v4 `9acbbef2...83a0`; amendment
+  `3d58eb5d...4c7c`; both bind immutable r9 identity `894e1d30...83f7`
+  while preserving v3 and its contract unchanged.
+- Corrected contract: legacy version fields are optional/absent; timing versions
+  are null. Configured eight updates are a floor; transition replay expansion
+  yields valid actual counts `16 -> 24`.
+- Acceptance: existing order 1 reports `accepted=true`, two iterations, 55
+  metrics, aggregates `1024 -> 1408`, and complete semantic/checkpoint checks.
+- Immutability: recursive before/after inventories cover all 16 training files
+  and have identical SHA-256 `048923de...41c2`; `training_rerun=false`.
+- Isolation: persistent order-2 output/log/acceptance remain absent. Resume
+  requires separate authorization and must not rerun legacy order 1.
+
+## E65: r9 Two-Iteration Amortization Confirmed
+
+- Artifact: `evidence/2026-07-17-hp4c-r9-two-iteration-amortization-pass.md`.
+- Resume: exact preflight `22a14939...24cb`; persistent order 2 and oracle v4
+  pass; execution complete `886ea139...a129`; legacy was not rerun.
+- Persistent iteration 1 -> 2: weight version `1 -> 2`, updates `16 -> 24`,
+  request total `0.315057 -> 0.149815 s` (-52.45%), request residual
+  `0.216987 -> 0.008742 s` (-95.97%).
+- Lifecycle: iteration 2 adds four cache hits and zero env/teacher init; final
+  counters are 6 requests/resets/hits, 2 resource init/close, 0 errors.
+  One cleanup is `0.168563 s`, or `0.084282 s` amortized per iteration.
+- Limitation: persistent process `3.585368 s` is 20.64% slower than legacy
+  `2.971893 s` in this single pair; learner work also grows to 24 updates.
+- Verdict: `AMORTIZATION_CONFIRMED`, but `hp5_owner=null` and no stable speedup
+  claim. Persistent remains OFF-default; repeated performance benchmarking is
+  a separate future decision.
+
+## E66: r10 Repeated Two-Iteration Benchmark Frozen
+
+- Artifact: `evidence/2026-07-17-hp4c-r10-multirep-freeze-pass.md`.
+- Identity: r10 `8f14c14c...1185`, oracle v4 `9acbbef2...83a0`, contract
+  `9329719d...aed6`, preflight `4d97819a...1fb4`.
+- Workload: exact r9 two-iteration semantics, four repetitions per route, order
+  `L1,P1,P2,L2,L3,P3,P4,L4`; all eight per-order compose hashes are frozen and
+  normalize to shared hash `25c2bb69...0055`.
+- Decision gate: process elapsed is primary; stable direction requires median
+  paired ratio below 1, persistent median below legacy, and at least 3/4 paired
+  ratios below 1. Otherwise `NO_STABLE_SPEEDUP`.
+- Preflight: exact source/provider/assets/teachers/compose/oracle/import/help
+  contracts pass. Output root and execution logs remain absent;
+  `training_started=false`.
+- Isolation: execution requires separate authorization; HP-5 and default-on
+  promotion remain closed.
+
+## E67: r10 Eight-Run Benchmark Complete, No Stable Speedup
+
+- Artifact: `evidence/2026-07-17-hp4c-r10-eight-run-no-speedup.md`.
+- Execution: exact order `L1,P1,P2,L2,L3,P3,P4,L4`; 8/8 commands exit zero
+  and 8/8 immediate oracle-v4 checks accept. Execution-complete hash is
+  `617b5a52...840f`; no retry or reorder occurred.
+- Primary: legacy/persistent medians `2.286095/2.891427 s`; paired P/L ratios
+  `0.963548, 1.272740, 1.266714, 1.262870`; median ratio `1.264792`; only 1/4
+  is below 1. Verdict: `NO_STABLE_SPEEDUP`.
+- Secondary: persistent iteration-2 request total/residual medians fall
+  34.69%/93.70%; all four runs add four cache hits and zero env/teacher init;
+  median cleanup is 0.153230 s once per process.
+- Decision: secondary amortization does not override primary process time.
+  `hp5_owner=null`; HP-5/default-on remain unauthorized and persistent remains
+  OFF-default. No policy-quality claim is made.
+
+## E68: HP-6a Readiness Blocked by Stale Runtime Status
+
+- Artifact:
+  `evidence/2026-07-17-hp6a-readiness-stale-runtime-status-blocked.md`.
+- Review fact: `async_runtime.py:10` and `performance.py:7` still claim live
+  timing and A/B are absent, contradicting E61/E65/E67.
+- Classification: Important source-level audit-status drift; no runtime defect
+  is inferred from this finding.
+- Stop: source repair was outside HP-6a scope. No test, Ruff, atlas, training,
+  or `make test-all` command ran after the first finding.
+- Next: separately authorize the two-owner stale-status repair and HP-6a
+  restart. HP-6b, contract activation, default-on, commit, and PR remain closed.
+
+## E69: HP-6a1 Runtime Audit-Status Repair Pass
+
+- Artifact: `evidence/2026-07-17-hp6a1-runtime-status-repair-pass.md`.
+- Scope: two runtime-owner module docstrings plus equivalent current
+  Method-to-Code performance gaps; no behavior/config/contract/route change.
+- Facts: current surfaces record E61/E65/E67 runtime timing and A/B,
+  `NO_STABLE_SPEEDUP`, OFF-default, no HP-5 owner, and pending HP-6/physical
+  acceptance. Structured stale assertions return no hits.
+- Verification: both modules compile; targeted Ruff passes; atlas contracts
+  pass with 9 runtime modules, 11 method modules, and 6 concept nodes.
+- Decision: E68 status drift is repaired. E70 may restart HP-6a; HP-6b and all
+  activation/default/PR actions remain closed.
+
+## E70: HP-6a Restart Tests Green, Runtime Atlas Still Stale
+
+- Artifact: `evidence/2026-07-17-hp6a-restart-runtime-atlas-blocked.md`.
+- Executable evidence: owner probe 10/10; algorithm 137 passed; script/config
+  326 passed; IPC 74 passed and 24 skipped; targeted Ruff passed. The sandbox
+  shared-memory failures were invalid environment evidence and passed on the
+  exact permission-corrected rerun.
+- Cross-file blocker: Runtime Atlas U-RT-06/U-RT-08 still use the missed phrase
+  `尚缺` to claim timing/A/B are absent, contradicting E61/E65/E67.
+- Correction: E69 remains valid for source docstrings and Method-to-Code, but
+  is PARTIAL for whole-Architecture coverage. E70 is BLOCKED.
+- Next: bounded U-RT-06/U-RT-08 status repair plus broadened semantic assertion
+  and atlas/cross-file checks. Executable source is unchanged, so the 537-test
+  E70 evidence can be reused. HP-6b and all activation/default/PR actions stay
+  closed.
+
+## E71: HP-6a2 Runtime Atlas Status Repair Pass
+
+- Artifact: `evidence/2026-07-17-hp6a2-runtime-atlas-status-pass.md`.
+- Durable RED: the extended atlas checker exits 1 on old U-RT-06 `A/B 尚缺`.
+- GREEN: after U-RT-06/U-RT-08 repair, atlas checks pass with 9 runtime
+  modules, 11 method modules, and 6 concept nodes.
+- Cross-file: zero stale timing/A/B hits in current Runtime/Method-to-Code gaps;
+  both cards contain E67, `NO_STABLE_SPEEDUP`, and HP-6; active registry remains
+  method v001/training v002 and v003 remains proposal; diff check passes.
+- Decision: E69+E71 resolve E68/E70 status drift. Combined with E70's owner
+  probe, 537 passed/24 skipped, and Ruff, HP-6a readiness is PASS. Persistent
+  remains OFF-default. Return before HP-6b or activation/default/commit/PR.
+
+## E72: HP-6b make test-all Blocked at Ruff
+
+- Artifact: `evidence/2026-07-17-hp6b-make-test-all-lint-blocked.md`.
+- Command: exact repository `make test-all` from the isolated worktree.
+- Format stage: 57 files reformatted; Ruff safe-fix corrected 15 of 17 issues.
+- Blocker: two F841 unused assignments at
+  `check_robojudo_unilab_section8_runtime_torque.py:381-382`; Make exits 2.
+- Unreached: mypy, pyright, non-slow pytest coverage, and all later production
+  conclusions. E70 focused evidence remains valid but cannot substitute.
+- Worktree: automatic formatter/fix mutations remain; no manual repair or
+  revert was authorized.
+- Next: separately authorize the two-line owner repair, mechanical diff review,
+  and exact full rerun. Contract/default/commit/push/PR remain closed.
+
+## E73: HP-6b1 Section-8 Lint Repair Pass
+
+- Artifact: `evidence/2026-07-17-hp6b1-section8-lint-repair-pass.md`.
+- Change: removed only two unused `main()` assignments from the section-8
+  RoboJudo/UniLab diagnostic.
+- Evidence: targeted compile and Ruff pass; AST proves helper-local state
+  assignments remain in both rollout functions and are absent only from main.
+- Decision: E72 F841 blocker is repaired. E74 may review formatter/auto-fix
+  mutations and rerun exact `make test-all`; later decisions remain closed.
+
+## E74: HP-6b2 Full Rerun Blocked at Mypy
+
+- Artifact: `evidence/2026-07-17-hp6b2-mypy-blocked.md`.
+- Diff review: 429 files AST-equivalent to r8 frozen source; only E73's two
+  removed assignments differ; no missing counterpart or parse failure.
+- Rerun: 477 files unchanged by format; Ruff passes; mypy reports 20 errors in
+  8 files and Make exits 2. Pyright and coverage pytest do not start.
+- Owner split: 7 errors in changed/new collector/async/workflow/G1 persistent
+  owners; 13 errors in models/playback/data/G1 joystick files AST-identical to
+  HEAD. Both sets block the repository gate.
+- Next: separately repair branch-owned and baseline type boundaries with
+  targeted evidence before another exact full rerun. All later actions remain
+  closed.
+
+## E75-E86: Type Closure, Repository Gate, And Runtime Contract Decision
+
+- E75/E76 repair branch-owned and baseline type boundaries with targeted
+  mypy/Ruff and affected-suite evidence.
+- E77 exposes collector Pyright narrowing gaps; E78 repairs them and reports
+  zero targeted Pyright errors.
+- E79 reaches non-slow coverage and exposes fourteen G1/Stewart/docs/CLI
+  failures. E80-E84 repair the G1 compatibility owner, optional-provider test
+  selection, generated support matrix, and temporary-checkout uv isolation.
+- E85 closes the exact fourteen-node regression set: 12 passed, 2 expected
+  optional-provider skips.
+- E86 exact `make test-all` PASS: Ruff/mypy/Pyright green; 1556 passed,
+  51 skipped, 256 deselected; 70% coverage.
+- Human decision: persistent DAgger integration is complete, promotion is
+  deferred, and the default remains `legacy`. `DISTILL-TRAIN-v003` is active;
+  E67 `NO_STABLE_SPEEDUP` forbids default-on promotion and leaves no HP-5 owner.
+- Open boundaries: RT-10 physical acceptance, optional Motrix runtime,
+  slow/S4, height teacher, promoted checkpoint, and explicit diagnostic-only
+  labeling of the manual route.

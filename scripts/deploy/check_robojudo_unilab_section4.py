@@ -25,7 +25,6 @@ from typing import Any
 import mujoco
 import numpy as np
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_UNILAB_SCENE = REPO_ROOT / "src/unilab/assets/robots/g1/scene_flat.xml"
@@ -203,7 +202,9 @@ def audit(
         if g1_unilab_has_stand_init
         else None
     )
-    effective_initial_qpos = configured_init_qpos if configured_init_qpos is not None else robojudo_qpos0
+    effective_initial_qpos = (
+        configured_init_qpos if configured_init_qpos is not None else robojudo_qpos0
+    )
     effective_initial_root = effective_initial_qpos[:ROOT_QPOS_DIM]
     effective_initial_dof = effective_initial_qpos[ROOT_QPOS_DIM:]
 
@@ -263,8 +264,12 @@ def audit(
             "0: MujocoEnv.reborn() default keyframe reset is unavailable in this XML",
         )
 
-    compare_vec("unilab_cfg_default_matches_stand", unilab_cfg_default, unilab_stand_dof, TOL, checks)
-    compare_vec("unilab_stand_ctrl_matches_stand_dof", unilab_stand_ctrl, unilab_stand_dof, TOL, checks)
+    compare_vec(
+        "unilab_cfg_default_matches_stand", unilab_cfg_default, unilab_stand_dof, TOL, checks
+    )
+    compare_vec(
+        "unilab_stand_ctrl_matches_stand_dof", unilab_stand_ctrl, unilab_stand_dof, TOL, checks
+    )
     if g1_unilab_has_stand_init:
         _add(checks, "PASS", "g1_unilab_configures_init_qpos", "UNILAB_G1_STAND_QPOS")
         _add(
@@ -318,7 +323,13 @@ def audit(
     )
 
     zero_action_pd_target = unilab_cfg_default.copy()
-    compare_vec("zero_action_pd_target_matches_unilab_default", zero_action_pd_target, unilab_cfg_default, TOL, checks)
+    compare_vec(
+        "zero_action_pd_target_matches_unilab_default",
+        zero_action_pd_target,
+        unilab_cfg_default,
+        TOL,
+        checks,
+    )
 
     details["section4_conclusion"] = (
         "g1_unilab effective initial qpos is UniLab stand"

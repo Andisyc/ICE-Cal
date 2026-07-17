@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import torch
 from torch import nn
@@ -65,6 +65,10 @@ def load_distillation_student_policy(
             squash_action=squash_action,
         ).to(device)
     elif model_type == "moe":
+        routing_mode = str(runtime_cfg.get("student_routing_mode", "soft"))
+        if routing_mode not in {"soft", "hard"}:
+            raise ValueError(f"student_routing_mode must be 'soft' or 'hard', got {routing_mode!r}")
+        validated_routing_mode = cast(Literal["soft", "hard"], routing_mode)
         policy = MoEStudentPolicy(
             obs_dim=obs_dim,
             action_dim=action_dim,
@@ -79,7 +83,7 @@ def load_distillation_student_policy(
             ),
             activation=activation,
             squash_action=squash_action,
-            routing_mode=str(runtime_cfg.get("student_routing_mode", "soft")),
+            routing_mode=validated_routing_mode,
             router_temperature=float(runtime_cfg.get("student_router_temperature", 1.0)),
         ).to(device)
     else:

@@ -354,7 +354,9 @@ def test_play_interactive_routes_distill_to_generic_session(monkeypatch):
         calls.update(kwargs)
         return FakeSession(), "actor", "/tmp/model.pt"
 
-    monkeypatch.setattr(mod, "create_distill_playback_session", fake_create_distill_playback_session)
+    monkeypatch.setattr(
+        mod, "create_distill_playback_session", fake_create_distill_playback_session
+    )
     monkeypatch.setattr(mod, "_uses_native_mujoco_viewer_launch", lambda: True)
     monkeypatch.setattr(mod, "_can_launch_glfw_viewer", lambda: False)
 

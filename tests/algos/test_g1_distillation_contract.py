@@ -37,8 +37,7 @@ def test_behavior_distillation_update_detaches_teacher_and_updates_student() -> 
     assert stats.teacher_action_shape == (4, 3)
     assert all(param.grad is None for param in teacher.parameters())
     assert any(
-        not torch.allclose(before[name], value)
-        for name, value in student.state_dict().items()
+        not torch.allclose(before[name], value) for name, value in student.state_dict().items()
     )
 
 
@@ -1802,9 +1801,7 @@ class _TransitionDistillEnv:
                 "obs": self._obs(self.step_calls),
                 "info": {"commands": self.commands},
                 "terminated": (
-                    np.zeros((self.num_envs,), dtype=np.bool_)
-                    if terminated is None
-                    else terminated
+                    np.zeros((self.num_envs,), dtype=np.bool_) if terminated is None else terminated
                 ),
                 "truncated": np.zeros((self.num_envs,), dtype=np.bool_),
                 "final_observation": None,
@@ -2206,7 +2203,9 @@ def test_iterative_dagger_recollects_with_updated_student_policy() -> None:
     assert result.iteration_count == 2
     assert result.update_count == 2
     assert result.samples_collected == 8
-    assert [metadata["dagger_aggregate_num_samples"] for metadata in result.collection_metadata] == [
+    assert [
+        metadata["dagger_aggregate_num_samples"] for metadata in result.collection_metadata
+    ] == [
         4,
         8,
     ]
@@ -2819,9 +2818,7 @@ def test_offline_distillation_run_applies_scenario_quotas() -> None:
         seed=17,
     )
 
-    assert result.batch_label_counts == (
-        {"walk_flat": 10, "static_stand": 5, "walk_to_stop": 5},
-    )
+    assert result.batch_label_counts == ({"walk_flat": 10, "static_stand": 5, "walk_to_stop": 5},)
     assert result.last_balance_label_counts == {
         "walk_flat": 10,
         "static_stand": 5,
@@ -2852,9 +2849,7 @@ def test_offline_distillation_run_enforces_transition_replay_budget() -> None:
         teacher_actions=torch.randn(10, 3),
         role_labels=("walk_flat",) * 4 + ("stand",) * 4 + ("stand",) * 2,
         command_intents=("active",) * 4 + ("inactive",) * 6,
-        scenario_labels=("walk_flat",) * 4
-        + ("static_stand",) * 4
-        + ("walk_to_stop",) * 2,
+        scenario_labels=("walk_flat",) * 4 + ("static_stand",) * 4 + ("walk_to_stop",) * 2,
         transition_ages=torch.tensor([-1] * 8 + [0, 1], dtype=torch.int64),
         command_before=torch.tensor([[0.4, 0.0, 0.0]] * 4 + [[0.0, 0.0, 0.0]] * 6),
         command_after=torch.zeros(10, 3),

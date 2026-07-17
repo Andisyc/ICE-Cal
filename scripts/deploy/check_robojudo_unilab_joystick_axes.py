@@ -8,7 +8,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 DEFAULT_ROBOJUDO_ROOT = Path("/Users/chengyuxuan/ArtiIntComVis/RoboJudo_Real")
 
 

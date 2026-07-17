@@ -17,7 +17,9 @@ def _load_audit_script() -> Any:
         / "deploy"
         / "check_unilab_g1_distill_dataset_audit.py"
     )
-    spec = importlib.util.spec_from_file_location("check_unilab_g1_distill_dataset_audit", script_path)
+    spec = importlib.util.spec_from_file_location(
+        "check_unilab_g1_distill_dataset_audit", script_path
+    )
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(mod)

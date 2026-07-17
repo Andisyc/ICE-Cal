@@ -1,6 +1,6 @@
 # Engineering Plan: Single-Entry Multi-Teacher Distillation Workflow
 
-Status: superseded by accepted `DISTILL-TRAIN-v002`; retained as implementation history
+Status: superseded by active `DISTILL-TRAIN-v003`; retained as implementation history
 
 ## Problem
 

@@ -30,7 +30,6 @@ import torch
 
 from unilab.algos.torch.fast_sac.learner import SACActor
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_UNILAB_SCENE = REPO_ROOT / "src/unilab/assets/robots/g1/scene_flat.xml"
@@ -230,7 +229,9 @@ def get_gravity_orientation_xyzw(quat: np.ndarray) -> np.ndarray:
     return gravity
 
 
-def build_obs(model: mujoco.MjModel, default_angles: np.ndarray, gait_phase: np.ndarray) -> np.ndarray:
+def build_obs(
+    model: mujoco.MjModel, default_angles: np.ndarray, gait_phase: np.ndarray
+) -> np.ndarray:
     data = mujoco.MjData(model)
     data.qpos[:] = np.concatenate(
         [
@@ -260,7 +261,9 @@ def run_onnx(policy_path: Path, obs: np.ndarray) -> np.ndarray:
     session = ort.InferenceSession(policy_path.as_posix(), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name
-    return np.asarray(session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0]).squeeze()
+    return np.asarray(
+        session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0]
+    ).squeeze()
 
 
 def run_actor(actor: SACActor, obs: np.ndarray) -> np.ndarray:
@@ -326,21 +329,29 @@ def audit(robojudo_root: Path, unilab_scene: Path) -> tuple[list[Check], dict[st
         dtype=np.float32,
     )
     joint_names = extract_class_assignment(unilab_cfg, "G1UniLabDoF", "joint_names")
-    stiffness = np.asarray(extract_class_assignment(env_cfg, env_dof_class, "stiffness"), dtype=np.float32)
-    damping = np.asarray(extract_class_assignment(env_cfg, env_dof_class, "damping"), dtype=np.float32)
+    stiffness = np.asarray(
+        extract_class_assignment(env_cfg, env_dof_class, "stiffness"), dtype=np.float32
+    )
+    damping = np.asarray(
+        extract_class_assignment(env_cfg, env_dof_class, "damping"), dtype=np.float32
+    )
     torque_limits = np.asarray(
         extract_class_assignment(env_cfg, env_dof_class, "torque_limits"), dtype=np.float32
     )
 
     unilab_model = mujoco.MjModel.from_xml_path(unilab_scene.as_posix())
-    robojudo_model = mujoco.MjModel.from_xml_path((robojudo_root / DEFAULT_ROBOJUDO_XML_REL).as_posix())
+    robojudo_model = mujoco.MjModel.from_xml_path(
+        (robojudo_root / DEFAULT_ROBOJUDO_XML_REL).as_posix()
+    )
     obs = build_obs(unilab_model, default_angles, gait_phase=np.zeros(2, dtype=np.float32))
     onnx_action = run_onnx(policy_path, obs).astype(np.float32)
     actor_action = run_actor(actor, obs).astype(np.float32)
     target = onnx_action + default_angles
     target_violations = joint_limit_violations(target, joint_names, unilab_model)
     native_force = actuator_forces(unilab_model, default_angles, target)
-    robojudo_torque = np.clip(onnx_action * stiffness - 0.0 * damping, -torque_limits, torque_limits)
+    robojudo_torque = np.clip(
+        onnx_action * stiffness - 0.0 * damping, -torque_limits, torque_limits
+    )
     force_diff = robojudo_torque - native_force
     abs_ratio = np.abs(robojudo_torque) / (np.abs(native_force) + 1.0e-9)
 
@@ -406,7 +417,9 @@ def audit(robojudo_root: Path, unilab_scene: Path) -> tuple[list[Check], dict[st
         "all_unilab_actuators_ctrllimited": bool(np.all(unilab_model.actuator_ctrllimited)),
         "any_unilab_actuators_ctrllimited": bool(np.any(unilab_model.actuator_ctrllimited)),
         "all_unilab_actuators_forcelimited": bool(np.all(unilab_model.actuator_forcelimited)),
-        "any_robojudo_xml_actuator_forcelimited": bool(np.any(robojudo_model.actuator_forcelimited)),
+        "any_robojudo_xml_actuator_forcelimited": bool(
+            np.any(robojudo_model.actuator_forcelimited)
+        ),
     }
 
     if obs.shape == (EXPECTED_OBS_DIM,):
@@ -421,9 +434,13 @@ def audit(robojudo_root: Path, unilab_scene: Path) -> tuple[list[Check], dict[st
 
     max_actor_diff = details["onnx_vs_actor_max_abs"]
     if max_actor_diff <= TOL:
-        _add(checks, "PASS", "unilab_checkpoint_actor_matches_onnx", f"max_abs={max_actor_diff:.3e}")
+        _add(
+            checks, "PASS", "unilab_checkpoint_actor_matches_onnx", f"max_abs={max_actor_diff:.3e}"
+        )
     else:
-        _add(checks, "FAIL", "unilab_checkpoint_actor_matches_onnx", f"max_abs={max_actor_diff:.3e}")
+        _add(
+            checks, "FAIL", "unilab_checkpoint_actor_matches_onnx", f"max_abs={max_actor_diff:.3e}"
+        )
 
     if target_violations:
         _add(
@@ -436,7 +453,12 @@ def audit(robojudo_root: Path, unilab_scene: Path) -> tuple[list[Check], dict[st
         _add(checks, "WARN", "unilab_native_target_limit_violations_reproduced", "none")
 
     if not details["any_unilab_actuators_ctrllimited"]:
-        _add(checks, "PASS", "unilab_no_ctrlrange_clip", "actuator_ctrllimited is false for all actuators")
+        _add(
+            checks,
+            "PASS",
+            "unilab_no_ctrlrange_clip",
+            "actuator_ctrllimited is false for all actuators",
+        )
     else:
         _add(checks, "FAIL", "unilab_no_ctrlrange_clip", "some actuators have ctrlrange clipping")
 
@@ -447,7 +469,12 @@ def audit(robojudo_root: Path, unilab_scene: Path) -> tuple[list[Check], dict[st
 
     max_force_diff = float(np.max(np.abs(force_diff)))
     if max_force_diff <= 1.0:
-        _add(checks, "PASS", "robojudo_torque_matches_unilab_actuator_force", f"max_abs={max_force_diff:.3e}")
+        _add(
+            checks,
+            "PASS",
+            "robojudo_torque_matches_unilab_actuator_force",
+            f"max_abs={max_force_diff:.3e}",
+        )
     else:
         _add(
             checks,

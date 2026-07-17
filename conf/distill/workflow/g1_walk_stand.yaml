@@ -1,5 +1,8 @@
 # @package _global_
 
+teacher:
+  obs_dim: 98
+
 student:
   model_type: moe
   obs_dim: 98

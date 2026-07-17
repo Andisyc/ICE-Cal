@@ -190,7 +190,9 @@ def _term_contributions(env: Any, state: Any) -> dict[str, float]:
     return terms
 
 
-def _term_contributions_by_role(env: Any, state: Any, roles: np.ndarray) -> dict[str, dict[str, float]]:
+def _term_contributions_by_role(
+    env: Any, state: Any, roles: np.ndarray
+) -> dict[str, dict[str, float]]:
     ctx = _reward_context(env, state)
     terms: dict[str, dict[str, float]] = {}
     for name, scale in env.cfg.reward_config.scales.items():
@@ -198,9 +200,7 @@ def _term_contributions_by_role(env: Any, state: Any, roles: np.ndarray) -> dict
             continue
         values = np.asarray(env._reward_fns[name](ctx), dtype=np.float32)
         weighted = values * float(scale) * float(env.cfg.ctrl_dt)
-        terms[name] = {
-            role: stats["mean"] for role, stats in _role_stats(weighted, roles).items()
-        }
+        terms[name] = {role: stats["mean"] for role, stats in _role_stats(weighted, roles).items()}
     return terms
 
 
@@ -208,7 +208,9 @@ def _snapshot(env: Any, state: Any, *, include_termination: bool = True) -> dict
     foot = _foot_metrics(env)
     support = _support_metrics(env)
     commands = np.asarray(state.info.get("commands"), dtype=np.float32)
-    gait_enabled = np.asarray(state.info.get("gait_enabled", np.zeros((env.num_envs,))), dtype=np.float32)
+    gait_enabled = np.asarray(
+        state.info.get("gait_enabled", np.zeros((env.num_envs,))), dtype=np.float32
+    )
     height = _height(env)
     height_target = float(env.cfg.reward_config.base_height_target)
     out = {
@@ -628,7 +630,8 @@ def _role_boundary_decision(role_final: dict[str, Any]) -> dict[str, Any]:
         hold = out["hold_reset_pose"]
         out["interpretation"] = (
             "G1LOC-ACT-001 default_angles/static action anchor mismatch"
-            if hold["tilt_max"] + 10.0 < zero_tilt or hold["base_over_feet_x_abs_max"] + 0.1 < zero_x
+            if hold["tilt_max"] + 10.0 < zero_tilt
+            or hold["base_over_feet_x_abs_max"] + 0.1 < zero_x
             else "G1LOC-ENV-001 reset/keyframe or physics anchor remains suspect"
         )
     else:
@@ -756,7 +759,9 @@ def run_check(
                 "reset_base_qvel_limit": env_override.get("reset_base_qvel_limit"),
                 "rel_standing_envs": env_override.get("commands", {}).get("rel_standing_envs"),
                 "rel_transition_envs": env_override.get("commands", {}).get("rel_transition_envs"),
-                "observe_height_command": env_override.get("commands", {}).get("observe_height_command"),
+                "observe_height_command": env_override.get("commands", {}).get(
+                    "observe_height_command"
+                ),
             },
             "initial": _snapshot(env, state, include_termination=False),
             "module_probe": {
@@ -826,9 +831,7 @@ def run_check(
             exec_actions0 = env._actions_for_execution(actions, state.info)
             ctrl0 = exec_actions0 * action_scale[None, :] + default_angles[None, :]
             ctrl_minus_reset_dof = ctrl0 - reset_dof_pos
-            details["module_probe"]["action_G1LOC_ACT_001"][
-                "first_step_ctrl_minus_reset_dof"
-            ] = {
+            details["module_probe"]["action_G1LOC_ACT_001"]["first_step_ctrl_minus_reset_dof"] = {
                 "by_role": _role_stats(ctrl_minus_reset_dof, roles),
                 "top_abs_zero_action_joint_indices": _top_abs(
                     ctrl_minus_reset_dof[roles == "zero_action"]
@@ -907,7 +910,8 @@ def run_check(
             "final": final_snapshot,
             "final_by_role": _snapshot_by_role(env, final_state, roles),
             "per_term_reward_mean_per_step": {
-                name: value / max(completed_steps, 1) for name, value in sorted(per_term_sum.items())
+                name: value / max(completed_steps, 1)
+                for name, value in sorted(per_term_sum.items())
             },
             "per_term_reward_mean_per_step_by_role": {
                 name: {
@@ -949,7 +953,9 @@ def run_check(
             )
         if first_termination_step is not None:
             reason = details["rollout"]["final"]["termination"]["first_reason"]
-            failures.append(f"stand-still zero-action rollout terminated at step {first_termination_step}: {reason}")
+            failures.append(
+                f"stand-still zero-action rollout terminated at step {first_termination_step}: {reason}"
+            )
         if final_snapshot["tilt_deg"]["max"] > max_ok_tilt_deg:
             failures.append(
                 "stand-still zero-action rollout exceeded stable tilt: "

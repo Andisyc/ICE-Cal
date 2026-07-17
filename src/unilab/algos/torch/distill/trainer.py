@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+from .performance import DistillationStageObservationAccumulator
 
 
 @dataclass(frozen=True)
@@ -97,13 +100,11 @@ class BehaviorDistillationTrainer:
             raise ValueError("role_expert_targets must be non-empty when role_loss_coef > 0")
         if self.command_intent_loss_coef < 0.0:
             raise ValueError(
-                "command_intent_loss_coef must be non-negative, "
-                f"got {command_intent_loss_coef}"
+                f"command_intent_loss_coef must be non-negative, got {command_intent_loss_coef}"
             )
         if self.command_intent_loss_coef > 0.0 and not self.command_intent_expert_targets:
             raise ValueError(
-                "command_intent_expert_targets must be non-empty when "
-                "command_intent_loss_coef > 0"
+                "command_intent_expert_targets must be non-empty when command_intent_loss_coef > 0"
             )
         self.update_count = 0
         self.teacher.eval()
@@ -118,7 +119,9 @@ class BehaviorDistillationTrainer:
     @staticmethod
     def _cached_teacher_action(teacher_actions: torch.Tensor) -> torch.Tensor:
         if teacher_actions.ndim != 2:
-            raise ValueError(f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}")
+            raise ValueError(
+                f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}"
+            )
         if not torch.isfinite(teacher_actions).all():
             raise ValueError("teacher_actions must contain only finite values")
         return teacher_actions.detach()
@@ -237,7 +240,9 @@ class BehaviorDistillationTrainer:
                 return None
             target_indices.append(int(targets[label_key]))
         target_tensor = torch.tensor(target_indices, dtype=torch.long, device=device)
-        if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(num_experts):
+        if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(
+            num_experts
+        ):
             raise ValueError(
                 f"{label_name}_expert_targets index out of range: "
                 f"targets={sorted(set(target_indices))} num_experts={int(num_experts)}"
@@ -255,7 +260,9 @@ class BehaviorDistillationTrainer:
         if self.expert_behavior_loss_source == "none" or expert_actions is None:
             return student_action, "student_action", 0, None
         if expert_actions.ndim != 3:
-            raise ValueError(f"expert_actions must be rank-3, got shape {tuple(expert_actions.shape)}")
+            raise ValueError(
+                f"expert_actions must be rank-3, got shape {tuple(expert_actions.shape)}"
+            )
         if expert_actions.shape[0] != student_action.shape[0]:
             raise ValueError(
                 "expert_actions batch size mismatch: "
@@ -341,13 +348,14 @@ class BehaviorDistillationTrainer:
             raise ValueError("role_labels are required when role_loss_coef > 0")
         if len(role_labels) != int(batch_size):
             raise ValueError(
-                "role_labels length mismatch: "
-                f"labels={len(role_labels)} batch={int(batch_size)}"
+                f"role_labels length mismatch: labels={len(role_labels)} batch={int(batch_size)}"
             )
         if router_logits is None:
             raise TypeError("role-conditioned router loss requires MoE router logits")
         if router_logits.ndim != 2:
-            raise ValueError(f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}")
+            raise ValueError(
+                f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}"
+            )
 
         target_indices: list[int] = []
         for role in role_labels:
@@ -356,7 +364,9 @@ class BehaviorDistillationTrainer:
                 raise ValueError(f"unmapped role label for role-conditioned loss: {role_key!r}")
             target_indices.append(int(self.role_expert_targets[role_key]))
         targets = torch.tensor(target_indices, dtype=torch.long, device=router_logits.device)
-        if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(router_logits.shape[-1]):
+        if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(
+            router_logits.shape[-1]
+        ):
             raise ValueError(
                 "role_expert_targets index out of range: "
                 f"targets={sorted(set(target_indices))} num_experts={int(router_logits.shape[-1])}"
@@ -383,86 +393,114 @@ class BehaviorDistillationTrainer:
         if router_logits is None:
             raise TypeError("command-intent router loss requires MoE router logits")
         if router_logits.ndim != 2:
-            raise ValueError(f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}")
+            raise ValueError(
+                f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}"
+            )
 
         target_indices: list[int] = []
         for intent in command_intents:
             intent_key = str(intent)
             if intent_key not in self.command_intent_expert_targets:
-                raise ValueError(
-                    f"unmapped command intent for command-intent loss: {intent_key!r}"
-                )
+                raise ValueError(f"unmapped command intent for command-intent loss: {intent_key!r}")
             target_indices.append(int(self.command_intent_expert_targets[intent_key]))
         targets = torch.tensor(target_indices, dtype=torch.long, device=router_logits.device)
-        if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(router_logits.shape[-1]):
+        if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(
+            router_logits.shape[-1]
+        ):
             raise ValueError(
                 "command_intent_expert_targets index out of range: "
                 f"targets={sorted(set(target_indices))} num_experts={int(router_logits.shape[-1])}"
             )
         return F.cross_entropy(router_logits, targets), int(targets.numel())
 
-    def update(self, batch: DistillationBatch) -> BehaviorDistillationStats:
-        if batch.teacher_actions is None and batch.student_obs.shape[0] != batch.teacher_obs.shape[0]:
+    def update(
+        self,
+        batch: DistillationBatch,
+        *,
+        performance: DistillationStageObservationAccumulator | None = None,
+    ) -> BehaviorDistillationStats:
+        if (
+            batch.teacher_actions is None
+            and batch.student_obs.shape[0] != batch.teacher_obs.shape[0]
+        ):
             raise ValueError(
                 "student/teacher batch size mismatch: "
                 f"student={batch.student_obs.shape[0]} teacher={batch.teacher_obs.shape[0]}"
             )
-        if batch.teacher_actions is not None and batch.student_obs.shape[0] != batch.teacher_actions.shape[0]:
+        if (
+            batch.teacher_actions is not None
+            and batch.student_obs.shape[0] != batch.teacher_actions.shape[0]
+        ):
             raise ValueError(
                 "student/teacher action batch size mismatch: "
                 f"student={batch.student_obs.shape[0]} teacher_actions={batch.teacher_actions.shape[0]}"
             )
 
         self.student.train()
-        teacher_action_source = "teacher"
-        if batch.teacher_actions is None:
-            teacher_action = self._teacher_action(batch.teacher_obs)
-        else:
-            teacher_action = self._cached_teacher_action(batch.teacher_actions)
-            teacher_action_source = "cached"
-        student_action, aux_loss, expert_usage, route_entropy, router_logits, expert_actions = (
-            self._student_action_and_aux(batch.student_obs)
+        forward_span = (
+            nullcontext() if performance is None else performance.measure("learner_forward")
         )
-        role_loss, role_target_count = self._role_router_loss(
-            role_labels=batch.role_labels,
-            router_logits=router_logits,
-            batch_size=int(batch.student_obs.shape[0]),
-            like=student_action,
-        )
-        command_intent_loss, command_intent_target_count = self._command_intent_router_loss(
-            command_intents=batch.command_intents,
-            router_logits=router_logits,
-            batch_size=int(batch.student_obs.shape[0]),
-            like=student_action,
-        )
-        (
-            behavior_action,
-            behavior_action_source,
-            behavior_target_count,
-            selected_expert_targets,
-        ) = (
-            self._expert_behavior_action(
+        with forward_span:
+            teacher_action_source = "teacher"
+            if batch.teacher_actions is None:
+                teacher_action = self._teacher_action(batch.teacher_obs)
+            else:
+                teacher_action = self._cached_teacher_action(batch.teacher_actions)
+                teacher_action_source = "cached"
+            (
+                student_action,
+                aux_loss,
+                expert_usage,
+                route_entropy,
+                router_logits,
+                expert_actions,
+            ) = self._student_action_and_aux(batch.student_obs)
+            role_loss, role_target_count = self._role_router_loss(
+                role_labels=batch.role_labels,
+                router_logits=router_logits,
+                batch_size=int(batch.student_obs.shape[0]),
+                like=student_action,
+            )
+            command_intent_loss, command_intent_target_count = self._command_intent_router_loss(
+                command_intents=batch.command_intents,
+                router_logits=router_logits,
+                batch_size=int(batch.student_obs.shape[0]),
+                like=student_action,
+            )
+            (
+                behavior_action,
+                behavior_action_source,
+                behavior_target_count,
+                selected_expert_targets,
+            ) = self._expert_behavior_action(
                 student_action=student_action,
                 expert_actions=expert_actions,
                 role_labels=batch.role_labels,
                 command_intents=batch.command_intents,
             )
-        )
-        behavior_loss = self._loss(behavior_action, teacher_action)
-        loss = (
-            behavior_loss
-            + self.aux_loss_coef * aux_loss
-            + self.role_loss_coef * role_loss
-            + self.command_intent_loss_coef * command_intent_loss
-        )
+            behavior_loss = self._loss(behavior_action, teacher_action)
+            loss = (
+                behavior_loss
+                + self.aux_loss_coef * aux_loss
+                + self.role_loss_coef * role_loss
+                + self.command_intent_loss_coef * command_intent_loss
+            )
 
-        self.optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        self._clear_inactive_expert_grads(selected_expert_targets)
-        if self.max_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm_(self.student.parameters(), self.max_grad_norm)
-        grad_norm = self._grad_norm(self.student)
-        self.optimizer.step()
+        backward_span = (
+            nullcontext() if performance is None else performance.measure("learner_backward")
+        )
+        with backward_span:
+            self.optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            self._clear_inactive_expert_grads(selected_expert_targets)
+            if self.max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(self.student.parameters(), self.max_grad_norm)
+            grad_norm = self._grad_norm(self.student)
+        optimizer_span = (
+            nullcontext() if performance is None else performance.measure("optimizer_step")
+        )
+        with optimizer_span:
+            self.optimizer.step()
         self.update_count += 1
 
         return BehaviorDistillationStats(

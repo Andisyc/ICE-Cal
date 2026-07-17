@@ -19,7 +19,6 @@ from typing import Any
 
 import numpy as np
 
-
 DEFAULT_ROBOJUDO_ROOT = Path("/Users/chengyuxuan/ArtiIntComVis/RoboJudo_Real")
 
 
@@ -172,7 +171,9 @@ def _write_position_actuator_xml(source_xml: str, dof_cfg: Any) -> str:
         flags=re.DOTALL,
     )
     if count != 1:
-        raise RuntimeError(f"Expected exactly one actuator block in {source_path}, replaced {count}")
+        raise RuntimeError(
+            f"Expected exactly one actuator block in {source_path}, replaced {count}"
+        )
     target = source_path.with_name(source_path.stem + "_unilab_position_test.xml")
     target.write_text(new_text, encoding="utf-8")
     return target.as_posix()
@@ -227,7 +228,9 @@ def _capture_manual_forward(pipeline) -> dict[str, Any]:
     ctrl_data = pipeline.ctrl_manager.get_ctrl_data(env_data)
     obs, extras = pipeline.policy.get_observation(env_data, ctrl_data)
     pd_target = pipeline.policy.get_pd_target(obs)
-    torque = (pd_target - pipeline.env.dof_pos) * pipeline.env.stiffness - pipeline.env.dof_vel * pipeline.env.damping
+    torque = (
+        pd_target - pipeline.env.dof_pos
+    ) * pipeline.env.stiffness - pipeline.env.dof_vel * pipeline.env.damping
     torque = np.clip(torque, -pipeline.env.torque_limits, pipeline.env.torque_limits)
     sensor_compare: dict[str, Any] = {}
     try:
@@ -238,7 +241,9 @@ def _capture_manual_forward(pipeline) -> dict[str, Any]:
         if gyro_id >= 0:
             adr = int(pipeline.env.model.sensor_adr[gyro_id])
             dim = int(pipeline.env.model.sensor_dim[gyro_id])
-            torso_gyro_sensor = np.asarray(pipeline.env.data.sensordata[adr : adr + dim], dtype=np.float32)
+            torso_gyro_sensor = np.asarray(
+                pipeline.env.data.sensordata[adr : adr + dim], dtype=np.float32
+            )
             sensor_compare["torso_gyro_sensor"] = torso_gyro_sensor.copy()
             sensor_compare["obs_vs_torso_gyro_sensor_scaled_max_abs"] = float(
                 np.max(np.abs(np.asarray(obs[0:3], dtype=np.float32) - torso_gyro_sensor * 0.25))
@@ -246,7 +251,9 @@ def _capture_manual_forward(pipeline) -> dict[str, Any]:
         if up_id >= 0:
             adr = int(pipeline.env.model.sensor_adr[up_id])
             dim = int(pipeline.env.model.sensor_dim[up_id])
-            torso_upvector_sensor = np.asarray(pipeline.env.data.sensordata[adr : adr + dim], dtype=np.float32)
+            torso_upvector_sensor = np.asarray(
+                pipeline.env.data.sensordata[adr : adr + dim], dtype=np.float32
+            )
             sensor_compare["torso_upvector_sensor"] = torso_upvector_sensor.copy()
             sensor_compare["obs_vs_minus_torso_upvector_sensor_max_abs"] = float(
                 np.max(np.abs(np.asarray(obs[3:6], dtype=np.float32) + torso_upvector_sensor))
@@ -269,7 +276,9 @@ def _capture_manual_forward(pipeline) -> dict[str, Any]:
     }
 
 
-def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: float | None = None) -> tuple[list[Check], dict[str, float]]:
+def _run_pipeline_trace(
+    args: argparse.Namespace, root: Path, initial_phase: float | None = None
+) -> tuple[list[Check], dict[str, float]]:
     checks: list[Check] = []
     cfg, pipeline = _build_pipeline(
         root,
@@ -294,7 +303,9 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
         )
     )
 
-    init_delta = np.asarray(pipeline.env.dof_pos) - np.asarray(pipeline.policy.policy.default_dof_pos)
+    init_delta = np.asarray(pipeline.env.dof_pos) - np.asarray(
+        pipeline.policy.policy.default_dof_pos
+    )
     checks.append(
         Check(
             "PASS" if np.max(np.abs(init_delta)) < args.pose_tol else "FAIL",
@@ -313,7 +324,9 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
     )
     checks.append(
         Check(
-            "PASS" if not manual["torso_ang_vel_is_none"] and not manual["torso_quat_is_none"] else "FAIL",
+            "PASS"
+            if not manual["torso_ang_vel_is_none"] and not manual["torso_quat_is_none"]
+            else "FAIL",
             "runtime_torso_fields_present",
             f"torso_ang_vel_is_none={manual['torso_ang_vel_is_none']}, torso_quat_is_none={manual['torso_quat_is_none']}",
         )
@@ -330,7 +343,8 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
         checks.append(
             Check(
                 "PASS"
-                if float(sensor_compare["obs_vs_torso_gyro_sensor_scaled_max_abs"]) <= args.sensor_tol
+                if float(sensor_compare["obs_vs_torso_gyro_sensor_scaled_max_abs"])
+                <= args.sensor_tol
                 else "FAIL",
                 "runtime_obs_matches_torso_gyro_sensor",
                 f"max_abs={float(sensor_compare['obs_vs_torso_gyro_sensor_scaled_max_abs']):.6g}",
@@ -340,7 +354,8 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
         checks.append(
             Check(
                 "PASS"
-                if float(sensor_compare["obs_vs_minus_torso_upvector_sensor_max_abs"]) <= args.sensor_tol
+                if float(sensor_compare["obs_vs_minus_torso_upvector_sensor_max_abs"])
+                <= args.sensor_tol
                 else "FAIL",
                 "runtime_obs_matches_minus_torso_upvector_sensor",
                 f"max_abs={float(sensor_compare['obs_vs_minus_torso_upvector_sensor_max_abs']):.6g}",
@@ -351,7 +366,9 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
     original_step = pipeline.env.step
 
     def wrapped_step(pd_target, hand_pose=None):
-        pre_torque = (pd_target - pipeline.env.dof_pos) * pipeline.env.stiffness - pipeline.env.dof_vel * pipeline.env.damping
+        pre_torque = (
+            pd_target - pipeline.env.dof_pos
+        ) * pipeline.env.stiffness - pipeline.env.dof_vel * pipeline.env.damping
         pre_torque = np.clip(pre_torque, -pipeline.env.torque_limits, pipeline.env.torque_limits)
         ret = original_step(pd_target, hand_pose)
         captured.append(
@@ -372,8 +389,12 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
     if not captured:
         checks.append(Check("FAIL", "pipeline_step_called_env_step", "captured=0"))
     else:
-        height_history = np.asarray([float(item["base_z_after_step"][0]) for item in captured], dtype=np.float64)
-        ctrl_l2_history = np.asarray([_stats(item["data_ctrl_after_step"])["l2"] for item in captured], dtype=np.float64)
+        height_history = np.asarray(
+            [float(item["base_z_after_step"][0]) for item in captured], dtype=np.float64
+        )
+        ctrl_l2_history = np.asarray(
+            [_stats(item["data_ctrl_after_step"])["l2"] for item in captured], dtype=np.float64
+        )
         history_summary = {
             "base_z_min": float(np.min(height_history)),
             "base_z_last": float(height_history[-1]),
@@ -394,14 +415,18 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
         )
         checks.append(
             Check(
-                "PASS" if _stats(first["data_ctrl_after_step"])["max_abs"] > args.nonzero_tol else "FAIL",
+                "PASS"
+                if _stats(first["data_ctrl_after_step"])["max_abs"] > args.nonzero_tol
+                else "FAIL",
                 "first_pipeline_step_data_ctrl_nonzero_after_step",
                 json.dumps(_stats(first["data_ctrl_after_step"]), sort_keys=True),
             )
         )
         checks.append(
             Check(
-                "PASS" if _stats(last["data_ctrl_after_step"])["max_abs"] > args.nonzero_tol else "FAIL",
+                "PASS"
+                if _stats(last["data_ctrl_after_step"])["max_abs"] > args.nonzero_tol
+                else "FAIL",
                 "last_pipeline_step_data_ctrl_nonzero_after_step",
                 json.dumps(_stats(last["data_ctrl_after_step"]), sort_keys=True),
             )
@@ -425,7 +450,13 @@ def _run_pipeline_trace(args: argparse.Namespace, root: Path, initial_phase: flo
             )
         )
         print("first_pipeline_step:")
-        print(json.dumps({k: _stats(v) for k, v in first.items() if k != "base_z_after_step"}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {k: _stats(v) for k, v in first.items() if k != "base_z_after_step"},
+                indent=2,
+                sort_keys=True,
+            )
+        )
         print("last_pipeline_step:")
         print(json.dumps({k: _stats(v) for k, v in last.items()}, indent=2, sort_keys=True))
         print("rollout_history:")

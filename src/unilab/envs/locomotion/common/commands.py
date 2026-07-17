@@ -54,7 +54,9 @@ def sample_height_commands(
 ) -> np.ndarray:
     height_range_arr = np.asarray(height_range, dtype=get_global_dtype())
     if height_range_arr.shape != (2,):
-        raise ValueError(f"commands.height_range must have shape (2,), got {height_range_arr.shape}")
+        raise ValueError(
+            f"commands.height_range must have shape (2,), got {height_range_arr.shape}"
+        )
     low, high = float(np.min(height_range_arr)), float(np.max(height_range_arr))
     if random_height:
         values = rng.uniform(low=low, high=high, size=(num_samples, 1))
