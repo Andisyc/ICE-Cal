@@ -1584,3 +1584,39 @@ Date: 2026-07-15
   replay budget, quota, execution default, or promotion change.
 - Decision boundary: HP-7c remains partial. Frozen HP-7a production-path CUDA
   rerun and one bounded persistent workflow require separate server authority.
+
+## E95: HP-7c3 Production-Path Server Sentinel PASS
+
+- Date: 2026-07-17.
+- Artifact: `/ssd1/cyx/UniLab/hp7c3_production_path.json`.
+- Scope: server CUDA production offline path with a no-op trainer; no
+  forward/backward/optimizer/checkpoint or bounded workflow was executed.
+- Runtime facts: `production_cache_build_count=1` across
+  `production_update_count=512`; staging is `2.166843445971608 s` total and
+  `0.004232116105413297 s/update`.
+- Semantic facts: production sampled-index digest equals the rebuild reference,
+  final RNG state is equal, `training_executed=false`, and `pass=true`.
+- Interpretation: cache wiring and sampling equivalence are runtime-confirmed
+  on the production function. Comparing `2.1668 s` with E92's `31.8345 s`
+  suggests about `14.69x`, but this is an inference across different warmup and
+  timing boundaries, not a frozen A/B claim.
+- Decision boundary: HP-7c remains partial until one bounded persistent workflow
+  verifies real learner updates, checkpoint/manifest lineage, memory, staging,
+  and end-to-end time. Default-on and promotion remain unauthorized.
+
+## E96: HP-7c3 Gate 0 SSH Authentication Block
+
+- Date: 2026-07-17.
+- Authorized scope: no-training server identity/oracle materialization only.
+- Discriminator: read-only `BatchMode` SSH to configured alias `SUST_4090`,
+  followed only on success by repository path and Git HEAD reads.
+- Observed result: the network connection reached the configured host but SSH
+  returned `Permission denied (publickey,password)` before the remote command.
+- Confirmed absence: no remote repository/artifact bytes were read, no freeze
+  JSON/oracle/log/output directory was created, and no Python, environment,
+  collection, learner, or training process started.
+- Classification: external authentication boundary, not source/config/artifact
+  identity failure.
+- Stop: do not attempt passwords or alternate hosts automatically. Resume Gate
+  0 only through a user-authenticated session or explicitly provided
+  non-interactive identity. Gate 1 remains unauthorized.

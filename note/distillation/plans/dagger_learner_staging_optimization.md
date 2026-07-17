@@ -146,14 +146,23 @@ suites report 301 passed; targeted Ruff/mypy/Pyright and Atlas contracts pass. N
 batch schedule, pinned memory, GPU-native label, replay/quota/default/promotion
 change entered the diff.
 
-HP-7c3 live status: PENDING. It requires the frozen HP-7a server discriminator
-against the production path and one bounded persistent workflow. Return control
-before either server command; local and integration evidence do not establish
-CUDA or end-to-end speedup.
+HP-7c3 production-path sentinel result: PASS by E95. The server executes 512
+production balanced updates with a no-op trainer, builds one cache, preserves
+the sampled-index digest and final RNG state, and records `2.1668 s` staging
+(`0.004232 s/update`). No learner update is executed. The remaining HP-7c3
+boundary is one separately frozen bounded persistent workflow; the sentinel
+does not establish end-to-end training speedup.
+
+Bounded-workflow design: frozen in
+`plans/hp7c3_bounded_persistent_workflow_freeze.md`. It separates no-training
+Gate 0 identity/oracle materialization from Gate 1 execution, caps production-
+derived effective updates at 8192, and requires a new output identity. Neither
+gate is authorized by the design step.
 
 ## Current Decision
 
-HP-7a passes E92, HP-7b is frozen by E93, and HP-7c1/HP-7c2 pass E94. Return
-control before HP-7c3 server evidence. Batch scheduling, pinned memory,
-GPU-native labels, training-semantic changes, promotion, and default-on remain
+HP-7a passes E92, HP-7b is frozen by E93, HP-7c1/HP-7c2 pass E94, and the
+HP-7c3 production-path sentinel passes E95. Return control before the remaining
+bounded persistent workflow. Batch scheduling, pinned memory, GPU-native
+labels, training-semantic changes, promotion, and default-on remain
 unauthorized.

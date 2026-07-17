@@ -40,6 +40,9 @@ Current status: **integration complete, promotion deferred, default off**.
 - E94: HP-7c1 owner implementation and HP-7c2 formal integration PASS: one
   cache build per invocation, exact RNG/index/count equivalence, `8N` bound,
   301 affected tests, targeted Ruff/mypy/Pyright, and Atlas contracts pass.
+- E95: server production-path sentinel PASS: one cache build across 512
+  updates, sampled-index digest and final RNG state equal, no training, staging
+  `2.1668 s` total and `0.004232 s/update`.
 
 ## Current Owners
 
@@ -87,14 +90,17 @@ Current status: **integration complete, promotion deferred, default off**.
 - Current performance evidence:
   `note/distillation/evidence/2026-07-17-persistent-live-learner-staging-bottleneck.md`
 - Candidate optimization plan:
-  `note/distillation/plans/dagger_learner_staging_optimization.md`
+ `note/distillation/plans/dagger_learner_staging_optimization.md`
+- Bounded workflow freeze:
+  `note/distillation/plans/hp7c3_bounded_persistent_workflow_freeze.md`
 - Runtime/owner views: `note/architecture/runtime/` and
   `note/architecture/architecture/`.
 
 ## Next Human Decision
 
-No automatic server benchmark, training, promotion, default-on, commit, or PR
-action is active. HP-7c1/HP-7c2 pass E94; HP-7c remains partial. The next human
-decision is whether to authorize HP-7c3: sync the exact source identity, rerun
-the frozen HP-7a CUDA discriminator, then separately run one bounded persistent
-workflow. Return control before server execution.
+No automatic training, promotion, default-on, commit, or PR action is active.
+HP-7c production-path sentinel passes E95, but HP-7c remains partial. The next
+Gate 0 attempt is blocked by E96 before remote reads/writes because the
+non-interactive SSH session has no accepted authentication identity. No
+freeze/oracle/output exists. Resume only in a user-authenticated SSH session or
+with an explicitly provided non-interactive identity; Gate 1 remains closed.

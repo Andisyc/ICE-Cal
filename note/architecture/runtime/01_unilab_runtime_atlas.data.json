@@ -189,7 +189,7 @@
           "mainRouteTitles": ["验证训练就绪", "计算模型张量", "更新 Policy", "发布新权重"],
           "review": ["shape normalization checkpoint contract 与 env spec 一致", "更新频率不能绕过 runner lifecycle"],
           "tests": ["S1 HP-7c pool identity/RNG/memory contracts", "S1 loss update", "S2 distillation formal offline integration", "S2 runner learner connectivity", "S3/S4 HP-7c bounded live pending"],
-          "gap": "HP-7c distillation cache owner and S1/S2 integration pass; CUDA staging and bounded persistent end-to-end evidence pending; 各算法 update 公式不同但 runtime ownership 相同"
+          "gap": "HP-7c cache owner/S1/S2 and E95 production-path CUDA staging sentinel pass; bounded persistent end-to-end evidence pending; 各算法 update 公式不同但 runtime ownership 相同"
         }
       ]
     },

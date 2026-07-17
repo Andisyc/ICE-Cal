@@ -209,7 +209,7 @@
           "mainRouteTitles": ["锁定 Rollout Expert", "采集 Student States", "聚合历轮证据", "更新对应 Expert"],
           "review": ["检查 rollout/loss/deploy expert 三者一致", "检查每轮数据量与真实 episode 覆盖"],
           "tests": ["S1 HP-7c pool identity/RNG/memory contracts", "S2 iterative aggregation and formal offline integration", "T-regression expert-conditioned rollout", "S4 HP-7c bounded live pending"],
-          "gap": "HP-7c owner implementation and S1/S2 integration pass; frozen HP-7a rerun and bounded persistent live evidence pending; repeated-reset 与 walk-to-stop acceptance remains separate"
+          "gap": "HP-7c owner/S1/S2 and E95 production-path CUDA sentinel pass; bounded persistent end-to-end evidence pending; repeated-reset 与 walk-to-stop acceptance remains separate"
         }
       ]
     },
