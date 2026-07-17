@@ -55,7 +55,7 @@
             {"id":"DT-SRC-037","path":"src/unilab/algos/torch/distill/g1_persistent_worker.py","sourceLine":80,"role":"production G1 persistent collection worker","functions":["PersistentG1DistillationWorker.collect()","PersistentG1DistillationWorker.close()","build_persistent_g1_distillation_runtime()"]},
             {"id":"DT-SRC-041","path":"src/unilab/algos/torch/distill/formal_identity.py","sourceLine":19,"role":"formal parent-lineage command freeze and oracle owner","functions":["FormalDaggerIdentitySpec","build_formal_command_identity()","build_formal_freeze_document()","build_formal_supervisor_source()","build_formal_oracle_source()"]},
             {"id":"DT-SRC-042","path":"tests/algos/test_distill_formal_identity.py","sourceLine":1,"role":"formal identity fail-closed contracts","functions":[]},
-            {"id":"DT-SRC-043","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":57,"role":"thin FT-0 no-training observation and artifact connector","functions":["load_materialization_spec()","observe_gate0()","materialize_from_spec()"]},
+            {"id":"DT-SRC-043","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":64,"role":"thin FT-0 no-training identity, aggregate-workload, and artifact connector","functions":["load_materialization_spec()","compute_observed_workload()","validate_observed_workload()","observe_gate0()","materialize_from_spec()"]},
             {"id":"DT-SRC-044","path":"tests/scripts/test_materialize_formal_dagger_gate0.py","sourceLine":1,"role":"FT-0 connector file-level integration contracts","functions":[]}
           ],
           "mainRoute": [
@@ -202,7 +202,7 @@
           "files": [
             {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":38,"role":"online DAgger owner","functions":["resolve_command_intent_rollout_policies()","run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
             {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1151,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
-            ,{"id":"DT-SRC-040","path":"src/unilab/algos/torch/distill/offline.py","sourceLine":56,"role":"invocation-local balanced label-pool cache and offline learner staging owner","functions":["BalancedLabelIndexPools","run_offline_distillation_updates()"]}
+            ,{"id":"DT-SRC-040","path":"src/unilab/algos/torch/distill/offline.py","sourceLine":56,"role":"invocation-local balanced label-pool cache, replay-budget, and offline learner staging owner","functions":["BalancedLabelIndexPools","required_balanced_replay_updates_for_labels()","run_offline_distillation_updates()"]}
           ],
           "mainRoute": [
             "B1 _resolve_dagger_rollout_policy(): intent/role mapping -> fixed rollout expert",

@@ -12,12 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from omegaconf import OmegaConf
+
+from unilab.algos.torch.distill.data import load_distillation_dataset
 from unilab.algos.torch.distill.formal_identity import (
     FormalDaggerIdentitySpec,
     build_formal_command_identity,
     build_formal_freeze_document,
     build_formal_oracle_source,
     build_formal_supervisor_source,
+)
+from unilab.algos.torch.distill.offline import (
+    required_balanced_replay_updates_for_labels,
 )
 
 REQUIRED_HARD_ARTIFACTS = frozenset(
@@ -45,6 +51,7 @@ class Gate0Observations:
     compose_stderr: str
     dependency_identity: dict[str, Any]
     gpu_query: dict[str, Any]
+    workload_identity: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,90 @@ def _compose_argv(command_identity: dict[str, Any]) -> list[str]:
     argv = list(command_identity["argv"])
     override_start = argv.index("workflow=g1_walk_stand")
     return [*argv[:override_start], "--cfg", "job", "--resolve", *argv[override_start:]]
+
+
+def compute_observed_workload(
+    spec: MaterializationSpec, compose_stdout: str
+) -> dict[str, Any]:
+    """Recompute each formal replay budget from the real parent aggregate."""
+
+    cfg = OmegaConf.create(compose_stdout)
+    scenarios = OmegaConf.select(cfg, "training.workflow.scenarios")
+    if not scenarios:
+        raise ValueError("composed workflow has no scenarios")
+    scenario_names = [str(item["name"]) for item in scenarios]
+    quotas = {str(item["name"]): float(item["quota"]) for item in scenarios}
+    batch_size = int(OmegaConf.select(cfg, "training.workflow.dagger_batch_size"))
+    replay_passes = int(
+        OmegaConf.select(cfg, "training.workflow.dagger_min_transition_replay_passes")
+    )
+    replay_labels = tuple(
+        str(label)
+        for label in OmegaConf.select(
+            cfg, "training.workflow.dagger_min_transition_replay_labels"
+        )
+    )
+    balance_key = str(OmegaConf.select(cfg, "training.workflow.dagger_balance_key"))
+    if balance_key != "scenario":
+        raise ValueError(f"formal replay balance key must be scenario, got {balance_key!r}")
+    if batch_size != spec.identity.batch_size:
+        raise ValueError(
+            f"composed batch size mismatch: {batch_size} != {spec.identity.batch_size}"
+        )
+
+    aggregate = load_distillation_dataset(
+        spec.hard_artifact_paths["parent_aggregate"], device="cpu"
+    )
+    if aggregate.scenario_labels is None:
+        raise ValueError("parent aggregate has no scenario_labels")
+    labels = tuple(aggregate.scenario_labels)
+    aggregate_rows: list[int] = []
+    required_updates: list[int] = []
+    effective_updates: list[int] = []
+    for _ in range(spec.identity.dagger_iterations):
+        labels += tuple(
+            scenario
+            for scenario in scenario_names
+            for _ in range(spec.identity.samples_per_role)
+        )
+        required = required_balanced_replay_updates_for_labels(
+            labels,
+            batch_size=batch_size,
+            balanced_labels=scenario_names,
+            balance_quotas=quotas,
+            replay_labels=replay_labels,
+            replay_passes=replay_passes,
+        )
+        aggregate_rows.append(len(labels))
+        required_updates.append(required)
+        effective_updates.append(max(spec.identity.configured_update_floor, required))
+    return {
+        "parent_rows": aggregate.num_samples,
+        "aggregate_rows_by_iteration": aggregate_rows,
+        "required_updates_by_iteration": required_updates,
+        "effective_updates_by_iteration": effective_updates,
+        "total_effective_updates": sum(effective_updates),
+    }
+
+
+def validate_observed_workload(
+    *, expected_schedule: list[int], expected_total: int, observed: dict[str, Any]
+) -> list[str]:
+    """Return fail-closed differences between spec and observed workload."""
+
+    observed_schedule = observed.get("effective_updates_by_iteration")
+    observed_total = observed.get("total_effective_updates")
+    failures: list[str] = []
+    if observed_schedule != expected_schedule:
+        failures.append(
+            "effective update schedule mismatch: "
+            f"observed={observed_schedule} expected={expected_schedule}"
+        )
+    if observed_total != expected_total:
+        failures.append(
+            f"total effective updates mismatch: observed={observed_total} expected={expected_total}"
+        )
+    return failures
 
 
 def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
@@ -136,6 +227,10 @@ def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
         capture_output=True,
         text=True,
     )
+    try:
+        workload_identity = compute_observed_workload(spec, compose.stdout)
+    except Exception as error:  # fail closed into the freeze artifact
+        workload_identity = {"error": f"{type(error).__name__}: {error}"}
     return Gate0Observations(
         head=head,
         runtime_diff_clean=not runtime_status.strip(),
@@ -144,6 +239,7 @@ def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
         compose_stderr=compose.stderr,
         dependency_identity=dependency_identity,
         gpu_query={"returncode": gpu.returncode, "stdout": gpu.stdout.strip(), "stderr": gpu.stderr},
+        workload_identity=workload_identity,
     )
 
 
@@ -190,6 +286,13 @@ def materialize_from_spec(
         extra_failures.append("Hydra compose output is empty")
     if observed.gpu_query.get("returncode") != 0:
         extra_failures.append("GPU identity query failed")
+    extra_failures.extend(
+        validate_observed_workload(
+            expected_schedule=identity["workload"]["effective_updates_by_iteration"],
+            expected_total=identity["workload"]["total_effective_updates"],
+            observed=observed.workload_identity,
+        )
+    )
     freeze["failures"].extend(extra_failures)
     freeze["accepted"] = not freeze["failures"]
     freeze["compose"] = {
@@ -199,6 +302,7 @@ def materialize_from_spec(
     }
     freeze["dependency_identity"] = observed.dependency_identity
     freeze["gpu_query"] = observed.gpu_query
+    freeze["observed_workload"] = observed.workload_identity
     paths["freeze"].write_text(json.dumps(freeze, indent=2, sort_keys=True) + "\n")
 
     preflight = subprocess.run(

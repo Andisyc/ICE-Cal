@@ -1728,3 +1728,16 @@ or policy-quality conclusion is authorized.
   and binds a fresh formal output root.
 - Decision: spec freeze PASS. Server materialization must recompute the schedule
   from the real aggregate; FT-1 remains closed.
+
+## E104: FT-0 Aggregate Workload Owner Integration
+
+- Artifact:
+  `evidence/2026-07-17-ft0-aggregate-workload-owner-integration.md`.
+- The one-line materializer loads the real parent aggregate, reads resolved
+  scenario quota/replay fields, and calls the offline replay owner for every
+  added outer iteration.
+- Observed rows, required/effective schedule, and total are frozen and compared
+  with the spec; any mismatch blocks preflight.
+- Serialized-dataset fixture plus focused regression: 23 passed; Ruff/mypy pass.
+- Decision: local integration PASS. Server materialization remains unexecuted;
+  FT-1 remains closed.

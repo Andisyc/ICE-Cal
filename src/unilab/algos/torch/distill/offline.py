@@ -403,6 +403,27 @@ def required_balanced_replay_updates(
     )
 
 
+def required_balanced_replay_updates_for_labels(
+    labels: Sequence[str],
+    *,
+    batch_size: int,
+    balanced_labels: Sequence[str] | None,
+    balance_quotas: Mapping[str, float] | None,
+    replay_labels: Sequence[str],
+    replay_passes: int,
+) -> int:
+    """Compute the replay budget from an explicit label sequence."""
+
+    return _required_balanced_replay_updates(
+        tuple(str(label) for label in labels),
+        batch_size=int(batch_size),
+        balanced_labels=balanced_labels,
+        balance_quotas=balance_quotas,
+        replay_labels=replay_labels,
+        replay_passes=int(replay_passes),
+    )
+
+
 def run_offline_distillation_updates(
     trainer: BehaviorDistillationTrainer,
     dataset: DistillationTensorDataset,

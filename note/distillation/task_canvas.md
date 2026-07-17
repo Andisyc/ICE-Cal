@@ -124,3 +124,7 @@ outer iterations from original
 parent iteration 3, update schedule `[12320, 12352]`, total `24672`, and a new
 output root. The next boundary is one authenticated server no-training
 materialization that recomputes and verifies the schedule. FT-1 remains closed.
+
+E104 moves schedule recomputation inside the one-line materializer using the
+real aggregate and production offline replay owner. The only next action is the
+authenticated server no-training materialization; FT-1 remains closed.

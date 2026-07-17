@@ -157,3 +157,8 @@ It captures source/config/artifact, owner-CLI compose, dependency/import, GPU,
 command, output, supervisor, oracle, and preflight identities without invoking
 training. FT-0 remains PARTIAL only because the formal workload/output spec and
 authenticated server no-training materialization are not yet frozen/executed.
+
+E104 integrates the real aggregate workload discriminator into that connector.
+The one-line materializer loads the manifest-owned aggregate, reads resolved
+scenario quotas/replay fields, calls the offline replay owner, and compares the
+observed schedule/total against the spec. A mismatch blocks preflight.

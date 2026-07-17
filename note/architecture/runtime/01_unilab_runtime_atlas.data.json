@@ -178,7 +178,7 @@
             {"id":"U-SRC-015","path":"src/unilab/algos/torch/fast_sac/learner.py","sourceLine":356,"role":"Torch off-policy learner","functions":["learn()","update()"]},
             {"id":"U-SRC-016","path":"src/unilab/algos/mlx/ppo/ppo.py","sourceLine":1,"role":"MLX PPO learner","functions":[]},
             {"id":"U-SRC-017","path":"scripts/train_mlx_ppo.py","sourceLine":538,"role":"synchronous rollout update loop","functions":["main()"]}
-            ,{"id":"U-SRC-040","path":"src/unilab/algos/torch/distill/offline.py","sourceLine":56,"role":"distillation invocation-local balanced staging cache","functions":["BalancedLabelIndexPools","run_offline_distillation_updates()"]}
+            ,{"id":"U-SRC-040","path":"src/unilab/algos/torch/distill/offline.py","sourceLine":56,"role":"distillation invocation-local balanced staging and replay-budget owner","functions":["BalancedLabelIndexPools","required_balanced_replay_updates_for_labels()","run_offline_distillation_updates()"]}
           ],
           "mainRoute": [
             "B1 distillation staging or readiness guard: loaded dataset -> one immutable label-pool cache -> equivalent valid training batch",
@@ -211,7 +211,7 @@
             {"id":"U-SRC-019","path":"src/unilab/training/run.py","sourceLine":16,"role":"run and checkpoint helpers","functions":["parse_checkpoint_path()"]},
             {"id":"U-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"distillation performance schema, full request/workflow/cleanup identity, and atomic run artifact","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
             {"id":"U-SRC-039","path":"src/unilab/algos/torch/distill/formal_identity.py","sourceLine":19,"role":"no-training formal lineage command freeze and oracle owner","functions":["build_formal_command_identity()","build_formal_freeze_document()","build_formal_supervisor_source()","build_formal_oracle_source()"]},
-            {"id":"U-SRC-040","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":57,"role":"FT-0 Git/compose/dependency/GPU observation and artifact connector","functions":["observe_gate0()","materialize_from_spec()"]}
+            {"id":"U-SRC-041","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":64,"role":"FT-0 Git/compose/dependency/GPU/aggregate-workload observation and artifact connector","functions":["compute_observed_workload()","validate_observed_workload()","observe_gate0()","materialize_from_spec()"]}
           ],
           "mainRoute": [
             "B1 tracker start: resolved cfg plus identity -> run_config and contract snapshot",

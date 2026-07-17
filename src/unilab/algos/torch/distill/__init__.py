@@ -33,6 +33,7 @@ from .moe_student import MoEStudentOutput, MoEStudentPolicy
 from .offline import (
     OfflineDistillationRunResult,
     required_balanced_replay_updates,
+    required_balanced_replay_updates_for_labels,
     run_offline_distillation_updates,
 )
 from .performance import (
@@ -138,6 +139,7 @@ __all__ = [
     "project_student_obs",
     "project_teacher_obs",
     "required_balanced_replay_updates",
+    "required_balanced_replay_updates_for_labels",
     "resolve_command_intent_rollout_policies",
     "preflight_role_artifact",
     "preflight_role_artifacts",
