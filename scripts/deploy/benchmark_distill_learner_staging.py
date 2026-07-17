@@ -144,7 +144,22 @@ def run_staging_benchmark(
 ) -> dict[str, Any]:
     if batch_size <= 0 or updates <= 0 or warmup_updates < 0:
         raise ValueError("batch_size/updates must be positive and warmup_updates non-negative")
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("HP-7a requested CUDA, but torch.cuda.is_available() is false")
+        device_index = torch.cuda.current_device() if device.index is None else device.index
+        if device_index < 0 or device_index >= torch.cuda.device_count():
+            raise ValueError(
+                "HP-7a CUDA device index is not visible: "
+                f"requested={device_index} visible_device_count={torch.cuda.device_count()}"
+            )
+        torch.cuda.set_device(device_index)
     dataset = load_distillation_dataset(dataset_path, device=device)
+    if device.type == "cuda":
+        # The dataset load initializes the CUDA context. Older supported PyTorch
+        # builds may reject an uninitialized torch.device in this API, so reset
+        # with the validated integer index only after the first CUDA allocation.
+        torch.cuda.reset_peak_memory_stats(torch.cuda.current_device())
     labels = {
         "role": dataset.role_labels,
         "command_intent": dataset.command_intents,
@@ -318,8 +333,6 @@ def main() -> None:
         outer_iteration=args.outer_iteration,
     )
     device = torch.device(args.device)
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
     report = run_staging_benchmark(
         dataset_path=dataset_path,
         device=device,
