@@ -1,0 +1,50 @@
+{
+  "repo_root": "/ssd1/cyx/UniLab",
+  "parent_run_dir": null,
+  "run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_formal_fresh_8iter_20260717_r1",
+  "parent_iteration": 0,
+  "dagger_iterations": 8,
+  "configured_update_floor": 128,
+  "effective_updates_by_iteration": [
+    4096,
+    8192,
+    12288,
+    16384,
+    20480,
+    24576,
+    28672,
+    32768
+  ],
+  "seed": 0,
+  "device": "cuda:0",
+  "collect_num_envs": 64,
+  "samples_per_role": 65536,
+  "batch_size": 512,
+  "execution_mode": "persistent_async",
+  "mode": "fresh",
+  "artifact_dir": "/ssd1/cyx/UniLab/logs/distill_role_artifacts/g1_walk_stand_formal_fresh_8iter_20260717_r1",
+  "bootstrap_updates": 20000,
+  "adopt_legacy_artifacts": false,
+  "transition_max_env_steps": 24576,
+  "source_paths": {
+    "formal_identity": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/formal_identity.py",
+    "workflow": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/workflow.py",
+    "offline": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/offline.py",
+    "async_runtime": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/async_runtime.py",
+    "persistent_runtime": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/persistent_runtime.py",
+    "persistent_resources": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/persistent_resources.py",
+    "persistent_worker": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/g1_persistent_worker.py",
+    "train_distill": "/ssd1/cyx/UniLab/scripts/train_distill.py",
+    "gate0_connector": "/ssd1/cyx/UniLab/scripts/deploy/materialize_formal_dagger_gate0.py",
+    "distill_config": "/ssd1/cyx/UniLab/conf/distill/config.yaml",
+    "workflow_config": "/ssd1/cyx/UniLab/conf/distill/workflow/g1_walk_stand.yaml",
+    "pyproject": "/ssd1/cyx/UniLab/pyproject.toml",
+    "uv_lock": "/ssd1/cyx/UniLab/uv.lock"
+  },
+  "hard_artifact_paths": {
+    "walk_teacher": "/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt",
+    "stand_teacher": "/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt",
+    "walk_dataset": "/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt",
+    "stand_dataset": "/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt"
+  }
+}

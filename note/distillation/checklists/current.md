@@ -117,6 +117,8 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | FT-0 formal identity materialization | distill formal-identity owner + deploy connector | S0/S1 / T-identity+compose+oracle | PARTIAL | E101-E102 owner and local connector PASS; reviewed formal spec plus authenticated server no-training materialization/preflight pending |
 | FT-1 formal DAgger execution | formal CLI/workflow/runtime/artifact owners | S2/S3/S4 / T-formal+artifact+live | PARTIAL | r2 executed two iterations and original postflight accepted; E106 identifies incomplete oracle coverage, v2 server validation pending |
 | FT-1 acceptance oracle v2 | formal postflight owner | S1/S2/S3 / T-lineage+artifact+runtime-identity | PARTIAL | E106 local implementation: 41 tests/Ruff/mypy PASS; existing r2 server artifacts not yet evaluated |
+| Final fresh 8-iteration spec | formal identity + offline replay owner | S0/S1 / T-fresh-lineage+workload+compose | PASS | E107: bootstrap 20000, DAgger schedule 4096..32768, total 147456, strict role REUSE, unique output identity |
+| Final fresh Gate 0 materialization | deploy connector + oracle v2 | S1/S3 / T-identity+workload+preflight | PENDING | Local owner/compose/oracle integration PASS; authenticated server no-training materialization not run |
 | Formal candidate RT-10 physical acceptance | playback/physical acceptance owner | S4 / T-physical | PENDING | Separate post-training gate; training artifact PASS is not physical PASS |
 
 ## Current Stop Condition

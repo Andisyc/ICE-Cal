@@ -157,6 +157,11 @@ def _fixture(tmp_path: Path, mod: ModuleType) -> tuple[Path, dict, dict, dict]:
             },
         },
         "command": {
+            "lineage": {
+                "parent_iteration": 3,
+                "source": "original_parent_iteration_3",
+                "r6_sentinel_promoted": False,
+            },
             "workload": {
                 "dagger_iterations": 2,
                 "effective_updates_by_iteration": [2, 4],
@@ -171,6 +176,33 @@ def _fixture(tmp_path: Path, mod: ModuleType) -> tuple[Path, dict, dict, dict]:
     freeze_path = root / "freeze.json"
     freeze_path.write_text(json.dumps(freeze))
     return freeze_path, freeze, dependency, gpu
+
+
+def test_v2_accepts_fresh_bootstrap_to_iteration_chain(tmp_path: Path) -> None:
+    mod = _load_oracle()
+    freeze_path, freeze, dependency, gpu = _fixture(tmp_path, mod)
+    parent = freeze["hard_artifacts"].pop("parent_checkpoint")
+    freeze["command"]["lineage"] = {
+        "parent_iteration": None,
+        "source": "fresh_teacher_bootstrap",
+        "r6_sentinel_promoted": False,
+    }
+    manifest_path = Path(freeze["output_paths"]["run_dir"]) / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["bootstrap_checkpoint_path"] = parent["path"]
+    manifest["bootstrap_checkpoint_sha256"] = parent["sha256"]
+    manifest_path.write_text(json.dumps(manifest))
+    freeze_path.write_text(json.dumps(freeze))
+
+    result = mod.validate_postflight(
+        freeze_path,
+        observed_head="a" * 40,
+        observed_dependency=dependency,
+        observed_gpu=gpu,
+    )
+
+    assert result["accepted"] is True
+    assert result["failures"] == []
 
 
 def test_v2_accepts_complete_two_iteration_artifact_chain(tmp_path: Path) -> None:

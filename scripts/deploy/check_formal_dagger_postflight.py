@@ -75,7 +75,18 @@ def validate_postflight(
     if len(iterations) != expected_count:
         failures.append("manifest iteration count mismatch")
 
-    expected_input_sha = freeze["hard_artifacts"]["parent_checkpoint"]["sha256"]
+    lineage_source = freeze["command"].get("lineage", {}).get("source")
+    if lineage_source == "fresh_teacher_bootstrap":
+        bootstrap_path = Path(str(manifest.get("bootstrap_checkpoint_path", "")))
+        if not bootstrap_path.is_file():
+            failures.append("fresh bootstrap checkpoint missing")
+            expected_input_sha = ""
+        else:
+            expected_input_sha = file_sha256(bootstrap_path)
+            if manifest.get("bootstrap_checkpoint_sha256") != expected_input_sha:
+                failures.append("fresh bootstrap checkpoint hash mismatch")
+    else:
+        expected_input_sha = freeze["hard_artifacts"]["parent_checkpoint"]["sha256"]
     previous_weight_version: int | None = None
     final_checkpoint_sha: str | None = None
     final_checkpoint_path: str | None = None

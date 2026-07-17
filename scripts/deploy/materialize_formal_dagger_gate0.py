@@ -27,7 +27,7 @@ from unilab.algos.torch.distill.offline import (
 )
 from unilab.cli import build_command
 
-REQUIRED_HARD_ARTIFACTS = frozenset(
+FORK_HARD_ARTIFACTS = frozenset(
     {
         "parent_manifest",
         "parent_checkpoint",
@@ -38,6 +38,10 @@ REQUIRED_HARD_ARTIFACTS = frozenset(
         "stand_dataset",
     }
 )
+FRESH_HARD_ARTIFACTS = frozenset(
+    {"walk_teacher", "stand_teacher", "walk_dataset", "stand_dataset"}
+)
+REQUIRED_HARD_ARTIFACTS = FORK_HARD_ARTIFACTS
 RUNTIME_SCOPE = ("src", "scripts/train_distill.py", "conf/distill", "pyproject.toml", "uv.lock")
 
 
@@ -70,7 +74,8 @@ def load_materialization_spec(path: Path) -> MaterializationSpec:
         name: Path(value).resolve()
         for name, value in payload.pop("hard_artifact_paths").items()
     }
-    missing = sorted(REQUIRED_HARD_ARTIFACTS - hard_artifact_paths.keys())
+    required = FRESH_HARD_ARTIFACTS if payload.get("mode", "fork") == "fresh" else FORK_HARD_ARTIFACTS
+    missing = sorted(required - hard_artifact_paths.keys())
     if missing:
         raise ValueError(f"missing hard artifact identities: {missing}")
     source_paths = {
@@ -79,8 +84,15 @@ def load_materialization_spec(path: Path) -> MaterializationSpec:
     payload["effective_updates_by_iteration"] = tuple(
         int(value) for value in payload["effective_updates_by_iteration"]
     )
-    for field in ("repo_root", "parent_run_dir", "run_dir"):
+    for field in ("repo_root", "run_dir"):
         payload[field] = Path(payload[field]).resolve()
+    payload["parent_run_dir"] = (
+        None
+        if payload.get("parent_run_dir") is None
+        else Path(payload["parent_run_dir"]).resolve()
+    )
+    if payload.get("artifact_dir") is not None:
+        payload["artifact_dir"] = Path(payload["artifact_dir"]).resolve()
     return MaterializationSpec(
         identity=FormalDaggerIdentitySpec(**payload),
         source_paths=source_paths,
@@ -146,12 +158,21 @@ def compute_observed_workload(
             f"composed batch size mismatch: {batch_size} != {spec.identity.batch_size}"
         )
 
-    aggregate = load_distillation_dataset(
-        spec.hard_artifact_paths["parent_aggregate"], device="cpu"
-    )
-    if aggregate.scenario_labels is None:
-        raise ValueError("parent aggregate has no scenario_labels")
-    labels = tuple(aggregate.scenario_labels)
+    if spec.identity.mode == "fresh":
+        walk = load_distillation_dataset(spec.hard_artifact_paths["walk_dataset"], device="cpu")
+        stand = load_distillation_dataset(
+            spec.hard_artifact_paths["stand_dataset"], device="cpu"
+        )
+        labels = ("walk_flat",) * walk.num_samples + ("static_stand",) * stand.num_samples
+        parent_rows = walk.num_samples + stand.num_samples
+    else:
+        aggregate = load_distillation_dataset(
+            spec.hard_artifact_paths["parent_aggregate"], device="cpu"
+        )
+        if aggregate.scenario_labels is None:
+            raise ValueError("parent aggregate has no scenario_labels")
+        labels = tuple(aggregate.scenario_labels)
+        parent_rows = aggregate.num_samples
     aggregate_rows: list[int] = []
     required_updates: list[int] = []
     effective_updates: list[int] = []
@@ -173,7 +194,7 @@ def compute_observed_workload(
         required_updates.append(required)
         effective_updates.append(max(spec.identity.configured_update_floor, required))
     return {
-        "parent_rows": aggregate.num_samples,
+        "parent_rows": parent_rows,
         "aggregate_rows_by_iteration": aggregate_rows,
         "required_updates_by_iteration": required_updates,
         "effective_updates_by_iteration": effective_updates,

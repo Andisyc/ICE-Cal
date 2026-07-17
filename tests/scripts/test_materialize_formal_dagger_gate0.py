@@ -196,6 +196,63 @@ training:
     }
 
 
+def test_connector_recomputes_fresh_schedule_from_role_datasets(tmp_path: Path) -> None:
+    mod = _load_connector()
+    walk_path = tmp_path / "walk.pt"
+    stand_path = tmp_path / "stand.pt"
+    save_distillation_dataset(
+        walk_path, build_distillation_dataset(torch.zeros(3, 2), torch.zeros(3, 2))
+    )
+    save_distillation_dataset(
+        stand_path, build_distillation_dataset(torch.zeros(2, 2), torch.zeros(2, 2))
+    )
+    spec = mod.MaterializationSpec(
+        identity=FormalDaggerIdentitySpec(
+            repo_root=tmp_path,
+            parent_run_dir=None,
+            run_dir=tmp_path / "fresh_r1",
+            parent_iteration=0,
+            dagger_iterations=2,
+            configured_update_floor=1,
+            effective_updates_by_iteration=(2, 4),
+            seed=0,
+            device="cuda:0",
+            collect_num_envs=1,
+            samples_per_role=4,
+            batch_size=20,
+            execution_mode="persistent_async",
+            mode="fresh",
+            artifact_dir=tmp_path / "artifacts",
+            bootstrap_updates=10,
+            adopt_legacy_artifacts=False,
+        ),
+        source_paths={},
+        hard_artifact_paths={"walk_dataset": walk_path, "stand_dataset": stand_path},
+    )
+    compose = """
+training:
+  workflow:
+    dagger_batch_size: 20
+    dagger_balance_key: scenario
+    dagger_min_transition_replay_passes: 2
+    dagger_min_transition_replay_labels: [walk_to_stop]
+    scenarios:
+      - {name: walk_flat, quota: 0.50}
+      - {name: static_stand, quota: 0.25}
+      - {name: walk_to_stop, quota: 0.25}
+"""
+
+    observed = mod.compute_observed_workload(spec, compose)
+
+    assert observed == {
+        "parent_rows": 5,
+        "aggregate_rows_by_iteration": [17, 29],
+        "required_updates_by_iteration": [2, 4],
+        "effective_updates_by_iteration": [2, 4],
+        "total_effective_updates": 6,
+    }
+
+
 def test_connector_refuses_incomplete_hard_artifact_identity(tmp_path: Path) -> None:
     mod = _load_connector()
     spec_path = tmp_path / "incomplete.json"
@@ -227,6 +284,46 @@ def test_connector_refuses_incomplete_hard_artifact_identity(tmp_path: Path) -> 
         assert "missing hard artifact identities" in str(error)
     else:
         raise AssertionError("incomplete formal identity must fail closed")
+
+
+def test_connector_fresh_spec_requires_only_teacher_and_role_data(tmp_path: Path) -> None:
+    mod = _load_connector()
+    payload = {
+        "repo_root": str(tmp_path),
+        "parent_run_dir": None,
+        "run_dir": str(tmp_path / "formal_fresh_r1"),
+        "parent_iteration": 0,
+        "dagger_iterations": 1,
+        "configured_update_floor": 128,
+        "effective_updates_by_iteration": [4096],
+        "seed": 0,
+        "device": "cuda:0",
+        "collect_num_envs": 64,
+        "samples_per_role": 65536,
+        "batch_size": 512,
+        "execution_mode": "persistent_async",
+        "mode": "fresh",
+        "artifact_dir": str(tmp_path / "artifacts"),
+        "bootstrap_updates": 20000,
+        "adopt_legacy_artifacts": False,
+        "source_paths": {},
+        "hard_artifact_paths": {
+            name: str(tmp_path / f"{name}.pt")
+            for name in ("walk_teacher", "stand_teacher", "walk_dataset", "stand_dataset")
+        },
+    }
+    spec_path = tmp_path / "fresh.json"
+    spec_path.write_text(json.dumps(payload))
+
+    loaded = mod.load_materialization_spec(spec_path)
+
+    assert loaded.identity.mode == "fresh"
+    assert set(loaded.hard_artifact_paths) == {
+        "walk_teacher",
+        "stand_teacher",
+        "walk_dataset",
+        "stand_dataset",
+    }
 
 
 def test_connector_runtime_cleanliness_includes_untracked_owner_files() -> None:
@@ -284,3 +381,41 @@ def test_connector_real_owner_compose_exits_zero() -> None:
     assert result.returncode == 0, result.stderr
     assert "dagger_iterations: 2" in result.stdout
     assert "run_dir: /ssd1/cyx/UniLab/logs/distill_workflow/" in result.stdout
+
+
+def test_repository_fresh_eight_iteration_spec_and_compose_are_exact() -> None:
+    mod = _load_connector()
+    loaded = mod.load_materialization_spec(
+        Path("note/distillation/plans/formal_dagger_fresh_8iter_r1.spec.json")
+    )
+    identity = mod.bind_hard_artifact_environment(
+        mod.build_formal_command_identity(loaded.identity), loaded
+    )
+
+    assert identity["lineage"]["source"] == "fresh_teacher_bootstrap"
+    assert identity["workload"]["dagger_iterations"] == 8
+    assert identity["workload"]["effective_updates_by_iteration"] == [
+        4096,
+        8192,
+        12288,
+        16384,
+        20480,
+        24576,
+        28672,
+        32768,
+    ]
+    assert identity["workload"]["total_effective_updates"] == 147456
+    result = subprocess.run(
+        mod._compose_argv(identity),
+        cwd=Path.cwd(),
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **identity["env"]},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "mode: fresh" in result.stdout
+    assert "dagger_iterations: 8" in result.stdout
+    assert "dagger_samples_per_role: 65536" in result.stdout
+    assert "bootstrap_updates: 20000" in result.stdout
+    assert "adopt_legacy_artifacts: false" in result.stdout

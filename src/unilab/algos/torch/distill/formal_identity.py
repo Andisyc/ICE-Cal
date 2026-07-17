@@ -20,7 +20,7 @@ class FormalDaggerIdentitySpec:
     """Human-approved inputs required before formal Gate 0 materialization."""
 
     repo_root: Path
-    parent_run_dir: Path
+    parent_run_dir: Path | None
     run_dir: Path
     parent_iteration: int
     dagger_iterations: int
@@ -32,6 +32,11 @@ class FormalDaggerIdentitySpec:
     samples_per_role: int
     batch_size: int
     execution_mode: str
+    mode: str = "fork"
+    artifact_dir: Path | None = None
+    bootstrap_updates: int = 0
+    adopt_legacy_artifacts: bool = False
+    transition_max_env_steps: int | None = None
 
 
 def _file_identity(path: Path) -> dict[str, Any]:
@@ -49,9 +54,24 @@ def _reject_sentinel_path(path: Path) -> None:
 
 
 def _validate_spec(spec: FormalDaggerIdentitySpec) -> None:
-    if spec.parent_iteration != 3:
-        raise ValueError("formal lineage must start from parent iteration 3")
-    _reject_sentinel_path(spec.parent_run_dir)
+    if spec.mode not in {"fork", "fresh"}:
+        raise ValueError(f"unsupported formal workflow mode: {spec.mode!r}")
+    if spec.mode == "fork":
+        if spec.parent_iteration != 3 or spec.parent_run_dir is None:
+            raise ValueError("formal fork lineage must start from parent iteration 3")
+        _reject_sentinel_path(spec.parent_run_dir)
+    else:
+        if spec.parent_iteration != 0 or spec.parent_run_dir is not None:
+            raise ValueError("formal fresh lineage must not name a parent run")
+        if spec.artifact_dir is None:
+            raise ValueError("formal fresh identity requires a new artifact_dir")
+        _reject_sentinel_path(spec.artifact_dir)
+        if spec.bootstrap_updates <= 0:
+            raise ValueError("formal fresh bootstrap_updates must be positive")
+        if spec.adopt_legacy_artifacts:
+            raise ValueError("formal fresh identity forbids legacy artifact adoption")
+    if spec.transition_max_env_steps is not None and spec.transition_max_env_steps <= 0:
+        raise ValueError("transition_max_env_steps must be positive when configured")
     _reject_sentinel_path(spec.run_dir)
     if spec.dagger_iterations <= 0:
         raise ValueError("dagger_iterations must be positive and explicit")
@@ -80,6 +100,8 @@ def _identity_paths(spec: FormalDaggerIdentitySpec) -> tuple[dict[str, str], dic
         "gpu_telemetry": str(spec.repo_root / f"{stem}.nvidia.csv"),
         "acceptance": str(spec.repo_root / f"{stem}.acceptance.json"),
     }
+    if spec.mode == "fresh" and spec.artifact_dir is not None:
+        outputs["artifact_dir"] = str(spec.artifact_dir)
     materialization = {
         "compose": str(spec.repo_root / f"{stem}.compose.yaml"),
         "freeze": str(spec.repo_root / f"{stem}.freeze.json"),
@@ -118,8 +140,7 @@ def build_formal_command_identity(spec: FormalDaggerIdentitySpec) -> dict[str, A
         "workflow=g1_walk_stand",
         f"algo.seed={spec.seed}",
         f"training.device={spec.device}",
-        "training.workflow.mode=fork",
-        f"training.workflow.parent_run_dir={spec.parent_run_dir}",
+        f"training.workflow.mode={spec.mode}",
         f"training.workflow.run_dir={spec.run_dir}",
         f"training.workflow.execution_mode={spec.execution_mode}",
         f"training.workflow.collect_num_envs={spec.collect_num_envs}",
@@ -128,13 +149,31 @@ def build_formal_command_identity(spec: FormalDaggerIdentitySpec) -> dict[str, A
         f"training.workflow.dagger_batch_size={spec.batch_size}",
         f"training.workflow.dagger_updates_per_iteration={spec.configured_update_floor}",
     ]
+    if spec.mode == "fork":
+        argv.append(f"training.workflow.parent_run_dir={spec.parent_run_dir}")
+    else:
+        argv.extend(
+            [
+                f"training.workflow.artifact_dir={spec.artifact_dir}",
+                f"training.workflow.bootstrap_updates={spec.bootstrap_updates}",
+                "training.workflow.adopt_legacy_artifacts=false",
+            ]
+        )
+    if spec.transition_max_env_steps is not None:
+        argv.append(
+            f"training.workflow.transition_max_env_steps={spec.transition_max_env_steps}"
+        )
     return {
         "schema_version": 1,
         "training_executed": False,
         "repo_root": str(spec.repo_root),
         "lineage": {
-            "parent_iteration": spec.parent_iteration,
-            "source": "original_parent_iteration_3",
+            "parent_iteration": spec.parent_iteration if spec.mode == "fork" else None,
+            "source": (
+                "original_parent_iteration_3"
+                if spec.mode == "fork"
+                else "fresh_teacher_bootstrap"
+            ),
             "r6_sentinel_promoted": False,
         },
         "workload": {
@@ -148,6 +187,9 @@ def build_formal_command_identity(spec: FormalDaggerIdentitySpec) -> dict[str, A
             "seed": spec.seed,
             "device": spec.device,
             "execution_mode": spec.execution_mode,
+            "mode": spec.mode,
+            "bootstrap_updates": spec.bootstrap_updates,
+            "transition_max_env_steps": spec.transition_max_env_steps,
         },
         "argv": argv,
         "env": {

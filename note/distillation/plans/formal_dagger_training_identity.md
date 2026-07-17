@@ -167,3 +167,16 @@ E105 closes r1 as failed before workload observation or training. The repaired
 connector keeps UniLab route ownership, places Hydra flags before script
 overrides, and binds reviewed teacher/dataset paths into the compose/supervisor
 environment. r2 is the only current executable Gate 0 identity.
+
+## Final Fresh Eight-Iteration Identity
+
+E107 freezes a separate final-training identity in
+`formal_dagger_fresh_8iter_r1.spec.json`. It does not continue fork-r2 and does
+not reuse `persistent_test01` as output. It starts from strict-REUSE walk/stand
+role datasets, runs 20,000 bootstrap updates, then eight student-state DAgger
+iterations under explicit `persistent_async`.
+
+The effective DAgger schedule is
+`[4096, 8192, 12288, 16384, 20480, 24576, 28672, 32768]`, total `147456`;
+bootstrap plus DAgger is `167456`. Server Gate 0 must recompute it from the real
+role datasets and resolved config before generating the executable supervisor.

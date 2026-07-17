@@ -1767,3 +1767,16 @@ or policy-quality conclusion is authorized.
 - Three semantic fixtures and the focused suite report 41 passed; Ruff/mypy pass.
 - Decision: implementation PASS; r2 server acceptance remains PARTIAL pending
   one read-only v2 evaluation. Training must not rerun.
+
+## E107: Formal Fresh Eight-Iteration Gate 0 Design
+
+- Artifact: `evidence/2026-07-17-formal-fresh-8iter-gate0-design.md`.
+- Spec: `plans/formal_dagger_fresh_8iter_r1.spec.json`.
+- Fresh lineage uses strict-REUSE role data, 20,000 bootstrap updates, and eight
+  DAgger iterations with schedule `4096..32768`, total `147456`.
+- Gate 0 recomputes the schedule from real role datasets; oracle v2 validates
+  fresh bootstrap-to-iteration checkpoint lineage.
+- Real compose, role-dataset discriminator, and focused suite report 46 passed;
+  Ruff/mypy pass.
+- Decision: local Gate 0 integration PASS; server materialization and final
+  fresh training remain unexecuted.

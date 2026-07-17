@@ -138,3 +138,9 @@ postflight reports accepted, but its acceptance coverage was incomplete. E106
 adds oracle v2 for checkpoint/scenario/weight/cleanup/metrics/dependency/GPU
 closure. The next action is read-only v2 validation of existing r2 artifacts;
 never rerun training.
+
+E107 defines a separate final clean fresh workload: strict role REUSE, 20,000
+bootstrap updates, eight DAgger iterations, 147,456 DAgger updates, and unique
+run/artifact directories. Local identity, real compose, workload discriminator,
+and fresh oracle-v2 contracts pass. Next is server no-training Gate 0; no final
+fresh training is authorized yet.

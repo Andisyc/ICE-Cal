@@ -94,6 +94,48 @@ def test_formal_identity_materializes_iteration_aware_effective_update_schedule(
     assert identity["workload"]["total_effective_updates"] == 24672
 
 
+def test_fresh_formal_identity_owns_bootstrap_and_has_no_parent_lineage(
+    tmp_path: Path,
+) -> None:
+    spec = FormalDaggerIdentitySpec(
+        repo_root=tmp_path / "repo",
+        parent_run_dir=None,
+        run_dir=tmp_path / "formal_fresh_r1",
+        parent_iteration=0,
+        dagger_iterations=8,
+        configured_update_floor=128,
+        effective_updates_by_iteration=tuple(4096 * i for i in range(1, 9)),
+        seed=0,
+        device="cuda:0",
+        collect_num_envs=64,
+        samples_per_role=65536,
+        batch_size=512,
+        execution_mode="persistent_async",
+        mode="fresh",
+        artifact_dir=tmp_path / "formal_role_artifacts_r1",
+        bootstrap_updates=20000,
+        adopt_legacy_artifacts=False,
+        transition_max_env_steps=24576,
+    )
+
+    identity = build_formal_command_identity(spec)
+
+    assert identity["lineage"] == {
+        "parent_iteration": None,
+        "source": "fresh_teacher_bootstrap",
+        "r6_sentinel_promoted": False,
+    }
+    assert "training.workflow.mode=fresh" in identity["argv"]
+    assert not any("parent_run_dir=" in arg for arg in identity["argv"])
+    assert "training.workflow.bootstrap_updates=20000" in identity["argv"]
+    assert "training.workflow.adopt_legacy_artifacts=false" in identity["argv"]
+    assert "training.workflow.transition_max_env_steps=24576" in identity["argv"]
+    assert identity["workload"]["total_effective_updates"] == 147456
+    assert identity["output_paths"]["artifact_dir"] == str(
+        tmp_path / "formal_role_artifacts_r1"
+    )
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [
