@@ -115,7 +115,8 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | Formal DAgger two-round r2 spec | formal identity owner | S0/S1 / T-workload+lineage+output | PASS | E105: parent iter 3, rows 853504/855040, updates 12320/12352, total 24672, fresh r2 output identity |
 | FT-0 aggregate workload discriminator integration | offline replay owner + deploy connector | S1 / T-dataset+replay+fail-closed | PASS | E104: real aggregate labels drive per-iteration schedule; mismatch enters freeze failures; 23 focused tests pass |
 | FT-0 formal identity materialization | distill formal-identity owner + deploy connector | S0/S1 / T-identity+compose+oracle | PARTIAL | E101-E102 owner and local connector PASS; reviewed formal spec plus authenticated server no-training materialization/preflight pending |
-| FT-1 formal DAgger execution | formal CLI/workflow/runtime/artifact owners | S2/S3/S4 / T-formal+artifact+live | PENDING | Closed until separately authorized FT-0 PASS; one output identity, no retry/resume/promotion |
+| FT-1 formal DAgger execution | formal CLI/workflow/runtime/artifact owners | S2/S3/S4 / T-formal+artifact+live | PARTIAL | r2 executed two iterations and original postflight accepted; E106 identifies incomplete oracle coverage, v2 server validation pending |
+| FT-1 acceptance oracle v2 | formal postflight owner | S1/S2/S3 / T-lineage+artifact+runtime-identity | PARTIAL | E106 local implementation: 41 tests/Ruff/mypy PASS; existing r2 server artifacts not yet evaluated |
 | Formal candidate RT-10 physical acceptance | playback/physical acceptance owner | S4 / T-physical | PENDING | Separate post-training gate; training artifact PASS is not physical PASS |
 
 ## Current Stop Condition

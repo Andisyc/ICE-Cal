@@ -1754,3 +1754,16 @@ or policy-quality conclusion is authorized.
   script overrides, and compose/supervisor share the reviewed artifact env.
 - Real local compose and 24 focused regressions pass; Ruff/mypy pass.
 - Current identity: `plans/formal_dagger_2round_r2.spec.json`; FT-1 closed.
+
+## E106: FT-1 Acceptance Oracle v2 Implementation
+
+- Artifact:
+  `evidence/2026-07-17-ft1-acceptance-oracle-v2-implementation.md`.
+- The v2 oracle closes checkpoint/aggregate hashes, parent-to-iteration
+  lineage, weight/scenario/worker identity, per-iteration metric stages,
+  cleanup, metrics hash/count, telemetry, dependency/import, and GPU gates.
+- It reads existing r2 artifacts and never executes, repairs, resumes, or
+  deletes training output.
+- Three semantic fixtures and the focused suite report 41 passed; Ruff/mypy pass.
+- Decision: implementation PASS; r2 server acceptance remains PARTIAL pending
+  one read-only v2 evaluation. Training must not rerun.

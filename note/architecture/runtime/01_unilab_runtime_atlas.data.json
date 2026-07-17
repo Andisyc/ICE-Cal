@@ -212,6 +212,7 @@
             {"id":"U-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"distillation performance schema, full request/workflow/cleanup identity, and atomic run artifact","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
             {"id":"U-SRC-039","path":"src/unilab/algos/torch/distill/formal_identity.py","sourceLine":19,"role":"no-training formal lineage command freeze and oracle owner","functions":["build_formal_command_identity()","build_formal_freeze_document()","build_formal_supervisor_source()","build_formal_oracle_source()"]},
             {"id":"U-SRC-041","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":65,"role":"FT-0 route/Git/compose/dependency/GPU/aggregate-workload observation and artifact connector","functions":["bind_hard_artifact_environment()","compute_observed_workload()","validate_observed_workload()","observe_gate0()","materialize_from_spec()"]}
+            ,{"id":"U-SRC-042","path":"scripts/deploy/check_formal_dagger_postflight.py","sourceLine":32,"role":"read-only formal checkpoint/lineage/metrics/cleanup/runtime-identity acceptance owner","functions":["validate_postflight()"]}
           ],
           "mainRoute": [
             "B1 tracker start: resolved cfg plus identity -> run_config and contract snapshot",

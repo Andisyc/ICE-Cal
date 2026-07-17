@@ -57,6 +57,8 @@
             {"id":"DT-SRC-042","path":"tests/algos/test_distill_formal_identity.py","sourceLine":1,"role":"formal identity fail-closed contracts","functions":[]},
             {"id":"DT-SRC-043","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":65,"role":"thin FT-0 no-training route/identity/aggregate-workload/artifact connector","functions":["load_materialization_spec()","bind_hard_artifact_environment()","compute_observed_workload()","validate_observed_workload()","observe_gate0()","materialize_from_spec()"]},
             {"id":"DT-SRC-044","path":"tests/scripts/test_materialize_formal_dagger_gate0.py","sourceLine":1,"role":"FT-0 connector file-level integration contracts","functions":[]}
+            ,{"id":"DT-SRC-045","path":"scripts/deploy/check_formal_dagger_postflight.py","sourceLine":32,"role":"read-only formal artifact lineage and runtime-identity acceptance owner","functions":["validate_postflight()"]}
+            ,{"id":"DT-SRC-046","path":"tests/scripts/test_check_formal_dagger_postflight.py","sourceLine":1,"role":"formal postflight semantic artifact fixtures","functions":[]}
           ],
           "mainRoute": [
             "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",

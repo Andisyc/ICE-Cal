@@ -132,3 +132,9 @@ authenticated server no-training materialization; FT-1 remains closed.
 E105 records r1 Gate 0 as permanently failed with `training_executed=false`.
 The real compose route and teacher/dataset environment binding now pass locally.
 The only current identity is r2; its no-training materialization is next.
+
+The r2 supervisor has since completed two formal iterations and the original
+postflight reports accepted, but its acceptance coverage was incomplete. E106
+adds oracle v2 for checkpoint/scenario/weight/cleanup/metrics/dependency/GPU
+closure. The next action is read-only v2 validation of existing r2 artifacts;
+never rerun training.
