@@ -95,7 +95,12 @@ def _check_stand_distribution(
                 f"stand_frac={stand_frac:.3f}, mode_mean={mode_mean:.3f}",
             )
         else:
-            _add(checks, "FAIL", f"{stage}: standing command distribution", f"stand_frac={stand_frac:.3f}")
+            _add(
+                checks,
+                "FAIL",
+                f"{stage}: standing command distribution",
+                f"stand_frac={stand_frac:.3f}",
+            )
     elif expected.stand == "none":
         if not np.any(stand_mask) and np.all(mode_signal > 0.5):
             _add(checks, "PASS", f"{stage}: walking mode", f"stand_frac={stand_frac:.3f}")
@@ -108,7 +113,9 @@ def _check_stand_distribution(
             _add(checks, "FAIL", f"{stage}: mixed mode", f"stand_frac={stand_frac:.3f}")
 
 
-def audit_stage(stage: str, *, num_envs: int, seed: int, steps: int) -> tuple[list[Check], dict[str, Any]]:
+def audit_stage(
+    stage: str, *, num_envs: int, seed: int, steps: int
+) -> tuple[list[Check], dict[str, Any]]:
     if stage not in STAGES:
         raise ValueError(f"unknown stage {stage!r}; choose one of {sorted(STAGES)}")
 
@@ -167,11 +174,19 @@ def audit_stage(stage: str, *, num_envs: int, seed: int, steps: int) -> tuple[li
                 "mode_signal_mean": _mean(mode_signal),
                 "gait_enabled_mean": _mean(gait_enabled),
                 "commands_max_abs": _max_abs(state.info["commands"]),
-                "log": {key: float(value) for key, value in log.items() if isinstance(value, int | float)},
+                "log": {
+                    key: float(value)
+                    for key, value in log.items()
+                    if isinstance(value, int | float)
+                },
             }
         )
 
-        if env.obs_groups_spec == {"obs": 99, "critic": 102} and obs.shape[1] == 99 and critic.shape[1] == 102:
+        if (
+            env.obs_groups_spec == {"obs": 99, "critic": 102}
+            and obs.shape[1] == 99
+            and critic.shape[1] == 102
+        ):
             _add(checks, "PASS", f"{stage}: obs contract", str(env.obs_groups_spec))
         else:
             _add(
@@ -182,7 +197,12 @@ def audit_stage(stage: str, *, num_envs: int, seed: int, steps: int) -> tuple[li
             )
 
         if env_override.get("stand_action_authority") is False:
-            _add(checks, "PASS", f"{stage}: action authority ablation", "stand_action_authority=false")
+            _add(
+                checks,
+                "PASS",
+                f"{stage}: action authority ablation",
+                "stand_action_authority=false",
+            )
         else:
             _add(checks, "FAIL", f"{stage}: action authority ablation", "expected false")
 
@@ -219,7 +239,11 @@ def audit_stage(stage: str, *, num_envs: int, seed: int, steps: int) -> tuple[li
             mode_signal=mode_signal,
         )
 
-        for key in ("reward/mode_stand_frac", "reward/mode_walk_frac", "reward/stand_raw_action_l1"):
+        for key in (
+            "reward/mode_stand_frac",
+            "reward/mode_walk_frac",
+            "reward/stand_raw_action_l1",
+        ):
             if key in log:
                 _add(checks, "PASS", f"{stage}: log {key}", f"{float(log[key]):.6f}")
             else:

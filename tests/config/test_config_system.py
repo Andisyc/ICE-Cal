@@ -164,6 +164,7 @@ def test_distill_g1_walk_height_owner_composes() -> None:
     assert cfg.training.offline_shuffle is False
     assert cfg.training.offline_balance_key == "none"
     assert cfg.training.offline_balanced_labels == []
+    assert cfg.training.workflow.execution_mode == "legacy"
     assert cfg.training.formal_run is False
     assert cfg.training.formal_run_name is None
     assert cfg.training.formal_run_dir is None

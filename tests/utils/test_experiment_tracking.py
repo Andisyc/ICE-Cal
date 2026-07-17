@@ -137,6 +137,34 @@ def test_offpolicy_training_terminal_refresh_uses_single_low_frequency_trigger(m
     logger.close()
 
 
+def test_offpolicy_status_force_bypasses_low_frequency_trigger(monkeypatch):
+    update_refresh_values: list[bool | None] = []
+
+    class _FakeLive:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
+        def start(self, *, refresh: bool = False) -> None:
+            del refresh
+
+        def update(self, *args, **kwargs) -> None:
+            del args
+            update_refresh_values.append(kwargs.get("refresh"))
+
+        def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr(common_module, "Live", _FakeLive)
+
+    logger = OffPolicyLogger(log_backend="none", refresh_per_second=4)
+    logger.start()
+    logger.log_step(iteration=1, train_time=0.01, wait_time=0.0)
+    logger.log_status("DAgger progress", force=True)
+
+    assert update_refresh_values == [True, True]
+    logger.close()
+
+
 def test_onpolicy_logger_uses_offpolicy_terminal_layout():
     logger = OnPolicyLogger(
         algo_name="MLX_PPO",

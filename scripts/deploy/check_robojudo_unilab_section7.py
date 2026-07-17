@@ -24,7 +24,6 @@ import mujoco
 import numpy as np
 import onnxruntime as ort
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_ROBOJUDO_XML_REL = Path("assets/robots/g1/g1_29dof_rev_1_0.xml")
@@ -121,21 +120,28 @@ def inspect_pipeline_source(path: Path, policy_path: Path) -> dict[str, Any]:
     prepare_src = ast.unparse(find_method(cls, "prepare"))
     wrapper_cls = find_class(tree, "PolicyWrapper")
     get_pd_target_src = ast.unparse(find_method(wrapper_cls, "get_pd_target"))
-    policy_tree = ast.parse(policy_path.read_text(encoding="utf-8"), filename=policy_path.as_posix())
+    policy_tree = ast.parse(
+        policy_path.read_text(encoding="utf-8"), filename=policy_path.as_posix()
+    )
     policy_cls = find_class(policy_tree, "UniLabPolicy")
     policy_methods = {node.name for node in policy_cls.body if isinstance(node, ast.FunctionDef)}
     return {
-        "init_calls_self_check_then_reset": init_src.find("self.self_check()") < init_src.find("self.reset()"),
+        "init_calls_self_check_then_reset": init_src.find("self.self_check()")
+        < init_src.find("self.reset()"),
         "dry_run_adds_freeze_phase": "[UNILAB_FREEZE_PHASE]" in step_src,
         "dry_run_skips_env_step": "if not dry_run:" in step_src and "self.env.step" in step_src,
         "dry_run_snapshots_policy_state": "snapshot_state()" in step_src,
         "dry_run_restores_policy_state": "restore_state(policy_state)" in step_src,
         "step_always_calls_get_pd_target": "pd_target = self.policy.get_pd_target(obs)" in step_src,
-        "get_pd_target_calls_get_action": "action = self.policy.get_action(obs)" in get_pd_target_src,
+        "get_pd_target_calls_get_action": "action = self.policy.get_action(obs)"
+        in get_pd_target_src,
         "prepare_calls_step_dry_run": "self.step(dry_run=True)" in prepare_src,
-        "prepare_has_reset_at_900": "if t == 0.9 * traj_len:" in prepare_src and "self.reset()" in prepare_src,
+        "prepare_has_reset_at_900": "if t == 0.9 * traj_len:" in prepare_src
+        and "self.reset()" in prepare_src,
         "prepare_has_final_reset_after_loop": prepare_src.rstrip().endswith("self.reset()"),
-        "unilab_policy_has_snapshot_restore": {"snapshot_state", "restore_state"}.issubset(policy_methods),
+        "unilab_policy_has_snapshot_restore": {"snapshot_state", "restore_state"}.issubset(
+            policy_methods
+        ),
     }
 
 
@@ -183,7 +189,9 @@ def run_onnx(policy_path: Path, obs: np.ndarray) -> np.ndarray:
     session = ort.InferenceSession(policy_path.as_posix(), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name
-    return np.asarray(session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0]).squeeze()
+    return np.asarray(
+        session.run([output_name], {input_name: obs[None, :].astype(np.float32)})[0]
+    ).squeeze()
 
 
 def simulate_dry_runs(
@@ -219,7 +227,9 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
     default_angles = np.asarray(
         extract_class_assignment(policy_cfg, "G1UniLabDoF", "default_pos"), dtype=np.float32
     )
-    gait_frequency = float(extract_class_assignment(policy_cfg, "G1UniLabPolicyCfg", "gait_frequency"))
+    gait_frequency = float(
+        extract_class_assignment(policy_cfg, "G1UniLabPolicyCfg", "gait_frequency")
+    )
     freq = int(extract_class_assignment(policy_cfg, "G1UniLabPolicyCfg", "freq"))
     freeze_phase_during_dry_run = bool(
         extract_class_assignment(policy_cfg, "G1UniLabPolicyCfg", "freeze_phase_during_dry_run")
@@ -295,7 +305,9 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
         "post_prepare_dry_runs_after_reset": post_prepare_dry_runs,
         "one_dry_run_last_action_stats": stats(one_dry_last_action),
         "one_dry_run_gait_phase": one_dry_phase.tolist(),
-        "self_check_dry_run_last_action_stats_before_constructor_reset": stats(self_check_last_action),
+        "self_check_dry_run_last_action_stats_before_constructor_reset": stats(
+            self_check_last_action
+        ),
         "self_check_dry_run_gait_phase_before_constructor_reset": self_check_phase.tolist(),
         "prepare_end_last_action_stats": stats(prepare_last_action),
         "prepare_end_gait_phase": prepare_phase.tolist(),
@@ -319,7 +331,9 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
             checks,
             "PASS" if preserve_policy_state else "FAIL",
             "source_prepare_final_reset",
-            "not required because dry-run restores policy state" if preserve_policy_state else "prepare has no final policy reset after loop",
+            "not required because dry-run restores policy state"
+            if preserve_policy_state
+            else "prepare has no final policy reset after loop",
         )
 
     one_last = float(details["one_dry_run_last_action_stats"]["max_abs"])
@@ -354,13 +368,23 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
     if prepare_phase_delta <= TOL:
         _add(checks, "PASS", "prepare_end_gait_phase_clean", f"max_delta={prepare_phase_delta:.3e}")
     else:
-        _add(checks, "FAIL", "prepare_end_gait_phase_polluted", f"max_delta={prepare_phase_delta:.3e}")
+        _add(
+            checks,
+            "FAIL",
+            "prepare_end_gait_phase_polluted",
+            f"max_delta={prepare_phase_delta:.3e}",
+        )
 
     obs_last = details["clean_vs_polluted_last_action_max_abs"]
     if obs_last <= TOL:
         _add(checks, "PASS", "first_real_step_last_action_segment_zero", f"max_abs={obs_last:.3e}")
     else:
-        _add(checks, "FAIL", "first_real_step_last_action_segment_polluted", f"max_abs={obs_last:.3e}")
+        _add(
+            checks,
+            "FAIL",
+            "first_real_step_last_action_segment_polluted",
+            f"max_abs={obs_last:.3e}",
+        )
 
     return checks, details
 
@@ -388,7 +412,9 @@ def print_report(checks: list[Check], details: dict[str, Any], json_out: bool) -
     print(f"pipeline: {details['pipeline']}")
     print(f"post_prepare_dry_runs_after_reset: {details['post_prepare_dry_runs_after_reset']}")
     print(f"freeze_phase_during_dry_run: {details['freeze_phase_during_dry_run']}")
-    print(f"preserve_policy_state_during_dry_run: {details['preserve_policy_state_during_dry_run']}")
+    print(
+        f"preserve_policy_state_during_dry_run: {details['preserve_policy_state_during_dry_run']}"
+    )
     print()
     for name in [
         "one_dry_run_last_action_stats",
@@ -404,7 +430,9 @@ def print_report(checks: list[Check], details: dict[str, Any], json_out: bool) -
         )
     print(f"one_dry_run_gait_phase: {details['one_dry_run_gait_phase']}")
     print(f"prepare_end_gait_phase: {details['prepare_end_gait_phase']}")
-    print(f"clean_vs_polluted_last_action_max_abs: {details['clean_vs_polluted_last_action_max_abs']:.6g}")
+    print(
+        f"clean_vs_polluted_last_action_max_abs: {details['clean_vs_polluted_last_action_max_abs']:.6g}"
+    )
     print()
     for check in checks:
         print(f"[{check.level}] {check.name}: {check.detail}")

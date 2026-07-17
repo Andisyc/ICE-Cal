@@ -363,7 +363,9 @@ def run_check(
             "student_grad_norm": result.last_student_grad_norm,
             "student_action_shape": list(result.student_action_shape),
             "teacher_action_shape": list(result.teacher_action_shape),
-            "expert_usage": None if result.last_expert_usage is None else list(result.last_expert_usage),
+            "expert_usage": None
+            if result.last_expert_usage is None
+            else list(result.last_expert_usage),
             "route_entropy": result.last_route_entropy,
         },
     }

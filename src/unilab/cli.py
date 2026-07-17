@@ -235,7 +235,9 @@ def build_command(
         raise SystemExit("--algo distill is a training workflow; use start.sh for playback.")
     if height_tracking:
         if algo != "sac" or sim != "mujoco" or task not in {"g1_walk_flat", "g1_walk_height"}:
-            raise SystemExit("--height-tracking is only supported for --algo sac --task g1_walk_flat --sim mujoco.")
+            raise SystemExit(
+                "--height-tracking is only supported for --algo sac --task g1_walk_flat --sim mujoco."
+            )
         task = "g1_walk_height"
     _check_private_checkout(selected_root)
     _check_task_name(task)
@@ -290,7 +292,9 @@ def _train_eval_parser(*, mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--height-tracking", action="store_true")
     standing_reward = parser.add_mutually_exclusive_group()
     standing_reward.add_argument("--standing-reward", dest="standing_reward", action="store_true")
-    standing_reward.add_argument("--no-standing-reward", dest="standing_reward", action="store_false")
+    standing_reward.add_argument(
+        "--no-standing-reward", dest="standing_reward", action="store_false"
+    )
     parser.set_defaults(standing_reward=None)
     if mode == "eval":
         parser.add_argument("--load-run", default=None)

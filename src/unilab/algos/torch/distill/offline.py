@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
 from .checkpoint import save_distillation_checkpoint
 from .data import DistillationTensorDataset
+from .performance import (
+    DistillationStageObservation,
+    DistillationStageObservationAccumulator,
+)
 from .trainer import BehaviorDistillationTrainer, DistillationBatch
 
 
@@ -44,6 +49,7 @@ class OfflineDistillationRunResult:
     balance_key: str
     batch_label_counts: tuple[dict[str, int], ...]
     last_balance_label_counts: dict[str, int]
+    performance_stage_observations: tuple[DistillationStageObservation, ...] = ()
 
 
 def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) -> DistillationBatch:
@@ -161,7 +167,9 @@ def _balanced_batch_indices(
         if any(not math.isfinite(value) or value <= 0.0 for value in quota_values.values()):
             raise ValueError("offline balance_quotas must contain finite positive weights")
         total_weight = sum(quota_values[label] for label in selected_labels)
-        exact_quotas = [int(batch_size) * quota_values[label] / total_weight for label in selected_labels]
+        exact_quotas = [
+            int(batch_size) * quota_values[label] / total_weight for label in selected_labels
+        ]
         counts_list = [int(quota) for quota in exact_quotas]
         if any(count < 1 for count in counts_list):
             raise ValueError(
@@ -179,7 +187,9 @@ def _balanced_batch_indices(
     else:
         base_quota = int(batch_size) // len(selected_labels)
         remainder = int(batch_size) % len(selected_labels)
-        counts_list = [base_quota + (1 if index < remainder else 0) for index in range(len(selected_labels))]
+        counts_list = [
+            base_quota + (1 if index < remainder else 0) for index in range(len(selected_labels))
+        ]
     chunks: list[torch.Tensor] = []
     counts: dict[str, int] = {}
     for label_idx, label in enumerate(selected_labels):
@@ -222,15 +232,13 @@ def _required_balanced_replay_updates(
     unknown = sorted(replay_label_set - set(selected_labels))
     if unknown:
         raise ValueError(
-            "offline replay labels must be present in balanced_labels: "
-            f"unknown={unknown}"
+            f"offline replay labels must be present in balanced_labels: unknown={unknown}"
         )
     if not balance_quotas:
         base = int(batch_size) // len(selected_labels)
         remainder = int(batch_size) % len(selected_labels)
         batch_counts = {
-            label: base + int(index < remainder)
-            for index, label in enumerate(selected_labels)
+            label: base + int(index < remainder) for index, label in enumerate(selected_labels)
         }
     else:
         quota_values = {str(label): float(value) for label, value in balance_quotas.items()}
@@ -245,8 +253,7 @@ def _required_balanced_replay_updates(
             raise ValueError("offline balance_quotas must contain finite positive weights")
         total_weight = sum(quota_values[label] for label in selected_labels)
         exact = {
-            label: int(batch_size * quota_values[label] / total_weight)
-            for label in selected_labels
+            label: int(batch_size * quota_values[label] / total_weight) for label in selected_labels
         }
         remainder = int(batch_size) - sum(exact.values())
         order = sorted(
@@ -317,6 +324,7 @@ def run_offline_distillation_updates(
     min_balanced_replay_labels: Sequence[str] | None = None,
     progress_interval: int = 0,
     progress_callback: Callable[[int, int, Any], None] | None = None,
+    performance_clock: Callable[[], float] | None = None,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -381,39 +389,47 @@ def run_offline_distillation_updates(
 
     order = _order()
     cursor = 0
+    performance = (
+        None
+        if performance_clock is None
+        else DistillationStageObservationAccumulator(clock=performance_clock)
+    )
 
     for update_idx in range(int(max_updates)):
         label_counts: dict[str, int] = {}
-        if balance_labels is not None:
-            indices, label_counts = _balanced_batch_indices(
-                balance_labels,
-                batch_size=int(batch_size),
-                balanced_labels=balanced_labels,
-                balance_quotas=balance_quotas,
-                generator=generator,
-            )
-            batch = _indexed_batch(dataset, indices)
-        elif repeat_dataset or shuffle:
-            if cursor >= dataset.num_samples:
-                if not repeat_dataset:
+        staging_span = (
+            nullcontext() if performance is None else performance.measure("learner_batch_staging")
+        )
+        with staging_span:
+            if balance_labels is not None:
+                indices, label_counts = _balanced_batch_indices(
+                    balance_labels,
+                    batch_size=int(batch_size),
+                    balanced_labels=balanced_labels,
+                    balance_quotas=balance_quotas,
+                    generator=generator,
+                )
+                batch = _indexed_batch(dataset, indices)
+            elif repeat_dataset or shuffle:
+                if cursor >= dataset.num_samples:
+                    if not repeat_dataset:
+                        break
+                    order = _order()
+                    cursor = 0
+                end = min(dataset.num_samples, cursor + int(batch_size))
+                batch = _indexed_batch(dataset, order[cursor:end])
+                cursor = end
+            else:
+                start = update_idx * int(batch_size)
+                if start >= dataset.num_samples:
                     break
-                order = _order()
-                cursor = 0
-            end = min(dataset.num_samples, cursor + int(batch_size))
-            batch = _indexed_batch(dataset, order[cursor:end])
-            cursor = end
-        else:
-            start = update_idx * int(batch_size)
-            if start >= dataset.num_samples:
-                break
-            batch = dataset.as_batch(start=start, batch_size=int(batch_size))
+                batch = dataset.as_batch(start=start, batch_size=int(batch_size))
         batch_label_counts.append(label_counts)
-        stats = trainer.update(batch)
+        stats = trainer.update(batch, performance=performance)
 
         completed_updates = update_idx + 1
         if progress_interval > 0 and (
-            completed_updates % progress_interval == 0
-            or completed_updates == int(max_updates)
+            completed_updates % progress_interval == 0 or completed_updates == int(max_updates)
         ):
             if progress_callback is not None:
                 progress_callback(completed_updates, int(max_updates), stats)
@@ -451,14 +467,37 @@ def run_offline_distillation_updates(
 
     resolved_checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else None
     if resolved_checkpoint_path is not None:
-        save_distillation_checkpoint(
-            resolved_checkpoint_path,
-            student=trainer.student,
-            optimizer=trainer.optimizer,
-            agent_steps=samples_seen,
-            teacher_metadata=teacher_metadata,
-            distill_runtime_cfg=distill_runtime_cfg,
+        checkpoint_span = (
+            nullcontext() if performance is None else performance.measure("checkpoint_save")
         )
+        with checkpoint_span:
+            save_distillation_checkpoint(
+                resolved_checkpoint_path,
+                student=trainer.student,
+                optimizer=trainer.optimizer,
+                agent_steps=samples_seen,
+                teacher_metadata=teacher_metadata,
+                distill_runtime_cfg=distill_runtime_cfg,
+            )
+
+    performance_observations = (
+        ()
+        if performance is None
+        else tuple(
+            performance.observation(
+                stage=stage,
+                row_count=samples_seen,
+                env_step_count=0,
+            )
+            for stage in (
+                "learner_batch_staging",
+                "learner_forward",
+                "learner_backward",
+                "optimizer_step",
+                "checkpoint_save",
+            )
+        )
+    )
 
     return OfflineDistillationRunResult(
         update_count=trainer.update_count,
@@ -488,4 +527,5 @@ def run_offline_distillation_updates(
         balance_key=resolved_balance_key,
         batch_label_counts=tuple(batch_label_counts),
         last_balance_label_counts=batch_label_counts[-1] if batch_label_counts else {},
+        performance_stage_observations=performance_observations,
     )

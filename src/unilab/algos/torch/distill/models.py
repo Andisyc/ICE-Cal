@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 import torch
 from torch import nn
@@ -9,13 +10,13 @@ from torch import nn
 def _activation(name: str) -> type[nn.Module]:
     normalized = name.lower()
     if normalized == "elu":
-        return nn.ELU
+        return cast(type[nn.Module], nn.ELU)
     if normalized == "relu":
-        return nn.ReLU
+        return cast(type[nn.Module], nn.ReLU)
     if normalized == "silu":
-        return nn.SiLU
+        return cast(type[nn.Module], nn.SiLU)
     if normalized == "tanh":
-        return nn.Tanh
+        return cast(type[nn.Module], nn.Tanh)
     raise ValueError(f"Unsupported activation for distillation student: {name!r}")
 
 

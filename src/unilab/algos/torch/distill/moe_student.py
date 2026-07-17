@@ -67,9 +67,7 @@ class MoEStudentPolicy(nn.Module):
         if self.routing_mode not in ("soft", "hard"):
             raise ValueError(f"Unsupported MoE routing_mode: {self.routing_mode!r}")
         if self.router_temperature <= 0.0:
-            raise ValueError(
-                f"router_temperature must be positive, got {self.router_temperature}"
-            )
+            raise ValueError(f"router_temperature must be positive, got {self.router_temperature}")
 
         self.router = _mlp(
             input_dim=self.obs_dim,

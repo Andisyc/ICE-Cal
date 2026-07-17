@@ -681,6 +681,7 @@ def test_demo_local_only_checkpoint_uses_existing_file(
     monkeypatch.setattr(demo, "ASSETS_ROOT_PATH", assets)
     monkeypatch.setattr(demo, "_repo_root", lambda: checkout)
     monkeypatch.setattr(demo.platform, "system", lambda: "Linux")
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
 
     def fail_resolve(_: str) -> str:
         raise AssertionError("local-only demo must not download from Hugging Face")

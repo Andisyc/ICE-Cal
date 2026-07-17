@@ -208,9 +208,7 @@ def test_g1_distill_repeated_reset_probe_reports_standing_contract() -> None:
 
     env = FakeEnv()
     session = FakeSession(env)
-    checks, details = mod._run_repeated_reset_probe(
-        session, env, repetitions=2, action_mode="zero"
-    )
+    checks, details = mod._run_repeated_reset_probe(session, env, repetitions=2, action_mode="zero")
 
     assert all(check.level == "PASS" for check in checks)
     assert details["distill_playback/reset_repetitions"] == 2
@@ -277,7 +275,10 @@ def test_g1_distill_viewer_path_preflight_reaches_viewer_model(tmp_path: Path, m
     assert details["distill_viewer/cfg_student_obs_dim"] == 98
     assert details["distill_viewer/cfg_teacher_obs_dim"] == 98
     assert details["distill_viewer/checkpoint_path"] == str(checkpoint)
-    assert "mjpython scripts/play_interactive.py --algo distill" in details["distill_viewer/viewer_command"]
+    assert (
+        "mjpython scripts/play_interactive.py --algo distill"
+        in details["distill_viewer/viewer_command"]
+    )
     assert "UniLab G1 generic distill viewer path preflight" in out
     assert "[PASS] distill_viewer/state_transfer" in out
 
@@ -358,10 +359,7 @@ def test_g1_distill_moe_expert_semantics_checker_reads_role_labels(tmp_path: Pat
     assert not any(check.level == "FAIL" for check in checks)
     assert details["moe_expert/student_model_type"] == "moe"
     assert details["moe_expert/role_labels_present"] is True
-    by_role = {
-        item["role"]: item
-        for item in details["moe_expert/diagnostics"]["by_role"]
-    }
+    by_role = {item["role"]: item for item in details["moe_expert/diagnostics"]["by_role"]}
     assert by_role["stand"]["dominant_expert"] == 0
     assert by_role["walk"]["dominant_expert"] == 1
     assert by_role["recovery"]["dominant_expert"] == 2
@@ -894,6 +892,8 @@ def test_distill_walk_stand_workflow_profile_composes_teacher_roles(monkeypatch)
     cfg = _distill_cfg(["workflow=g1_walk_stand"])
 
     roles = OmegaConf.to_container(cfg.training.workflow.roles, resolve=True)
+    assert cfg.teacher.obs_dim == 98
+    assert cfg.student.obs_dim == 98
     assert cfg.algo.expert_behavior_loss_source == "auto"
     assert cfg.training.workflow.transition_min_post_switch_steps == 20
     assert cfg.training.workflow.dagger_min_transition_replay_passes == 8
@@ -950,6 +950,7 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
     monkeypatch.setattr(mod, "run_bootstrap_workflow", fake_bootstrap)
 
     def fake_dagger(**kwargs):
+        captured["dagger_kwargs"] = kwargs
         run_dir = Path(kwargs["run_dir"])
         return SimpleNamespace(
             run_dir=run_dir,
@@ -960,6 +961,11 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
         )
 
     monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(
+        mod,
+        "finalize_workflow_performance",
+        lambda **kwargs: captured.setdefault("finalize_kwargs", kwargs),
+    )
 
     result = mod.run_single_entry_workflow(cfg)
 
@@ -968,7 +974,185 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
     assert spec.task == "g1_stand_still/mujoco"
     assert spec.dataset_path == tmp_path / "artifacts" / "stand.pt"
     assert spec.command_sample_filter == "inactive"
+    assert captured["dagger_kwargs"]["execution_mode"] == "legacy"
+    assert callable(captured["dagger_kwargs"]["collect_scenario"]) is False
+    assert captured["dagger_kwargs"]["scenario_collector"] is None
+    performance_context = captured["dagger_kwargs"]["performance_context"]
+    assert performance_context.execution_mode == "legacy"
+    assert performance_context.teacher_checkpoint_sha256 == (mod.file_sha256(teacher_path),)
+    assert result["execution_mode"] == "legacy"
     assert result["checkpoint_path"].endswith("checkpoints/dagger_iteration_8.pt")
+
+
+def test_distill_single_entry_persistent_execution_routes_factory_and_closes_service(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.workflow.enabled=true"])
+    teacher_path = tmp_path / "stand_teacher.pt"
+    teacher_path.write_bytes(b"stand-teacher")
+    walk_teacher_path = tmp_path / "walk_teacher.pt"
+    walk_teacher_path.write_bytes(b"walk-teacher")
+    cfg.training.workflow.run_dir = str(tmp_path / "persistent_run")
+    cfg.training.workflow.artifact_dir = str(tmp_path / "artifacts")
+    cfg.training.workflow.execution_mode = "persistent_async"
+    cfg.training.workflow.roles = [
+        {
+            "role": "stand",
+            "task": "g1_stand_still/mujoco",
+            "teacher_checkpoint_path": str(teacher_path),
+        },
+        {
+            "role": "walk_flat",
+            "task": "g1_walk_flat/mujoco",
+            "teacher_checkpoint_path": str(walk_teacher_path),
+        },
+    ]
+    scenarios = (
+        mod.WorkflowScenarioSpec("stand", "role", ("stand",), 0.5),
+        mod.WorkflowScenarioSpec("walk_flat", "role", ("walk_flat",), 0.5),
+    )
+    monkeypatch.setattr(mod, "_workflow_scenario_specs", lambda *_args: scenarios)
+    monkeypatch.setattr(
+        mod,
+        "run_bootstrap_workflow",
+        lambda **kwargs: SimpleNamespace(
+            run_dir=Path(kwargs["run_dir"]),
+            manifest_path=Path(kwargs["run_dir"]) / "run_manifest.json",
+            role_decisions={"stand": "COLLECT", "walk_flat": "COLLECT"},
+            bootstrap_dataset_path=Path(kwargs["run_dir"]) / "datasets" / "bootstrap_merged.pt",
+            bootstrap_num_samples=8,
+            checkpoint_path=Path(kwargs["run_dir"]) / "checkpoints" / "bootstrap_student.pt",
+            bootstrap_updates=2,
+        ),
+    )
+    service = MagicMock()
+    service.close_report = {
+        "worker_pid": 1234,
+        "resource_counters": {"env_builds": 1},
+    }
+    factory_inputs: dict[str, Any] = {}
+
+    def fake_factory(**kwargs):
+        factory_inputs.update(kwargs)
+        return service
+
+    dagger_inputs: dict[str, Any] = {}
+
+    def fake_dagger(**kwargs):
+        dagger_inputs.update(kwargs)
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            completed_iterations=1,
+            checkpoint_path=run_dir / "checkpoints" / "dagger_iteration_1.pt",
+            cumulative_num_samples=24,
+        )
+
+    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(
+        mod,
+        "finalize_workflow_performance",
+        lambda **kwargs: dagger_inputs.setdefault("finalize_kwargs", kwargs),
+    )
+
+    result = mod.run_single_entry_workflow(
+        cfg,
+        persistent_scenario_collector_factory=fake_factory,
+    )
+
+    assert factory_inputs["cfg"] is cfg
+    assert set(factory_inputs["role_cfgs"]) == {"stand", "walk_flat"}
+    assert [spec.role for spec in factory_inputs["role_specs"]] == [
+        "stand",
+        "walk_flat",
+    ]
+    assert factory_inputs["scenario_specs"] == scenarios
+    assert dagger_inputs["execution_mode"] == "persistent_async"
+    assert dagger_inputs["collect_scenario"] is None
+    assert dagger_inputs["scenario_collector"] is service
+    performance_context = dagger_inputs["performance_context"]
+    assert performance_context.execution_mode == "persistent_async"
+    assert performance_context.teacher_checkpoint_sha256 == tuple(
+        sorted(
+            (
+                mod.file_sha256(teacher_path),
+                mod.file_sha256(walk_teacher_path),
+            )
+        )
+    )
+    assert performance_context.config_sha256 == mod.config_fingerprint(
+        mod.OmegaConf.to_container(cfg, resolve=True)
+    )
+    assert performance_context.seed == int(cfg.algo.seed)
+    assert performance_context.device == mod._distill_device(cfg)
+    assert performance_context.num_envs == int(cfg.training.workflow.collect_num_envs)
+    service.close.assert_called_once_with()
+    assert result["execution_mode"] == "persistent_async"
+
+
+def test_distill_single_entry_persistent_execution_uses_production_factory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.workflow.enabled=true"])
+    teacher_path = tmp_path / "teacher.pt"
+    teacher_path.write_bytes(b"teacher")
+    cfg.training.workflow.run_dir = str(tmp_path / "persistent_run")
+    cfg.training.workflow.execution_mode = "persistent_async"
+    cfg.training.workflow.roles = [
+        {
+            "role": "stand",
+            "task": "g1_stand_still/mujoco",
+            "teacher_checkpoint_path": str(teacher_path),
+        }
+    ]
+    monkeypatch.setattr(
+        mod,
+        "_workflow_scenario_specs",
+        lambda *_args: (mod.WorkflowScenarioSpec("stand", "role", ("stand",), 1.0),),
+    )
+    monkeypatch.setattr(mod, "run_bootstrap_workflow", lambda **_kwargs: None)
+    service = MagicMock()
+    service.close_report = {
+        "worker_pid": 1234,
+        "resource_counters": {"env_builds": 1},
+    }
+    factory_inputs: dict[str, Any] = {}
+
+    def fake_production_factory(**kwargs):
+        factory_inputs.update(kwargs)
+        return service
+
+    monkeypatch.setattr(
+        mod,
+        "build_persistent_g1_distillation_runtime",
+        fake_production_factory,
+    )
+    monkeypatch.setattr(
+        mod,
+        "run_multirole_dagger_workflow",
+        lambda **kwargs: types.SimpleNamespace(
+            run_dir=Path(kwargs["run_dir"]),
+            manifest_path=Path(kwargs["run_dir"]) / "run_manifest.json",
+            completed_iterations=1,
+            checkpoint_path=Path(kwargs["run_dir"]) / "checkpoints" / "dagger_iteration_1.pt",
+            cumulative_num_samples=1,
+        ),
+    )
+    monkeypatch.setattr(mod, "finalize_workflow_performance", lambda **_kwargs: None)
+
+    result = mod.run_single_entry_workflow(cfg)
+
+    assert factory_inputs["cfg"] is cfg
+    assert [spec.role for spec in factory_inputs["role_specs"]] == ["stand"]
+    assert result["execution_mode"] == "persistent_async"
+    service.close.assert_called_once_with()
 
 
 class _FakeDistillCollectEnv:
@@ -1010,9 +1194,6 @@ class _FakeDistillCollectEnv:
             info=self._command_info(self.step_calls),
         )
 
-    def close(self) -> None:
-        self.closed = True
-
     def _obs(self, offset: int) -> dict[str, np.ndarray]:
         obs = np.arange(self.num_envs * self.obs_dim, dtype=np.float32).reshape(
             self.num_envs, self.obs_dim
@@ -1027,6 +1208,49 @@ class _FakeDistillCollectEnv:
             return {}
         index = min(int(batch_index), len(self.command_batches) - 1)
         return {"commands": self.command_batches[index]}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _IncrementingClock:
+    def __init__(self, step: float = 0.1) -> None:
+        self.value = 0.0
+        self.step = float(step)
+
+    def __call__(self) -> float:
+        current = self.value
+        self.value += self.step
+        return current
+
+
+def test_distill_collect_wrapper_emits_legacy_request_observations_only_when_opted_in(
+    tmp_path: Path,
+) -> None:
+    mod = _train_distill()
+    cfg = _distill_cfg(
+        [
+            "training.collect_num_samples=2",
+            "training.collect_num_envs=2",
+            "training.collect_max_env_steps=1",
+        ]
+    )
+    fake_env = _FakeDistillCollectEnv(num_envs=2, obs_dim=99, critic_dim=102)
+
+    result = mod.run_collect_dataset(
+        cfg,
+        dataset_path=tmp_path / "timed.pt",
+        create_env_fn=lambda *args, **kwargs: fake_env,
+        env_cfg_override_fn=lambda cfg: {"owner": "legacy-performance-test"},
+        performance_clock=_IncrementingClock(),
+    )
+
+    observations = result["performance_stage_observations"]
+    assert [item["stage"] for item in observations] == list(mod.LEGACY_REQUEST_STAGE_NAMES)
+    assert observations[0]["duration_seconds"] == pytest.approx(0.1)
+    assert observations[-2]["row_count"] == 2
+    assert observations[-1]["row_count"] == 2
+    assert observations[-1]["cleanup_state"] == "pending"
 
 
 def test_offpolicy_hydra_default_algo():
@@ -1326,9 +1550,7 @@ def test_distill_script_builds_moe_student_from_owner_config():
         3,
     ]
     assert [
-        layer.out_features
-        for layer in student.experts[0].net
-        if hasattr(layer, "out_features")
+        layer.out_features for layer in student.experts[0].net if hasattr(layer, "out_features")
     ] == [32, 29]
 
 
@@ -2419,7 +2641,9 @@ def test_distill_script_rejects_owner_command_filter_override(
         ]
     )
 
-    with pytest.raises(ValueError, match=f"requires training.collect_command_sample_filter={expected_filter}"):
+    with pytest.raises(
+        ValueError, match=f"requires training.collect_command_sample_filter={expected_filter}"
+    ):
         mod.run_collect_dataset(
             cfg,
             dataset_path=tmp_path / "bad_owner_filter.pt",
@@ -5602,18 +5826,14 @@ def test_play_interactive_distill_playback_forces_standing_reset() -> None:
         "G1WalkFlat",
         "g1-walk-flat",
     ):
-        resolved = mod._apply_distill_playback_reset_contract(
-            env_cfg_override, task_name
-        )
+        resolved = mod._apply_distill_playback_reset_contract(env_cfg_override, task_name)
 
         assert resolved is not env_cfg_override
         assert resolved["commands"]["rel_standing_envs"] == 1.0
         assert resolved["commands"]["rel_transition_envs"] == 0.0
         assert resolved["standing_reset_base_qvel_limit"] == 0.0
 
-    untouched = mod._apply_distill_playback_reset_contract(
-        env_cfg_override, "g1_stand_still"
-    )
+    untouched = mod._apply_distill_playback_reset_contract(env_cfg_override, "g1_stand_still")
     assert untouched == env_cfg_override
     assert env_cfg_override["commands"]["rel_standing_envs"] == 0.0
 
@@ -5674,9 +5894,7 @@ def test_play_interactive_command_obs_probe_refreshes_stale_reset_command() -> N
 
         def update_state(self, state: State) -> State:
             command = state.info["commands"][0, :3]
-            state.obs = {
-                "obs": np.concatenate([np.zeros(5, dtype=np.float32), command])[None, :]
-            }
+            state.obs = {"obs": np.concatenate([np.zeros(5, dtype=np.float32), command])[None, :]}
             return state
 
     env = Env()
@@ -5720,9 +5938,7 @@ def test_play_interactive_command_obs_probe_restores_live_state_when_reset_is_ex
             state.info["gait_enabled"] = np.asarray(
                 [float(np.linalg.norm(command) > 1.0e-9)], dtype=np.float32
             )
-            state.obs = {
-                "obs": np.concatenate([np.zeros(5, dtype=np.float32), command])[None, :]
-            }
+            state.obs = {"obs": np.concatenate([np.zeros(5, dtype=np.float32), command])[None, :]}
             return state
 
     env = Env()

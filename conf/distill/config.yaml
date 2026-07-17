@@ -84,6 +84,7 @@ training:
   workflow:
     enabled: false
     mode: auto
+    execution_mode: legacy
     run_dir: null
     parent_run_dir: null
     artifact_dir: logs/distill_role_artifacts

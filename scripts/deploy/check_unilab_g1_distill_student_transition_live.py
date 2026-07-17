@@ -170,9 +170,7 @@ def run_check(
         "nonzero_action_phases": sum(
             phase["action_abs_max"]["max"] > 1.0e-6 for phase in all_phases
         ),
-        "stop_speed_decay_pass": all(
-            bool(episode["stop_speed_le_active"]) for episode in episodes
-        ),
+        "stop_speed_decay_pass": all(bool(episode["stop_speed_le_active"]) for episode in episodes),
         "task_min_base_height": float(reward_cfg.min_base_height),
         "task_max_tilt_deg": float(reward_cfg.max_tilt_deg),
     }

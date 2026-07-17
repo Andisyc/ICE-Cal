@@ -240,7 +240,9 @@ def _g1_standing_contract_issues(run_config: Mapping[str, Any]) -> list[str]:
 
     feet_phase_scale = _nested_get(run_config, "config.reward.scales.feet_phase", 0.0)
     if float(feet_phase_scale) > 0.0:
-        issues.append(f"positive old gait reward config.reward.scales.feet_phase={feet_phase_scale}")
+        issues.append(
+            f"positive old gait reward config.reward.scales.feet_phase={feet_phase_scale}"
+        )
 
     return issues
 
@@ -347,10 +349,7 @@ def _apply_checkpoint_env_contract(
             and "mode_observation" in merged
         ):
             merged["mode_observation"] = False
-        elif (
-            args.task in {"g1_walk_flat", "G1WalkFlat"}
-            and "mode_observation" not in run_env
-        ):
+        elif args.task in {"g1_walk_flat", "G1WalkFlat"} and "mode_observation" not in run_env:
             merged = _apply_missing_g1_mode_observation_contract(merged, args)
     run_reward = run_cfg.get("reward")
     if isinstance(run_reward, Mapping):
@@ -1473,7 +1472,9 @@ def _print_distill_action_trace(
     actions = getattr(playback_session, "actions", None)
     policy_fn = getattr(playback_session, "policy", None)
     student_policy = getattr(policy_fn, "_unilab_distill_student_policy", None)
-    device = str(getattr(policy_fn, "_unilab_distill_device", getattr(playback_session, "device", "cpu")))
+    device = str(
+        getattr(policy_fn, "_unilab_distill_device", getattr(playback_session, "device", "cpu"))
+    )
     info = playback_session.info
     command = _trace_first_command(env, commander)
 

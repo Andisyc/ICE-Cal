@@ -24,7 +24,6 @@ import mujoco
 import numpy as np
 import onnxruntime as ort
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_ROBOJUDO_XML_REL = Path("assets/robots/g1/g1_29dof_rev_1_0.xml")
@@ -313,9 +312,13 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
         extract_class_assignment(paths["env_cfg"], env_dof_class, "position_limits"),
         dtype=np.float32,
     )
-    action_scale = float(extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "action_scale"))
+    action_scale = float(
+        extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "action_scale")
+    )
     action_clip = extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "action_clip")
-    action_beta = float(extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "action_beta"))
+    action_beta = float(
+        extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "action_beta")
+    )
     expected_action_dim = int(
         extract_class_assignment(paths["unilab_cfg"], "G1UniLabPolicyCfg", "expected_action_dim")
     )
@@ -468,9 +471,16 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
         _add(checks, "FAIL", "source_pd_target_adapter", str(returns))
 
     if policy_source["applies_action_scale"]:
-        _add(checks, "PASS", "source_action_scale_applied_once", "UniLabPolicy.get_action applies self.action_scale")
+        _add(
+            checks,
+            "PASS",
+            "source_action_scale_applied_once",
+            "UniLabPolicy.get_action applies self.action_scale",
+        )
     else:
-        _add(checks, "FAIL", "source_action_scale_applied_once", "action_scale application not found")
+        _add(
+            checks, "FAIL", "source_action_scale_applied_once", "action_scale application not found"
+        )
 
     if details["mapped_joint_count"] == EXPECTED_DOF:
         _add(checks, "PASS", "dof_adapter_maps_all_joints", str(details["mapped_joint_count"]))
@@ -480,9 +490,13 @@ def audit(robojudo_root: Path) -> tuple[list[Check], dict[str, Any]]:
     if details["dof_mapping_identity"]:
         _add(checks, "PASS", "dof_adapter_mapping_identity", "policy and env joint orders match")
     else:
-        _add(checks, "WARN", "dof_adapter_mapping_identity", "mapping is complete but order differs")
+        _add(
+            checks, "WARN", "dof_adapter_mapping_identity", "mapping is complete but order differs"
+        )
 
-    max_pd_diff = float(np.max(np.abs((pd_target_env_order - default_pos_env_order) - action_delta_env_order)))
+    max_pd_diff = float(
+        np.max(np.abs((pd_target_env_order - default_pos_env_order) - action_delta_env_order))
+    )
     if max_pd_diff <= TOL:
         _add(checks, "PASS", "pd_target_minus_default_equals_action", f"max_abs={max_pd_diff:.3e}")
     else:
@@ -562,7 +576,9 @@ def print_report(checks: list[Check], details: dict[str, Any], *, json_out: bool
                 f"  {item['joint']}: target={item['pd_target']:.6g}, "
                 f"limit=[{item['low']:.6g}, {item['high']:.6g}]"
             )
-    print(f"offset_phase_position_limit_violations: {len(details['offset_phase_position_limit_violations'])}")
+    print(
+        f"offset_phase_position_limit_violations: {len(details['offset_phase_position_limit_violations'])}"
+    )
     if details["offset_phase_position_limit_violations"]:
         for item in details["offset_phase_position_limit_violations"]:
             print(

@@ -58,31 +58,20 @@ def resolve_command_intent_rollout_policies(
 
     raw_targets = runtime_cfg.get("command_intent_expert_targets")
     if not isinstance(raw_targets, Mapping):
-        raise ValueError(
-            "command-intent rollout requires command_intent_expert_targets"
-        )
+        raise ValueError("command-intent rollout requires command_intent_expert_targets")
     missing_intents = {"active", "inactive"} - set(raw_targets)
     if missing_intents:
         raise ValueError(
-            "command-intent rollout targets are missing intents: "
-            f"{sorted(missing_intents)}"
+            f"command-intent rollout targets are missing intents: {sorted(missing_intents)}"
         )
-    expert_targets = {
-        intent: int(raw_targets[intent]) for intent in ("active", "inactive")
-    }
-    if any(
-        target < 0 or target >= int(student.num_experts)
-        for target in expert_targets.values()
-    ):
+    expert_targets = {intent: int(raw_targets[intent]) for intent in ("active", "inactive")}
+    if any(target < 0 or target >= int(student.num_experts) for target in expert_targets.values()):
         raise ValueError(
             "command-intent rollout expert target out of range: "
             f"targets={expert_targets} num_experts={int(student.num_experts)}"
         )
     return (
-        {
-            intent: student.experts[target]
-            for intent, target in expert_targets.items()
-        },
+        {intent: student.experts[target] for intent, target in expert_targets.items()},
         expert_targets,
     )
 
@@ -232,12 +221,10 @@ def run_iterative_dagger_updates(
     collected_datasets: list[DistillationTensorDataset] = []
     samples_collected = 0
     samples_seen = 0
-    rollout_policy, rollout_expert_index, rollout_policy_source = (
-        _resolve_dagger_rollout_policy(
-            trainer,
-            command_sample_filter=str(command_sample_filter),
-            role_label=role_label,
-        )
+    rollout_policy, rollout_expert_index, rollout_policy_source = _resolve_dagger_rollout_policy(
+        trainer,
+        command_sample_filter=str(command_sample_filter),
+        role_label=role_label,
     )
     for iteration in range(int(num_iterations)):
         dataset = collect_distillation_dataset_from_env(

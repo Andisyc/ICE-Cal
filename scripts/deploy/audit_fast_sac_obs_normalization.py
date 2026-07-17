@@ -23,7 +23,6 @@ import torch
 
 from unilab.algos.torch.fast_sac.learner import FastSACLearner
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_RUN_CONFIG_REL = Path(

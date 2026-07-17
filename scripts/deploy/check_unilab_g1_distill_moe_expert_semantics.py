@@ -54,10 +54,7 @@ def _report_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     raw_role_labels = report.pop("role_labels", None)
     if isinstance(raw_role_labels, list):
         counts = Counter(str(label) for label in raw_role_labels)
-        report["role_label_counts"] = {
-            role: int(counts[role])
-            for role in sorted(counts)
-        }
+        report["role_label_counts"] = {role: int(counts[role]) for role in sorted(counts)}
         report["role_label_count_total"] = int(sum(counts.values()))
     elif raw_role_labels is not None:
         report["role_labels_type"] = type(raw_role_labels).__name__
@@ -75,7 +72,9 @@ def _action_imitation_summary(
     if teacher_actions is None:
         return None
     if teacher_actions.ndim != 2:
-        raise ValueError(f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}")
+        raise ValueError(
+            f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}"
+        )
     if teacher_actions.shape[0] != student_obs.shape[0]:
         raise ValueError(
             "teacher_actions batch size must match student_obs: "
@@ -128,7 +127,9 @@ def _action_imitation_summary(
             device=student_actions.device,
         )
         by_role[str(role)] = summarize(idx)
-    overall_idx = torch.arange(student_obs.shape[0], dtype=torch.long, device=student_actions.device)
+    overall_idx = torch.arange(
+        student_obs.shape[0], dtype=torch.long, device=student_actions.device
+    )
     return {
         "overall": summarize(overall_idx),
         "by_role": by_role,
@@ -174,9 +175,7 @@ def run_check(
         device=device,
     )
     role_labels = (
-        None
-        if dataset.role_labels is None
-        else [str(label) for label in dataset.role_labels]
+        None if dataset.role_labels is None else [str(label) for label in dataset.role_labels]
     )
     if role_labels is None:
         role_labels = _metadata_role_labels(dataset.metadata, num_samples=dataset.num_samples)
@@ -224,7 +223,9 @@ def run_check(
             "dataset has no role_labels metadata; reporting overall collapse/entropy only",
         )
 
-    collapse_level = "FAIL" if fail_on_collapse and diagnostics.overall.collapse_detected else "WARN"
+    collapse_level = (
+        "FAIL" if fail_on_collapse and diagnostics.overall.collapse_detected else "WARN"
+    )
     if diagnostics.overall.collapse_detected:
         _add(
             checks,

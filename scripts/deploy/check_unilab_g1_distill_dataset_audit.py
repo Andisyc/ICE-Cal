@@ -128,10 +128,14 @@ def _counts(labels: tuple[str, ...] | None) -> dict[str, int] | None:
     return {label: int(counts[label]) for label in sorted(counts)}
 
 
-def _paired_counts(left: tuple[str, ...] | None, right: tuple[str, ...] | None) -> dict[str, int] | None:
+def _paired_counts(
+    left: tuple[str, ...] | None, right: tuple[str, ...] | None
+) -> dict[str, int] | None:
     if left is None or right is None:
         return None
-    counts = Counter(f"{left_label}|{right_label}" for left_label, right_label in zip(left, right, strict=True))
+    counts = Counter(
+        f"{left_label}|{right_label}" for left_label, right_label in zip(left, right, strict=True)
+    )
     return {label: int(counts[label]) for label in sorted(counts)}
 
 
@@ -202,10 +206,12 @@ def _source_summary(metadata: Mapping[str, Any], *, num_samples: int) -> dict[st
         "source_sample_counts": _summarize_value(source_sample_counts),
     }
     if isinstance(source_sample_counts, list | tuple):
-        summary["source_sample_count_total"] = int(sum(int(value) for value in source_sample_counts))
-        summary["source_sample_count_matches_num_samples"] = (
-            summary["source_sample_count_total"] == int(num_samples)
+        summary["source_sample_count_total"] = int(
+            sum(int(value) for value in source_sample_counts)
         )
+        summary["source_sample_count_matches_num_samples"] = summary[
+            "source_sample_count_total"
+        ] == int(num_samples)
     if isinstance(source_metadata, list | tuple):
         compact: list[dict[str, Any]] = []
         keep_keys = (
@@ -229,13 +235,7 @@ def _source_summary(metadata: Mapping[str, Any], *, num_samples: int) -> dict[st
             if not isinstance(item, Mapping):
                 compact.append({"type": type(item).__name__, "value": _summarize_value(item)})
                 continue
-            compact.append(
-                {
-                    key: _summarize_value(item[key])
-                    for key in keep_keys
-                    if key in item
-                }
-            )
+            compact.append({key: _summarize_value(item[key]) for key in keep_keys if key in item})
         summary["source_metadata"] = compact
     else:
         summary["source_metadata"] = _summarize_value(source_metadata)
@@ -284,10 +284,17 @@ def audit_dataset(
 
     if teacher_actions is not None:
         if not isinstance(teacher_actions, torch.Tensor):
-            issues.append(f"teacher_actions must be a tensor or None, got {type(teacher_actions).__name__}")
+            issues.append(
+                f"teacher_actions must be a tensor or None, got {type(teacher_actions).__name__}"
+            )
         elif teacher_actions.ndim != 2:
-            issues.append(f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}")
-        elif isinstance(student_obs, torch.Tensor) and teacher_actions.shape[0] != student_obs.shape[0]:
+            issues.append(
+                f"teacher_actions must be rank-2, got shape {tuple(teacher_actions.shape)}"
+            )
+        elif (
+            isinstance(student_obs, torch.Tensor)
+            and teacher_actions.shape[0] != student_obs.shape[0]
+        ):
             issues.append(
                 "teacher_actions row mismatch: "
                 f"{int(teacher_actions.shape[0])} != {int(student_obs.shape[0])}"
@@ -299,7 +306,9 @@ def audit_dataset(
         elif commands.ndim != 2 or int(commands.shape[-1]) != 3:
             issues.append(f"commands must have shape (N, 3), got {tuple(commands.shape)}")
         elif isinstance(student_obs, torch.Tensor) and commands.shape[0] != student_obs.shape[0]:
-            issues.append(f"commands row mismatch: {int(commands.shape[0])} != {int(student_obs.shape[0])}")
+            issues.append(
+                f"commands row mismatch: {int(commands.shape[0])} != {int(student_obs.shape[0])}"
+            )
 
     role_labels = _labels(payload.get("role_labels"))
     command_intents = _labels(payload.get("command_intents"))
@@ -312,7 +321,9 @@ def audit_dataset(
     if command_intents is not None and len(command_intents) != num_samples:
         issues.append(f"command_intents length mismatch: {len(command_intents)} != {num_samples}")
     if command_intents is not None:
-        invalid_intents = sorted({intent for intent in command_intents if intent not in {"active", "inactive"}})
+        invalid_intents = sorted(
+            {intent for intent in command_intents if intent not in {"active", "inactive"}}
+        )
         if invalid_intents:
             issues.append(f"command_intents contain invalid labels: {invalid_intents}")
 
@@ -321,19 +332,25 @@ def audit_dataset(
         issues.append(f"payload num_samples mismatch: {payload_num_samples} != {num_samples}")
     if isinstance(student_obs, torch.Tensor) and student_obs.ndim == 2:
         payload_student_dim = payload.get("student_obs_dim")
-        if payload_student_dim is not None and int(payload_student_dim) != int(student_obs.shape[-1]):
+        if payload_student_dim is not None and int(payload_student_dim) != int(
+            student_obs.shape[-1]
+        ):
             issues.append(
                 f"payload student_obs_dim mismatch: {payload_student_dim} != {int(student_obs.shape[-1])}"
             )
     if isinstance(teacher_obs, torch.Tensor) and teacher_obs.ndim == 2:
         payload_teacher_dim = payload.get("teacher_obs_dim")
-        if payload_teacher_dim is not None and int(payload_teacher_dim) != int(teacher_obs.shape[-1]):
+        if payload_teacher_dim is not None and int(payload_teacher_dim) != int(
+            teacher_obs.shape[-1]
+        ):
             issues.append(
                 f"payload teacher_obs_dim mismatch: {payload_teacher_dim} != {int(teacher_obs.shape[-1])}"
             )
     if isinstance(teacher_actions, torch.Tensor) and teacher_actions.ndim == 2:
         payload_action_dim = payload.get("teacher_action_dim")
-        if payload_action_dim is not None and int(payload_action_dim) != int(teacher_actions.shape[-1]):
+        if payload_action_dim is not None and int(payload_action_dim) != int(
+            teacher_actions.shape[-1]
+        ):
             issues.append(
                 "payload teacher_action_dim mismatch: "
                 f"{payload_action_dim} != {int(teacher_actions.shape[-1])}"
@@ -369,7 +386,11 @@ def audit_dataset(
                 )
 
     role_expected_mismatch = 0
-    if role_labels is not None and command_intents is not None and len(role_labels) == len(command_intents):
+    if (
+        role_labels is not None
+        and command_intents is not None
+        and len(role_labels) == len(command_intents)
+    ):
         for role, intent in zip(role_labels, command_intents, strict=True):
             expected = _intent_from_role(role)
             if expected is not None and expected != intent:
@@ -413,13 +434,17 @@ def audit_dataset(
         "groups": {
             "by_role": _group_stats(
                 labels=role_labels,
-                teacher_actions=teacher_actions if isinstance(teacher_actions, torch.Tensor) else None,
+                teacher_actions=teacher_actions
+                if isinstance(teacher_actions, torch.Tensor)
+                else None,
                 commands=commands if isinstance(commands, torch.Tensor) else None,
                 max_rows=stat_sample_rows,
             ),
             "by_command_intent": _group_stats(
                 labels=command_intents,
-                teacher_actions=teacher_actions if isinstance(teacher_actions, torch.Tensor) else None,
+                teacher_actions=teacher_actions
+                if isinstance(teacher_actions, torch.Tensor)
+                else None,
                 commands=commands if isinstance(commands, torch.Tensor) else None,
                 max_rows=stat_sample_rows,
             ),
@@ -437,7 +462,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--command-xy-threshold", type=float, default=0.05)
     parser.add_argument("--command-yaw-threshold", type=float, default=0.05)
     parser.add_argument("--stat-sample-rows", type=int, default=262144)
-    parser.add_argument("--strict", action="store_true", help="exit non-zero when hard schema issues exist")
+    parser.add_argument(
+        "--strict", action="store_true", help="exit non-zero when hard schema issues exist"
+    )
     parser.add_argument(
         "--fail-on-warning",
         action="store_true",

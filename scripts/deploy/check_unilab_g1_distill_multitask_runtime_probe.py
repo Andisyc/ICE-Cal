@@ -56,12 +56,18 @@ def _source_dataset(
     device: str,
 ):
     return build_distillation_dataset(
-        torch.full((num_samples, student_obs_dim), student_value, dtype=torch.float32, device=device),
-        torch.full((num_samples, teacher_obs_dim), teacher_value, dtype=torch.float32, device=device),
+        torch.full(
+            (num_samples, student_obs_dim), student_value, dtype=torch.float32, device=device
+        ),
+        torch.full(
+            (num_samples, teacher_obs_dim), teacher_value, dtype=torch.float32, device=device
+        ),
         expected_student_obs_dim=student_obs_dim,
         expected_teacher_obs_dim=teacher_obs_dim,
         expected_teacher_action_dim=action_dim,
-        teacher_actions=torch.full((num_samples, action_dim), action_value, dtype=torch.float32, device=device),
+        teacher_actions=torch.full(
+            (num_samples, action_dim), action_value, dtype=torch.float32, device=device
+        ),
     )
 
 
@@ -228,11 +234,15 @@ def run_check(
     if teacher.called:
         raise AssertionError("cached-target probe unexpectedly called the teacher")
     if result.last_teacher_action_source != "cached":
-        raise AssertionError(f"expected cached teacher target, got {result.last_teacher_action_source!r}")
+        raise AssertionError(
+            f"expected cached teacher target, got {result.last_teacher_action_source!r}"
+        )
     if result.last_role_loss <= 0.0:
         raise AssertionError(f"expected positive role loss, got {result.last_role_loss}")
     if result.last_student_grad_norm <= 0.0:
-        raise AssertionError(f"expected positive student grad norm, got {result.last_student_grad_norm}")
+        raise AssertionError(
+            f"expected positive student grad norm, got {result.last_student_grad_norm}"
+        )
 
     role_counts = dict(sorted(Counter(dataset.role_labels).items()))
     return {
@@ -258,7 +268,9 @@ def run_check(
             "student_grad_norm": result.last_student_grad_norm,
             "student_action_shape": list(result.student_action_shape),
             "teacher_action_shape": list(result.teacher_action_shape),
-            "expert_usage": None if result.last_expert_usage is None else list(result.last_expert_usage),
+            "expert_usage": None
+            if result.last_expert_usage is None
+            else list(result.last_expert_usage),
             "route_entropy": result.last_route_entropy,
         },
     }

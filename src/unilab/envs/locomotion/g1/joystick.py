@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from etils import epath
@@ -881,7 +881,9 @@ class G1WalkEnv(G1BaseEnv):
             else:
                 default_target = getattr(command_cfg, "default_height", None)
             if default_target is None:
-                default_target = getattr(getattr(self, "_reward_cfg", None), "base_height_target", 0.0)
+                default_target = getattr(
+                    getattr(self, "_reward_cfg", None), "base_height_target", 0.0
+                )
             target = info.get("commands_height", default_target)
 
         target_arr = np.asarray(target, dtype=get_global_dtype())
@@ -890,15 +892,17 @@ class G1WalkEnv(G1BaseEnv):
         if target_arr.ndim == 1:
             target_arr = target_arr.reshape(-1, 1)
         if target_arr.shape != (num_obs, 1):
-            raise ValueError(f"height command must have shape ({num_obs}, 1), got {target_arr.shape}")
+            raise ValueError(
+                f"height command must have shape ({num_obs}, 1), got {target_arr.shape}"
+            )
         return np.asarray(target_arr, dtype=get_global_dtype())
 
     def _gait_constraint_cfg(self) -> GaitConstraintConfig:
-        cfg = self._reward_cfg.gait_constraint
+        cfg = getattr(self._reward_cfg, "gait_constraint", GaitConstraintConfig())
         if isinstance(cfg, dict):
             cfg = GaitConstraintConfig(**cfg)
             self._reward_cfg.gait_constraint = cfg
-        return cfg
+        return cast(GaitConstraintConfig, cfg)
 
     def _reward_mode_cfg(self) -> RewardModeConfig:
         cfg = getattr(self._reward_cfg, "mode", RewardModeConfig())
@@ -946,11 +950,7 @@ class G1WalkEnv(G1BaseEnv):
         if mask.ndim == 2 and mask.shape[1] == 1:
             mask = mask[:, 0]
         commands = info.get("commands")
-        expected_size = (
-            np.asarray(commands).shape[0]
-            if commands is not None
-            else self._num_envs
-        )
+        expected_size = np.asarray(commands).shape[0] if commands is not None else self._num_envs
         if mask.shape != (expected_size,):
             raise ValueError(f"gait_enabled must have shape ({expected_size},), got {mask.shape}")
         return np.asarray(mask > 0.5, dtype=get_global_dtype())
@@ -961,9 +961,8 @@ class G1WalkEnv(G1BaseEnv):
             tilt_deg = np.zeros_like(speed_xy)
         else:
             tilt_deg = np.rad2deg(np.arccos(np.clip(ctx.gravity[:, 2], -1.0, 1.0)))
-        recovery = (
-            (speed_xy > float(self._reward_cfg.stand_recovery_lin_vel_xy_threshold))
-            | (tilt_deg > float(self._reward_cfg.stand_recovery_tilt_deg_threshold))
+        recovery = (speed_xy > float(self._reward_cfg.stand_recovery_lin_vel_xy_threshold)) | (
+            tilt_deg > float(self._reward_cfg.stand_recovery_tilt_deg_threshold)
         )
         recovery_mask = np.asarray(recovery, dtype=get_global_dtype()) * stand_mask
         ctx.info["stand_recovery_active"] = recovery_mask
@@ -1165,9 +1164,7 @@ class G1WalkEnv(G1BaseEnv):
         stand_recovery_mask = self._stand_recovery_mask(ctx, stand_mask)
         stand_static_mask = np.asarray(stand_mask - stand_recovery_mask, dtype=get_global_dtype())
         self._reset_mode_reward_log(ctx.info)
-        walk_terms = self._combine_mode_terms(
-            mode_cfg.balance_common_terms, mode_cfg.walk_terms
-        )
+        walk_terms = self._combine_mode_terms(mode_cfg.balance_common_terms, mode_cfg.walk_terms)
         if mode_cfg.standing_enabled:
             stand_terms = self._combine_mode_terms(
                 mode_cfg.balance_common_terms, mode_cfg.stand_terms
@@ -1191,7 +1188,9 @@ class G1WalkEnv(G1BaseEnv):
         walk_reward = self._run_masked_mode_reward_dispatch(
             ctx, cfg, walk_terms, walk_mask, mode_cfg.walk_scale_overrides
         )
-        reward = np.asarray(stand_reward + stand_recovery_reward + walk_reward, dtype=get_global_dtype())
+        reward = np.asarray(
+            stand_reward + stand_recovery_reward + walk_reward, dtype=get_global_dtype()
+        )
         self._log_reward_mode(
             ctx.info,
             stand_static_mask,
@@ -1232,11 +1231,7 @@ class G1WalkEnv(G1BaseEnv):
         scales = {name: scale for name, scale in cfg.scales.items() if name in term_set}
         if scale_overrides:
             scales.update(
-                {
-                    name: scale
-                    for name, scale in scale_overrides.items()
-                    if name in term_set
-                }
+                {name: scale for name, scale in scale_overrides.items() if name in term_set}
             )
         reward = np.zeros((ctx.num_envs,), dtype=dtype)
         step_count = ctx.info.get("steps", np.zeros((ctx.num_envs,), dtype=np.uint32))
@@ -1285,9 +1280,7 @@ class G1WalkEnv(G1BaseEnv):
         log["reward/walk_total"] = float(np.mean(walk_mask * walk_reward))
         info["log"] = log
 
-    def _apply_gait_constraint_bridge(
-        self, ctx: RewardContext, reward: np.ndarray
-    ) -> np.ndarray:
+    def _apply_gait_constraint_bridge(self, ctx: RewardContext, reward: np.ndarray) -> np.ndarray:
         cfg = self._gait_constraint_cfg()
         if not cfg.enabled:
             return reward
@@ -1466,11 +1459,16 @@ class G1WalkEnv(G1BaseEnv):
 
     def _reward_stand_still(self, ctx: RewardContext):
         diff = ctx.dof_pos - self.default_angles
-        return np.asarray(np.sum(np.abs(diff), axis=1) * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+        return np.asarray(
+            np.sum(np.abs(diff), axis=1) * self._stand_mode_mask(ctx), dtype=get_global_dtype()
+        )
 
     def _reward_stand_action_l2(self, ctx: RewardContext):
         actions = ctx.info.get("current_actions", np.zeros_like(ctx.dof_pos))
-        return np.asarray(np.sum(np.square(actions), axis=1) * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+        return np.asarray(
+            np.sum(np.square(actions), axis=1) * self._stand_mode_mask(ctx),
+            dtype=get_global_dtype(),
+        )
 
     def _reward_stand_dof_vel_l2(self, ctx: RewardContext):
         assert ctx.dof_vel is not None
@@ -1516,7 +1514,9 @@ class G1WalkEnv(G1BaseEnv):
         fallen = (tilt > np.deg2rad(float(self._reward_cfg.max_tilt_deg))) | (
             ctx.base_height < float(self._reward_cfg.min_base_height)
         )
-        return np.asarray(fallen.astype(get_global_dtype()) * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+        return np.asarray(
+            fallen.astype(get_global_dtype()) * self._stand_mode_mask(ctx), dtype=get_global_dtype()
+        )
 
     def _foot_contact_counts(self) -> tuple[np.ndarray, np.ndarray]:
         return (
@@ -1568,8 +1568,8 @@ class G1WalkEnv(G1BaseEnv):
     def _reward_stand_both_feet_contact(self, ctx: RewardContext):
         left_contact = compute_aggregated_foot_contact(self._backend, LEFT_FOOT_CONTACT_SENSORS)
         right_contact = compute_aggregated_foot_contact(self._backend, RIGHT_FOOT_CONTACT_SENSORS)
-        missing = 2.0 - left_contact.astype(get_global_dtype()) - right_contact.astype(
-            get_global_dtype()
+        missing = (
+            2.0 - left_contact.astype(get_global_dtype()) - right_contact.astype(get_global_dtype())
         )
         return np.asarray(missing * self._stand_mode_mask(ctx), dtype=get_global_dtype())
 
@@ -1738,12 +1738,8 @@ class G1WalkEnv(G1BaseEnv):
         cfg = self._gait_constraint_cfg()
         if cfg.enabled and cfg.freeze_phase_in_stand_mode:
             active = self._dynamic_mode_mask(state.info).astype(bool)
-            gait_phase[active, 0] = (gait_phase[active, 0] + self._gait_phase_delta) % (
-                2 * np.pi
-            )
-            gait_phase[active, 1] = (gait_phase[active, 1] + self._gait_phase_delta) % (
-                2 * np.pi
-            )
+            gait_phase[active, 0] = (gait_phase[active, 0] + self._gait_phase_delta) % (2 * np.pi)
+            gait_phase[active, 1] = (gait_phase[active, 1] + self._gait_phase_delta) % (2 * np.pi)
             gait_phase[~active, :] = self._stand_phase_array()
         else:
             gait_phase[:, 0] = (gait_phase[:, 0] + self._gait_phase_delta) % (2 * np.pi)
@@ -1808,9 +1804,7 @@ class G1StandStillCfg(G1WalkFlatCfg):
     scene: SceneCfg = field(
         default_factory=lambda: SceneCfg(
             model_file=str(ASSETS_ROOT_PATH / "robots" / "g1" / "scene_flat.xml"),
-            fragment_files=[
-                str(ASSETS_ROOT_PATH / "robots" / "g1" / "stand_support_task.xml")
-            ],
+            fragment_files=[str(ASSETS_ROOT_PATH / "robots" / "g1" / "stand_support_task.xml")],
         )
     )
 

@@ -89,7 +89,9 @@ def run_check(
         "distill_teacher_obs/teacher_obs_dim": teacher_dim,
         "distill_teacher_obs/student_obs_dim": student_dim,
         "distill_teacher_obs/teacher_projection": teacher_projection,
-        "distill_teacher_obs/checkpoint_path": None if checkpoint_path is None else str(checkpoint_path),
+        "distill_teacher_obs/checkpoint_path": None
+        if checkpoint_path is None
+        else str(checkpoint_path),
     }
 
     env = create_env_fn(

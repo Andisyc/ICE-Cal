@@ -249,9 +249,7 @@ class RslRlPlaybackSession:
         commands[:, :3] = command_arr
         refresh_state = getattr(self.env, "refresh_state", None)
         if not callable(refresh_state):
-            raise RuntimeError(
-                "Playback command synchronization requires env.refresh_state()."
-            )
+            raise RuntimeError("Playback command synchronization requires env.refresh_state().")
         refresh_state()
         return self.refresh_observation()
 
@@ -1097,9 +1095,7 @@ def distill_command_intents_from_commands(
     if not np.isfinite(command_array[:, :3]).all():
         raise ValueError("distill command intent requires finite command values")
     xy_norm = np.linalg.norm(command_array[:, :2], axis=1)
-    active = (xy_norm > float(xy_threshold)) | (
-        np.abs(command_array[:, 2]) > float(yaw_threshold)
-    )
+    active = (xy_norm > float(xy_threshold)) | (np.abs(command_array[:, 2]) > float(yaw_threshold))
     return tuple("active" if bool(value) else "inactive" for value in active)
 
 
@@ -1153,8 +1149,7 @@ def _distill_command_intent_targets(
     missing = {"active", "inactive"} - set(resolved)
     if missing:
         raise ValueError(
-            "distill command routing requires command_intent_expert_targets for "
-            f"{sorted(missing)}"
+            f"distill command routing requires command_intent_expert_targets for {sorted(missing)}"
         )
     return resolved
 
@@ -1192,9 +1187,7 @@ def _distill_expected_expert_tensor(
     if not indices:
         return torch.empty((0,), dtype=torch.long, device=device)
     target_tensor = torch.as_tensor(indices, dtype=torch.long, device=device)
-    if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(
-        num_experts
-    ):
+    if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(num_experts):
         raise ValueError(
             "distill command routing expert target out of range: "
             f"targets={sorted(set(indices))} num_experts={int(num_experts)}"
@@ -1296,9 +1289,7 @@ def create_distill_playback_session(
             routing_yaw_threshold = float(
                 _cfg_select(cfg, "interactive.distill_command_yaw_threshold", 0.05)
             )
-            routing_bias = float(
-                _cfg_select(cfg, "interactive.distill_command_routing_bias", 10.0)
-            )
+            routing_bias = float(_cfg_select(cfg, "interactive.distill_command_routing_bias", 10.0))
 
             def policy(obs: Any) -> Any:
                 obs_tensor = _distill_student_obs_tensor(obs, device=device_name)

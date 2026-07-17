@@ -29,7 +29,6 @@ from typing import Any
 import mujoco
 import numpy as np
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_ROBOJUDO_XML_REL = Path("assets/robots/g1/g1_29dof_rev_1_0.xml")
@@ -157,7 +156,9 @@ def inspect_unilab_policy_source(path: Path) -> dict[str, Any]:
     concat_terms: list[str] = []
     for node in ast.walk(method):
         if isinstance(node, ast.Assign):
-            if any(isinstance(target, ast.Name) and target.id == "gravity" for target in node.targets):
+            if any(
+                isinstance(target, ast.Name) and target.id == "gravity" for target in node.targets
+            ):
                 value_src = ast.unparse(node.value)
                 gravity_uses_getter = (
                     not value_src.startswith("-")

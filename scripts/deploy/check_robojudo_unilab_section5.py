@@ -22,16 +22,13 @@ from typing import Any
 
 import numpy as np
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_POLICY_CFG_REL = Path("robojudo/config/g1/policy/g1_unilab_policy_cfg.py")
 DEFAULT_POLICY_SRC_REL = Path("robojudo/policy/unilab_policy.py")
 DEFAULT_PIPELINE_SRC_REL = Path("robojudo/pipeline/rl_pipeline.py")
 DEFAULT_UTIL_SRC_REL = Path("robojudo/utils/util_func.py")
-DEFAULT_RUN_CONFIG_GLOB = (
-    "assets/models/g1/unilab/g1_walk_flat/*_mujoco/run_config.json"
-)
+DEFAULT_RUN_CONFIG_GLOB = "assets/models/g1/unilab/g1_walk_flat/*_mujoco/run_config.json"
 DEFAULT_FLASH_SAC_YAML = Path("conf/offpolicy/task/flashsac/g1_walk_flat/mujoco.yaml")
 DEFAULT_COMMANDS_SRC = Path("src/unilab/envs/locomotion/common/commands.py")
 
@@ -137,7 +134,9 @@ def read_training_snapshot(robojudo_root: Path, fallback_yaml: Path) -> dict[str
     return snapshot
 
 
-def command_remap(command: float, new_range: list[float], old_range: list[float] | None = None) -> float:
+def command_remap(
+    command: float, new_range: list[float], old_range: list[float] | None = None
+) -> float:
     if old_range is None:
         old_range = [-1.0, 0.0, 1.0]
     old_min, old_mid, old_max = old_range
@@ -151,7 +150,13 @@ def command_remap(command: float, new_range: list[float], old_range: list[float]
     return float(new_mid + (command - old_mid) * scale_pos)
 
 
-def joystick_command(command_maps: list[list[float]], *, left_x: float = 0.0, left_y: float = 0.0, right_x: float = 0.0) -> np.ndarray:
+def joystick_command(
+    command_maps: list[list[float]],
+    *,
+    left_x: float = 0.0,
+    left_y: float = 0.0,
+    right_x: float = 0.0,
+) -> np.ndarray:
     return np.asarray(
         [
             command_remap(left_y, command_maps[0]),
@@ -268,7 +273,12 @@ def main() -> int:
         if np.allclose(actual, expected, atol=TOL):
             add(checks, "PASS", name, format_vec(actual))
         else:
-            add(checks, "FAIL", name, f"actual={format_vec(actual)}, expected={format_vec(expected)}")
+            add(
+                checks,
+                "FAIL",
+                name,
+                f"actual={format_vec(actual)}, expected={format_vec(expected)}",
+            )
 
     deadzone = joystick_command(command_maps, left_y=0.03)
     outside_deadzone = joystick_command(command_maps, left_y=0.05)
@@ -288,9 +298,19 @@ def main() -> int:
         )
 
     if "def command_remap" in util_src and "np.where" in util_src and "clip" not in util_src:
-        add(checks, "PASS", "command_remap_has_no_hidden_clip", "matches current RoboJudo util_func.py")
+        add(
+            checks,
+            "PASS",
+            "command_remap_has_no_hidden_clip",
+            "matches current RoboJudo util_func.py",
+        )
     else:
-        add(checks, "WARN", "command_remap_has_no_hidden_clip", "please inspect util_func.py manually")
+        add(
+            checks,
+            "WARN",
+            "command_remap_has_no_hidden_clip",
+            "please inspect util_func.py manually",
+        )
 
     keyboard_samples = {key: keyboard_command(command_maps, key) for key in "wsadeq"}
     keyboard_exceeds: list[str] = []
@@ -309,7 +329,10 @@ def main() -> int:
     else:
         add(checks, "PASS", "keyboard_command_within_training_range", str(keyboard_samples))
 
-    if training_gait_frequency is not None and abs(float(training_gait_frequency) - gait_frequency) < TOL:
+    if (
+        training_gait_frequency is not None
+        and abs(float(training_gait_frequency) - gait_frequency) < TOL
+    ):
         add(
             checks,
             "PASS",
@@ -338,8 +361,16 @@ def main() -> int:
         )
 
     dry_phase_before = initial_gait_phase.copy()
-    dry_phase_after = dry_phase_before.copy() if freeze_phase else (dry_phase_before + phase_delta) % (2.0 * math.pi)
-    if freeze_phase and "[UNILAB_FREEZE_PHASE]" in pipeline_src and np.allclose(dry_phase_after, dry_phase_before):
+    dry_phase_after = (
+        dry_phase_before.copy()
+        if freeze_phase
+        else (dry_phase_before + phase_delta) % (2.0 * math.pi)
+    )
+    if (
+        freeze_phase
+        and "[UNILAB_FREEZE_PHASE]" in pipeline_src
+        and np.allclose(dry_phase_after, dry_phase_before)
+    ):
         add(checks, "PASS", "dry_run_freezes_gait_phase", format_vec(dry_phase_after))
     else:
         add(
@@ -352,12 +383,24 @@ def main() -> int:
     normal_phase_after = (dry_phase_before + phase_delta) % (2.0 * math.pi)
     expected_normal_phase_after = (initial_gait_phase + phase_delta) % (2.0 * math.pi)
     if np.allclose(normal_phase_after, expected_normal_phase_after, atol=TOL):
-        add(checks, "PASS", "normal_step_advances_raw_left_right_phase", format_vec(normal_phase_after))
+        add(
+            checks,
+            "PASS",
+            "normal_step_advances_raw_left_right_phase",
+            format_vec(normal_phase_after),
+        )
     else:
-        add(checks, "FAIL", "normal_step_advances_raw_left_right_phase", format_vec(normal_phase_after))
+        add(
+            checks,
+            "FAIL",
+            "normal_step_advances_raw_left_right_phase",
+            format_vec(normal_phase_after),
+        )
 
     reset_uses_initial = "self.gait_phase = self.initial_gait_phase.copy()" in policy_src
-    reset_phase = initial_gait_phase.copy() if reset_uses_initial else np.asarray([math.nan, math.nan])
+    reset_phase = (
+        initial_gait_phase.copy() if reset_uses_initial else np.asarray([math.nan, math.nan])
+    )
     if training_gait_phase_mode == "offset_phase":
         phase_offset = wrap_to_pi(float(reset_phase[1] - reset_phase[0]))
         if abs(abs(phase_offset) - math.pi) < 1.0e-5:
@@ -403,8 +446,7 @@ def main() -> int:
 
     print()
     print(
-        f"summary: {counts['FAIL']} fail(s), {counts['WARN']} warning(s), "
-        f"{counts['PASS']} pass(es)"
+        f"summary: {counts['FAIL']} fail(s), {counts['WARN']} warning(s), {counts['PASS']} pass(es)"
     )
     return 1 if counts["FAIL"] else 0
 

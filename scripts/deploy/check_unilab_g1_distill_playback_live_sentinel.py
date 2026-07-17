@@ -95,7 +95,9 @@ def _extract_actor_observation(value: Any) -> np.ndarray | None:
     return None
 
 
-def _extract_actor_command(env: Any, info: dict[str, Any], actor_obs: np.ndarray | None) -> np.ndarray | None:
+def _extract_actor_command(
+    env: Any, info: dict[str, Any], actor_obs: np.ndarray | None
+) -> np.ndarray | None:
     if actor_obs is None or actor_obs.ndim != 2:
         return None
     commands = _array_on_cpu(info.get("commands"))
@@ -104,9 +106,7 @@ def _extract_actor_command(env: Any, info: dict[str, Any], actor_obs: np.ndarray
     command_observation = commands
     command_observation_fn = getattr(env, "_command_observation", None)
     if callable(command_observation_fn):
-        command_observation = _array_on_cpu(
-            command_observation_fn(info, int(actor_obs.shape[0]))
-        )
+        command_observation = _array_on_cpu(command_observation_fn(info, int(actor_obs.shape[0])))
     if command_observation is None or command_observation.ndim != 2:
         return None
     mode_dim = 0
@@ -157,9 +157,7 @@ def _run_repeated_reset_probe(
         base_lin_norm, base_ang_norm = _backend_velocity_norms(env)
         command_row = command[0, :3] if command is not None and command.ndim == 2 else None
         actor_command_row = (
-            actor_command[0, :3]
-            if actor_command is not None and actor_command.ndim == 2
-            else None
+            actor_command[0, :3] if actor_command is not None and actor_command.ndim == 2 else None
         )
         gait_value = (
             float(gait_enabled.reshape(-1)[0])
@@ -192,7 +190,11 @@ def _run_repeated_reset_probe(
         records.append(record)
 
     command_abs_max = max(
-        (max(abs(float(item)) for item in record["command"]) for record in records if record["command"]),
+        (
+            max(abs(float(item)) for item in record["command"])
+            for record in records
+            if record["command"]
+        ),
         default=0.0,
     )
     actor_command_abs_max = max(
@@ -219,7 +221,11 @@ def _run_repeated_reset_probe(
         default=float("inf"),
     )
     qvel_max = max(
-        (float(record["base_qvel_norm"]) for record in records if record["base_qvel_norm"] is not None),
+        (
+            float(record["base_qvel_norm"])
+            for record in records
+            if record["base_qvel_norm"] is not None
+        ),
         default=float("inf"),
     )
     finite = all(
@@ -276,7 +282,11 @@ def _run_repeated_reset_probe(
     )
     if action_mode == "policy":
         action_max = max(
-            (float(record["action_abs_max"]) for record in records if record["action_abs_max"] is not None),
+            (
+                float(record["action_abs_max"])
+                for record in records
+                if record["action_abs_max"] is not None
+            ),
             default=0.0,
         )
         details["distill_playback/reset_first_action_abs_max"] = action_max
@@ -321,9 +331,7 @@ def _make_temp_student_checkpoint(
         param.data.zero_()
     if student_model_type == "moe":
         for expert in student.experts:
-            linear_layers = [
-                module for module in expert.modules() if isinstance(module, nn.Linear)
-            ]
+            linear_layers = [module for module in expert.modules() if isinstance(module, nn.Linear)]
             if linear_layers and linear_layers[-1].bias is not None:
                 linear_layers[-1].bias.data.fill_(0.05)
     else:
@@ -340,19 +348,13 @@ def _make_temp_student_checkpoint(
         "student_squash_action": bool(cfg.student.squash_action),
     }
     if student_model_type == "mlp":
-        distill_runtime_cfg["student_hidden_dims"] = [
-            int(dim) for dim in cfg.student.hidden_dims
-        ]
+        distill_runtime_cfg["student_hidden_dims"] = [int(dim) for dim in cfg.student.hidden_dims]
     else:
         distill_runtime_cfg.update(
             {
                 "student_num_experts": int(cfg.student.num_experts),
-                "student_expert_hidden_dims": [
-                    int(dim) for dim in cfg.student.expert_hidden_dims
-                ],
-                "student_router_hidden_dims": [
-                    int(dim) for dim in cfg.student.router_hidden_dims
-                ],
+                "student_expert_hidden_dims": [int(dim) for dim in cfg.student.expert_hidden_dims],
+                "student_router_hidden_dims": [int(dim) for dim in cfg.student.router_hidden_dims],
                 "student_routing_mode": str(cfg.student.routing_mode),
                 "student_router_temperature": float(cfg.student.router_temperature),
             }
@@ -496,7 +498,9 @@ def run_check(
                 "distill_playback/command_intents": list(command_intents),
                 "distill_playback/command_expected_experts": list(expected_experts),
                 "distill_playback/command_selected_experts": list(selected_experts),
-                "distill_playback/info_keys": sorted(info.keys())[:12] if isinstance(info, dict) else [],
+                "distill_playback/info_keys": sorted(info.keys())[:12]
+                if isinstance(info, dict)
+                else [],
                 "distill_playback/messages": messages,
             }
         )
@@ -516,7 +520,11 @@ def run_check(
         else:
             _add(checks, "FAIL", "distill_playback/physics_state", str(np.asarray(physics).shape))
 
-        if actions is not None and _finite_array(actions) and tuple(_shape(actions) or ()) == (1, action_dim):
+        if (
+            actions is not None
+            and _finite_array(actions)
+            and tuple(_shape(actions) or ()) == (1, action_dim)
+        ):
             _add(checks, "PASS", "distill_playback/actions", str(tuple(_shape(actions) or ())))
         else:
             _add(
@@ -532,7 +540,12 @@ def run_check(
             else:
                 _add(checks, "FAIL", "distill_playback/policy_checkpoint", "missing")
             if actions_abs_max is not None and actions_abs_max > 1.0e-6:
-                _add(checks, "PASS", "distill_playback/policy_action_nonzero", f"{actions_abs_max:.6f}")
+                _add(
+                    checks,
+                    "PASS",
+                    "distill_playback/policy_action_nonzero",
+                    f"{actions_abs_max:.6f}",
+                )
             else:
                 _add(checks, "FAIL", "distill_playback/policy_action_nonzero", str(actions_abs_max))
             if expected_experts and selected_experts:

@@ -116,11 +116,17 @@ def run_check(*, num_envs: int, steps: int, seed: int) -> tuple[list[Check], dic
                     and np.all(np.isfinite(reward))
                     and np.all(np.isfinite(height_commands))
                 ),
-                "height_tracking/log_reward": float(log.get("reward/track_base_height_exp_smooth", np.nan)),
+                "height_tracking/log_reward": float(
+                    log.get("reward/track_base_height_exp_smooth", np.nan)
+                ),
             }
         )
 
-        if env.obs_groups_spec == {"obs": 100, "critic": 103} and obs.shape[1] == 100 and critic.shape[1] == 103:
+        if (
+            env.obs_groups_spec == {"obs": 100, "critic": 103}
+            and obs.shape[1] == 100
+            and critic.shape[1] == 103
+        ):
             _add(checks, "PASS", "height_tracking/obs_contract", str(env.obs_groups_spec))
         else:
             _add(
@@ -146,12 +152,27 @@ def run_check(*, num_envs: int, steps: int, seed: int) -> tuple[list[Check], dic
             )
 
         if np.allclose(command_obs, expected_command_obs):
-            _add(checks, "PASS", "height_tracking/obs_command_block", "matches [vx, vy, yaw, target_height]")
+            _add(
+                checks,
+                "PASS",
+                "height_tracking/obs_command_block",
+                "matches [vx, vy, yaw, target_height]",
+            )
         else:
-            _add(checks, "FAIL", "height_tracking/obs_command_block", f"head={command_obs[:2].tolist()}")
+            _add(
+                checks,
+                "FAIL",
+                "height_tracking/obs_command_block",
+                f"head={command_obs[:2].tolist()}",
+            )
 
         if details["height_tracking/finite"]:
-            _add(checks, "PASS", "height_tracking/finite", "obs, critic, reward, height commands finite")
+            _add(
+                checks,
+                "PASS",
+                "height_tracking/finite",
+                "obs, critic, reward, height commands finite",
+            )
         else:
             _add(checks, "FAIL", "height_tracking/finite", "non-finite value found")
 
@@ -163,7 +184,12 @@ def run_check(*, num_envs: int, steps: int, seed: int) -> tuple[list[Check], dic
                 f"{details['height_tracking/log_reward']:.6f}",
             )
         else:
-            _add(checks, "FAIL", "height_tracking/reward_log", "missing reward/track_base_height_exp_smooth")
+            _add(
+                checks,
+                "FAIL",
+                "height_tracking/reward_log",
+                "missing reward/track_base_height_exp_smooth",
+            )
     finally:
         if env is not None:
             _close_env(env)

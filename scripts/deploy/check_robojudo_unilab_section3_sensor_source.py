@@ -32,12 +32,10 @@ from unilab.base.observations import split_obs_dict
 from unilab.base.registry import ensure_registries
 from unilab.training.seed import apply_training_seed
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROBOJUDO_ROOT = REPO_ROOT.parent / "RoboJudo_Real"
 DEFAULT_RUN_DIR = (
-    DEFAULT_ROBOJUDO_ROOT
-    / "assets/models/g1/unilab/g1_walk_flat/2026-06-12_15-46-01_mujoco"
+    DEFAULT_ROBOJUDO_ROOT / "assets/models/g1/unilab/g1_walk_flat/2026-06-12_15-46-01_mujoco"
 )
 DEFAULT_ONNX = DEFAULT_ROBOJUDO_ROOT / "assets/models/g1/unilab/g1_walk_flat/policy.onnx"
 DEFAULT_ROBOJUDO_POLICY = DEFAULT_ROBOJUDO_ROOT / "robojudo/policy/unilab_policy.py"
@@ -93,7 +91,9 @@ def run_onnx(session: ort.InferenceSession, obs: np.ndarray) -> np.ndarray:
     if fixed_batch == 1:
         return np.concatenate(
             [
-                np.asarray(session.run([output_name], {input_name: obs[i : i + 1]})[0], dtype=np.float32)
+                np.asarray(
+                    session.run([output_name], {input_name: obs[i : i + 1]})[0], dtype=np.float32
+                )
                 for i in range(obs.shape[0])
             ],
             axis=0,
@@ -172,9 +172,13 @@ def main() -> int:
             obs = np.asarray(obs, dtype=np.float32)
 
         torso_gyro = np.asarray(env._backend.get_sensor_data("torso_gyro"), dtype=np.float32)
-        torso_upvector = np.asarray(env._backend.get_sensor_data("torso_upvector"), dtype=np.float32)
+        torso_upvector = np.asarray(
+            env._backend.get_sensor_data("torso_upvector"), dtype=np.float32
+        )
         pelvis_gyro = np.asarray(env._backend.get_sensor_data("pelvis_gyro"), dtype=np.float32)
-        pelvis_upvector = np.asarray(env._backend.get_sensor_data("pelvis_upvector"), dtype=np.float32)
+        pelvis_upvector = np.asarray(
+            env._backend.get_sensor_data("pelvis_upvector"), dtype=np.float32
+        )
 
         torso_obs = obs.copy()
         pelvis_obs = obs.copy()
@@ -242,7 +246,9 @@ def main() -> int:
         )
         _add(
             checks,
-            "PASS" if source_info["uses_torso_ang_vel"] and source_info["uses_torso_quat"] else "FAIL",
+            "PASS"
+            if source_info["uses_torso_ang_vel"] and source_info["uses_torso_quat"]
+            else "FAIL",
             "robojudo_unilab_policy_uses_torso_source",
             str(source_info),
         )

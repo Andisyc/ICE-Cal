@@ -204,7 +204,10 @@ def _force_policy_command(session: Any, command: np.ndarray) -> None:
     tilt = _tilt_deg(env)
     reward_cfg = env.cfg.reward_config
     current_recovery = (
-        (np.linalg.norm(linvel[:, :2], axis=1) > float(reward_cfg.stand_recovery_lin_vel_xy_threshold))
+        (
+            np.linalg.norm(linvel[:, :2], axis=1)
+            > float(reward_cfg.stand_recovery_lin_vel_xy_threshold)
+        )
         | (tilt > float(reward_cfg.stand_recovery_tilt_deg_threshold))
     ) & (~gait_enabled)
     recovery = np.asarray(
@@ -356,7 +359,9 @@ def run_check(
             foot_stance = _foot_stance(env)
             linvel = _linvel(env)
             if action_mode == "walk-to-stand" and step > walk_to_stand_switch_step:
-                post_switch_xy_speed_values.append(float(np.max(np.linalg.norm(linvel[:, :2], axis=1))))
+                post_switch_xy_speed_values.append(
+                    float(np.max(np.linalg.norm(linvel[:, :2], axis=1)))
+                )
                 post_switch_tilt_values.append(float(np.max(tilts)))
                 post_switch_height_values.append(float(np.min(heights)))
             min_height = min(min_height, float(np.min(heights)))
@@ -505,7 +510,9 @@ def run_check(
                     f"> {float(env.cfg.reward_config.max_tilt_deg):.2f}"
                 )
             if reward_base_height_values and min(reward_base_height_values) >= -1.0e-6:
-                failures.append("base_height reward did not become negative during standing rollout")
+                failures.append(
+                    "base_height reward did not become negative during standing rollout"
+                )
     finally:
         close = getattr(env, "close", None)
         if callable(close):
@@ -545,9 +552,13 @@ def main() -> int:
             print(f"[FAIL] {failure}")
         return 1
     if args.action_mode == "reward-search":
-        print("[PASS] reward-search found a reward-preferred candidate that stands better than zero")
+        print(
+            "[PASS] reward-search found a reward-preferred candidate that stands better than zero"
+        )
     else:
-        print(f"[PASS] {args.action_mode} STAND mode stayed upright and standing reward path was active")
+        print(
+            f"[PASS] {args.action_mode} STAND mode stayed upright and standing reward path was active"
+        )
     return 0
 
 

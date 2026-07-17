@@ -1,8 +1,9 @@
 contract_id: DISTILL-TRAIN-v002
-status: active
+status: superseded
 effective_date: 2026-07-16
-updated_date: 2026-07-16
+updated_date: 2026-07-17
 supersedes: DISTILL-TRAIN-v001
+superseded_by: DISTILL-TRAIN-v003
 method_contract: DISTILL-METHOD-v001
 concept_figure: note/architecture/concept/03_g1_multiteacher_distillation_method.data.json
 

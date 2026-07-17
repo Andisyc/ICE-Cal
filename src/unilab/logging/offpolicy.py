@@ -335,7 +335,7 @@ class OffPolicyLogger(BaseTrainingLogger):
     def log_status(self, status: str, *, force: bool = False):
         self._status = status
         if force or not self._terminal_refresh_started or "[red]" in status or "ERROR" in status:
-            self._refresh(force=force)
+            self._refresh(force=True)
 
     def _build_display(self) -> Panel:
         header = self._build_compact_header(include_status=True)

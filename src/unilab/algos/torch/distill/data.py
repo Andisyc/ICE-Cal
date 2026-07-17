@@ -51,8 +51,7 @@ def _validate_role_labels(
         return None
     if len(role_labels) != int(num_samples):
         raise ValueError(
-            "role_labels length mismatch: "
-            f"labels={len(role_labels)} samples={int(num_samples)}"
+            f"role_labels length mismatch: labels={len(role_labels)} samples={int(num_samples)}"
         )
     labels = tuple(str(label) for label in role_labels)
     if any(label == "" for label in labels):
@@ -165,8 +164,7 @@ def _validate_scenario_labels(
     unknown = sorted(set(labels) - _TRANSITION_SCENARIOS)
     if unknown:
         raise ValueError(
-            "scenario_labels must contain only static_stand/walk_flat/walk_to_stop, "
-            f"got {unknown}"
+            f"scenario_labels must contain only static_stand/walk_flat/walk_to_stop, got {unknown}"
         )
     return labels
 
@@ -180,8 +178,7 @@ def _validate_transition_ages(
         return None
     if transition_ages.ndim != 1:
         raise ValueError(
-            "transition_ages must have shape (N,), "
-            f"got {tuple(transition_ages.shape)}"
+            f"transition_ages must have shape (N,), got {tuple(transition_ages.shape)}"
         )
     if int(transition_ages.shape[0]) != int(num_samples):
         raise ValueError(
@@ -195,10 +192,7 @@ def _validate_transition_ages(
         torch.int64,
         torch.uint8,
     }:
-        raise ValueError(
-            "transition_ages must have an integer dtype, "
-            f"got {transition_ages.dtype}"
-        )
+        raise ValueError(f"transition_ages must have an integer dtype, got {transition_ages.dtype}")
     if torch.any(transition_ages < -1):
         raise ValueError("transition_ages must be -1 or non-negative")
     return transition_ages
@@ -217,9 +211,7 @@ def _validate_transition_fields(
     torch.Tensor | None,
     torch.Tensor | None,
 ]:
-    has_extra = any(
-        value is not None for value in (transition_ages, command_before, command_after)
-    )
+    has_extra = any(value is not None for value in (transition_ages, command_before, command_after))
     validated_labels = _validate_scenario_labels(scenario_labels, num_samples=num_samples)
     if validated_labels is None:
         if has_extra:
@@ -228,6 +220,8 @@ def _validate_transition_fields(
     if transition_ages is None:
         raise ValueError("scenario_labels require transition_ages")
     validated_ages = _validate_transition_ages(transition_ages, num_samples=num_samples)
+    if validated_ages is None:
+        raise RuntimeError("validated transition_ages unexpectedly missing")
     if (command_before is None) != (command_after is None):
         raise ValueError("command_before and command_after must be provided together")
     validated_before = _validate_command_tensor(
@@ -308,9 +302,7 @@ class DistillationTensorDataset:
             command_before=(
                 None if self.command_before is None else self.command_before.to(device)
             ),
-            command_after=(
-                None if self.command_after is None else self.command_after.to(device)
-            ),
+            command_after=(None if self.command_after is None else self.command_after.to(device)),
         )
 
     def as_batch(self, *, start: int = 0, batch_size: int | None = None) -> DistillationBatch:
@@ -339,9 +331,7 @@ class DistillationTensorDataset:
             command_before=(
                 None if self.command_before is None else self.command_before[start:end]
             ),
-            command_after=(
-                None if self.command_after is None else self.command_after[start:end]
-            ),
+            command_after=(None if self.command_after is None else self.command_after[start:end]),
         )
 
 
@@ -505,8 +495,7 @@ def annotate_distillation_dataset_scenario(
     scenario = str(scenario_label)
     if scenario not in _TRANSITION_SCENARIOS:
         raise ValueError(
-            "workflow scenario must be static_stand/walk_flat/walk_to_stop, "
-            f"got {scenario!r}"
+            f"workflow scenario must be static_stand/walk_flat/walk_to_stop, got {scenario!r}"
         )
     if dataset.scenario_labels is not None:
         if any(label != scenario for label in dataset.scenario_labels):
@@ -530,9 +519,7 @@ def annotate_distillation_dataset_scenario(
     if dataset.command_intents is not None and any(
         intent != expected_intent for intent in dataset.command_intents
     ):
-        raise ValueError(
-            f"{scenario} scenario annotation conflicts with command_intents"
-        )
+        raise ValueError(f"{scenario} scenario annotation conflicts with command_intents")
     metadata = dict(dataset.metadata)
     metadata["scenario_annotation"] = "workflow_explicit"
     return build_distillation_dataset(
@@ -613,9 +600,7 @@ def build_multitask_distillation_dataset(
                 f"multitask source {path} requires row role_labels when preservation is enabled"
             )
         if dataset.teacher_actions is None:
-            raise ValueError(
-                f"multitask source {path} must contain cached teacher_actions"
-            )
+            raise ValueError(f"multitask source {path} must contain cached teacher_actions")
         has_commands = dataset.commands is not None
         if source_has_commands is None:
             source_has_commands = has_commands
@@ -625,9 +610,7 @@ def build_multitask_distillation_dataset(
         if source_has_command_intents is None:
             source_has_command_intents = has_command_intents
         elif has_command_intents != source_has_command_intents:
-            raise ValueError(
-                "multitask sources must either all include command_intents or none"
-            )
+            raise ValueError("multitask sources must either all include command_intents or none")
         transition_presence = {
             "scenario_labels": dataset.scenario_labels is not None,
             "transition_ages": dataset.transition_ages is not None,
@@ -643,8 +626,7 @@ def build_multitask_distillation_dataset(
                 if transition_presence[field_name] != source_transition_presence[field_name]
             )
             raise ValueError(
-                "multitask sources must either all include "
-                f"{mismatched_field} or none"
+                f"multitask sources must either all include {mismatched_field} or none"
             )
         if source_student_obs_dim is None:
             source_student_obs_dim = dataset.student_obs_dim
@@ -675,14 +657,14 @@ def build_multitask_distillation_dataset(
         source_preserve_role_labels.append(preserve_row_labels)
         source_scenarios.append(None if scenario in (None, "") else str(scenario))
 
+    if source_transition_presence is None:
+        raise RuntimeError("multitask source transition presence was not initialized")
+    validated_transition_presence = source_transition_presence
+
     student_obs = torch.cat([dataset.student_obs for dataset in datasets], dim=0)
     teacher_obs = torch.cat([dataset.teacher_obs for dataset in datasets], dim=0)
     teacher_actions = torch.cat(
-        [
-            dataset.teacher_actions
-            for dataset in datasets
-            if dataset.teacher_actions is not None
-        ],
+        [dataset.teacher_actions for dataset in datasets if dataset.teacher_actions is not None],
         dim=0,
     )
     commands = (
@@ -707,15 +689,19 @@ def build_multitask_distillation_dataset(
             if dataset.scenario_labels is not None
             for label in dataset.scenario_labels
         )
-        if source_transition_presence["scenario_labels"]
+        if validated_transition_presence["scenario_labels"]
         else None
     )
     transition_ages = (
         torch.cat(
-            [dataset.transition_ages for dataset in datasets if dataset.transition_ages is not None],
+            [
+                dataset.transition_ages
+                for dataset in datasets
+                if dataset.transition_ages is not None
+            ],
             dim=0,
         )
-        if source_transition_presence["transition_ages"]
+        if validated_transition_presence["transition_ages"]
         else None
     )
     command_before = (
@@ -723,7 +709,7 @@ def build_multitask_distillation_dataset(
             [dataset.command_before for dataset in datasets if dataset.command_before is not None],
             dim=0,
         )
-        if source_transition_presence["command_before"]
+        if validated_transition_presence["command_before"]
         else None
     )
     command_after = (
@@ -731,7 +717,7 @@ def build_multitask_distillation_dataset(
             [dataset.command_after for dataset in datasets if dataset.command_after is not None],
             dim=0,
         )
-        if source_transition_presence["command_after"]
+        if validated_transition_presence["command_after"]
         else None
     )
     role_label_chunks: list[tuple[str, ...]] = []

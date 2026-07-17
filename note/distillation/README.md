@@ -58,13 +58,17 @@ checkpoint whose routing follows the same intent contract.
   height teacher checkpoint is currently part of the active training route.
 - Existing local student checkpoints and the RT-8 bounded candidate are
   candidate artifacts only. None is a promoted or accepted policy.
-- Restart sensitivity is traced to playback reset/command ordering and remains
-  unfixed.
+- Playback reset/command ordering is repaired and contract/live-reset tested;
+  transition policy quality remains a separate unresolved boundary.
 - Stop-transition collection and the scenario workflow are implemented; the
   RT-8 candidate still fails the physical walk-to-stop acceptance gate.
-- The seven-command training workflow is retained only for diagnostics. The
+- The seven-command training workflow is intended only for diagnostics, but
+  its explicit diagnostic-only labeling remains an open checklist item. The
   accepted public path is the single-entry workflow owned by
-`DISTILL-TRAIN-v002`.
+`DISTILL-TRAIN-v003`.
+- The persistent runtime is integrated but not promoted. It remains explicit
+  opt-in and the default execution mode remains `legacy` because E67 found no
+  stable end-to-end speedup.
 - Iterative DAgger means repeated outer student rollouts followed by relabel,
   cumulative aggregation, and update. Repeating optimizer updates on one fixed
   dataset is not an additional DAgger iteration.

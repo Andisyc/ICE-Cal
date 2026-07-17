@@ -146,11 +146,15 @@
           "summary": "管理同步或异步 rollout collector IPC replay 与异常生命周期",
           "owns": "collector process shared resources replay transport weight sync 与 cleanup",
           "mustNot": "传输层不能改变 observation reward done 或 action 语义",
-          "objects": ["AsyncRunner", "collector process", "replay buffer", "error pipe", "policy weights"],
+          "objects": ["AsyncRunner", "collector process", "replay buffer", "error pipe", "policy weights", "SharedWeightSync", "PersistentDistillationRuntime", "DaggerCollectRequest", "DaggerCollectResult", "expected_weight_version", "performance_clock", "DistillationStageObservationAccumulator", "DistillationStageObservation", "performance_metrics_schema_version"],
           "files": [
             {"id":"U-SRC-012","path":"src/unilab/ipc/async_runner.py","sourceLine":40,"role":"异步 runner 生命周期","functions":["AsyncRunner._start_collector()","AsyncRunner._check_collector_alive()","AsyncRunner.close()"]},
             {"id":"U-SRC-013","path":"src/unilab/algos/torch/offpolicy/double_buffer_runner.py","sourceLine":41,"role":"off-policy runner implementation","functions":["learn()"]},
-            {"id":"U-SRC-014","path":"src/unilab/ipc/replay_buffer.py","sourceLine":11,"role":"shared replay transport","functions":[]}
+            {"id":"U-SRC-014","path":"src/unilab/ipc/replay_buffer.py","sourceLine":11,"role":"shared replay transport","functions":[]},
+            {"id":"U-SRC-034","path":"src/unilab/algos/torch/distill/async_runtime.py","sourceLine":20,"role":"DAgger persistent collector adapter","functions":["PersistentDaggerCollectorRunner.start()","PersistentDaggerCollectorRunner.collect()","validate_dagger_collect_result()"]},
+            {"id":"U-SRC-035","path":"src/unilab/algos/torch/distill/persistent_runtime.py","sourceLine":31,"role":"DAgger shared student lifecycle","functions":["PersistentDistillationRuntime.activate_checkpoint()","PersistentDistillationRuntime.collect()","PersistentDistillationRuntime.close()"]},
+            {"id":"U-SRC-036","path":"src/unilab/algos/torch/distill/persistent_resources.py","sourceLine":20,"role":"DAgger exact resource cache and reset lifecycle","functions":["PersistentResourceCache.acquire()","PersistentResourceCache.run_request()","PersistentResourceCache.close()"]},
+            {"id":"U-SRC-037","path":"src/unilab/algos/torch/distill/g1_persistent_worker.py","sourceLine":80,"role":"DAgger production G1 worker and HP-4a2a request observation owner","functions":["PersistentG1DistillationWorker.collect()","PersistentG1DistillationWorker.close()"]}
           ],
           "mainRoute": [
             "B1 runner setup: env spec plus cfg -> collector learner shared resources",
@@ -160,8 +164,8 @@
           ],
           "mainRouteTitles": ["创建运行资源", "采集 Transition", "传输训练数据", "传播错误并清理"],
           "review": ["collector 异常必须回传完整 traceback", "shared memory 预算与 cleanup 必须可证明"],
-          "tests": ["S1 IPC layout", "S2 collector failure propagation", "S3 async runner integration"],
-          "gap": "同步 PPO 与异步 off-policy 的 storage 形态不同"
+          "tests": ["S1 IPC layout", "S2 collector failure propagation", "S2 DAgger persistent lifecycle and barrier", "S2 exact resource reuse/reset/cleanup", "S2 HP-4a2a request observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S3 async runner integration", "S4 bounded G1 MuJoCo lifecycle"],
+          "gap": "DAgger runtime 已完成接入, E61/E65/E67 证明 NO_STABLE_SPEEDUP, HP-6/E86 production gate PASS; promotion deferred 且默认 legacy; 同步 PPO 与异步 off-policy storage 形态仍不同"
         },
         {
           "id": "U-RT-07",
@@ -200,10 +204,11 @@
           "summary": "保存 run config contract snapshot metrics checkpoint 与结束摘要",
           "owns": "log dir run identity experiment metadata checkpoint resolution 与 summary",
           "mustNot": "不能按文件大小猜 checkpoint 语义或静默加载另一个 run",
-          "objects": ["run_config.json", "contract_snapshot", "checkpoint", "run_summary.json"],
+          "objects": ["run_config.json", "contract_snapshot", "checkpoint", "run_summary.json", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "distillation metrics artifact"],
           "files": [
             {"id":"U-SRC-018","path":"src/unilab/training/experiment.py","sourceLine":172,"role":"experiment metadata owner","functions":["ExperimentTracker.start()","ExperimentTracker.update_summary()","ExperimentTracker.finish()"]},
-            {"id":"U-SRC-019","path":"src/unilab/training/run.py","sourceLine":16,"role":"run and checkpoint helpers","functions":["parse_checkpoint_path()"]}
+            {"id":"U-SRC-019","path":"src/unilab/training/run.py","sourceLine":16,"role":"run and checkpoint helpers","functions":["parse_checkpoint_path()"]},
+            {"id":"U-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"distillation performance schema, full request/workflow/cleanup identity, and atomic run artifact","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]}
           ],
           "mainRoute": [
             "B1 tracker start: resolved cfg plus identity -> run_config and contract snapshot",
@@ -212,8 +217,8 @@
           ],
           "mainRouteTitles": ["记录 Run 身份", "保存 Checkpoint", "收束运行摘要"],
           "review": ["checkpoint 路径与 run_config 必须成对核对", "跨 backend 需要读取 contract snapshot"],
-          "tests": ["S1 experiment metadata", "S2 checkpoint path resolution", "sim2sim snapshot contract"],
-          "gap": "旧 run 无 snapshot 时只能 warning fallback"
+          "tests": ["S1 experiment metadata", "S1/S3 distillation metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S2 checkpoint path resolution", "sim2sim snapshot contract"],
+          "gap": "request/workflow/learner/cleanup 与 reset/resource timing 已由 E61/E65/E67 runtime-confirmed, 但 NO_STABLE_SPEEDUP; HP-6/E86 production gate PASS, promotion deferred; 旧 run 无 snapshot 时只能 warning fallback"
         },
         {
           "id": "U-RT-09",

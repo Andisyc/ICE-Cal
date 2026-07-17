@@ -258,7 +258,9 @@ def test_height_obs_appends_target_height_after_velocity_command() -> None:
     expected_command_block = np.concatenate(
         [info["commands"], info["height_commands"]], axis=1, dtype=get_global_dtype()
     )
-    np.testing.assert_allclose(obs["obs"][:, command_start : command_start + 4], expected_command_block)
+    np.testing.assert_allclose(
+        obs["obs"][:, command_start : command_start + 4], expected_command_block
+    )
     np.testing.assert_allclose(
         obs["critic"][:, command_start : command_start + 4], expected_command_block
     )

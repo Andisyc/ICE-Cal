@@ -23,7 +23,7 @@
           "summary": "Hydra 入口选择单入口 workflow 或保留的低层诊断操作",
           "owns": "操作模式 参数组合 teacher/student checkpoint 解析与 owner guard",
           "mustNot": "不拥有数据语义 loss 物理验收或 checkpoint 质量结论",
-          "objects": ["DictConfig", "operation mode", "teacher checkpoint", "student init"],
+          "objects": ["DictConfig", "operation mode", "training.workflow.execution_mode", "persistent runtime factory", "teacher checkpoint", "student init"],
           "files": [
             {"id":"DT-SRC-001","path":"conf/distill/config.yaml","sourceLine":1,"role":"Hydra defaults","functions":[]},
             {"id":"DT-SRC-002","path":"scripts/train_distill.py","sourceLine":1382,"role":"distillation assembly","functions":["run_single_entry_workflow()","run_collect_dataset()","run_multitask_dataset_assembly()","run_offline_dataset_update()","run_online_dagger_update()","main()"]},
@@ -36,31 +36,35 @@
           ],
           "mainRouteTitles": ["选择正式操作", "验证 Owner Contract", "调用领域 Owner"],
           "review": ["先确认本次命令只触发一个正式操作", "检查 checkpoint 参数是否指向预期父模型"],
-          "tests": ["S0 config compose", "S2 train_distill entry connectivity"],
-          "gap": "低层诊断分支仍保留; physical acceptance 尚未并入 promotion stage"
+          "tests": ["S0 config compose", "S2 train_distill entry connectivity", "S2 legacy/persistent execution-mode dispatch"],
+          "gap": "persistent_async 已完成接入且 HP-6/E86 production gate PASS, 但 E67 为 NO_STABLE_SPEEDUP; promotion deferred, 默认 legacy, 低层诊断分支显式标记仍待收口"
         },
         {
           "id": "DT-MOD-WORKFLOW",
           "title": "Distillation Workflow",
           "summary": "按角色与 scenario 复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
-          "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage resume 与 fork",
-          "mustNot": "不加载大 tensor 来判断文件存在性, 不把 route pass 当作物理质量",
-          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
+          "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage outer iteration barrier resume 与 fork",
+          "mustNot": "不加载大 tensor 来判断文件存在性, 不在 scenario collection 中发布 student_(k+1), 不把 route pass 当作物理质量",
+          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
           "files": [
             {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
-            {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]}
+            {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]},
+            {"id":"DT-SRC-034","path":"src/unilab/algos/torch/distill/async_runtime.py","sourceLine":20,"role":"persistent collector request/result interface","functions":["validate_dagger_collect_result()","PersistentDaggerCollectorRunner.collect()"]},
+            {"id":"DT-SRC-035","path":"src/unilab/algos/torch/distill/persistent_runtime.py","sourceLine":31,"role":"shared resident student owner","functions":["PersistentDistillationRuntime.activate_checkpoint()","PersistentDistillationRuntime.collect()","PersistentDistillationRuntime.close()"]},
+            {"id":"DT-SRC-036","path":"src/unilab/algos/torch/distill/persistent_resources.py","sourceLine":20,"role":"exact-identity teacher/env lifecycle owner","functions":["PersistentResourceCache.acquire()","PersistentResourceCache.run_request()","PersistentResourceCache.close()"]},
+            {"id":"DT-SRC-037","path":"src/unilab/algos/torch/distill/g1_persistent_worker.py","sourceLine":80,"role":"production G1 persistent collection worker","functions":["PersistentG1DistillationWorker.collect()","PersistentG1DistillationWorker.close()","build_persistent_g1_distillation_runtime()"]}
           ],
           "mainRoute": [
             "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",
             "B2 WorkflowScenarioSpec: scenario roles + quota -> manifest contract",
             "B3 run_bootstrap_workflow(): role decisions -> collected/reused role data + bootstrap checkpoint",
-            "B4 run_multirole_dagger_workflow(): student_k + scenarios -> cumulative dataset + student_(k+1)",
-            "B5 run manifest commit: completed stage -> resumable identity chain"
+            "B4 run_multirole_dagger_workflow(): activate student_k checkpoint/version once + scenarios -> cumulative dataset + student_(k+1)",
+            "B5 fork_workflow_run(): completed parent sources + scenario/row-role identity -> resumable active-schema chain"
           ],
           "mainRouteTitles": ["按角色判定 Artifact", "定义 Scenario Quota", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
-          "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查 iteration k+1 是否加载 iteration k checkpoint"],
-          "tests": ["S1 hash/schema decisions", "S2 Bootstrap connectivity", "S2 DAgger resume/fork probe"],
-          "gap": "E27 已完成 real checkpoint formal workflow 与 manifest lineage; E28 physical acceptance blocked"
+          "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查同一 iteration 全部 scenario 是否共享 student_k checkpoint/version", "检查 student_(k+1) activation 是否晚于 updater"],
+          "tests": ["S1 hash/schema decisions", "S2 Bootstrap connectivity", "S2 DAgger resume/fork scenario-identity probe", "S2 persistent barrier event trace", "S2 exact resource lifecycle and dataset differential", "S4 bounded G1 MuJoCo lifecycle"],
+          "gap": "E65/E67 已完成 two-iteration amortization 与多重复判定: cache/residual amortization confirmed, 但 NO_STABLE_SPEEDUP 且无 HP-5 owner; HP-6/E86 production gate PASS, promotion deferred"
         }
       ]
     },
@@ -94,9 +98,9 @@
           "id": "DT-MOD-COLLECTOR",
           "title": "Role Collector",
           "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态; transition collector 作为独立场景 owner",
-          "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection 与 collection metadata",
+          "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection collection metadata 与 opt-in stage observations",
           "mustNot": "不训练 student, 不把 finite action 当作物理质量",
-          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after"],
+          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "performance_clock", "DistillationStageObservation"],
           "files": [
             {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":282,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_set_transition_command_rows()"]},
             {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":989,"role":"collection connector","functions":["run_collect_dataset()"]}
@@ -106,12 +110,13 @@
             "B2 collector.py command mask: commands + thresholds -> selected intent rows",
             "B3 collector.py rollout/label policies: selected states -> teacher targets + executed actions",
             "B4 transition owner: student-state rows -> atomic active/zero command switch -> command-intent rollout expert -> role-labelled targets",
-            "B5 build_distillation_dataset(): collected chunks -> persisted semantic dataset"
+            "B5 build_distillation_dataset(): collected chunks -> persisted semantic dataset",
+            "B6 opt-in performance accumulator: owner spans -> copied dataset metadata -> worker pass-through"
           ],
-          "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "执行 Transition Scenario", "生成 Dataset"],
+          "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "执行 Transition Scenario", "生成 Dataset", "记录 Owner Stage"],
           "review": ["检查 inactive 数据是否真的零指令", "检查 done/reset 后的行是否仍保持语义"],
-          "tests": ["S1 projection/filter", "S2 teacher/student rollout", "S4 live collection"],
-          "gap": "E27 已完成 real G1 transition collection; E28 student walk-to-stop physical gate failed; E32/E33 track rollout authority repair"
+          "tests": ["S1 projection/filter", "S1/S2 HP-4a2b fake-clock observations", "S2 teacher/student rollout", "S4 live collection"],
+          "gap": "collector 与 reset/resource timing 已通过 E61/E65/E67 runtime-confirmed, 但端到端 NO_STABLE_SPEEDUP; HP-6/E86 production gate PASS; RT-10 physical acceptance 未完成"
         },
         {
           "id": "DT-MOD-DATA",
@@ -270,12 +275,14 @@
           "summary": "测试 tensor dataflow optimizer checkpoint 和 playback route",
           "owns": "deterministic regression integration probe 与 live evidence inventory",
           "mustNot": "不把 fake tensor 或一次启动等同于机器人策略质量",
-          "objects": ["S/T matrix", "contract fixtures", "live sentinel output", "evidence ledger"],
+          "objects": ["S/T matrix", "contract fixtures", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "run-local metrics artifact", "live sentinel output", "evidence ledger"],
           "files": [
             {"id":"DT-SRC-016","path":"tests/algos/test_g1_distillation_contract.py","sourceLine":1,"role":"algorithm/data contracts","functions":[]},
             {"id":"DT-SRC-017","path":"tests/scripts/test_train_scripts.py","sourceLine":1,"role":"entrypoint connectivity","functions":[]},
             {"id":"DT-SRC-018","path":"tests/visualization/test_interactive_playback.py","sourceLine":1,"role":"playback contracts","functions":[]},
-            {"id":"DT-SRC-019","path":"scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py","sourceLine":166,"role":"current weak live sentinel","functions":["run_check()"]}
+            {"id":"DT-SRC-019","path":"scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py","sourceLine":166,"role":"current weak live sentinel","functions":["run_check()"]},
+            {"id":"DT-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"HP-4 request workflow learner cleanup identity and atomic artifact owner","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
+            {"id":"DT-SRC-039","path":"tests/algos/test_distill_performance.py","sourceLine":1,"role":"HP-4a fake-clock and persistence contracts","functions":[]}
           ],
           "mainRoute": [
             "B1 contract tests: semantic fixture -> local invariant result",
@@ -285,8 +292,8 @@
           ],
           "mainRouteTitles": ["验证局部语义", "验证正式连接", "采集真实运行事实", "更新人类验收状态"],
           "review": ["区分 PASS route 与 PASS policy quality", "确保失败场景记录 checkpoint identity 和 command schedule"],
-          "tests": ["S0-S2 current suites", "S4 E28 physical acceptance BLOCKED"],
-          "gap": "E28 已有 repeated reset 与 walk-to-stop live suite, 但 candidate done_count=19 且 stop-speed decay failed"
+          "tests": ["S0-S2 current suites", "S1/S3 HP-4a metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S4 E61/E65/E67 MuJoCo timing and A/B accepted; NO_STABLE_SPEEDUP", "S4 E28 physical acceptance BLOCKED"],
+          "gap": "HP-4 request/workflow/learner/cleanup timing 与 r8/r9/r10 A/B 已 runtime-confirmed, 但 NO_STABLE_SPEEDUP; HP-6/E86 production gate PASS; promotion deferred, RT-10 physical acceptance 未完成"
         }
       ]
     }
