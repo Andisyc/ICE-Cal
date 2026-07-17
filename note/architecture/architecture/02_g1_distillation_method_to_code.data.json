@@ -45,14 +45,18 @@
           "summary": "按角色与 scenario 复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
           "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage outer iteration barrier resume 与 fork",
           "mustNot": "不加载大 tensor 来判断文件存在性, 不在 scenario collection 中发布 student_(k+1), 不把 route pass 当作物理质量",
-          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
+          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "FormalDaggerIdentitySpec", "formal freeze", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
           "files": [
             {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
             {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]},
             {"id":"DT-SRC-034","path":"src/unilab/algos/torch/distill/async_runtime.py","sourceLine":20,"role":"persistent collector request/result interface","functions":["validate_dagger_collect_result()","PersistentDaggerCollectorRunner.collect()"]},
             {"id":"DT-SRC-035","path":"src/unilab/algos/torch/distill/persistent_runtime.py","sourceLine":31,"role":"shared resident student owner","functions":["PersistentDistillationRuntime.activate_checkpoint()","PersistentDistillationRuntime.collect()","PersistentDistillationRuntime.close()"]},
             {"id":"DT-SRC-036","path":"src/unilab/algos/torch/distill/persistent_resources.py","sourceLine":20,"role":"exact-identity teacher/env lifecycle owner","functions":["PersistentResourceCache.acquire()","PersistentResourceCache.run_request()","PersistentResourceCache.close()"]},
-            {"id":"DT-SRC-037","path":"src/unilab/algos/torch/distill/g1_persistent_worker.py","sourceLine":80,"role":"production G1 persistent collection worker","functions":["PersistentG1DistillationWorker.collect()","PersistentG1DistillationWorker.close()","build_persistent_g1_distillation_runtime()"]}
+            {"id":"DT-SRC-037","path":"src/unilab/algos/torch/distill/g1_persistent_worker.py","sourceLine":80,"role":"production G1 persistent collection worker","functions":["PersistentG1DistillationWorker.collect()","PersistentG1DistillationWorker.close()","build_persistent_g1_distillation_runtime()"]},
+            {"id":"DT-SRC-041","path":"src/unilab/algos/torch/distill/formal_identity.py","sourceLine":19,"role":"formal parent-lineage command freeze and oracle owner","functions":["FormalDaggerIdentitySpec","build_formal_command_identity()","build_formal_freeze_document()","build_formal_supervisor_source()","build_formal_oracle_source()"]},
+            {"id":"DT-SRC-042","path":"tests/algos/test_distill_formal_identity.py","sourceLine":1,"role":"formal identity fail-closed contracts","functions":[]},
+            {"id":"DT-SRC-043","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":57,"role":"thin FT-0 no-training observation and artifact connector","functions":["load_materialization_spec()","observe_gate0()","materialize_from_spec()"]},
+            {"id":"DT-SRC-044","path":"tests/scripts/test_materialize_formal_dagger_gate0.py","sourceLine":1,"role":"FT-0 connector file-level integration contracts","functions":[]}
           ],
           "mainRoute": [
             "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",

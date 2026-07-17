@@ -69,11 +69,9 @@ Current status: **integration complete, promotion deferred, default off**.
   owner.
 - The manual collect/offline route is intended as diagnostic-only, but its
   explicit formal labeling remains a checklist item.
-- The live persistent run confirms the runtime route but exposes a new learner
-  staging bottleneck. HP-7a passes E92: current staging is 31.835 s, cached
-  candidate staging is 1.336 s (23.83x), label-pool construction owns 93.8%,
-  and semantic differential passes. End-to-end speedup remains unconfirmed and
-  this does not reopen default-on promotion.
+- E99 closes the HP-7 staging optimization and bounded live route. Staging is
+  now 9.32% of wall time; forward/backward own the measured learner cost.
+  End-to-end A/B speedup remains unconfirmed and default-on is not reopened.
 
 ## Current Documents
 
@@ -99,11 +97,30 @@ Current status: **integration complete, promotion deferred, default off**.
 ## Next Human Decision
 
 No automatic training, promotion, default-on, commit, or PR action is active.
-HP-7c production-path sentinel passes E95, and Gate 0 identity/owner-CLI compose
-passes the E97 amendment boundary. Runtime-owner hashes match, manifest-owned
-role paths are resolved, exact required/effective updates `12320` are accepted,
-and parent metrics drift is recorded audit-only. Gate 0 remains partial until a
-server-side oracle v6 materializer freezes the complete command/dependency/GPU/
-scenario/metrics/cleanup/telemetry contract and passes its no-training
-preflight. E98 records r5 identity PASS and v6 local contract PASS. Gate 1,
-promotion, default-on, commit, and PR actions remain closed.
+E99 closes HP-7 implementation and bounded live integration PASS. The frozen
+r6 workflow completes one iteration and 12,320 updates with accepted checkpoint,
+metrics, and cleanup. Staging is 9.32% of wall time; forward/backward now own
+the learner cost. No second run, end-to-end A/B claim, workflow-specific GPU
+memory claim, promotion, or default-on action is authorized. Persistent remains
+legacy/OFF.
+
+E100 returns control to the main session. HP engineering is complete, but no
+formal DAgger run is frozen. The next human decision is checkpoint lineage:
+start cleanly from the original parent iteration 3, explicitly promote the r6
+sentinel checkpoint, or evaluate r6 first. A selected route still requires a
+new workload/output/oracle freeze. Do not reuse the r6 supervisor.
+
+The human has now selected the clean, independent formal-training direction.
+`plans/formal_dagger_training_identity.md` freezes the planning boundary:
+formal lineage starts from the original completed parent iteration 3; the r6
+performance sentinel checkpoint and supervisor are excluded. The current step
+is FT-0 no-training identity/oracle materialization. FT-1 real training remains
+closed until FT-0 returns a complete accepted freeze and the human separately
+authorizes execution.
+
+E101-E103 complete the FT-0 formal-identity owner, thin deploy connector, local
+file-level preflight integration, and formal r1 spec. The spec has two added
+outer iterations from original
+parent iteration 3, update schedule `[12320, 12352]`, total `24672`, and a new
+output root. The next boundary is one authenticated server no-training
+materialization that recomputes and verifies the schedule. FT-1 remains closed.

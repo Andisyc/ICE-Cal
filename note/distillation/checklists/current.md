@@ -105,11 +105,16 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | HP mainline owner-aware merge | mainline integration owner | S0/S1/S2/S3 / T-merge+full-sweep | PASS | E87 commit `06d31ad6`; 1578 passed, 30 skipped, 256 deselected; Ruff/mypy/Pyright pass |
 | Persistent server runtime identity | workflow/runtime metrics owners | S3/S4 / T-live+persist+identity | PASS | E88 stable collector PID `1127593`; workflow PID `1127462`; per-iteration weight versions 1/2/3 |
 | Persistent live learner bottleneck | offline learner + metrics owners | S3/S4 / T-live+profile | PARTIAL | E89 batch staging 515.90 s and about 61% of iteration-2 workflow; staging sub-owner split unmeasured |
-| HP-7 advanced learner-staging optimization | offline/data/performance owners | S0/S3 / T-plan+live-owner | PARTIAL | E92-E95 close discriminator, design, owner/S2 integration, and production-path sentinel; bounded persistent end-to-end evidence remains open |
+| HP-7 advanced learner-staging optimization | offline/data/performance owners | S0/S3 / T-plan+live-owner | PASS | E92-E99: owner cache, formal integration, production sentinel, and one frozen 12320-update bounded workflow PASS; no end-to-end A/B or promotion claim |
 | HP-7a learner-staging discriminator | offline/data owners | S1/S3 / T-benchmark+semantic-diff | PASS | E92: current 31.835 s, cached 1.336 s, 23.83x; pool build is 93.8%; all four semantic differentials pass |
 | HP-7b immutable label-pool cache design | offline sampler owner | S0/S1 / T-design+memory-bound | PASS | E93 freezes one invocation-local CPU/int64 pool cache per loaded dataset, exact RNG equivalence, `8N` payload bound, owner files, three evidence gates, and HP-7c stop |
-| HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PARTIAL | E94 S1/S2 PASS; E95 production path: one build/512 updates, digest+RNG equal, 2.1668 s staging, no training; bounded persistent workflow pending |
-| HP-7c bounded persistent workflow freeze | governance/workflow/acceptance owners | S0/S3/S4 / T-identity+oracle+live | PARTIAL | E98: r5 identity preflight PASS; oracle v6 completeness contract locally passes 3 tests/Ruff/compile, server v6 preflight pending; Gate 1 closed |
+| HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PASS | E99: frozen r6 one-iteration workflow accepted, 12320 updates, checkpoint/metrics/cleanup complete; staging 9.32% of wall |
+| HP-7c bounded persistent workflow freeze | governance/workflow/acceptance owners | S0/S3/S4 / T-identity+oracle+live | PASS | E99: r6 freeze/oracle/supervisor accepted before and after one bounded workflow; no second run or promotion authorized |
+| Formal DAgger training plan | governance + active training contract | S0 / T-plan+lineage | PASS | `plans/formal_dagger_training_identity.md`: clean lineage starts from original parent iteration 3; r6 sentinel excluded |
+| Formal DAgger two-round r1 spec | formal identity owner | S0/S1 / T-workload+lineage+output | PASS | E103: parent iter 3, rows 853504/855040, updates 12320/12352, total 24672, fresh output root, no training |
+| FT-0 formal identity materialization | distill formal-identity owner + deploy connector | S0/S1 / T-identity+compose+oracle | PARTIAL | E101-E102 owner and local connector PASS; reviewed formal spec plus authenticated server no-training materialization/preflight pending |
+| FT-1 formal DAgger execution | formal CLI/workflow/runtime/artifact owners | S2/S3/S4 / T-formal+artifact+live | PENDING | Closed until separately authorized FT-0 PASS; one output identity, no retry/resume/promotion |
+| Formal candidate RT-10 physical acceptance | playback/physical acceptance owner | S4 / T-physical | PENDING | Separate post-training gate; training artifact PASS is not physical PASS |
 
 ## Current Stop Condition
 

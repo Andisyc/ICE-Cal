@@ -1,6 +1,6 @@
 # HP-7 Advanced DAgger Learner-Staging Optimization
 
-Status: HP-7c owner implementation and integration PASS; bounded live gate pending.
+Status: HP-7 implementation, integration, and bounded live gate PASS; closed without promotion.
 
 Phase ID: `HP-7`. This phase begins only because the new server live run
 identifies a stable learner-side owner that E67's earlier short A/B workload
@@ -153,17 +153,27 @@ the sampled-index digest and final RNG state, and records `2.1668 s` staging
 boundary is one separately frozen bounded persistent workflow; the sentinel
 does not establish end-to-end training speedup.
 
-Bounded-workflow design: frozen in
-`plans/hp7c3_bounded_persistent_workflow_freeze.md`. It separates no-training
-Gate 0 identity/oracle materialization from Gate 1 execution, accepts the
-production-derived exact effective count `12320`, and requires a new output
-identity. Gate 0 owner-CLI compose passes E97, but freeze/oracle server
-materialization remains pending. Gate 1 remains separately unauthorized.
+Bounded-workflow design is recorded in
+`plans/hp7c3_bounded_persistent_workflow_freeze.md`. E99 completes both its
+no-training identity/oracle gate and its single authorized live gate under r6.
+The r6 identity is closed and may not be rerun or resumed.
 
 ## Current Decision
 
-HP-7a passes E92, HP-7b is frozen by E93, HP-7c1/HP-7c2 pass E94, and the
-HP-7c3 production-path sentinel passes E95. Return control before the remaining
-bounded persistent workflow. Batch scheduling, pinned memory, GPU-native
-labels, training-semantic changes, promotion, and default-on remain
-unauthorized.
+HP-7a passes E92, HP-7b is frozen by E93, HP-7c1/HP-7c2 pass E94, E95 closes
+the production-path sentinel, and E99 closes the bounded persistent workflow.
+Batch scheduling, pinned memory, GPU-native labels, training-semantic changes,
+promotion, and default-on remain unauthorized.
+
+E99 closes HP-7c3 with one frozen 12,320-update persistent workflow. Batch
+staging is `34.3355 s` (`0.00278697 s/update`, 9.32% of wall time); the active
+learner cost is now forward/backward. The approximately 22.3x per-update
+reduction relative to E92 is cross-workload supporting evidence, not an
+end-to-end A/B claim. GPU telemetry is contaminated by unrelated PIDs, so no
+workflow-specific GPU-memory claim is allowed. HP-7 closes without a rerun;
+persistent remains legacy/OFF and promotion remains unauthorized.
+
+E100 closes this volatile HP plan for handback to the main session. Any formal
+training is a new plan, not HP-7 continuation. It must first choose original
+parent iteration 3 versus explicit r6-checkpoint promotion (or an r6 policy
+evaluation), then freeze a new workload/output/oracle identity.

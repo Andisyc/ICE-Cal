@@ -1657,3 +1657,74 @@ Date: 2026-07-15
   supervisor. Local contract evidence is 3 tests plus Ruff/compile/diff PASS.
 - Decision: Gate 0 remains PARTIAL until v6 server materialization/preflight.
   Gate 1 remains closed.
+
+## E99: HP-7c3 Bounded Persistent Workflow PASS
+
+- Artifact: `evidence/2026-07-17-hp7c3-bounded-persistent-pass.md`.
+- Frozen r6 oracle accepts one real persistent iteration with 12,320 updates,
+  853,504 aggregate rows, checkpoint, 28 successful metric records, and cleanup.
+- Wall time is 368.38 s. Staging is 34.3355 s (`0.00278697 s/update`, 9.32% of
+  wall); backward is 167.6141 s, forward 131.3816 s, and optimizer 12.9387 s.
+- The bounded per-update staging is about 22.3x below E92's current-path
+  observation, but this is a cross-workload inference, not a frozen A/B or
+  end-to-end speedup claim.
+- NVIDIA telemetry contains unrelated PIDs; its 18,264 MiB peak is not
+  attributable to the workflow. CPU max RSS is 1,901,596 KiB.
+- Decision: HP-7 implementation and bounded integration close PASS. The active
+learner bottleneck is now forward/backward. No rerun, promotion, default-on,
+or policy-quality conclusion is authorized.
+
+## E100: HP-7 Side-Session Closeout
+
+- Artifact: `evidence/2026-07-17-hp7-side-session-closeout.md`.
+- HP-1 through HP-7 engineering scopes are closed; HP-7 ends PASS by E99.
+- This does not close RT-10 physical acceptance, student policy quality, or
+  persistent promotion/default-on.
+- No formal training run is frozen. The main session must choose whether its
+  lineage begins at the original parent iteration-3 checkpoint, explicitly
+  promotes the r6 sentinel checkpoint, or evaluates r6 first.
+- No second run or training command is authorized by this closeout.
+
+## E101: FT-0 Formal Identity Owner Implementation
+
+- Artifact:
+  `evidence/2026-07-17-ft0-formal-identity-owner-implementation.md`.
+- `formal_identity.py` owns the clean parent-iteration-3 lineage, reviewed
+  workload, owner-CLI argv/environment, fresh outputs, source/artifact freeze,
+  and generated supervisor/oracle contracts.
+- r6/HP-7 sentinel lineage, dirty/missing inputs, invalid workload/mode/device,
+  and existing outputs fail closed. Preflight records
+  `training_executed=false` and never invokes training.
+- Local evidence: 15 focused/regression tests pass; targeted Ruff and mypy pass.
+- Decision: owner implementation PASS; FT-0 remains PARTIAL pending deploy
+  connector, compose/dependency/GPU integration, and server materialization.
+  FT-1 remains closed.
+
+## E102: FT-0 Deploy Connector Integration
+
+- Artifact: `evidence/2026-07-17-ft0-deploy-connector-integration.md`.
+- The thin connector observes Git including untracked runtime files,
+  owner-CLI Hydra compose, dependency/import identity, GPU identity, reviewed
+  hard artifacts, command/output identity, and generated artifacts.
+- A file-level temporary-repository preflight accepts with
+  `training_executed=false`; the formal run directory remains absent and the
+  frozen training argv is never invoked.
+- Local connector/owner/HP-7 regression: 18 passed; Ruff and mypy pass.
+- Decision: local integration PASS. FT-0 remains PARTIAL pending a reviewed
+  formal workload/output spec and authenticated server no-training
+  materialization. FT-1 remains closed.
+
+## E103: FT-0 Formal Two-Round Spec Freeze
+
+- Artifact: `evidence/2026-07-17-ft0-formal-two-round-spec-freeze.md`.
+- Spec: `plans/formal_dagger_2round_r1.spec.json`.
+- Human-selected workload: original parent iteration 3, two added outer
+  iterations, aggregate rows `853504/855040`, required/effective schedule
+  `[12320, 12352]`, and total `24672` updates.
+- The formal owner now stores an iteration-aware schedule; the previous scalar
+  representation would have produced the wrong two-round total `24640`; the
+  postflight oracle checks each manifest iteration against the frozen schedule.
+- Local spec/argv validation reports `training_executed=false`, excludes r6,
+  and binds a fresh formal output root.
+- Decision: spec freeze PASS. Server materialization must recompute the schedule
+  from the real aggregate; FT-1 remains closed.

@@ -205,11 +205,13 @@
           "summary": "保存 run config contract snapshot metrics checkpoint 与结束摘要",
           "owns": "log dir run identity experiment metadata checkpoint resolution 与 summary",
           "mustNot": "不能按文件大小猜 checkpoint 语义或静默加载另一个 run",
-          "objects": ["run_config.json", "contract_snapshot", "checkpoint", "run_summary.json", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "distillation metrics artifact"],
+          "objects": ["run_config.json", "contract_snapshot", "checkpoint", "run_summary.json", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "distillation metrics artifact", "FormalDaggerIdentitySpec", "formal freeze", "formal oracle"],
           "files": [
             {"id":"U-SRC-018","path":"src/unilab/training/experiment.py","sourceLine":172,"role":"experiment metadata owner","functions":["ExperimentTracker.start()","ExperimentTracker.update_summary()","ExperimentTracker.finish()"]},
             {"id":"U-SRC-019","path":"src/unilab/training/run.py","sourceLine":16,"role":"run and checkpoint helpers","functions":["parse_checkpoint_path()"]},
-            {"id":"U-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"distillation performance schema, full request/workflow/cleanup identity, and atomic run artifact","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]}
+            {"id":"U-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"distillation performance schema, full request/workflow/cleanup identity, and atomic run artifact","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
+            {"id":"U-SRC-039","path":"src/unilab/algos/torch/distill/formal_identity.py","sourceLine":19,"role":"no-training formal lineage command freeze and oracle owner","functions":["build_formal_command_identity()","build_formal_freeze_document()","build_formal_supervisor_source()","build_formal_oracle_source()"]},
+            {"id":"U-SRC-040","path":"scripts/deploy/materialize_formal_dagger_gate0.py","sourceLine":57,"role":"FT-0 Git/compose/dependency/GPU observation and artifact connector","functions":["observe_gate0()","materialize_from_spec()"]}
           ],
           "mainRoute": [
             "B1 tracker start: resolved cfg plus identity -> run_config and contract snapshot",
