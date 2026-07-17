@@ -103,6 +103,7 @@ HP-7c production-path sentinel passes E95, and Gate 0 identity/owner-CLI compose
 passes the E97 amendment boundary. Runtime-owner hashes match, manifest-owned
 role paths are resolved, exact required/effective updates `12320` are accepted,
 and parent metrics drift is recorded audit-only. Gate 0 remains partial until a
-server-side materializer creates and hashes the freeze/oracle, runs the
-no-training preflight, and freshly proves all Gate 1 outputs absent. Gate 1,
+server-side oracle v6 materializer freezes the complete command/dependency/GPU/
+scenario/metrics/cleanup/telemetry contract and passes its no-training
+preflight. E98 records r5 identity PASS and v6 local contract PASS. Gate 1,
 promotion, default-on, commit, and PR actions remain closed.

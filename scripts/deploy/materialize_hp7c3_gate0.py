@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,39 @@ def artifact_identity(path: Path, expected: str) -> dict[str, Any]:
     }
 
 
+def supervisor_source(root: Path, run_dir: Path) -> str:
+    """Return the frozen Gate 1 launcher text without executing it."""
+    log = root / "hp7c3_bounded_persistent_r1.log"
+    timing = root / "hp7c3_bounded_persistent_r1.time"
+    gpu_csv = root / "hp7c3_bounded_persistent_r1.nvidia.csv"
+    return f'''#!/usr/bin/env bash
+set -euo pipefail
+cd {root}
+test ! -e {run_dir}
+nvidia-smi --query-compute-apps=timestamp,pid,gpu_uuid,used_gpu_memory --format=csv,noheader,nounits --loop-ms=250 > {gpu_csv} &
+SAMPLER_PID=$!
+trap 'kill "$SAMPLER_PID" 2>/dev/null || true; wait "$SAMPLER_PID" 2>/dev/null || true' EXIT
+CUDA_VISIBLE_DEVICES=0 \\
+UNILAB_G1_WALK_TEACHER={root}/model/G1WalkFlat/model_5000.pt \\
+UNILAB_G1_STAND_TEACHER={root}/model/G1StandStill/model_5000.pt \\
+UNILAB_G1_WALK_DATASET={root}/model/teacher/walk_flat_teacher_policy.pt \\
+UNILAB_G1_STAND_DATASET={root}/model/teacher/stand_teacher_policy.pt \\
+HYDRA_FULL_ERROR=1 PYTHONWARNINGS=ignore \\
+/usr/bin/time -v -o {timing} \\
+uv run --no-sync train --algo distill --task g1_walk_flat --sim mujoco \\
+  workflow=g1_walk_stand algo.seed=0 training.device=cuda:0 \\
+  training.workflow.mode=fork \\
+  training.workflow.parent_run_dir={root}/logs/distill_workflow/g1_walk_stand_persistent_test01 \\
+  training.workflow.run_dir={run_dir} \\
+  training.workflow.execution_mode=persistent_async \\
+  training.workflow.collect_num_envs=16 \\
+  training.workflow.dagger_samples_per_role=512 \\
+  training.workflow.dagger_iterations=1 \\
+  training.workflow.dagger_batch_size=512 \\
+  training.workflow.dagger_updates_per_iteration=512 > {log} 2>&1
+'''
+
+
 def oracle_source() -> str:
     return '''#!/usr/bin/env python3
 from __future__ import annotations
@@ -88,7 +122,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -132,6 +168,40 @@ def main() -> int:
         if not path.is_file() or sha256(path) != identity["observed_sha256"]:
             failures.append(f"artifact drift: {name}")
 
+    supervisor = Path(freeze["supervisor"]["path"])
+    if not supervisor.is_file() or sha256(supervisor) != freeze["supervisor"]["sha256"]:
+        failures.append("supervisor drift")
+    if not freeze.get("command", {}).get("argv") or not freeze.get("command", {}).get("env"):
+        failures.append("frozen command identity missing")
+
+    import mujoco
+    import torch
+    import unilab
+
+    observed_dependency = {
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "torch_path": str(Path(torch.__file__).resolve()),
+        "mujoco_version": getattr(mujoco, "__version__", None),
+        "mujoco_path": str(Path(mujoco.__file__).resolve()),
+        "unilab_path": str(Path(unilab.__file__).resolve()),
+        "uv_version": subprocess.check_output(["uv", "--version"], text=True).strip(),
+        "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR"),
+        "UV_PROJECT_ENVIRONMENT": os.environ.get("UV_PROJECT_ENVIRONMENT"),
+    }
+    if observed_dependency != freeze["dependency_identity"]:
+        failures.append("dependency/import identity drift")
+
+    gpu = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,uuid,name,driver_version,memory.total",
+         "--format=csv,noheader,nounits"],
+        check=False, capture_output=True, text=True,
+    )
+    if gpu.returncode or gpu.stdout.strip() != freeze["gpu_query"]["stdout"]:
+        failures.append("GPU identity drift")
+
     if args.preflight:
         existing = [path for path in freeze["output_paths"] if Path(path).exists()]
         if existing:
@@ -160,20 +230,53 @@ def main() -> int:
             failures.append("effective update count mismatch")
         if iteration.get("collection_execution_mode") != "persistent_async":
             failures.append("execution mode mismatch")
+        scenarios = iteration.get("scenario_artifacts", [])
+        expected_scenarios = freeze["workload"]["scenario_order"]
+        if [item.get("scenario") for item in scenarios] != expected_scenarios:
+            failures.append("scenario order mismatch")
+        if any(item.get("num_samples") != freeze["workload"]["rows_per_scenario"] for item in scenarios):
+            failures.append("scenario sample count mismatch")
+        weight_versions = {item.get("input_weight_version") for item in scenarios}
+        if len(weight_versions) != 1 or weight_versions != {iteration.get("input_weight_version")}:
+            failures.append("scenario weight-version identity mismatch")
+        worker_pids = {item.get("collector_worker_pid") for item in scenarios}
+        if len(worker_pids) != 1 or None in worker_pids:
+            failures.append("persistent collector worker identity mismatch")
+        if iteration.get("input_checkpoint_sha256") != freeze["hard_artifacts"]["parent_checkpoint"]["observed_sha256"]:
+            failures.append("input checkpoint lineage mismatch")
         metrics = json.loads(metrics_path.read_text()) if metrics_path.is_file() else {}
         records = metrics.get("records", [])
         if not records:
             failures.append("distillation metrics missing or empty")
         elif any(not record.get("success", False) for record in records):
             failures.append("one or more metric stages failed")
+        required_stages = {
+            "cumulative_aggregation", "learner_batch_staging", "learner_forward",
+            "learner_backward", "optimizer_step", "checkpoint_save", "cleanup",
+        }
+        observed_stages = {record.get("stage") for record in records}
+        if not required_stages.issubset(observed_stages):
+            failures.append("required workflow metric stages missing")
+        cleanup_records = [record for record in records if record.get("stage") == "cleanup"]
+        if len(cleanup_records) != 1 or cleanup_records[0].get("cleanup_state") != "complete":
+            failures.append("cleanup metric contract mismatch")
+        if manifest.get("performance_cleanup", {}).get("state") != "complete":
+            failures.append("manifest cleanup state incomplete")
         if metrics_path.is_file():
             if manifest.get("distillation_metrics_sha256") != sha256(metrics_path):
                 failures.append("metrics hash mismatch")
             if manifest.get("distillation_metrics_record_count") != len(records):
                 failures.append("metrics record count mismatch")
         for key in ("aggregate_dataset_path", "checkpoint_path"):
-            if not Path(str(iteration.get(key, ""))).is_file():
+            artifact = Path(str(iteration.get(key, "")))
+            if not artifact.is_file():
                 failures.append(f"missing output artifact: {key}")
+            elif iteration.get(key.replace("_path", "_sha256")) != sha256(artifact):
+                failures.append(f"output artifact hash mismatch: {key}")
+        for name, path_text in freeze["telemetry"].items():
+            path = Path(path_text)
+            if not path.is_file() or path.stat().st_size <= 0:
+                failures.append(f"telemetry artifact missing or empty: {name}")
         result = {
             "mode": "postrun",
             "accepted": not failures,
@@ -202,9 +305,10 @@ def materialize(root: Path) -> dict[str, Any]:
     compose = root / "hp7c3_gate0_compose_r2.yaml"
     compose_stderr = root / "hp7c3_gate0_compose_r2.stderr"
     probe_path = root / "hp7c3_gate0_identity_probe_r1.json"
-    freeze_path = root / "hp7c3_bounded_persistent_freeze_r5.json"
-    oracle_path = root / "hp7c3_bounded_persistent_oracle_v5.py"
-    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r5.json"
+    freeze_path = root / "hp7c3_bounded_persistent_freeze_r6.json"
+    oracle_path = root / "hp7c3_bounded_persistent_oracle_v6.py"
+    supervisor_path = root / "hp7c3_bounded_persistent_supervisor_r6.sh"
+    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r6.json"
     output_paths = [
         run_dir,
         root / "hp7c3_bounded_persistent_oracle_result_r1.json",
@@ -212,7 +316,7 @@ def materialize(root: Path) -> dict[str, Any]:
         root / "hp7c3_bounded_persistent_r1.time",
         root / "hp7c3_bounded_persistent_r1.nvidia.csv",
     ]
-    for path in (freeze_path, oracle_path, preflight_path):
+    for path in (freeze_path, oracle_path, supervisor_path, preflight_path):
         if path.exists():
             raise FileExistsError(f"refusing to overwrite Gate 0 artifact: {path}")
 
@@ -301,6 +405,49 @@ def materialize(root: Path) -> dict[str, Any]:
     if gpu.returncode:
         failures.append("nvidia-smi query failed")
 
+    import mujoco
+    import torch
+
+    import unilab
+
+    dependency_identity = {
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "torch_path": str(Path(torch.__file__).resolve()),
+        "mujoco_version": getattr(mujoco, "__version__", None),
+        "mujoco_path": str(Path(mujoco.__file__).resolve()),
+        "unilab_path": str(Path(unilab.__file__).resolve()),
+        "uv_version": command_output(root, "uv", "--version"),
+        "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR"),
+        "UV_PROJECT_ENVIRONMENT": os.environ.get("UV_PROJECT_ENVIRONMENT"),
+    }
+    command_argv = [
+        "uv", "run", "--no-sync", "train", "--algo", "distill",
+        "--task", "g1_walk_flat", "--sim", "mujoco",
+        "workflow=g1_walk_stand", "algo.seed=0", "training.device=cuda:0",
+        "training.workflow.mode=fork",
+        f"training.workflow.parent_run_dir={parent}",
+        f"training.workflow.run_dir={run_dir}",
+        "training.workflow.execution_mode=persistent_async",
+        "training.workflow.collect_num_envs=16",
+        "training.workflow.dagger_samples_per_role=512",
+        "training.workflow.dagger_iterations=1",
+        "training.workflow.dagger_batch_size=512",
+        "training.workflow.dagger_updates_per_iteration=512",
+    ]
+    command_env = {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "UNILAB_G1_WALK_TEACHER": str(root / ARTIFACTS["walk_teacher"][0]),
+        "UNILAB_G1_STAND_TEACHER": str(root / ARTIFACTS["stand_teacher"][0]),
+        "UNILAB_G1_WALK_DATASET": str(root / ARTIFACTS["walk_dataset"][0]),
+        "UNILAB_G1_STAND_DATASET": str(root / ARTIFACTS["stand_dataset"][0]),
+        "HYDRA_FULL_ERROR": "1",
+        "PYTHONWARNINGS": "ignore",
+    }
+    supervisor = supervisor_source(root, run_dir)
+
     freeze = {
         "schema_version": 2,
         "gate": "HP-7c3 Gate 0",
@@ -346,10 +493,16 @@ def materialize(root: Path) -> dict[str, Any]:
             "outer_iterations": 1,
         },
         "gpu_query": {"returncode": gpu.returncode, "stdout": gpu.stdout.strip(), "stderr": gpu.stderr.strip()},
-        "environment": {
-            "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR"),
-            "UV_PROJECT_ENVIRONMENT": os.environ.get("UV_PROJECT_ENVIRONMENT"),
-            "uv_version": command_output(root, "uv", "--version"),
+        "dependency_identity": dependency_identity,
+        "command": {"argv": command_argv, "env": command_env},
+        "supervisor": {
+            "path": str(supervisor_path),
+            "sha256": hashlib.sha256(supervisor.encode()).hexdigest(),
+        },
+        "telemetry": {
+            "console_log": str(root / "hp7c3_bounded_persistent_r1.log"),
+            "time_log": str(root / "hp7c3_bounded_persistent_r1.time"),
+            "gpu_csv": str(root / "hp7c3_bounded_persistent_r1.nvidia.csv"),
         },
         "run_dir": str(run_dir),
         "output_paths": [str(path) for path in output_paths],
@@ -358,6 +511,8 @@ def materialize(root: Path) -> dict[str, Any]:
     freeze_path.write_text(json.dumps(freeze, indent=2, sort_keys=True) + "\n")
     oracle_path.write_text(oracle_source())
     oracle_path.chmod(0o755)
+    supervisor_path.write_text(supervisor)
+    supervisor_path.chmod(0o755)
 
     subprocess.run(
         ["uv", "run", "--no-sync", "python", "-m", "py_compile", str(oracle_path)],
@@ -378,6 +533,8 @@ def materialize(root: Path) -> dict[str, Any]:
         "freeze_sha256": file_sha256(freeze_path),
         "oracle_path": str(oracle_path),
         "oracle_sha256": file_sha256(oracle_path),
+        "supervisor_path": str(supervisor_path),
+        "supervisor_sha256": file_sha256(supervisor_path),
         "preflight_path": str(preflight_path),
         "preflight_sha256": file_sha256(preflight_path) if preflight_path.is_file() else None,
         "preflight_returncode": result.returncode,

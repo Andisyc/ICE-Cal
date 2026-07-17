@@ -1644,3 +1644,16 @@ Date: 2026-07-15
 - Decision: compose boundary PASS. Gate 0 remains PARTIAL pending server
   freeze/oracle materialization and fresh output-absence preflight. Gate 1 is
   not authorized.
+
+## E98: HP-7c3 Gate 0 r5 Identity PASS And Oracle v6 Local Contract
+
+- Artifact: `evidence/2026-07-17-hp7c3-gate0-r5-pass-oracle-v6-local.md`.
+- Server r5 identity preflight accepts with no failures, training false, and
+  output paths absent; freeze SHA-256 is `eaab2f8a...b822`.
+- Review limits r5 to identity evidence: its post-run oracle omitted command,
+  dependency/GPU, supervisor, scenario/weight/worker, full metrics/cleanup, and
+  telemetry gates.
+- Oracle v6 adds those fail-closed clauses and a generated-but-not-executed
+  supervisor. Local contract evidence is 3 tests plus Ruff/compile/diff PASS.
+- Decision: Gate 0 remains PARTIAL until v6 server materialization/preflight.
+  Gate 1 remains closed.
