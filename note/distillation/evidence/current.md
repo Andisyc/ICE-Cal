@@ -1717,7 +1717,7 @@ or policy-quality conclusion is authorized.
 ## E103: FT-0 Formal Two-Round Spec Freeze
 
 - Artifact: `evidence/2026-07-17-ft0-formal-two-round-spec-freeze.md`.
-- Spec: `plans/formal_dagger_2round_r1.spec.json`.
+- Initial identity: r1, later superseded by r2 in E105.
 - Human-selected workload: original parent iteration 3, two added outer
   iterations, aggregate rows `853504/855040`, required/effective schedule
   `[12320, 12352]`, and total `24672` updates.
@@ -1741,3 +1741,16 @@ or policy-quality conclusion is authorized.
 - Serialized-dataset fixture plus focused regression: 23 passed; Ruff/mypy pass.
 - Decision: local integration PASS. Server materialization remains unexecuted;
   FT-1 remains closed.
+
+## E105: FT-0 r1 Compose Owner Repair And r2 Refreeze
+
+- Artifact:
+  `evidence/2026-07-17-ft0-r1-compose-owner-repair-r2-refreeze.md`.
+- Server r1 fails Hydra compose with return code 2 before workload observation;
+  freeze/preflight report training false. r1 is permanently closed.
+- Root cause: CLI-generated overrides preceded passthrough Hydra flags;
+  teacher/dataset environment interpolation was also absent.
+- Repair: `build_command()` retains route ownership, compose flags precede
+  script overrides, and compose/supervisor share the reviewed artifact env.
+- Real local compose and 24 focused regressions pass; Ruff/mypy pass.
+- Current identity: `plans/formal_dagger_2round_r2.spec.json`; FT-1 closed.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -241,10 +242,12 @@ def test_connector_runtime_cleanliness_includes_untracked_owner_files() -> None:
 def test_repository_formal_two_round_spec_has_exact_reviewed_identity() -> None:
     mod = _load_connector()
     loaded = mod.load_materialization_spec(
-        Path("note/distillation/plans/formal_dagger_2round_r1.spec.json")
+        Path("note/distillation/plans/formal_dagger_2round_r2.spec.json")
     )
 
-    identity = mod.build_formal_command_identity(loaded.identity)
+    identity = mod.bind_hard_artifact_environment(
+        mod.build_formal_command_identity(loaded.identity), loaded
+    )
 
     assert identity["training_executed"] is False
     assert identity["lineage"] == {
@@ -256,5 +259,28 @@ def test_repository_formal_two_round_spec_has_exact_reviewed_identity() -> None:
     assert identity["workload"]["effective_updates_by_iteration"] == [12320, 12352]
     assert identity["workload"]["total_effective_updates"] == 24672
     assert identity["output_paths"]["run_dir"].endswith(
-        "g1_walk_stand_formal_dagger_2round_20260717_r1"
+        "g1_walk_stand_formal_dagger_2round_20260717_r2"
     )
+
+
+def test_connector_real_owner_compose_exits_zero() -> None:
+    mod = _load_connector()
+    loaded = mod.load_materialization_spec(
+        Path("note/distillation/plans/formal_dagger_2round_r2.spec.json")
+    )
+    identity = mod.bind_hard_artifact_environment(
+        mod.build_formal_command_identity(loaded.identity), loaded
+    )
+
+    result = subprocess.run(
+        mod._compose_argv(identity),
+        cwd=Path.cwd(),
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **identity["env"]},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "dagger_iterations: 2" in result.stdout
+    assert "run_dir: /ssd1/cyx/UniLab/logs/distill_workflow/" in result.stdout

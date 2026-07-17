@@ -1,14 +1,11 @@
 {
   "repo_root": "/ssd1/cyx/UniLab",
   "parent_run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_persistent_test01",
-  "run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_formal_dagger_2round_20260717_r1",
+  "run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_formal_dagger_2round_20260717_r2",
   "parent_iteration": 3,
   "dagger_iterations": 2,
   "configured_update_floor": 512,
-  "effective_updates_by_iteration": [
-    12320,
-    12352
-  ],
+  "effective_updates_by_iteration": [12320, 12352],
   "seed": 0,
   "device": "cuda:0",
   "collect_num_envs": 16,

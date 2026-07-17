@@ -51,3 +51,6 @@ This is a reviewed expected workload, not server-derived proof. The server
 materializer must read the real parent aggregate and use the production replay
 owner to recompute both per-iteration required/effective values. Any mismatch
 blocks Gate 0. FT-1 remains closed.
+
+The initial r1 Gate 0 identity later failed compose before workload observation
+and is superseded operationally by the repaired r2 identity recorded in E105.

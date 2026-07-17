@@ -128,3 +128,7 @@ materialization that recomputes and verifies the schedule. FT-1 remains closed.
 E104 moves schedule recomputation inside the one-line materializer using the
 real aggregate and production offline replay owner. The only next action is the
 authenticated server no-training materialization; FT-1 remains closed.
+
+E105 records r1 Gate 0 as permanently failed with `training_executed=false`.
+The real compose route and teacher/dataset environment binding now pass locally.
+The only current identity is r2; its no-training materialization is next.

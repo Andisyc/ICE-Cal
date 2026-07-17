@@ -25,6 +25,7 @@ from unilab.algos.torch.distill.formal_identity import (
 from unilab.algos.torch.distill.offline import (
     required_balanced_replay_updates_for_labels,
 )
+from unilab.cli import build_command
 
 REQUIRED_HARD_ARTIFACTS = frozenset(
     {
@@ -88,9 +89,32 @@ def load_materialization_spec(path: Path) -> MaterializationSpec:
 
 
 def _compose_argv(command_identity: dict[str, Any]) -> list[str]:
-    argv = list(command_identity["argv"])
-    override_start = argv.index("workflow=g1_walk_stand")
-    return [*argv[:override_start], "--cfg", "job", "--resolve", *argv[override_start:]]
+    public_argv = list(command_identity["argv"])
+    override_start = public_argv.index("workflow=g1_walk_stand")
+    routed = build_command(
+        mode="train",
+        algo="distill",
+        task="g1_walk_flat",
+        sim="mujoco",
+        overrides=public_argv[override_start:],
+    )
+    return [*routed[:2], "--cfg", "job", "--resolve", *routed[2:]]
+
+
+def bind_hard_artifact_environment(
+    command_identity: dict[str, Any], spec: MaterializationSpec
+) -> dict[str, Any]:
+    """Bind manifest-reviewed teacher/data artifacts to config environment keys."""
+
+    command_identity["env"].update(
+        {
+            "UNILAB_G1_WALK_TEACHER": str(spec.hard_artifact_paths["walk_teacher"]),
+            "UNILAB_G1_STAND_TEACHER": str(spec.hard_artifact_paths["stand_teacher"]),
+            "UNILAB_G1_WALK_DATASET": str(spec.hard_artifact_paths["walk_dataset"]),
+            "UNILAB_G1_STAND_DATASET": str(spec.hard_artifact_paths["stand_dataset"]),
+        }
+    )
+    return command_identity
 
 
 def compute_observed_workload(
@@ -181,7 +205,9 @@ def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
     """Collect Git, compose, dependency, and GPU facts without training."""
 
     root = spec.identity.repo_root
-    command_identity = build_formal_command_identity(spec.identity)
+    command_identity = bind_hard_artifact_environment(
+        build_formal_command_identity(spec.identity), spec
+    )
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     runtime_status = subprocess.check_output(
         [
@@ -196,7 +222,12 @@ def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
         text=True,
     )
     compose = subprocess.run(
-        _compose_argv(command_identity), cwd=root, check=False, capture_output=True, text=True
+        _compose_argv(command_identity),
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **command_identity["env"]},
     )
 
     import mujoco
@@ -249,7 +280,9 @@ def materialize_from_spec(
     """Write FT-0 artifacts and run only the generated oracle preflight."""
 
     materialization = load_materialization_spec(spec_path)
-    identity = build_formal_command_identity(materialization.identity)
+    identity = bind_hard_artifact_environment(
+        build_formal_command_identity(materialization.identity), materialization
+    )
     observed = observations or observe_gate0(materialization)
     paths = {name: Path(path) for name, path in identity["materialization_paths"].items()}
 

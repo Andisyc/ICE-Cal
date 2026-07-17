@@ -119,10 +119,10 @@ FT-0. They may not be copied from r6 or silently chosen by a helper. If no
 accepted current document fixes them, FT-0 stops for a human decision before
 writing an executable supervisor.
 
-## Frozen Formal Workload R1
+## Frozen Formal Workload R2
 
-E103 records the human-selected two-round workload in
-`formal_dagger_2round_r1.spec.json`:
+E103 records the selected workload. E105 supersedes failed r1 with
+`formal_dagger_2round_r2.spec.json` after repairing the real compose path:
 
 - original parent iteration 3;
 - aggregate rows `853504`, then `855040`;
@@ -130,7 +130,7 @@ E103 records the human-selected two-round workload in
 - total effective updates `24672`;
 - seed `0`, logical device `cuda:0`, explicit `persistent_async`;
 - new output root
-  `/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_formal_dagger_2round_20260717_r1`.
+  `/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_formal_dagger_2round_20260717_r2`.
 
 The server materializer must recompute this schedule from the real parent
 aggregate through the production replay owner. The spec is an expected
@@ -162,3 +162,8 @@ E104 integrates the real aggregate workload discriminator into that connector.
 The one-line materializer loads the manifest-owned aggregate, reads resolved
 scenario quotas/replay fields, calls the offline replay owner, and compares the
 observed schedule/total against the spec. A mismatch blocks preflight.
+
+E105 closes r1 as failed before workload observation or training. The repaired
+connector keeps UniLab route ownership, places Hydra flags before script
+overrides, and binds reviewed teacher/dataset paths into the compose/supervisor
+environment. r2 is the only current executable Gate 0 identity.
