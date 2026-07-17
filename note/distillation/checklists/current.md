@@ -109,7 +109,7 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | HP-7a learner-staging discriminator | offline/data owners | S1/S3 / T-benchmark+semantic-diff | PASS | E92: current 31.835 s, cached 1.336 s, 23.83x; pool build is 93.8%; all four semantic differentials pass |
 | HP-7b immutable label-pool cache design | offline sampler owner | S0/S1 / T-design+memory-bound | PASS | E93 freezes one invocation-local CPU/int64 pool cache per loaded dataset, exact RNG equivalence, `8N` payload bound, owner files, three evidence gates, and HP-7c stop |
 | HP-7c implementation and formal validation | offline/data/workflow owners | S1/S2/S3/S4 / T-regression+benchmark+formal | PARTIAL | E94 S1/S2 PASS; E95 production path: one build/512 updates, digest+RNG equal, 2.1668 s staging, no training; bounded persistent workflow pending |
-| HP-7c bounded persistent workflow freeze | governance/workflow/acceptance owners | S0/S3/S4 / T-identity+oracle+live | BLOCKED | E96: authorized Gate 0 reached configured SSH host but authentication failed before remote reads/writes; no freeze/oracle/output exists and Gate 1 remains closed |
+| HP-7c bounded persistent workflow freeze | governance/workflow/acceptance owners | S0/S3/S4 / T-identity+oracle+live | PARTIAL | E97: runtime hashes/role artifacts reviewed, exact 12320 accepted, parent metrics classified audit-only, formal owner-CLI compose PASS; server freeze/oracle materialization and fresh output-absence preflight remain pending; Gate 1 closed |
 
 ## Current Stop Condition
 

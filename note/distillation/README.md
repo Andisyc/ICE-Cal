@@ -84,8 +84,8 @@ reuse.
 CUDA_VISIBLE_DEVICES=0 \
 UNILAB_G1_WALK_TEACHER=/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt \
 UNILAB_G1_STAND_TEACHER=/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt \
-UNILAB_G1_WALK_DATASET=/ssd1/cyx/UniLab/model/walk_flat_teacher_policy.pt \
-UNILAB_G1_STAND_DATASET=/ssd1/cyx/UniLab/model/stand_teacher_policy.pt \
+UNILAB_G1_WALK_DATASET=/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt \
+UNILAB_G1_STAND_DATASET=/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt \
 HYDRA_FULL_ERROR=1 PYTHONWARNINGS="ignore" \
 uv run train \
   --algo distill \

@@ -1,6 +1,6 @@
 # HP-7c3 Bounded Persistent Workflow Freeze
 
-Status: design frozen; Gate 0 blocked before server materialization by SSH authentication.
+Status: amended identity and owner-CLI compose pass E97; Gate 0 server materialization pending.
 Date: 2026-07-17
 
 ## Decision
@@ -37,7 +37,10 @@ not a legacy/persistent A/B, promotion trial, or policy-quality experiment.
 
 ## Frozen Local Source And Config Identity
 
-- Git commit: `d3c2bc77c34c081ae3861668b8a415cd55cc25d5`.
+- Observed server Git commit: `4fd2f67c08bb5372221ee1347561145b27238a75`.
+- The earlier planning commit differs, but E97 records an empty mismatch list
+  for the frozen runtime-owner bytes. Gate 0 binds both the observed HEAD and
+  the byte identities; it does not infer runtime drift from HEAD alone.
 - Runtime source paths must be byte-identical to this identity:
   - `offline.py`: `24d2230e98673625bc3202e600692b6eafe67ef88f5c99e2f345d3c41301d76f`
   - `workflow.py`: `22896114219d5e08df9893f158c38c7470675ac6546feac9ae0d74351f86d47c`
@@ -68,8 +71,8 @@ not a legacy/persistent A/B, promotion trial, or policy-quality experiment.
   - walk: `/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt`
   - stand: `/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt`
 - Reused role datasets:
-  - walk: `/ssd1/cyx/UniLab/model/walk_flat_teacher_policy.pt`
-  - stand: `/ssd1/cyx/UniLab/model/stand_teacher_policy.pt`
+  - walk: `/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt`
+  - stand: `/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt`
 - Parent checkpoint is the latest completed entry in
   `parent/run_manifest.json::dagger_iterations[-1].checkpoint_path`.
 - Gate 0 writes the exact absolute paths, SHA-256 values, sizes, parent manifest
@@ -77,6 +80,11 @@ not a legacy/persistent A/B, promotion trial, or policy-quality experiment.
   hash/row count, and teacher hashes into the freeze JSON. Every value must
   agree with the parent manifest where recorded. Missing or disagreeing values
   block execution; no filename-only reuse is accepted.
+- Exception: the parent `distillation_metrics.json` is an audit-only artifact,
+  not a fork input. E97 records its manifest/observed hash mismatch explicitly;
+  the mismatch is non-blocking and may not be rewritten or represented as a
+  match. Aggregate dataset, checkpoint, role artifacts, and teachers remain
+  hard-gated training inputs.
 
 ## Frozen Workload And Output Identity
 
@@ -93,9 +101,10 @@ not a legacy/persistent A/B, promotion trial, or policy-quality experiment.
 - Configured update floor: `512`.
 - Effective updates: Gate 0 computes the exact value with the production
   `required_balanced_replay_updates()` contract over the frozen parent aggregate
-  plus the three exact 512-row scenario additions. It must equal
-  `max(512, required_updates)` and must be at most `8192`; otherwise execution
-  is blocked. The frozen value is written into the identity and oracle.
+  plus the three exact 512-row scenario additions. E97 records
+  `required_updates=12320`; the human accepts the exact effective value
+  `max(512, required_updates)=12320`. Any different computed value blocks
+  execution. The frozen value is written into the identity and oracle.
 - Seed: `algo.seed=0`.
 - Device identity: `CUDA_VISIBLE_DEVICES=0`, logical `training.device=cuda:0`.
   Gate 0 records physical GPU UUID/name/driver/total memory and rejects a
@@ -127,13 +136,12 @@ production-derived effective count computed by Gate 0:
 CUDA_VISIBLE_DEVICES=0 \
 UNILAB_G1_WALK_TEACHER=/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt \
 UNILAB_G1_STAND_TEACHER=/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt \
-UNILAB_G1_WALK_DATASET=/ssd1/cyx/UniLab/model/walk_flat_teacher_policy.pt \
-UNILAB_G1_STAND_DATASET=/ssd1/cyx/UniLab/model/stand_teacher_policy.pt \
+UNILAB_G1_WALK_DATASET=/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt \
+UNILAB_G1_STAND_DATASET=/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt \
 HYDRA_FULL_ERROR=1 PYTHONWARNINGS=ignore \
 uv run --no-sync train --algo distill --task g1_walk_flat --sim mujoco \
   workflow=g1_walk_stand \
   algo.seed=0 training.device=cuda:0 \
-  training.workflow.enabled=true \
   training.workflow.mode=fork \
   training.workflow.parent_run_dir=/ssd1/cyx/UniLab/logs/distill_workflow/g1_walk_stand_persistent_test01 \
   training.workflow.run_dir=/ssd1/cyx/UniLab/logs/distill_workflow/hp7c3_bounded_persistent_20260717_r1 \
@@ -214,3 +222,20 @@ authentication with `Permission denied (publickey,password)` before the remote
 path was created and Gate 1 remains closed. Resume Gate 0 only through a
 user-authenticated SSH session or an explicitly provided non-interactive
 connection identity; do not try passwords or alternate hosts automatically.
+
+## Gate 0 Amendment
+
+E97 supersedes E96 only as the current operational state. In a user-authenticated
+SSH session, runtime-owner hashes match, manifest-owned role artifact paths are
+resolved, and the formal owner CLI compose exits zero with resolved YAML SHA-256
+`741676aca03cbed11f9ad6e37105216b3acb545b35ebc86690202b2c0798798d`.
+The human accepts exact required/effective updates `12320`; the configured
+floor remains `512`. Parent metrics hash drift is recorded audit-only because
+the fork owner does not consume that artifact. Gate 0 remains PARTIAL until
+freeze/oracle materialization and fresh output-absence preflight pass. No
+training is authorized.
+
+The human-facing materializer is
+`scripts/deploy/materialize_hp7c3_gate0.py`. It owns only Gate 0 hashing,
+freeze/oracle file creation, oracle syntax checking, and no-training preflight;
+it does not import or invoke the training entrypoint.

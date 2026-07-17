@@ -155,9 +155,10 @@ does not establish end-to-end training speedup.
 
 Bounded-workflow design: frozen in
 `plans/hp7c3_bounded_persistent_workflow_freeze.md`. It separates no-training
-Gate 0 identity/oracle materialization from Gate 1 execution, caps production-
-derived effective updates at 8192, and requires a new output identity. Neither
-gate is authorized by the design step.
+Gate 0 identity/oracle materialization from Gate 1 execution, accepts the
+production-derived exact effective count `12320`, and requires a new output
+identity. Gate 0 owner-CLI compose passes E97, but freeze/oracle server
+materialization remains pending. Gate 1 remains separately unauthorized.
 
 ## Current Decision
 

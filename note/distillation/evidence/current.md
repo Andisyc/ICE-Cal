@@ -1620,3 +1620,27 @@ Date: 2026-07-15
 - Stop: do not attempt passwords or alternate hosts automatically. Resume Gate
   0 only through a user-authenticated session or explicitly provided
   non-interactive identity. Gate 1 remains unauthorized.
+
+## E97: HP-7c3 Gate 0 Amendment And Owner-CLI Compose PASS
+
+- Date: 2026-07-17.
+- Artifact: `evidence/2026-07-17-hp7c3-gate0-amendment-compose-pass.md`.
+- Source identity: observed server HEAD
+  `4fd2f67c08bb5372221ee1347561145b27238a75`; frozen runtime-owner mismatch
+  list empty.
+- Artifact correction: manifest-owned walk/stand datasets resolve under
+  `/ssd1/cyx/UniLab/model/teacher/`; teacher and dataset hashes are recorded in
+  the evidence artifact.
+- Replay decision: the human accepts exact required/effective updates `12320`;
+  configured floor remains `512` and production auto-expansion remains active.
+- Metrics classification: parent manifest/observed metrics hashes differ, but
+  `fork_workflow_run()` does not consume parent metrics. The drift is recorded
+  audit-only/non-blocking and is not rewritten as a match.
+- Compose: formal `uv run --no-sync train --algo distill` owner CLI exits `0`;
+  resolved YAML is 6795 bytes, SHA-256
+  `741676aca03cbed11f9ad6e37105216b3acb545b35ebc86690202b2c0798798d`,
+  with empty stderr and the frozen workflow fields/98-D teacher-student
+  contract.
+- Decision: compose boundary PASS. Gate 0 remains PARTIAL pending server
+  freeze/oracle materialization and fresh output-absence preflight. Gate 1 is
+  not authorized.

@@ -99,8 +99,10 @@ Current status: **integration complete, promotion deferred, default off**.
 ## Next Human Decision
 
 No automatic training, promotion, default-on, commit, or PR action is active.
-HP-7c production-path sentinel passes E95, but HP-7c remains partial. The next
-Gate 0 attempt is blocked by E96 before remote reads/writes because the
-non-interactive SSH session has no accepted authentication identity. No
-freeze/oracle/output exists. Resume only in a user-authenticated SSH session or
-with an explicitly provided non-interactive identity; Gate 1 remains closed.
+HP-7c production-path sentinel passes E95, and Gate 0 identity/owner-CLI compose
+passes the E97 amendment boundary. Runtime-owner hashes match, manifest-owned
+role paths are resolved, exact required/effective updates `12320` are accepted,
+and parent metrics drift is recorded audit-only. Gate 0 remains partial until a
+server-side materializer creates and hashes the freeze/oracle, runs the
+no-training preflight, and freshly proves all Gate 1 outputs absent. Gate 1,
+promotion, default-on, commit, and PR actions remain closed.
