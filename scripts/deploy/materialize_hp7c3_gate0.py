@@ -117,7 +117,7 @@ def main() -> int:
             failures.append(f"source drift: {path}")
 
     compose = Path(freeze["compose"]["path"])
-    if not compose.is_file() or sha256(compose) != freeze["compose"]["sha256"]:
+    if not compose.is_file() or sha256(compose) != freeze["compose"]["observed_sha256"]:
         failures.append("compose drift")
 
     for name, identity in freeze["hard_artifacts"].items():
@@ -195,9 +195,9 @@ def materialize(root: Path) -> dict[str, Any]:
     compose = root / "hp7c3_gate0_compose_r2.yaml"
     compose_stderr = root / "hp7c3_gate0_compose_r2.stderr"
     probe_path = root / "hp7c3_gate0_identity_probe_r1.json"
-    freeze_path = root / "hp7c3_bounded_persistent_freeze_r2.json"
-    oracle_path = root / "hp7c3_bounded_persistent_oracle_v2.py"
-    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r2.json"
+    freeze_path = root / "hp7c3_bounded_persistent_freeze_r3.json"
+    oracle_path = root / "hp7c3_bounded_persistent_oracle_v3.py"
+    preflight_path = root / "hp7c3_bounded_persistent_oracle_preflight_r3.json"
     output_paths = [
         run_dir,
         root / "hp7c3_bounded_persistent_oracle_result_r1.json",
