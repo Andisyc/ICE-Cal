@@ -1776,6 +1776,93 @@ def test_command_intent_corruption_requests_native_abort_with_snapshot(
     assert failure["native_abort_requested"] is True
 
 
+def test_serialization_callable_corruption_requests_native_abort(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    import unilab.algos.torch.distill.data as data_module
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    class NativeAbortRequestedError(RuntimeError):
+        pass
+
+    dataset = build_distillation_dataset(
+        torch.zeros(2, 3),
+        torch.zeros(2, 4),
+        expected_student_obs_dim=3,
+        expected_teacher_obs_dim=4,
+    )
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+    monkeypatch.setattr(
+        data_module.torch,
+        "save",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            TypeError("'cell' object is not callable")
+        ),
+    )
+    monkeypatch.setattr(
+        data_module,
+        "_abort_for_native_capture",
+        lambda: (_ for _ in ()).throw(NativeAbortRequestedError),
+    )
+
+    with pytest.raises(NativeAbortRequestedError):
+        data_module.save_distillation_dataset(tmp_path / "corrupt.pt", dataset)
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    failure = snapshots[-1]
+    assert failure["stage"] == "serialization/torch_save_failure"
+    assert failure["error_type"] == "TypeError"
+    assert failure["native_abort_requested"] is True
+    assert failure["builtins_isinstance_callable"] is True
+    assert failure["builtins_isinstance_is_original"] is True
+
+
+def test_serialization_io_failure_does_not_request_native_abort(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    import unilab.algos.torch.distill.data as data_module
+    from unilab.algos.torch.distill import build_distillation_dataset
+
+    dataset = build_distillation_dataset(
+        torch.zeros(2, 3),
+        torch.zeros(2, 4),
+        expected_student_obs_dim=3,
+        expected_teacher_obs_dim=4,
+    )
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+    monkeypatch.setattr(
+        data_module.torch,
+        "save",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    monkeypatch.setattr(
+        data_module,
+        "_abort_for_native_capture",
+        lambda: pytest.fail("ordinary IO failure must not request native abort"),
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        data_module.save_distillation_dataset(tmp_path / "io-error.pt", dataset)
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    assert snapshots[-1]["stage"] == "serialization/torch_save_failure"
+    assert snapshots[-1]["native_abort_requested"] is False
+
+
 def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
     tmp_path,
     monkeypatch,

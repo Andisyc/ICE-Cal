@@ -15,6 +15,7 @@ import torch
 from .trainer import DistillationBatch
 
 _ORIGINAL_CALLABLE = callable
+_ORIGINAL_ISINSTANCE = isinstance
 _ORIGINAL_LIST = list
 _ORIGINAL_REPR = repr
 _ORIGINAL_STR = str
@@ -135,10 +136,7 @@ def _validate_command_intents(
             native_abort_requested=abort_requested,
         )
         if abort_requested:
-            # 仅用于诊断: 在 Apport core 中保留当前 learner 进程状态.
-            sys.stdout.flush()
-            sys.stderr.flush()
-            os.abort()
+            _abort_for_native_capture()
         raise ValueError(
             "command_intents must contain only active/inactive labels; "
             f"invalid_head={invalid_head!r}"
@@ -289,6 +287,7 @@ def _scenario_label_debug_snapshot(
 def _emit_data_runtime(stage: str, **fields: Any) -> None:
     is_storage = torch.is_storage
     current_int = builtins.int
+    current_isinstance = builtins.isinstance
     current_str = builtins.str
     current_type = builtins.type
     current_tuple = builtins.tuple
@@ -305,6 +304,10 @@ def _emit_data_runtime(stage: str, **fields: Any) -> None:
         "builtins_int_type": _ORIGINAL_TYPE(current_int).__name__,
         "builtins_int_repr": _safe_runtime_repr(current_int),
         "builtins_int_callable": _ORIGINAL_CALLABLE(current_int),
+        "builtins_isinstance_type": _ORIGINAL_TYPE(current_isinstance).__name__,
+        "builtins_isinstance_repr": _safe_runtime_repr(current_isinstance),
+        "builtins_isinstance_callable": _ORIGINAL_CALLABLE(current_isinstance),
+        "builtins_isinstance_is_original": current_isinstance is _ORIGINAL_ISINSTANCE,
         "builtins_str_type": _ORIGINAL_TYPE(current_str).__name__,
         "builtins_str_repr": _safe_runtime_repr(current_str),
         "builtins_str_callable": _ORIGINAL_CALLABLE(current_str),
@@ -328,6 +331,21 @@ def _emit_data_runtime(stage: str, **fields: Any) -> None:
         **fields,
     }
     print(f"[distill-data-runtime] {snapshot!r}", flush=True)
+
+
+def _native_abort_for_impossible_callable_error_requested(error: BaseException) -> bool:
+    return (
+        os.environ.get("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0") == "1"
+        and _ORIGINAL_ISINSTANCE(error, TypeError)
+        and "object is not callable" in _ORIGINAL_STR(error)
+    )
+
+
+def _abort_for_native_capture() -> None:
+    # 仅用于诊断: 在 Apport core 中保留当前 learner 进程状态.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.abort()
 
 
 _TRANSITION_SCENARIOS = {"static_stand", "walk_flat", "walk_to_stop"}
@@ -1275,12 +1293,16 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
     try:
         torch.save(payload, resolved_path)
     except Exception as error:
+        native_abort_requested = _native_abort_for_impossible_callable_error_requested(error)
         _emit_data_runtime(
             "serialization/torch_save_failure",
             path=str(resolved_path),
             error_type=type(error).__name__,
             error_repr=repr(error),
+            native_abort_requested=native_abort_requested,
         )
+        if native_abort_requested:
+            _abort_for_native_capture()
         raise
     _emit_data_runtime(
         "serialization/after_torch_save",
@@ -1312,13 +1334,17 @@ def load_distillation_dataset(
     try:
         payload = torch.load(resolved_path, map_location=device, weights_only=False)
     except Exception as error:
+        native_abort_requested = _native_abort_for_impossible_callable_error_requested(error)
         _emit_data_runtime(
             "serialization/torch_load_failure",
             path=str(resolved_path),
             device=str(device),
             error_type=type(error).__name__,
             error_repr=repr(error),
+            native_abort_requested=native_abort_requested,
         )
+        if native_abort_requested:
+            _abort_for_native_capture()
         raise
     _emit_data_runtime(
         "serialization/after_torch_load",
