@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -141,6 +143,27 @@ def _command_intents_from_role_labels(
 
 def _label_counts(labels: tuple[str, ...]) -> dict[str, int]:
     return {label: labels.count(label) for label in sorted(set(labels))}
+
+
+def _command_intent_debug_snapshot(
+    command_intents: Sequence[Any],
+) -> dict[str, Any]:
+    normalized = tuple(str(intent) for intent in command_intents)
+    return {
+        "type": type(command_intents).__name__,
+        "length": len(normalized),
+        "command_intent_counts": _label_counts(normalized),
+        "invalid_head": [
+            {
+                "index": index,
+                "type": type(command_intents[index]).__name__,
+                "repr": repr(command_intents[index]),
+                "normalized": intent,
+            }
+            for index, intent in enumerate(normalized)
+            if intent not in {"active", "inactive"}
+        ][:10],
+    }
 
 
 _TRANSITION_SCENARIOS = {"static_stand", "walk_flat", "walk_to_stop"}
@@ -744,22 +767,66 @@ def build_multitask_distillation_dataset(
     }
     if command_intents is not None:
         metadata["command_intent_counts"] = _label_counts(command_intents)
-    return build_distillation_dataset(
-        student_obs,
-        teacher_obs,
-        expected_student_obs_dim=expected_student_obs_dim,
-        expected_teacher_obs_dim=expected_teacher_obs_dim,
-        expected_teacher_action_dim=expected_teacher_action_dim,
-        metadata=metadata,
-        role_labels=role_labels,
-        teacher_actions=teacher_actions,
-        commands=commands,
-        command_intents=command_intents,
-        scenario_labels=scenario_labels,
-        transition_ages=transition_ages,
-        command_before=command_before,
-        command_after=command_after,
+    before_final_validation = (
+        None
+        if command_intents is None
+        else _command_intent_debug_snapshot(command_intents)
     )
+    try:
+        return build_distillation_dataset(
+            student_obs,
+            teacher_obs,
+            expected_student_obs_dim=expected_student_obs_dim,
+            expected_teacher_obs_dim=expected_teacher_obs_dim,
+            expected_teacher_action_dim=expected_teacher_action_dim,
+            metadata=metadata,
+            role_labels=role_labels,
+            teacher_actions=teacher_actions,
+            commands=commands,
+            command_intents=command_intents,
+            scenario_labels=scenario_labels,
+            transition_ages=transition_ages,
+            command_before=command_before,
+            command_after=command_after,
+        )
+    except ValueError as error:
+        if command_intents is None or "command_intents" not in str(error):
+            raise
+        sources_snapshot = []
+        for path, role, scenario, dataset in zip(
+            source_paths,
+            source_roles,
+            source_scenarios,
+            datasets,
+            strict=True,
+        ):
+            assert dataset.command_intents is not None
+            source_intents = _command_intent_debug_snapshot(dataset.command_intents)
+            sources_snapshot.append(
+                {
+                    "path": path,
+                    "role": role,
+                    "scenario": scenario,
+                    "num_samples": dataset.num_samples,
+                    "command_intent_counts": source_intents["command_intent_counts"],
+                    "invalid_head": source_intents["invalid_head"],
+                }
+            )
+        snapshot = {
+            "stage": "multitask/final_validation_failure",
+            "pid": os.getpid(),
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "source_count": len(datasets),
+            "sources": sources_snapshot,
+            "before_final_validation": before_final_validation,
+            "after_final_validation_failure": _command_intent_debug_snapshot(command_intents),
+        }
+        print(
+            "[distill-command-intent-sentinel] "
+            + json.dumps(snapshot, sort_keys=True)
+        )
+        raise
 
 
 def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDataset) -> None:

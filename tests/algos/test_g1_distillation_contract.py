@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 import torch
@@ -1438,6 +1440,96 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     assert reloaded.commands is not None
     assert torch.equal(reloaded.commands, merged.commands)
     assert reloaded.command_intents == merged.command_intents
+
+
+def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    import unilab.algos.torch.distill.data as data_module
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    source_paths = []
+    for role, intent in (("stand", "inactive"), ("walk", "active")):
+        path = tmp_path / f"{role}.pt"
+        dataset = build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 7),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            expected_teacher_action_dim=3,
+            teacher_actions=torch.zeros(2, 3),
+            commands=torch.zeros(2, 3),
+            command_intents=(intent, intent),
+        )
+        save_distillation_dataset(path, dataset)
+        source_paths.append((path, role))
+
+    real_builder = data_module.build_distillation_dataset
+    call_count = 0
+
+    def fail_only_at_final_validation(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise ValueError("command_intents must contain only active/inactive labels")
+        return real_builder(*args, **kwargs)
+
+    monkeypatch.setattr(
+        data_module,
+        "build_distillation_dataset",
+        fail_only_at_final_validation,
+    )
+    with pytest.raises(ValueError, match="command_intents.*active/inactive"):
+        build_multitask_distillation_dataset(
+            [{"path": path, "role": role} for path, role in source_paths],
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=7,
+            expected_teacher_action_dim=3,
+        )
+
+    output_lines = capsys.readouterr().out.splitlines()
+    snapshots = [
+        json.loads(line.removeprefix("[distill-command-intent-sentinel] "))
+        for line in output_lines
+        if line.startswith("[distill-command-intent-sentinel] ")
+    ]
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot["stage"] == "multitask/final_validation_failure"
+    assert snapshot["source_count"] == 2
+    assert snapshot["sources"] == [
+        {
+            "command_intent_counts": {"inactive": 2},
+            "invalid_head": [],
+            "num_samples": 2,
+            "path": str(source_paths[0][0]),
+            "role": "stand",
+            "scenario": None,
+        },
+        {
+            "command_intent_counts": {"active": 2},
+            "invalid_head": [],
+            "num_samples": 2,
+            "path": str(source_paths[1][0]),
+            "role": "walk",
+            "scenario": None,
+        },
+    ]
+    assert snapshot["before_final_validation"] == {
+        "command_intent_counts": {"active": 2, "inactive": 2},
+        "invalid_head": [],
+        "length": 4,
+        "type": "tuple",
+    }
+    assert snapshot["after_final_validation_failure"] == snapshot[
+        "before_final_validation"
+    ]
 
 
 def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
