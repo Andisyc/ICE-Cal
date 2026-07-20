@@ -122,9 +122,11 @@ semantic `run_name`, and Gate 0 will resolve/freeze exactly one time-sorted
 run/artifact identity. This is an output-control change only; it changes no
 DAgger semantics, resource values, retry behavior, or server execution.
 
-E110 closes the local r2 spec gate: `collect_num_envs=32`, unchanged batch and
-147456-update workload, and
-`run_name=g1_walk_stand_formal_fresh_8iter_oom_r2` all pass fixed-clock
-identity, replay-schedule, and formal owner-compose checks. The current next
-boundary is an explicitly authorized authenticated server Gate 0 only. No
-supervisor or training command is authorized.
+E110 closes the local r2 spec gate and E111 closes its authenticated server
+Gate 0: the frozen run identity is
+`20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2`, preflight accepted,
+and `training_executed=false`. FT-1 is now explicitly authorized as exactly
+one frozen supervisor invocation followed by its matching frozen oracle only
+on success. The chain and stop condition are in
+`plans/formal_dagger_fresh_8iter_r2_ft1_execution.md`: no retry, resume, or
+second r2 identity is authorized.

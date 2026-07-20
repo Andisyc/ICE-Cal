@@ -1835,3 +1835,24 @@ or policy-quality conclusion is authorized.
   training ran.
 - Decision: local r2 spec PASS. Authenticated server Gate 0 remains a separate
   human-authorized step.
+
+## E111: Formal Fresh r2 Authenticated Gate 0 PASS
+
+- Date: 2026-07-20.
+- L0 source: user-provided server materializer result in this task conversation;
+  this agent's SSH key was not accepted, so the generated server files were not
+  independently reread locally.
+- Result: `accepted=true`, `preflight_returncode=0`, and
+  `training_executed=false`.
+- Frozen auto identity:
+  `20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2`.
+- Frozen output identities:
+  `logs/distill_workflow/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2`
+  and matching `logs/distill_role_artifacts/...`.
+- Generated controls: freeze
+  `/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.freeze.json`
+  and corresponding preflight JSON both exist by the accepted materializer
+  result.
+- Decision: the no-training identity/oracle gate is PASS. FT-1 supervisor
+  execution, checkpoint production, GPU-memory behavior, and policy quality
+  remain unexecuted/unconfirmed and require separate authorization.

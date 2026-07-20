@@ -77,7 +77,7 @@ Non-scope:
 | Manual identity compatibility | connector | S1 parsing/materialization test | PASS, E109 |
 | Frozen resolved output paths | connector | S2 no-training materialization fixture | PASS, E109 |
 | Atlas and docs agreement | governance/Atlas | S0 docs + Atlas check | PASS, E109 |
-| Authenticated r2 Gate 0 | server connector | S3 no-training preflight | BLOCKED by AOI-3 authority |
+| Authenticated r2 Gate 0 | server connector | S3 no-training preflight | PASS, E111 |
 
 ## AOI-1/AOI-2 Result
 
@@ -98,5 +98,5 @@ select an OOM mitigation, workload, or new formal run.
 
 E110 now records one approved local fresh-r2 spec using this control surface.
 It freezes `run_name=g1_walk_stand_formal_fresh_8iter_oom_r2` without manual
-output paths. The authenticated Gate 0 remains a separately authorized AOI-3
-boundary.
+output paths. E111 records the separately authorized Gate 0 PASS: one server
+timestamp identity was materialized and preflight accepted without training.

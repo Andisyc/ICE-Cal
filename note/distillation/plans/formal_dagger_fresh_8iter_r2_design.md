@@ -1,6 +1,6 @@
 # Formal Fresh Eight-Iteration r2 Implementation Plan
 
-Status: R2-S1 through R2-S3 local PASS; R2-S4 authenticated server Gate 0 is pending separate authorization.
+Status: R2-S1 through R2-S4 PASS; FT-1 supervisor/training remains a separate human decision.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans`
 > or an equivalent bounded inline workflow. This plan does not authorize a
@@ -104,12 +104,13 @@ method semantic changes in this step.
 ### R2-S4 / 4: Authenticated server Gate 0
 
 - Objective: separately materialize and preflight the reviewed r2 identity.
-- Non-scope: this local step must not perform it.
-- Future entry condition: human explicitly authorizes Gate 0; GPU is exclusive
-  to the run at launch; all frozen source/artifact/config checks pass.
-- Future stop condition: any OOM at aggregate load/validation, foreign GPU
-  occupancy, mismatch, or preflight failure preserves r2 and returns control.
-  No retry/resume or batch adjustment is allowed under r2.
+- Result: user-authenticated server materialization returned `accepted=true`,
+  `preflight_returncode=0`, and `training_executed=false`; E111 records the
+  exact reported identity and paths.
+- Non-scope: Gate 0 did not invoke the supervisor or training.
+- Remaining stop condition: any future OOM at aggregate load/validation,
+  foreign GPU occupancy, mismatch, or postflight failure preserves r2 and
+  returns control. No retry/resume or batch adjustment is allowed under r2.
 
 ## Local Execution Result
 
@@ -122,6 +123,10 @@ returns zero with the selected fresh, 32-env, 512-batch configuration.
 This is a local config/identity result only. It cannot prove aggregate GPU
 capacity, collector peak memory, checkpoint production, or policy quality.
 
+E111 now closes the authenticated identity/preflight boundary, but does not
+change that limitation: the next live-only fact is the behavior of one future
+supervisor execution.
+
 ## Acceptance Matrix
 
 | Item | Owner | Evidence | Current status |
@@ -130,10 +135,10 @@ capacity, collector peak memory, checkpoint production, or policy quality.
 | Resource values and unchanged replay schedule | formal spec + offline replay owner | S1 numerical differential | PASS, E110 |
 | Real owner-to-Hydra composition | CLI/config connector | S2 compose regression | PASS, E110 |
 | No server action or training | governance | S0 command record | PASS, E110 |
-| Authenticated r2 Gate 0 | deploy connector | S3 server preflight | BLOCKED by separate authority |
+| Authenticated r2 Gate 0 | deploy connector | S3 server preflight | PASS, E111 |
 
 ## Non-Scope
 
 - No production code change, data-owner refactor, CPU-resident dataset change,
   GPU memory fix, batch-size reduction, output cleanup, resume, retry,
-  promotion, default-mode change, server Gate 0, supervisor, or training.
+  promotion, default-mode change, supervisor, or training.

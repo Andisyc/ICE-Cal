@@ -1,6 +1,6 @@
 # Formal DAgger Training Identity
 
-Status: formal route implemented; historical r2 artifact acceptance PASS; fresh r1 is preserved after OOM; new fresh r2 local spec PASS, authenticated Gate 0 pending separate authorization.
+Status: formal route implemented; historical r2 artifact acceptance PASS; fresh r1 is preserved after OOM; new fresh r2 Gate 0 PASS, FT-1 training pending separate authorization.
 Date: 2026-07-20
 
 ## Decision
@@ -217,5 +217,5 @@ fresh workload and 512-sized bootstrap/DAgger batches, and changes only
 
 This is collector-concurrency containment, not an established fix for the
 aggregate GPU load/validation OOM. The spec explicitly excludes retry/resume;
-an authenticated server Gate 0 and any training execution remain separate
-human decisions.
+E111 accepts its authenticated server Gate 0. Any supervisor/training execution
+remains a separate human decision.
