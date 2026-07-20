@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import builtins
+import os
+import sys
+import threading
+from collections import Counter
 from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -10,6 +15,53 @@ import torch.nn.functional as F
 from torch import nn
 
 from .performance import DistillationStageObservationAccumulator
+
+_DISTILL_RUNTIME_TRACE_INTERVAL = 100
+_ORIGINAL_INT = int
+
+
+def _runtime_trace_update(update_number: int) -> bool:
+    return update_number == 1 or update_number % _DISTILL_RUNTIME_TRACE_INTERVAL == 0
+
+
+def _label_counts(labels: tuple[str, ...] | None) -> dict[str, int]:
+    return {} if labels is None else dict(Counter(str(label) for label in labels))
+
+
+def _runtime_identity_snapshot() -> dict[str, Any]:
+    current_int = builtins.int
+    trace = sys.gettrace()
+    profile = sys.getprofile()
+    return {
+        "pid": os.getpid(),
+        "thread_id": threading.get_ident(),
+        "builtins_int_type": type(current_int).__name__,
+        "builtins_int_repr": repr(current_int),
+        "builtins_int_callable": callable(current_int),
+        "builtins_int_is_original": current_int is _ORIGINAL_INT,
+        "sys_trace_type": None if trace is None else type(trace).__name__,
+        "sys_trace_repr": None if trace is None else repr(trace),
+        "sys_profile_type": None if profile is None else type(profile).__name__,
+        "sys_profile_repr": None if profile is None else repr(profile),
+    }
+
+
+def _tensor_runtime_snapshot(tensor: torch.Tensor | None) -> dict[str, Any] | None:
+    if tensor is None:
+        return None
+    return {
+        "shape": tuple(tensor.shape),
+        "dtype": str(tensor.dtype),
+        "device": str(tensor.device),
+        "requires_grad": bool(tensor.requires_grad),
+        "grad_fn_type": None if tensor.grad_fn is None else type(tensor.grad_fn).__name__,
+        "finite": bool(torch.isfinite(tensor.detach()).all()) if tensor.numel() else True,
+    }
+
+
+def _emit_trainer_runtime(stage: str, **fields: Any) -> None:
+    snapshot = {"stage": stage, **_runtime_identity_snapshot(), **fields}
+    print(f"[distill-trainer-runtime] {snapshot!r}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -205,8 +257,8 @@ class BehaviorDistillationTrainer:
             raise TypeError("student output diagnostics `expert_actions` must be a tensor")
         return student_action, aux_loss, expert_usage, route_entropy, router_logits, expert_actions
 
-    @staticmethod
     def _target_indices_from_labels(
+        self,
         *,
         labels: tuple[str, ...] | None,
         targets: Mapping[str, int],
@@ -229,8 +281,10 @@ class BehaviorDistillationTrainer:
                 f"{label_name} length mismatch: labels={len(labels)} batch={int(batch_size)}"
             )
 
+        update_number = self.update_count + 1
+        trace_update = _runtime_trace_update(update_number)
         target_indices: list[int] = []
-        for label in labels:
+        for row_index, label in enumerate(labels):
             label_key = str(label)
             if label_key not in targets:
                 if required:
@@ -238,7 +292,15 @@ class BehaviorDistillationTrainer:
                         f"unmapped {label_name} label for expert behavior loss: {label_key!r}"
                     )
                 return None
-            target_indices.append(int(targets[label_key]))
+            self._append_runtime_target_index(
+                target_indices=target_indices,
+                raw_target=targets[label_key],
+                label_name=f"expert_behavior_{label_name}",
+                label_key=label_key,
+                row_index=row_index,
+                update_number=update_number,
+                trace_row=(trace_update and (row_index < 2 or row_index == len(labels) - 1)),
+            )
         target_tensor = torch.tensor(target_indices, dtype=torch.long, device=device)
         if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(
             num_experts
@@ -248,6 +310,74 @@ class BehaviorDistillationTrainer:
                 f"targets={sorted(set(target_indices))} num_experts={int(num_experts)}"
             )
         return target_tensor
+
+    def _append_runtime_target_index(
+        self,
+        *,
+        target_indices: list[int],
+        raw_target: Any,
+        label_name: str,
+        label_key: str,
+        row_index: int,
+        update_number: int,
+        trace_row: bool,
+    ) -> None:
+        int_fn = builtins.int
+        append_fn = cast(Any, getattr(target_indices, "append", None))
+        context = {
+            "update_number": update_number,
+            "label_name": label_name,
+            "label_key": label_key,
+            "row_index": row_index,
+            "raw_target_type": type(raw_target).__name__,
+            "raw_target_repr": repr(raw_target),
+            "target_indices_type": type(target_indices).__name__,
+            "target_indices_length": len(target_indices),
+            "target_indices_head": tuple(target_indices[:8]),
+            "append_type": type(append_fn).__name__,
+            "append_repr": repr(append_fn),
+            "append_callable": callable(append_fn),
+        }
+        if trace_row:
+            _emit_trainer_runtime("target_index/before_int", **context)
+        try:
+            converted_target = int_fn(raw_target)
+        except Exception as error:
+            _emit_trainer_runtime(
+                "target_index/int_failure",
+                **context,
+                error_type=type(error).__name__,
+                error_repr=repr(error),
+            )
+            raise
+        if trace_row:
+            _emit_trainer_runtime(
+                "target_index/after_int",
+                **context,
+                converted_target_type=type(converted_target).__name__,
+                converted_target_repr=repr(converted_target),
+            )
+        try:
+            append_fn(converted_target)
+        except Exception as error:
+            _emit_trainer_runtime(
+                "target_index/append_failure",
+                **context,
+                converted_target_type=type(converted_target).__name__,
+                converted_target_repr=repr(converted_target),
+                error_type=type(error).__name__,
+                error_repr=repr(error),
+            )
+            raise
+        if trace_row:
+            _emit_trainer_runtime(
+                "target_index/after_append",
+                **context,
+                converted_target_type=type(converted_target).__name__,
+                converted_target_repr=repr(converted_target),
+                target_indices_length_after=len(target_indices),
+                target_indices_head_after=tuple(target_indices[:8]),
+            )
 
     def _expert_behavior_action(
         self,
@@ -342,6 +472,8 @@ class BehaviorDistillationTrainer:
         batch_size: int,
         like: torch.Tensor,
     ) -> tuple[torch.Tensor, int]:
+        update_number = self.update_count + 1
+        trace_update = _runtime_trace_update(update_number)
         if self.role_loss_coef <= 0.0:
             return like.new_zeros(()), 0
         if role_labels is None:
@@ -357,13 +489,39 @@ class BehaviorDistillationTrainer:
                 f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}"
             )
 
+        if trace_update:
+            _emit_trainer_runtime(
+                "role/entry",
+                update_number=update_number,
+                batch_size=batch_size,
+                label_counts=_label_counts(role_labels),
+                expert_targets=dict(self.role_expert_targets),
+                router_logits=_tensor_runtime_snapshot(router_logits),
+            )
         target_indices: list[int] = []
-        for role in role_labels:
+        for row_index, role in enumerate(role_labels):
             role_key = str(role)
             if role_key not in self.role_expert_targets:
                 raise ValueError(f"unmapped role label for role-conditioned loss: {role_key!r}")
-            target_indices.append(int(self.role_expert_targets[role_key]))
+            self._append_runtime_target_index(
+                target_indices=target_indices,
+                raw_target=self.role_expert_targets[role_key],
+                label_name="role",
+                label_key=role_key,
+                row_index=row_index,
+                update_number=update_number,
+                trace_row=(
+                    trace_update and (row_index < 2 or row_index == len(role_labels) - 1)
+                ),
+            )
         targets = torch.tensor(target_indices, dtype=torch.long, device=router_logits.device)
+        if trace_update:
+            _emit_trainer_runtime(
+                "role/after_target_tensor",
+                update_number=update_number,
+                target_indices=tuple(target_indices),
+                targets=_tensor_runtime_snapshot(targets),
+            )
         if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(
             router_logits.shape[-1]
         ):
@@ -381,6 +539,8 @@ class BehaviorDistillationTrainer:
         batch_size: int,
         like: torch.Tensor,
     ) -> tuple[torch.Tensor, int]:
+        update_number = self.update_count + 1
+        trace_update = _runtime_trace_update(update_number)
         if self.command_intent_loss_coef <= 0.0:
             return like.new_zeros(()), 0
         if command_intents is None:
@@ -397,13 +557,40 @@ class BehaviorDistillationTrainer:
                 f"router_logits must be rank-2, got shape {tuple(router_logits.shape)}"
             )
 
+        if trace_update:
+            _emit_trainer_runtime(
+                "command_intent/entry",
+                update_number=update_number,
+                batch_size=batch_size,
+                label_counts=_label_counts(command_intents),
+                expert_targets=dict(self.command_intent_expert_targets),
+                router_logits=_tensor_runtime_snapshot(router_logits),
+            )
         target_indices: list[int] = []
-        for intent in command_intents:
+        for row_index, intent in enumerate(command_intents):
             intent_key = str(intent)
             if intent_key not in self.command_intent_expert_targets:
                 raise ValueError(f"unmapped command intent for command-intent loss: {intent_key!r}")
-            target_indices.append(int(self.command_intent_expert_targets[intent_key]))
+            self._append_runtime_target_index(
+                target_indices=target_indices,
+                raw_target=self.command_intent_expert_targets[intent_key],
+                label_name="command_intent",
+                label_key=intent_key,
+                row_index=row_index,
+                update_number=update_number,
+                trace_row=(
+                    trace_update
+                    and (row_index < 2 or row_index == len(command_intents) - 1)
+                ),
+            )
         targets = torch.tensor(target_indices, dtype=torch.long, device=router_logits.device)
+        if trace_update:
+            _emit_trainer_runtime(
+                "command_intent/after_target_tensor",
+                update_number=update_number,
+                target_indices=tuple(target_indices),
+                targets=_tensor_runtime_snapshot(targets),
+            )
         if int(targets.min().item()) < 0 or int(targets.max().item()) >= int(
             router_logits.shape[-1]
         ):
@@ -419,6 +606,20 @@ class BehaviorDistillationTrainer:
         *,
         performance: DistillationStageObservationAccumulator | None = None,
     ) -> BehaviorDistillationStats:
+        update_number = self.update_count + 1
+        trace_update = _runtime_trace_update(update_number)
+        if trace_update:
+            _emit_trainer_runtime(
+                "trainer/update_entry",
+                update_number=update_number,
+                student_obs=_tensor_runtime_snapshot(batch.student_obs),
+                teacher_obs=_tensor_runtime_snapshot(batch.teacher_obs),
+                teacher_actions=_tensor_runtime_snapshot(batch.teacher_actions),
+                role_label_counts=_label_counts(batch.role_labels),
+                command_intent_counts=_label_counts(batch.command_intents),
+                optimizer_type=type(self.optimizer).__name__,
+                student_type=type(self.student).__name__,
+            )
         if (
             batch.teacher_actions is None
             and batch.student_obs.shape[0] != batch.teacher_obs.shape[0]
@@ -455,18 +656,42 @@ class BehaviorDistillationTrainer:
                 router_logits,
                 expert_actions,
             ) = self._student_action_and_aux(batch.student_obs)
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_student_forward",
+                    update_number=update_number,
+                    teacher_action_source=teacher_action_source,
+                    teacher_action=_tensor_runtime_snapshot(teacher_action),
+                    student_action=_tensor_runtime_snapshot(student_action),
+                    router_logits=_tensor_runtime_snapshot(router_logits),
+                    expert_actions=_tensor_runtime_snapshot(expert_actions),
+                )
             role_loss, role_target_count = self._role_router_loss(
                 role_labels=batch.role_labels,
                 router_logits=router_logits,
                 batch_size=int(batch.student_obs.shape[0]),
                 like=student_action,
             )
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_role_loss",
+                    update_number=update_number,
+                    role_target_count=role_target_count,
+                    role_loss=_tensor_runtime_snapshot(role_loss),
+                )
             command_intent_loss, command_intent_target_count = self._command_intent_router_loss(
                 command_intents=batch.command_intents,
                 router_logits=router_logits,
                 batch_size=int(batch.student_obs.shape[0]),
                 like=student_action,
             )
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_command_intent_loss",
+                    update_number=update_number,
+                    command_intent_target_count=command_intent_target_count,
+                    command_intent_loss=_tensor_runtime_snapshot(command_intent_loss),
+                )
             (
                 behavior_action,
                 behavior_action_source,
@@ -478,6 +703,15 @@ class BehaviorDistillationTrainer:
                 role_labels=batch.role_labels,
                 command_intents=batch.command_intents,
             )
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_behavior_action",
+                    update_number=update_number,
+                    behavior_action_source=behavior_action_source,
+                    behavior_target_count=behavior_target_count,
+                    behavior_action=_tensor_runtime_snapshot(behavior_action),
+                    selected_expert_targets=_tensor_runtime_snapshot(selected_expert_targets),
+                )
             behavior_loss = self._loss(behavior_action, teacher_action)
             loss = (
                 behavior_loss
@@ -485,23 +719,64 @@ class BehaviorDistillationTrainer:
                 + self.role_loss_coef * role_loss
                 + self.command_intent_loss_coef * command_intent_loss
             )
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_loss",
+                    update_number=update_number,
+                    behavior_loss=_tensor_runtime_snapshot(behavior_loss),
+                    aux_loss=_tensor_runtime_snapshot(aux_loss),
+                    role_loss=_tensor_runtime_snapshot(role_loss),
+                    command_intent_loss=_tensor_runtime_snapshot(command_intent_loss),
+                    total_loss=_tensor_runtime_snapshot(loss),
+                )
 
         backward_span = (
             nullcontext() if performance is None else performance.measure("learner_backward")
         )
         with backward_span:
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/before_backward",
+                    update_number=update_number,
+                    total_loss=_tensor_runtime_snapshot(loss),
+                )
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             self._clear_inactive_expert_grads(selected_expert_targets)
             if self.max_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(self.student.parameters(), self.max_grad_norm)
             grad_norm = self._grad_norm(self.student)
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_backward",
+                    update_number=update_number,
+                    grad_norm=grad_norm,
+                )
         optimizer_span = (
             nullcontext() if performance is None else performance.measure("optimizer_step")
         )
         with optimizer_span:
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/before_optimizer",
+                    update_number=update_number,
+                    optimizer_type=type(self.optimizer).__name__,
+                )
             self.optimizer.step()
+            if trace_update:
+                _emit_trainer_runtime(
+                    "trainer/after_optimizer",
+                    update_number=update_number,
+                    optimizer_type=type(self.optimizer).__name__,
+                )
         self.update_count += 1
+        if trace_update:
+            _emit_trainer_runtime(
+                "trainer/update_complete",
+                update_number=update_number,
+                trainer_update_count=self.update_count,
+                grad_norm=grad_norm,
+            )
 
         return BehaviorDistillationStats(
             loss=float(loss.detach().item()),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import builtins
 import json
 
 import numpy as np
@@ -430,6 +432,136 @@ def test_moe_distillation_trainer_applies_command_intent_router_loss() -> None:
     assert stats.command_intent_target_count == 4
     assert stats.loss == pytest.approx(0.75 * stats.command_intent_loss)
     assert router_grad_norm > 0.0
+
+
+def test_distillation_runtime_trace_covers_command_target_chain(capsys) -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        DistillationBatch,
+        MoEStudentPolicy,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=torch.optim.Adam(student.parameters(), lr=0.0),
+        command_intent_loss_coef=1.0,
+        command_intent_expert_targets={"inactive": 0, "active": 1},
+        expert_behavior_loss_source="none",
+    )
+
+    trainer.update(
+        DistillationBatch(
+            student_obs=torch.zeros(2, 2),
+            teacher_obs=torch.empty(2, 0),
+            command_intents=("inactive", "active"),
+            teacher_actions=torch.zeros(2, 2),
+        )
+    )
+
+    prefix = "[distill-trainer-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    stages = [snapshot["stage"] for snapshot in snapshots]
+    assert stages == [
+        "trainer/update_entry",
+        "trainer/after_student_forward",
+        "trainer/after_role_loss",
+        "command_intent/entry",
+        "target_index/before_int",
+        "target_index/after_int",
+        "target_index/after_append",
+        "target_index/before_int",
+        "target_index/after_int",
+        "target_index/after_append",
+        "command_intent/after_target_tensor",
+        "trainer/after_command_intent_loss",
+        "trainer/after_behavior_action",
+        "trainer/after_loss",
+        "trainer/before_backward",
+        "trainer/after_backward",
+        "trainer/before_optimizer",
+        "trainer/after_optimizer",
+        "trainer/update_complete",
+    ]
+    target_snapshots = [
+        snapshot for snapshot in snapshots if snapshot["stage"] == "target_index/before_int"
+    ]
+    assert [snapshot["label_key"] for snapshot in target_snapshots] == [
+        "inactive",
+        "active",
+    ]
+    assert all(snapshot["builtins_int_callable"] is True for snapshot in target_snapshots)
+    assert all(snapshot["append_callable"] is True for snapshot in target_snapshots)
+
+
+def test_distillation_runtime_trace_identifies_int_callable_corruption(capsys) -> None:
+    from unilab.algos.torch.distill import BehaviorDistillationTrainer, MoEStudentPolicy
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=torch.optim.Adam(student.parameters(), lr=0.0),
+        command_intent_loss_coef=1.0,
+        command_intent_expert_targets={"active": 1},
+    )
+    original_int = builtins.int
+
+    class MutatingIntent:
+        def __str__(self) -> str:
+            builtins.int = iter((1,))  # type: ignore[assignment]
+            return "active"
+
+    error = None
+    try:
+        trainer._command_intent_router_loss(
+            command_intents=(MutatingIntent(),),  # type: ignore[arg-type]
+            router_logits=torch.zeros(1, 2),
+            batch_size=1,
+            like=torch.zeros(()),
+        )
+    except TypeError as caught:
+        error = caught
+    finally:
+        builtins.int = original_int  # type: ignore[assignment]
+
+    assert error is not None
+    assert "tuple_iterator" in str(error)
+    prefix = "[distill-trainer-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    failure = snapshots[-1]
+    assert failure["stage"] == "target_index/int_failure"
+    assert failure["label_name"] == "command_intent"
+    assert failure["label_key"] == "active"
+    assert failure["row_index"] == 0
+    assert failure["builtins_int_type"] == "tuple_iterator"
+    assert failure["builtins_int_callable"] is False
+    assert failure["target_indices_type"] == "list"
+    assert failure["append_callable"] is True
+    assert failure["raw_target_repr"] == "1"
 
 
 def test_moe_distillation_trainer_uses_command_intent_expert_behavior_loss() -> None:
@@ -1347,6 +1479,7 @@ def test_distillation_dataset_rejects_bad_cached_teacher_actions_contract() -> N
 
 def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     tmp_path,
+    capsys,
 ) -> None:
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
@@ -1440,6 +1573,89 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     assert reloaded.commands is not None
     assert torch.equal(reloaded.commands, merged.commands)
     assert reloaded.command_intents == merged.command_intents
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    multitask_stages = [
+        snapshot["stage"]
+        for snapshot in snapshots
+        if snapshot["stage"].startswith("multitask/")
+    ]
+    assert multitask_stages == [
+        "multitask/entry",
+        "multitask/before_source_load",
+        "multitask/after_source_annotation",
+        "multitask/before_source_load",
+        "multitask/after_source_annotation",
+        "multitask/after_concat",
+        "multitask/before_final_validation",
+        "multitask/after_final_validation",
+    ]
+
+
+def test_distillation_data_runtime_trace_wraps_torch_save_and_load(
+    tmp_path,
+    capsys,
+) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        load_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    dataset = build_distillation_dataset(
+        torch.zeros(2, 3),
+        torch.zeros(2, 4),
+        expected_student_obs_dim=3,
+        expected_teacher_obs_dim=4,
+    )
+    path = tmp_path / "runtime-trace.pt"
+    save_distillation_dataset(path, dataset)
+    load_distillation_dataset(path)
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    serialization = [
+        snapshot
+        for snapshot in snapshots
+        if snapshot["stage"].startswith("serialization/")
+    ]
+    assert [snapshot["stage"] for snapshot in serialization] == [
+        "serialization/before_torch_save",
+        "serialization/after_torch_save",
+        "serialization/before_torch_load",
+        "serialization/after_torch_load",
+    ]
+    assert all(snapshot["torch_is_storage_callable"] is True for snapshot in serialization)
+    assert all(snapshot["builtins_int_callable"] is True for snapshot in serialization)
+    assert serialization[0]["path"] == str(path)
+    assert serialization[-1]["payload_keys"] == sorted(
+        [
+            "command_after",
+            "command_before",
+            "command_intents",
+            "commands",
+            "metadata",
+            "num_samples",
+            "role_labels",
+            "scenario_labels",
+            "student_obs",
+            "student_obs_dim",
+            "teacher_action_dim",
+            "teacher_actions",
+            "teacher_obs",
+            "teacher_obs_dim",
+            "transition_ages",
+        ]
+    )
 
 
 def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
@@ -2676,6 +2892,75 @@ def test_offline_distillation_run_updates_and_saves_checkpoint(tmp_path) -> None
     assert "optimizer_state_dict" in checkpoint
     for trained_param, restored_param in zip(student.parameters(), restored.parameters()):
         assert torch.allclose(trained_param, restored_param)
+
+
+def test_offline_runtime_trace_emits_exact_failed_update_context(capsys) -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MoEStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=torch.optim.Adam(student.parameters(), lr=0.0),
+        command_intent_loss_coef=1.0,
+        command_intent_expert_targets={"inactive": 0},
+    )
+    dataset = build_distillation_dataset(
+        torch.zeros(2, 2),
+        torch.empty(2, 0),
+        expected_student_obs_dim=2,
+        expected_teacher_obs_dim=0,
+        expected_teacher_action_dim=2,
+        teacher_actions=torch.zeros(2, 2),
+        command_intents=("active", "active"),
+    )
+
+    with pytest.raises(ValueError, match="unmapped command intent"):
+        run_offline_distillation_updates(
+            trainer,
+            dataset,
+            batch_size=2,
+            max_updates=1,
+        )
+
+    prefix = "[distill-offline-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    assert [snapshot["stage"] for snapshot in snapshots] == [
+        "offline/before_trainer_update",
+        "offline/trainer_update_failure",
+    ]
+    failure = snapshots[-1]
+    assert failure["update_number"] == 1
+    assert failure["max_updates"] == 1
+    assert failure["trainer_update_count"] == 0
+    assert failure["error_type"] == "ValueError"
+    assert failure["command_intent_counts"] == {"active": 2}
+    assert failure["student_obs_shape"] == (2, 2)
+    assert failure["recent_updates"] == [
+        {
+            "command_intent_counts": {"active": 2},
+            "role_label_counts": {},
+            "student_obs_shape": (2, 2),
+            "teacher_obs_shape": (2, 0),
+            "update_number": 1,
+        }
+    ]
 
 
 def test_offline_distillation_run_accepts_cached_teacher_actions(tmp_path) -> None:

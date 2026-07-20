@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import builtins
 import math
+import os
+import sys
+import threading
+from collections import Counter, deque
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -16,6 +21,46 @@ from .performance import (
     DistillationStageObservationAccumulator,
 )
 from .trainer import BehaviorDistillationTrainer, DistillationBatch
+
+_DISTILL_OFFLINE_TRACE_INTERVAL = 100
+
+
+def _offline_label_counts(labels: tuple[str, ...] | None) -> dict[str, int]:
+    return {} if labels is None else dict(Counter(str(label) for label in labels))
+
+
+def _offline_batch_runtime_snapshot(
+    *,
+    batch: DistillationBatch,
+    update_number: int,
+) -> dict[str, Any]:
+    return {
+        "update_number": update_number,
+        "student_obs_shape": tuple(batch.student_obs.shape),
+        "teacher_obs_shape": tuple(batch.teacher_obs.shape),
+        "role_label_counts": _offline_label_counts(batch.role_labels),
+        "command_intent_counts": _offline_label_counts(batch.command_intents),
+    }
+
+
+def _emit_offline_runtime(stage: str, **fields: Any) -> None:
+    current_int = builtins.int
+    trace = sys.gettrace()
+    profile = sys.getprofile()
+    snapshot = {
+        "stage": stage,
+        "pid": os.getpid(),
+        "thread_id": threading.get_ident(),
+        "builtins_int_type": type(current_int).__name__,
+        "builtins_int_repr": repr(current_int),
+        "builtins_int_callable": callable(current_int),
+        "sys_trace_type": None if trace is None else type(trace).__name__,
+        "sys_trace_repr": None if trace is None else repr(trace),
+        "sys_profile_type": None if profile is None else type(profile).__name__,
+        "sys_profile_repr": None if profile is None else repr(profile),
+        **fields,
+    }
+    print(f"[distill-offline-runtime] {snapshot!r}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -525,6 +570,7 @@ def run_offline_distillation_updates(
         if performance_clock is None
         else DistillationStageObservationAccumulator(clock=performance_clock)
     )
+    recent_updates: deque[dict[str, Any]] = deque(maxlen=32)
 
     for update_idx in range(int(max_updates)):
         label_counts: dict[str, int] = {}
@@ -557,9 +603,52 @@ def run_offline_distillation_updates(
                     break
                 batch = dataset.as_batch(start=start, batch_size=int(batch_size))
         batch_label_counts.append(label_counts)
-        stats = trainer.update(batch, performance=performance)
-
         completed_updates = update_idx + 1
+        batch_snapshot = _offline_batch_runtime_snapshot(
+            batch=batch,
+            update_number=completed_updates,
+        )
+        recent_updates.append(batch_snapshot)
+        trace_update = (
+            completed_updates == 1
+            or completed_updates % _DISTILL_OFFLINE_TRACE_INTERVAL == 0
+            or completed_updates == int(max_updates)
+        )
+        if trace_update:
+            _emit_offline_runtime(
+                "offline/before_trainer_update",
+                **batch_snapshot,
+                max_updates=int(max_updates),
+                trainer_update_count=trainer.update_count,
+                balance_key=resolved_balance_key,
+                sampled_balance_label_counts=dict(label_counts),
+            )
+        try:
+            stats = trainer.update(batch, performance=performance)
+        except Exception as error:
+            _emit_offline_runtime(
+                "offline/trainer_update_failure",
+                **batch_snapshot,
+                max_updates=int(max_updates),
+                trainer_update_count=trainer.update_count,
+                balance_key=resolved_balance_key,
+                sampled_balance_label_counts=dict(label_counts),
+                error_type=type(error).__name__,
+                error_repr=repr(error),
+                recent_updates=list(recent_updates),
+            )
+            raise
+        if trace_update:
+            _emit_offline_runtime(
+                "offline/after_trainer_update",
+                **batch_snapshot,
+                max_updates=int(max_updates),
+                trainer_update_count=trainer.update_count,
+                stats_update_count=stats.update_count,
+                loss=stats.loss,
+                grad_norm=stats.student_grad_norm,
+            )
+
         if progress_interval > 0 and (
             completed_updates % progress_interval == 0 or completed_updates == int(max_updates)
         ):

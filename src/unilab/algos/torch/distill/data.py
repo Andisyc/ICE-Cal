@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import builtins
 import json
 import os
+import sys
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -164,6 +167,30 @@ def _command_intent_debug_snapshot(
             if intent not in {"active", "inactive"}
         ][:10],
     }
+
+
+def _emit_data_runtime(stage: str, **fields: Any) -> None:
+    is_storage = torch.is_storage
+    current_int = builtins.int
+    trace = sys.gettrace()
+    profile = sys.getprofile()
+    snapshot = {
+        "stage": stage,
+        "pid": os.getpid(),
+        "thread_id": threading.get_ident(),
+        "torch_is_storage_type": type(is_storage).__name__,
+        "torch_is_storage_repr": repr(is_storage),
+        "torch_is_storage_callable": callable(is_storage),
+        "builtins_int_type": type(current_int).__name__,
+        "builtins_int_repr": repr(current_int),
+        "builtins_int_callable": callable(current_int),
+        "sys_trace_type": None if trace is None else type(trace).__name__,
+        "sys_trace_repr": None if trace is None else repr(trace),
+        "sys_profile_type": None if profile is None else type(profile).__name__,
+        "sys_profile_repr": None if profile is None else repr(profile),
+        **fields,
+    }
+    print(f"[distill-data-runtime] {snapshot!r}", flush=True)
 
 
 _TRANSITION_SCENARIOS = {"static_stand", "walk_flat", "walk_to_stop"}
@@ -589,6 +616,15 @@ def build_multitask_distillation_dataset(
     if not sources:
         raise ValueError("multitask distillation dataset requires at least one source")
 
+    _emit_data_runtime(
+        "multitask/entry",
+        source_count=len(sources),
+        expected_student_obs_dim=expected_student_obs_dim,
+        expected_teacher_obs_dim=expected_teacher_obs_dim,
+        expected_teacher_action_dim=expected_teacher_action_dim,
+        device=str(device),
+    )
+
     datasets: list[DistillationTensorDataset] = []
     source_roles: list[str] = []
     source_paths: list[str] = []
@@ -605,6 +641,13 @@ def build_multitask_distillation_dataset(
     for source in sources:
         path = Path(_source_value(source, "path"))
         role = str(_source_value(source, "role"))
+        scenario = source.get("scenario")
+        _emit_data_runtime(
+            "multitask/before_source_load",
+            path=str(path),
+            role=role,
+            scenario=None if scenario in (None, "") else str(scenario),
+        )
         dataset = load_distillation_dataset(
             path,
             expected_student_obs_dim=expected_student_obs_dim,
@@ -612,9 +655,25 @@ def build_multitask_distillation_dataset(
             expected_teacher_action_dim=expected_teacher_action_dim,
             device=device,
         )
-        scenario = source.get("scenario")
         if scenario not in (None, ""):
             dataset = annotate_distillation_dataset_scenario(dataset, str(scenario))
+        _emit_data_runtime(
+            "multitask/after_source_annotation",
+            path=str(path),
+            role=role,
+            scenario=None if scenario in (None, "") else str(scenario),
+            num_samples=dataset.num_samples,
+            student_obs_shape=tuple(dataset.student_obs.shape),
+            teacher_obs_shape=tuple(dataset.teacher_obs.shape),
+            teacher_actions_shape=(
+                None if dataset.teacher_actions is None else tuple(dataset.teacher_actions.shape)
+            ),
+            command_intents=(
+                None
+                if dataset.command_intents is None
+                else _command_intent_debug_snapshot(dataset.command_intents)
+            ),
+        )
         preserve_row_labels = bool(
             source.get("preserve_row_role_labels", preserve_source_role_labels)
         )
@@ -756,6 +815,20 @@ def build_multitask_distillation_dataset(
         else:
             role_label_chunks.append((role,) * dataset.num_samples)
     role_labels = tuple(label for labels in role_label_chunks for label in labels)
+    _emit_data_runtime(
+        "multitask/after_concat",
+        source_count=len(datasets),
+        student_obs_shape=tuple(student_obs.shape),
+        teacher_obs_shape=tuple(teacher_obs.shape),
+        teacher_actions_shape=tuple(teacher_actions.shape),
+        commands_shape=None if commands is None else tuple(commands.shape),
+        command_intents=(
+            None
+            if command_intents is None
+            else _command_intent_debug_snapshot(command_intents)
+        ),
+        role_labels_length=len(role_labels),
+    )
     metadata = {
         "source": "multitask_adapter",
         "source_count": len(datasets),
@@ -772,8 +845,16 @@ def build_multitask_distillation_dataset(
         if command_intents is None
         else _command_intent_debug_snapshot(command_intents)
     )
+    _emit_data_runtime(
+        "multitask/before_final_validation",
+        source_count=len(datasets),
+        command_intents=before_final_validation,
+        student_obs_shape=tuple(student_obs.shape),
+        teacher_obs_shape=tuple(teacher_obs.shape),
+        role_labels_length=len(role_labels),
+    )
     try:
-        return build_distillation_dataset(
+        result = build_distillation_dataset(
             student_obs,
             teacher_obs,
             expected_student_obs_dim=expected_student_obs_dim,
@@ -789,11 +870,30 @@ def build_multitask_distillation_dataset(
             command_before=command_before,
             command_after=command_after,
         )
+        _emit_data_runtime(
+            "multitask/after_final_validation",
+            source_count=len(datasets),
+            num_samples=result.num_samples,
+            command_intents=(
+                None
+                if result.command_intents is None
+                else _command_intent_debug_snapshot(result.command_intents)
+            ),
+        )
+        return result
     except ValueError as error:
         if command_intents is None or "command_intents" not in str(error):
             raise
+        _emit_data_runtime(
+            "multitask/final_validation_failure",
+            source_count=len(datasets),
+            error_type=type(error).__name__,
+            error_repr=repr(error),
+            command_intents_before=before_final_validation,
+            command_intents_after=_command_intent_debug_snapshot(command_intents),
+        )
         sources_snapshot = []
-        for path, role, scenario, dataset in zip(
+        for source_path, role, scenario, dataset in zip(
             source_paths,
             source_roles,
             source_scenarios,
@@ -804,7 +904,7 @@ def build_multitask_distillation_dataset(
             source_intents = _command_intent_debug_snapshot(dataset.command_intents)
             sources_snapshot.append(
                 {
-                    "path": path,
+                    "path": source_path,
                     "role": role,
                     "scenario": scenario,
                     "num_samples": dataset.num_samples,
@@ -861,7 +961,31 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
         "teacher_action_dim": dataset.teacher_action_dim,
         "num_samples": dataset.num_samples,
     }
-    torch.save(payload, Path(path))
+    resolved_path = Path(path)
+    _emit_data_runtime(
+        "serialization/before_torch_save",
+        path=str(resolved_path),
+        payload_keys=sorted(payload),
+        payload_value_types={key: type(value).__name__ for key, value in payload.items()},
+        num_samples=dataset.num_samples,
+    )
+    try:
+        torch.save(payload, resolved_path)
+    except Exception as error:
+        _emit_data_runtime(
+            "serialization/torch_save_failure",
+            path=str(resolved_path),
+            error_type=type(error).__name__,
+            error_repr=repr(error),
+        )
+        raise
+    _emit_data_runtime(
+        "serialization/after_torch_save",
+        path=str(resolved_path),
+        payload_keys=sorted(payload),
+        file_exists=resolved_path.is_file(),
+        file_size=resolved_path.stat().st_size if resolved_path.is_file() else None,
+    )
 
 
 def load_distillation_dataset(
@@ -874,7 +998,33 @@ def load_distillation_dataset(
 ) -> DistillationTensorDataset:
     """Load and validate an offline distillation observation dataset."""
 
-    payload = torch.load(Path(path), map_location=device, weights_only=False)
+    resolved_path = Path(path)
+    _emit_data_runtime(
+        "serialization/before_torch_load",
+        path=str(resolved_path),
+        device=str(device),
+        file_exists=resolved_path.is_file(),
+        file_size=resolved_path.stat().st_size if resolved_path.is_file() else None,
+    )
+    try:
+        payload = torch.load(resolved_path, map_location=device, weights_only=False)
+    except Exception as error:
+        _emit_data_runtime(
+            "serialization/torch_load_failure",
+            path=str(resolved_path),
+            device=str(device),
+            error_type=type(error).__name__,
+            error_repr=repr(error),
+        )
+        raise
+    _emit_data_runtime(
+        "serialization/after_torch_load",
+        path=str(resolved_path),
+        device=str(device),
+        payload_type=type(payload).__name__,
+        payload_keys=sorted(payload),
+        payload_value_types={key: type(value).__name__ for key, value in payload.items()},
+    )
     teacher_actions = payload.get("teacher_actions")
     commands = payload.get("commands")
     transition_ages = payload.get("transition_ages")
