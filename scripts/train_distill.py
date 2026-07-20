@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from collections import Counter
 from collections.abc import Mapping
@@ -2373,5 +2374,18 @@ def main(cfg: DictConfig) -> None:
     )
 
 
+def _run_main_with_native_fail_stop() -> None:
+    """Run Hydra and preserve any unhandled diagnostic failure in a core."""
+
+    try:
+        main()
+    except BaseException:
+        if os.environ.get("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0") == "1":
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.abort()
+        raise
+
+
 if __name__ == "__main__":
-    main()
+    _run_main_with_native_fail_stop()

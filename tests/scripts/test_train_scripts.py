@@ -926,6 +926,48 @@ def test_distill_main_routes_enabled_single_entry_workflow(monkeypatch, capsys):
     assert '"distill_source": "single_entry_workflow"' in capsys.readouterr().out
 
 
+def test_distill_native_fail_stop_aborts_on_any_unhandled_diagnostic_error(
+    monkeypatch,
+) -> None:
+    mod = _train_distill()
+
+    class NativeAbortRequestedError(RuntimeError):
+        pass
+
+    def fail_main() -> None:
+        raise ValueError("moving semantic failure")
+
+    def request_abort() -> None:
+        raise NativeAbortRequestedError
+
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+    monkeypatch.setattr(mod, "main", fail_main)
+    monkeypatch.setattr(mod.os, "abort", request_abort)
+
+    with pytest.raises(NativeAbortRequestedError):
+        mod._run_main_with_native_fail_stop()
+
+
+def test_distill_native_fail_stop_preserves_original_error_when_disabled(
+    monkeypatch,
+) -> None:
+    mod = _train_distill()
+
+    def fail_main() -> None:
+        raise ValueError("ordinary failure")
+
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0")
+    monkeypatch.setattr(mod, "main", fail_main)
+    monkeypatch.setattr(
+        mod.os,
+        "abort",
+        lambda: pytest.fail("disabled native fail-stop must not abort"),
+    )
+
+    with pytest.raises(ValueError, match="ordinary failure"):
+        mod._run_main_with_native_fail_stop()
+
+
 def test_distill_walk_stand_workflow_profile_composes_teacher_roles(monkeypatch):
     monkeypatch.setenv("UNILAB_G1_WALK_TEACHER", "/models/walk.pt")
     monkeypatch.setenv("UNILAB_G1_STAND_TEACHER", "/models/stand.pt")
