@@ -8,11 +8,18 @@ import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
 from .trainer import DistillationBatch
+
+_ORIGINAL_CALLABLE = callable
+_ORIGINAL_LIST = list
+_ORIGINAL_REPR = repr
+_ORIGINAL_STR = str
+_ORIGINAL_TUPLE = tuple
+_ORIGINAL_TYPE = type
 
 
 def _validate_obs_tensor(
@@ -169,25 +176,127 @@ def _command_intent_debug_snapshot(
     }
 
 
+def _safe_runtime_repr(value: Any) -> str:
+    try:
+        return _ORIGINAL_REPR(value)
+    except BaseException as error:  # pragma: no cover - defensive runtime probe
+        return (
+            "<repr-error "
+            f"type={_ORIGINAL_TYPE(error).__name__} "
+            f"repr={_ORIGINAL_REPR(error)}>"
+        )
+
+
+def _scenario_label_debug_snapshot(
+    scenario_labels: Sequence[Any],
+    *,
+    source_ranges: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    label_counts: dict[str, int] = {}
+    invalid_head: list[dict[str, Any]] = []
+    boundary_entries: list[dict[str, Any]] = []
+    length = len(scenario_labels)
+    boundary_indices = sorted({0, 1, max(0, length - 2), max(0, length - 1)})
+
+    for index, raw_label in enumerate(scenario_labels):
+        try:
+            normalized_label = _ORIGINAL_STR(raw_label)
+        except BaseException as error:  # pragma: no cover - defensive runtime probe
+            normalized_label = (
+                "<str-error "
+                f"type={_ORIGINAL_TYPE(error).__name__} "
+                f"repr={_safe_runtime_repr(error)}>"
+            )
+        label_counts[normalized_label] = label_counts.get(normalized_label, 0) + 1
+        entry = {
+            "index": index,
+            "raw_type": _ORIGINAL_TYPE(raw_label).__name__,
+            "raw_repr": _safe_runtime_repr(raw_label),
+            "normalized": normalized_label,
+        }
+        if index in boundary_indices:
+            boundary_entries.append(entry)
+        if (
+            _ORIGINAL_TYPE(raw_label) is not _ORIGINAL_STR
+            or normalized_label not in _TRANSITION_SCENARIOS
+        ) and len(invalid_head) < 10:
+            if source_ranges:
+                provenance = next(
+                    (
+                        source_range
+                        for source_range in source_ranges
+                        if source_range["global_start"] <= index < source_range["global_stop"]
+                    ),
+                    None,
+                )
+                enriched = {
+                    "global_index": index,
+                    "raw_type": entry["raw_type"],
+                    "raw_repr": entry["raw_repr"],
+                    "normalized": normalized_label,
+                }
+                if provenance is not None:
+                    enriched.update(
+                        {
+                            "source_index": provenance["source_index"],
+                            "source_row_index": index - provenance["global_start"],
+                            "path": provenance["path"],
+                            "role": provenance["role"],
+                            "scenario": provenance["scenario"],
+                        }
+                    )
+                invalid_head.append(enriched)
+            else:
+                invalid_head.append(entry)
+
+    return {
+        "type": _ORIGINAL_TYPE(scenario_labels).__name__,
+        "length": length,
+        "label_counts": dict(sorted(label_counts.items())),
+        "boundary_entries": boundary_entries,
+        "invalid_head": invalid_head,
+    }
+
+
 def _emit_data_runtime(stage: str, **fields: Any) -> None:
     is_storage = torch.is_storage
     current_int = builtins.int
+    current_str = builtins.str
+    current_type = builtins.type
+    current_tuple = builtins.tuple
+    current_list = builtins.list
     trace = sys.gettrace()
     profile = sys.getprofile()
     snapshot = {
         "stage": stage,
         "pid": os.getpid(),
         "thread_id": threading.get_ident(),
-        "torch_is_storage_type": type(is_storage).__name__,
-        "torch_is_storage_repr": repr(is_storage),
-        "torch_is_storage_callable": callable(is_storage),
-        "builtins_int_type": type(current_int).__name__,
-        "builtins_int_repr": repr(current_int),
-        "builtins_int_callable": callable(current_int),
-        "sys_trace_type": None if trace is None else type(trace).__name__,
-        "sys_trace_repr": None if trace is None else repr(trace),
-        "sys_profile_type": None if profile is None else type(profile).__name__,
-        "sys_profile_repr": None if profile is None else repr(profile),
+        "torch_is_storage_type": _ORIGINAL_TYPE(is_storage).__name__,
+        "torch_is_storage_repr": _safe_runtime_repr(is_storage),
+        "torch_is_storage_callable": _ORIGINAL_CALLABLE(is_storage),
+        "builtins_int_type": _ORIGINAL_TYPE(current_int).__name__,
+        "builtins_int_repr": _safe_runtime_repr(current_int),
+        "builtins_int_callable": _ORIGINAL_CALLABLE(current_int),
+        "builtins_str_type": _ORIGINAL_TYPE(current_str).__name__,
+        "builtins_str_repr": _safe_runtime_repr(current_str),
+        "builtins_str_callable": _ORIGINAL_CALLABLE(current_str),
+        "builtins_str_is_original": current_str is _ORIGINAL_STR,
+        "builtins_type_type": _ORIGINAL_TYPE(current_type).__name__,
+        "builtins_type_repr": _safe_runtime_repr(current_type),
+        "builtins_type_callable": _ORIGINAL_CALLABLE(current_type),
+        "builtins_type_is_original": current_type is _ORIGINAL_TYPE,
+        "builtins_tuple_type": _ORIGINAL_TYPE(current_tuple).__name__,
+        "builtins_tuple_repr": _safe_runtime_repr(current_tuple),
+        "builtins_tuple_callable": _ORIGINAL_CALLABLE(current_tuple),
+        "builtins_tuple_is_original": current_tuple is _ORIGINAL_TUPLE,
+        "builtins_list_type": _ORIGINAL_TYPE(current_list).__name__,
+        "builtins_list_repr": _safe_runtime_repr(current_list),
+        "builtins_list_callable": _ORIGINAL_CALLABLE(current_list),
+        "builtins_list_is_original": current_list is _ORIGINAL_LIST,
+        "sys_trace_type": None if trace is None else _ORIGINAL_TYPE(trace).__name__,
+        "sys_trace_repr": None if trace is None else _safe_runtime_repr(trace),
+        "sys_profile_type": None if profile is None else _ORIGINAL_TYPE(profile).__name__,
+        "sys_profile_repr": None if profile is None else _safe_runtime_repr(profile),
         **fields,
     }
     print(f"[distill-data-runtime] {snapshot!r}", flush=True)
@@ -203,19 +312,49 @@ def _validate_scenario_labels(
 ) -> tuple[str, ...] | None:
     if scenario_labels is None:
         return None
+    entry_snapshot = _scenario_label_debug_snapshot(scenario_labels)
+    _emit_data_runtime(
+        "scenario_validation/entry",
+        num_samples=num_samples,
+        scenario_labels=entry_snapshot,
+    )
     if len(scenario_labels) != int(num_samples):
+        _emit_data_runtime(
+            "scenario_validation/failure",
+            reason="length_mismatch",
+            num_samples=num_samples,
+            scenario_labels=entry_snapshot,
+        )
         raise ValueError(
             "scenario_labels length mismatch: "
             f"labels={len(scenario_labels)} samples={int(num_samples)}"
         )
     labels = tuple(str(label) for label in scenario_labels)
     if any(label == "" for label in labels):
+        _emit_data_runtime(
+            "scenario_validation/failure",
+            reason="empty_label",
+            num_samples=num_samples,
+            scenario_labels=_scenario_label_debug_snapshot(scenario_labels),
+        )
         raise ValueError("scenario_labels must not contain empty labels")
     unknown = sorted(set(labels) - _TRANSITION_SCENARIOS)
     if unknown:
+        _emit_data_runtime(
+            "scenario_validation/failure",
+            reason="unknown_label",
+            num_samples=num_samples,
+            unknown=unknown,
+            scenario_labels=_scenario_label_debug_snapshot(scenario_labels),
+        )
         raise ValueError(
             f"scenario_labels must contain only static_stand/walk_flat/walk_to_stop, got {unknown}"
         )
+    _emit_data_runtime(
+        "scenario_validation/success",
+        num_samples=num_samples,
+        scenario_labels=_scenario_label_debug_snapshot(scenario_labels),
+    )
     return labels
 
 
@@ -673,6 +812,11 @@ def build_multitask_distillation_dataset(
                 if dataset.command_intents is None
                 else _command_intent_debug_snapshot(dataset.command_intents)
             ),
+            scenario_labels=(
+                None
+                if dataset.scenario_labels is None
+                else _scenario_label_debug_snapshot(dataset.scenario_labels)
+            ),
         )
         preserve_row_labels = bool(
             source.get("preserve_row_role_labels", preserve_source_role_labels)
@@ -764,6 +908,36 @@ def build_multitask_distillation_dataset(
         if source_has_command_intents
         else None
     )
+    scenario_source_ranges: list[dict[str, Any]] = []
+    if validated_transition_presence["scenario_labels"]:
+        global_start = 0
+        for source_index, (source_path, role, scenario, dataset) in enumerate(
+            zip(
+                source_paths,
+                source_roles,
+                source_scenarios,
+                datasets,
+                strict=True,
+            )
+        ):
+            assert dataset.scenario_labels is not None
+            global_stop = global_start + len(dataset.scenario_labels)
+            source_range = {
+                "source_index": source_index,
+                "path": source_path,
+                "role": role,
+                "scenario": scenario,
+                "global_start": global_start,
+                "global_stop": global_stop,
+            }
+            scenario_source_ranges.append(source_range)
+            _emit_data_runtime(
+                "multitask/scenario_source_ready",
+                **source_range,
+                num_samples=dataset.num_samples,
+                scenario_labels=_scenario_label_debug_snapshot(dataset.scenario_labels),
+            )
+            global_start = global_stop
     scenario_labels = (
         tuple(
             label
@@ -774,6 +948,36 @@ def build_multitask_distillation_dataset(
         if validated_transition_presence["scenario_labels"]
         else None
     )
+    if scenario_labels is not None:
+        for source_range, dataset in zip(
+            scenario_source_ranges,
+            datasets,
+            strict=True,
+        ):
+            assert dataset.scenario_labels is not None
+            global_start = cast(int, source_range["global_start"])
+            global_stop = cast(int, source_range["global_stop"])
+            aggregate_slice = scenario_labels[global_start:global_stop]
+            _emit_data_runtime(
+                "multitask/scenario_concat_chunk",
+                **source_range,
+                observation_timing="post_flatten_slice_check",
+                source_scenario_labels=_scenario_label_debug_snapshot(
+                    dataset.scenario_labels
+                ),
+                aggregate_slice=_scenario_label_debug_snapshot(aggregate_slice),
+                source_matches_aggregate_slice=(
+                    dataset.scenario_labels == aggregate_slice
+                ),
+            )
+        _emit_data_runtime(
+            "multitask/scenario_concat_complete",
+            source_count=len(datasets),
+            scenario_labels=_scenario_label_debug_snapshot(
+                scenario_labels,
+                source_ranges=scenario_source_ranges,
+            ),
+        )
     transition_ages = (
         torch.cat(
             [
@@ -827,6 +1031,14 @@ def build_multitask_distillation_dataset(
             if command_intents is None
             else _command_intent_debug_snapshot(command_intents)
         ),
+        scenario_labels=(
+            None
+            if scenario_labels is None
+            else _scenario_label_debug_snapshot(
+                scenario_labels,
+                source_ranges=scenario_source_ranges,
+            )
+        ),
         role_labels_length=len(role_labels),
     )
     metadata = {
@@ -845,10 +1057,19 @@ def build_multitask_distillation_dataset(
         if command_intents is None
         else _command_intent_debug_snapshot(command_intents)
     )
+    before_final_scenario_validation = (
+        None
+        if scenario_labels is None
+        else _scenario_label_debug_snapshot(
+            scenario_labels,
+            source_ranges=scenario_source_ranges,
+        )
+    )
     _emit_data_runtime(
         "multitask/before_final_validation",
         source_count=len(datasets),
         command_intents=before_final_validation,
+        scenario_labels=before_final_scenario_validation,
         student_obs_shape=tuple(student_obs.shape),
         teacher_obs_shape=tuple(teacher_obs.shape),
         role_labels_length=len(role_labels),
@@ -879,16 +1100,70 @@ def build_multitask_distillation_dataset(
                 if result.command_intents is None
                 else _command_intent_debug_snapshot(result.command_intents)
             ),
+            scenario_labels=(
+                None
+                if result.scenario_labels is None
+                else _scenario_label_debug_snapshot(
+                    result.scenario_labels,
+                    source_ranges=scenario_source_ranges,
+                )
+            ),
         )
         return result
     except ValueError as error:
-        if command_intents is None or "command_intents" not in str(error):
+        error_text = _ORIGINAL_STR(error)
+        if scenario_labels is not None and "scenario_labels" in error_text:
+            after_failure = _scenario_label_debug_snapshot(
+                scenario_labels,
+                source_ranges=scenario_source_ranges,
+            )
+            _emit_data_runtime(
+                "multitask/final_validation_failure",
+                source_count=len(datasets),
+                error_type=_ORIGINAL_TYPE(error).__name__,
+                error_repr=_safe_runtime_repr(error),
+                scenario_labels_before=before_final_scenario_validation,
+                scenario_labels_after=after_failure,
+            )
+            scenario_sources_snapshot = []
+            for source_range, dataset in zip(
+                scenario_source_ranges,
+                datasets,
+                strict=True,
+            ):
+                assert dataset.scenario_labels is not None
+                scenario_sources_snapshot.append(
+                    {
+                        **source_range,
+                        "num_samples": dataset.num_samples,
+                        "scenario_labels": _scenario_label_debug_snapshot(
+                            dataset.scenario_labels
+                        ),
+                    }
+                )
+            scenario_snapshot = {
+                "stage": "multitask/final_validation_failure",
+                "pid": os.getpid(),
+                "error_type": _ORIGINAL_TYPE(error).__name__,
+                "error": error_text,
+                "source_count": len(datasets),
+                "sources": scenario_sources_snapshot,
+                "aggregate": after_failure,
+                "before_final_validation": before_final_scenario_validation,
+            }
+            print(
+                "[distill-scenario-label-sentinel] "
+                + json.dumps(scenario_snapshot, sort_keys=True),
+                flush=True,
+            )
+            raise
+        if command_intents is None or "command_intents" not in error_text:
             raise
         _emit_data_runtime(
             "multitask/final_validation_failure",
             source_count=len(datasets),
-            error_type=type(error).__name__,
-            error_repr=repr(error),
+            error_type=_ORIGINAL_TYPE(error).__name__,
+            error_repr=_safe_runtime_repr(error),
             command_intents_before=before_final_validation,
             command_intents_after=_command_intent_debug_snapshot(command_intents),
         )
@@ -915,8 +1190,8 @@ def build_multitask_distillation_dataset(
         snapshot = {
             "stage": "multitask/final_validation_failure",
             "pid": os.getpid(),
-            "error_type": type(error).__name__,
-            "error": str(error),
+            "error_type": _ORIGINAL_TYPE(error).__name__,
+            "error": error_text,
             "source_count": len(datasets),
             "sources": sources_snapshot,
             "before_final_validation": before_final_validation,

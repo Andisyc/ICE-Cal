@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import builtins
 import json
+import types
 
 import numpy as np
 import pytest
@@ -1838,7 +1839,7 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
         )
 
 
-def test_multitask_distillation_dataset_merges_transition_fields(tmp_path) -> None:
+def test_multitask_distillation_dataset_merges_transition_fields(tmp_path, capsys) -> None:
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         build_multitask_distillation_dataset,
@@ -1905,6 +1906,130 @@ def test_multitask_distillation_dataset_merges_transition_fields(tmp_path) -> No
     assert torch.equal(merged.command_before[:2], torch.zeros(2, 3))
     assert merged.command_after is not None
     assert torch.equal(merged.command_after[2:], torch.zeros(2, 3))
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    scenario_snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if snapshot["stage"].startswith("multitask/scenario_")
+    ]
+    assert [snapshot["stage"] for snapshot in scenario_snapshots] == [
+        "multitask/scenario_source_ready",
+        "multitask/scenario_source_ready",
+        "multitask/scenario_concat_chunk",
+        "multitask/scenario_concat_chunk",
+        "multitask/scenario_concat_complete",
+    ]
+    assert scenario_snapshots[0]["path"] == str(stand_path)
+    assert scenario_snapshots[0]["scenario_labels"]["label_counts"] == {
+        "static_stand": 2
+    }
+    assert scenario_snapshots[2]["global_start"] == 0
+    assert scenario_snapshots[2]["global_stop"] == 2
+    assert scenario_snapshots[2]["observation_timing"] == "post_flatten_slice_check"
+    assert scenario_snapshots[2]["source_matches_aggregate_slice"] is True
+    assert scenario_snapshots[3]["path"] == str(transition_path)
+    assert scenario_snapshots[3]["global_start"] == 2
+    assert scenario_snapshots[3]["global_stop"] == 4
+    assert scenario_snapshots[3]["source_matches_aggregate_slice"] is True
+    assert scenario_snapshots[-1]["scenario_labels"]["label_counts"] == {
+        "static_stand": 2,
+        "walk_to_stop": 2,
+    }
+    assert scenario_snapshots[-1]["scenario_labels"]["invalid_head"] == []
+    assert all(snapshot["builtins_str_is_original"] is True for snapshot in snapshots)
+    assert all(snapshot["builtins_type_is_original"] is True for snapshot in snapshots)
+    assert all(snapshot["builtins_tuple_is_original"] is True for snapshot in snapshots)
+    assert all(snapshot["builtins_list_is_original"] is True for snapshot in snapshots)
+
+
+def test_multitask_scenario_failure_emits_raw_source_provenance_snapshot(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    from dataclasses import replace
+
+    import unilab.algos.torch.distill.data as data_module
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    source_path = tmp_path / "transition.pt"
+    source = build_distillation_dataset(
+        torch.zeros(2, 5),
+        torch.zeros(2, 5),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=5,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.zeros(2, 3),
+        scenario_labels=("walk_to_stop", "walk_to_stop"),
+        transition_ages=torch.tensor([0, 1], dtype=torch.int64),
+        command_before=torch.ones(2, 3),
+        command_after=torch.zeros(2, 3),
+    )
+    save_distillation_dataset(source_path, source)
+
+    real_load = data_module.load_distillation_dataset
+
+    def load_with_runtime_corruption(*args, **kwargs):
+        loaded = real_load(*args, **kwargs)
+        return replace(
+            loaded,
+            scenario_labels=("walk_to_stop", types.FrameType),
+        )
+
+    monkeypatch.setattr(
+        data_module,
+        "load_distillation_dataset",
+        load_with_runtime_corruption,
+    )
+    with pytest.raises(ValueError, match=r"scenario_labels.*<class 'frame'>"):
+        build_multitask_distillation_dataset(
+            [{"path": source_path, "role": "walk_flat"}],
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+        )
+
+    output_lines = capsys.readouterr().out.splitlines()
+    snapshots = [
+        json.loads(line.removeprefix("[distill-scenario-label-sentinel] "))
+        for line in output_lines
+        if line.startswith("[distill-scenario-label-sentinel] ")
+    ]
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot["stage"] == "multitask/final_validation_failure"
+    assert snapshot["source_count"] == 1
+    assert snapshot["aggregate"]["invalid_head"] == [
+        {
+            "global_index": 1,
+            "normalized": "<class 'frame'>",
+            "path": str(source_path),
+            "raw_repr": "<class 'frame'>",
+            "raw_type": "type",
+            "role": "walk_flat",
+            "scenario": None,
+            "source_index": 0,
+            "source_row_index": 1,
+        }
+    ]
+    assert snapshot["sources"][0]["scenario_labels"]["invalid_head"] == [
+        {
+            "index": 1,
+            "normalized": "<class 'frame'>",
+            "raw_repr": "<class 'frame'>",
+            "raw_type": "type",
+        }
+    ]
 
 
 def test_multitask_workflow_scenario_annotation_preserves_row_roles(tmp_path) -> None:
