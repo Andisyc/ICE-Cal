@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import sys
 from abc import ABC, abstractmethod
 from typing import Any, Callable
@@ -24,17 +25,28 @@ def _collector_entry_wrapper(
 ) -> None:
     """Top-level wrapper for collector subprocess entry point.
 
-    Ensures ALL exceptions (including import errors and env creation
+    Ensures ordinary Python exceptions (including import errors and env creation
     failures) are captured and sent to the parent via the error pipe.
+
+    Status: active. 诊断开关启用时, collector 异常先写入错误通道, 随后在
+    collector 本进程 abort, 以便 core dump 保留真实 collector native 状态.
     """
     label = kwargs.pop("_error_label", "collector")
-    with collector_error_guard(
-        error_conn=error_conn,
-        metrics_queue=kwargs.get("metrics_queue"),
-        stop_event=kwargs.get("stop_event"),
-        label=label,
-    ):
-        target_fn(**kwargs)
+    try:
+        with collector_error_guard(
+            error_conn=error_conn,
+            metrics_queue=kwargs.get("metrics_queue"),
+            stop_event=kwargs.get("stop_event"),
+            label=label,
+        ):
+            target_fn(**kwargs)
+    except BaseException:
+        if os.environ.get("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0") == "1":
+            # 对普通 Exception, guard 已先发送 traceback. 此处只制造 collector-owned core.
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.abort()
+        raise
 
 
 class AsyncRunner(ABC):

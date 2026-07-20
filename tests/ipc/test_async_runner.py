@@ -10,8 +10,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from unilab.ipc import async_runner as async_runner_module
 from unilab.ipc.async_runner import AsyncRunner
-from unilab.ipc.collector_error import format_collector_death
+from unilab.ipc.collector_error import (
+    ExceptionWrapper,
+    create_error_pipe,
+    format_collector_death,
+)
 
 _SPAWN_CTX = mp.get_context("spawn")
 
@@ -203,6 +208,10 @@ def _collector_report_kwargs(
     stop_event.wait(timeout=30)
 
 
+def _collector_raise_runtime_error() -> None:
+    raise RuntimeError("collector sentinel failure")
+
+
 def test_start_collector_spawns_process():
     """_start_collector() must create and start a subprocess."""
     r = _make_runner()
@@ -226,6 +235,67 @@ def test_start_collector_does_not_merge_runner_runtime_fields():
     payload = report_queue.get(timeout=5)
     assert payload == {"sim_backend": "missing", "token": "ok"}
     r.close()
+
+
+def test_collector_entry_native_fail_stop_reports_error_before_abort(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events: list[str] = []
+    error_conn = MagicMock()
+    error_conn.send.side_effect = lambda _wrapper: events.append("pipe_send")
+    abort = MagicMock(side_effect=lambda: events.append("abort"))
+    monkeypatch.setattr(async_runner_module.os, "abort", abort)
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+
+    with pytest.raises(RuntimeError, match="collector sentinel failure"):
+        async_runner_module._collector_entry_wrapper(
+            _collector_raise_runtime_error,
+            error_conn,
+            {},
+        )
+
+    assert events == ["pipe_send", "abort"]
+
+
+def test_collector_entry_native_fail_stop_disabled_preserves_original_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    error_conn = MagicMock()
+    abort = MagicMock()
+    monkeypatch.setattr(async_runner_module.os, "abort", abort)
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0")
+
+    with pytest.raises(RuntimeError, match="collector sentinel failure"):
+        async_runner_module._collector_entry_wrapper(
+            _collector_raise_runtime_error,
+            error_conn,
+            {},
+        )
+
+    error_conn.send.assert_called_once()
+    abort.assert_not_called()
+
+
+def test_collector_entry_native_fail_stop_aborts_real_spawned_collector(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+    error_recv, error_send = create_error_pipe()
+    process = _SPAWN_CTX.Process(
+        target=async_runner_module._collector_entry_wrapper,
+        args=(_collector_raise_runtime_error, error_send, {}),
+    )
+
+    process.start()
+    error_send.close()
+    assert error_recv.poll(timeout=10)
+    wrapper = error_recv.recv()
+    process.join(timeout=10)
+
+    assert isinstance(wrapper, ExceptionWrapper)
+    assert "collector sentinel failure" in wrapper.exc_msg
+    assert process.exitcode == -signal.SIGABRT
+    error_recv.close()
 
 
 def test_format_collector_death_reports_shell_style_sigbus():
