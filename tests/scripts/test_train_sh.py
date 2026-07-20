@@ -53,6 +53,7 @@ def test_train_sh_fresh_owns_one_paired_time_sorted_identity() -> None:
 
 def test_train_sh_native_heap_debug_exports_allocator_diagnostics(monkeypatch) -> None:
     monkeypatch.setenv("UNILAB_NATIVE_HEAP_DEBUG", "1")
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
     for name in (
         "PYTHONMALLOC",
         "PYTHONFAULTHANDLER",
@@ -73,6 +74,7 @@ def test_train_sh_native_heap_debug_exports_allocator_diagnostics(monkeypatch) -
     assert "PYTHONFAULTHANDLER=1" in result.stdout
     assert "MALLOC_CHECK_=3" in result.stdout
     assert "MALLOC_PERTURB_=165" in result.stdout
+    assert "[train.sh] native_abort_on_corruption=enabled" in result.stdout
 
 
 def test_train_sh_resume_uses_only_the_explicit_existing_identity(tmp_path: Path) -> None:

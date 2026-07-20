@@ -166,6 +166,12 @@ case "${UNILAB_NATIVE_HEAP_DEBUG:-0}" in
     *) die "UNILAB_NATIVE_HEAP_DEBUG must be 0 or 1" ;;
 esac
 
+case "${UNILAB_NATIVE_ABORT_ON_CORRUPTION:-0}" in
+    0) NATIVE_ABORT_ON_CORRUPTION=0 ;;
+    1) NATIVE_ABORT_ON_CORRUPTION=1 ;;
+    *) die "UNILAB_NATIVE_ABORT_ON_CORRUPTION must be 0 or 1" ;;
+esac
+
 for override in "${HYDRA_OVERRIDES[@]-}"; do
     [ -n "$override" ] || continue
     case "$override" in
@@ -239,6 +245,11 @@ if [ "$NATIVE_HEAP_DEBUG" = "1" ]; then
         "$PYTHONMALLOC" "$PYTHONFAULTHANDLER" "$MALLOC_CHECK_" "$MALLOC_PERTURB_"
 else
     printf '[train.sh] native_heap_debug=disabled\n'
+fi
+if [ "$NATIVE_ABORT_ON_CORRUPTION" = "1" ]; then
+    printf '[train.sh] native_abort_on_corruption=enabled\n'
+else
+    printf '[train.sh] native_abort_on_corruption=disabled\n'
 fi
 printf '[train.sh] run_dir=%s\n' "$RUN_DIR"
 printf '[train.sh] artifact_dir=%s\n' "$ARTIFACT_DIR"

@@ -1728,6 +1728,54 @@ def test_distillation_data_runtime_trace_wraps_torch_save_and_load(
     )
 
 
+def test_command_intent_corruption_requests_native_abort_with_snapshot(
+    monkeypatch,
+    capsys,
+) -> None:
+    import unilab.algos.torch.distill.data as data_module
+
+    class ImpossibleIntent:
+        def __str__(self) -> str:
+            return "impossible"
+
+        def __repr__(self) -> str:
+            return "<impossible-intent>"
+
+    class NativeAbortRequestedError(RuntimeError):
+        pass
+
+    def request_abort() -> None:
+        raise NativeAbortRequestedError
+
+    monkeypatch.setenv("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "1")
+    monkeypatch.setattr(data_module.os, "abort", request_abort)
+
+    with pytest.raises(NativeAbortRequestedError):
+        data_module._validate_command_intents(  # noqa: SLF001 - diagnostic contract
+            ["active", ImpossibleIntent()],
+            num_samples=2,
+        )
+
+    prefix = "[distill-data-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    failure = snapshots[-1]
+    assert failure["stage"] == "command_intent_validation/corruption_detected"
+    assert failure["invalid_count"] == 1
+    assert failure["invalid_head"] == [
+        {
+            "index": 1,
+            "raw_type": "ImpossibleIntent",
+            "raw_repr": "<impossible-intent>",
+            "normalized": "impossible",
+        }
+    ]
+    assert failure["native_abort_requested"] is True
+
+
 def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
     tmp_path,
     monkeypatch,

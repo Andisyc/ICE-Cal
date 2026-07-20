@@ -113,8 +113,36 @@ def _validate_command_intents(
         )
     intents = tuple(str(intent) for intent in command_intents)
     allowed = {"active", "inactive"}
-    if any(intent not in allowed for intent in intents):
-        raise ValueError("command_intents must contain only active/inactive labels")
+    invalid_indices = [index for index, intent in enumerate(intents) if intent not in allowed]
+    if invalid_indices:
+        invalid_head = [
+            {
+                "index": index,
+                "raw_type": _ORIGINAL_TYPE(command_intents[index]).__name__,
+                "raw_repr": _safe_runtime_repr(command_intents[index]),
+                "normalized": intents[index],
+            }
+            for index in invalid_indices[:10]
+        ]
+        abort_requested = os.environ.get("UNILAB_NATIVE_ABORT_ON_CORRUPTION", "0") == "1"
+        _emit_data_runtime(
+            "command_intent_validation/corruption_detected",
+            num_samples=int(num_samples),
+            command_intents_type=_ORIGINAL_TYPE(command_intents).__name__,
+            command_intents_length=len(command_intents),
+            invalid_count=len(invalid_indices),
+            invalid_head=invalid_head,
+            native_abort_requested=abort_requested,
+        )
+        if abort_requested:
+            # 仅用于诊断: 在 Apport core 中保留当前 learner 进程状态.
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.abort()
+        raise ValueError(
+            "command_intents must contain only active/inactive labels; "
+            f"invalid_head={invalid_head!r}"
+        )
     return intents
 
 
