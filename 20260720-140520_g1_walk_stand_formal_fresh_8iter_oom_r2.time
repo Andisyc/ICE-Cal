@@ -1,0 +1,24 @@
+Command exited with non-zero status 1
+	Command being timed: "uv run --no-sync train --algo distill --task g1_walk_flat --sim mujoco workflow=g1_walk_stand algo.seed=0 training.device=cuda:0 training.workflow.mode=fresh training.workflow.run_dir=/ssd1/cyx/UniLab/logs/distill_workflow/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2 training.workflow.execution_mode=persistent_async training.workflow.collect_num_envs=32 training.workflow.dagger_samples_per_role=65536 training.workflow.dagger_iterations=8 training.workflow.dagger_batch_size=512 training.workflow.dagger_updates_per_iteration=128 training.workflow.artifact_dir=/ssd1/cyx/UniLab/logs/distill_role_artifacts/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2 training.workflow.bootstrap_updates=20000 training.workflow.adopt_legacy_artifacts=false training.workflow.transition_max_env_steps=24576"
+	User time (seconds): 390.76
+	System time (seconds): 17.49
+	Percent of CPU this job got: 254%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:40.68
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2634960
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1100
+	Minor (reclaiming a frame) page faults: 2597651
+	Voluntary context switches: 3386298
+	Involuntary context switches: 44736
+	Swaps: 0
+	File system inputs: 439232
+	File system outputs: 5702176
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

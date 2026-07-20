@@ -1856,3 +1856,18 @@ or policy-quality conclusion is authorized.
 - Decision: the no-training identity/oracle gate is PASS. FT-1 supervisor
   execution, checkpoint production, GPU-memory behavior, and policy quality
   remain unexecuted/unconfirmed and require separate authorization.
+
+## E112: Ordinary `train.sh` Fresh/Resume Launcher Local PASS
+
+- Artifact: `evidence/2026-07-20-train-sh-fresh-resume-launcher-pass.md`.
+- `start.sh` remains interactive playback.  New `train.sh` requires an explicit
+  `fresh` or `resume` decision; fresh creates a paired time-sorted identity and
+  resume requires one manifest-backed run rather than selecting a latest run.
+- Local dry-run suite: `5 passed`; shell syntax passes.  A real owner-CLI
+  `--cfg job --resolve` probe exits zero with placeholder paths, confirms the
+  CLI-owned `training.workflow.enabled=true`, and retains `legacy` when no
+  execution-mode option is given.
+- No server, collector, learner update, checkpoint, candidate output creation,
+  or formal materialization occurred.
+- Decision: ordinary launcher control surface PASS.  It does not replace formal
+  Gate 0/FT-1 controls or authorize a training command.

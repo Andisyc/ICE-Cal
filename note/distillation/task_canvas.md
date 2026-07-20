@@ -43,6 +43,9 @@ Current status: **integration complete, promotion deferred, default off**.
 - E95: server production-path sentinel PASS: one cache build across 512
   updates, sampled-index digest and final RNG state equal, no training, staging
   `2.1668 s` total and `0.004232 s/update`.
+- E112: ordinary `train.sh` local launcher PASS: explicit fresh/resume choice,
+  paired time-sorted fresh paths, manifest-backed resume, and owner-CLI compose;
+  no server or training action.
 
 ## Current Owners
 
@@ -56,6 +59,8 @@ Current status: **integration complete, promotion deferred, default off**.
 - Structured performance evidence: `distill/performance.py`.
 - Default route selection: `conf/distill/config.yaml` and
   `scripts/train_distill.py`.
+- Ordinary training-launch convenience: root `train.sh`; it does not own
+  formal frozen identities.
 
 ## Open Boundaries
 
@@ -91,6 +96,8 @@ Current status: **integration complete, promotion deferred, default off**.
  `note/distillation/plans/dagger_learner_staging_optimization.md`
 - Bounded workflow freeze:
   `note/distillation/plans/hp7c3_bounded_persistent_workflow_freeze.md`
+- Ordinary launcher plan:
+  `note/distillation/plans/train_sh_fresh_resume_launcher.md`
 - Runtime/owner views: `note/architecture/runtime/` and
   `note/architecture/architecture/`.
 
@@ -130,3 +137,8 @@ one frozen supervisor invocation followed by its matching frozen oracle only
 on success. The chain and stop condition are in
 `plans/formal_dagger_fresh_8iter_r2_ft1_execution.md`: no retry, resume, or
 second r2 identity is authorized.
+
+E112 adds a local ordinary launcher only.  It is not a formal supervisor and
+does not authorize a server execution: formal identities still require their
+matching Gate 0/frozen supervisor path.  For ordinary training, the human must
+choose `fresh` or an exact `--resume-run`; no latest-run auto-resume exists.

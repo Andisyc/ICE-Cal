@@ -1,0 +1,282 @@
+{
+  "accepted": true,
+  "auto_output_identity": {
+    "run_name": "g1_walk_stand_formal_fresh_8iter_oom_r2",
+    "stem": "20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+    "timestamp": "20260720-140520"
+  },
+  "command": {
+    "argv": [
+      "uv",
+      "run",
+      "--no-sync",
+      "train",
+      "--algo",
+      "distill",
+      "--task",
+      "g1_walk_flat",
+      "--sim",
+      "mujoco",
+      "workflow=g1_walk_stand",
+      "algo.seed=0",
+      "training.device=cuda:0",
+      "training.workflow.mode=fresh",
+      "training.workflow.run_dir=/ssd1/cyx/UniLab/logs/distill_workflow/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+      "training.workflow.execution_mode=persistent_async",
+      "training.workflow.collect_num_envs=32",
+      "training.workflow.dagger_samples_per_role=65536",
+      "training.workflow.dagger_iterations=8",
+      "training.workflow.dagger_batch_size=512",
+      "training.workflow.dagger_updates_per_iteration=128",
+      "training.workflow.artifact_dir=/ssd1/cyx/UniLab/logs/distill_role_artifacts/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+      "training.workflow.bootstrap_updates=20000",
+      "training.workflow.adopt_legacy_artifacts=false",
+      "training.workflow.transition_max_env_steps=24576"
+    ],
+    "env": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "HYDRA_FULL_ERROR": "1",
+      "PYTHONWARNINGS": "ignore",
+      "UNILAB_G1_STAND_DATASET": "/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt",
+      "UNILAB_G1_STAND_TEACHER": "/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt",
+      "UNILAB_G1_WALK_DATASET": "/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt",
+      "UNILAB_G1_WALK_TEACHER": "/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt"
+    },
+    "lineage": {
+      "parent_iteration": null,
+      "r6_sentinel_promoted": false,
+      "source": "fresh_teacher_bootstrap"
+    },
+    "materialization_paths": {
+      "compose": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.compose.yaml",
+      "freeze": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.freeze.json",
+      "oracle": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.oracle.py",
+      "preflight": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.preflight.json",
+      "supervisor": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.supervisor.sh"
+    },
+    "output_paths": {
+      "acceptance": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.acceptance.json",
+      "artifact_dir": "/ssd1/cyx/UniLab/logs/distill_role_artifacts/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+      "gpu_telemetry": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.nvidia.csv",
+      "log": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.log",
+      "run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+      "time": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.time"
+    },
+    "repo_root": "/ssd1/cyx/UniLab",
+    "schema_version": 1,
+    "training_executed": false,
+    "workload": {
+      "batch_size": 512,
+      "bootstrap_updates": 20000,
+      "collect_num_envs": 32,
+      "configured_update_floor": 128,
+      "dagger_iterations": 8,
+      "device": "cuda:0",
+      "effective_updates_by_iteration": [
+        4096,
+        8192,
+        12288,
+        16384,
+        20480,
+        24576,
+        28672,
+        32768
+      ],
+      "execution_mode": "persistent_async",
+      "mode": "fresh",
+      "samples_per_role": 65536,
+      "seed": 0,
+      "total_effective_updates": 147456,
+      "transition_max_env_steps": 24576
+    }
+  },
+  "compose": {
+    "path": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.compose.yaml",
+    "returncode": 0,
+    "stderr": ""
+  },
+  "dependency_identity": {
+    "UV_CACHE_DIR": null,
+    "UV_PROJECT_ENVIRONMENT": null,
+    "mujoco_path": "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/mujoco/__init__.py",
+    "mujoco_version": "3.8.0",
+    "python_executable": "/ssd1/cyx/UniLab/.venv/bin/python3",
+    "python_version": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+    "torch_cuda_version": "12.8",
+    "torch_path": "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/__init__.py",
+    "torch_version": "2.7.0+cu128",
+    "unilab_path": "/ssd1/cyx/UniLab/src/unilab/__init__.py",
+    "uv_version": "uv 0.11.23 (x86_64-unknown-linux-gnu)"
+  },
+  "failures": [],
+  "gpu_query": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "0, GPU-d987db4a-1edd-bc5b-09b9-3f4c50530042, NVIDIA GeForce RTX 4090 D, 570.211.01, 24564"
+  },
+  "hard_artifacts": {
+    "stand_dataset": {
+      "path": "/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt",
+      "sha256": "f0e37612a74a355e429518e1241cc4c991111deb5e6483bb592b5732dc085b59",
+      "size": 120328607
+    },
+    "stand_teacher": {
+      "path": "/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt",
+      "sha256": "91e18d3d1f469b2bead350cd41b33494c39c8ec8d26f2daf802e0273afa2c6da",
+      "size": 18500453
+    },
+    "walk_dataset": {
+      "path": "/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt",
+      "sha256": "efa0bec38f43b2ef3e811e1d35fc1f54a40d0d7377aafaa47e113b74aa5be027",
+      "size": 120328711
+    },
+    "walk_teacher": {
+      "path": "/ssd1/cyx/UniLab/model/G1WalkFlat/model_5000.pt",
+      "sha256": "db2f536f1391f7bdd92d22afe065170e32239834e398b685488bcb5ba5b63291",
+      "size": 18500453
+    }
+  },
+  "materialization_paths": {
+    "compose": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.compose.yaml",
+    "freeze": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.freeze.json",
+    "oracle": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.oracle.py",
+    "preflight": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.preflight.json",
+    "supervisor": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.supervisor.sh"
+  },
+  "observed_workload": {
+    "aggregate_rows_by_iteration": [
+      458752,
+      655360,
+      851968,
+      1048576,
+      1245184,
+      1441792,
+      1638400,
+      1835008
+    ],
+    "effective_updates_by_iteration": [
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+    ],
+    "parent_rows": 262144,
+    "required_updates_by_iteration": [
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+    ],
+    "total_effective_updates": 147456
+  },
+  "output_paths": {
+    "acceptance": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.acceptance.json",
+    "artifact_dir": "/ssd1/cyx/UniLab/logs/distill_role_artifacts/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+    "gpu_telemetry": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.nvidia.csv",
+    "log": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.log",
+    "run_dir": "/ssd1/cyx/UniLab/logs/distill_workflow/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2",
+    "time": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.time"
+  },
+  "repo": {
+    "head": "04ccc8f0eb7453611bfdb8dd95dfdc64fa062802",
+    "root": "/ssd1/cyx/UniLab",
+    "runtime_diff_clean": true
+  },
+  "schema_version": 1,
+  "source_identity": {
+    "async_runtime": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/async_runtime.py",
+      "sha256": "69cf2a5ebc516c718454a75a96745534504c927efdcfecf5c5c6f44756aad7ae",
+      "size": 9693
+    },
+    "distill_config": {
+      "path": "/ssd1/cyx/UniLab/conf/distill/config.yaml",
+      "sha256": "64de26d85ffa058e09cf0344b7545bf8153704cf5f76216402a7758e1c9234da",
+      "size": 4753
+    },
+    "formal_identity": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/formal_identity.py",
+      "sha256": "34023424d010bf5e0ed77a476967fe88172506e44abbf2ad6f15dd1bbdfa52a9",
+      "size": 17461
+    },
+    "formal_spec": {
+      "path": "/ssd1/cyx/UniLab/note/distillation/plans/formal_dagger_fresh_8iter_r2.spec.json",
+      "sha256": "cbd962c95b2494990be912437f7aa7b095f5ea55e870151c3b5cd6420566041f",
+      "size": 2012
+    },
+    "gate0_connector": {
+      "path": "/ssd1/cyx/UniLab/scripts/deploy/materialize_formal_dagger_gate0.py",
+      "sha256": "9031a297970c107bceac36dda0577de5a93ba1a80cd017f7a86033c67594125c",
+      "size": 16707
+    },
+    "generated_compose": {
+      "path": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.compose.yaml",
+      "sha256": "1c9f188402d6d9b0a7650b344097e122adb05278cd3f35cad38b8141b4e34afb",
+      "size": 6825
+    },
+    "generated_oracle": {
+      "path": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.oracle.py",
+      "sha256": "a7eb9dfc18ca73fbdcbbce0a278c8976401be201ed073555ef78171a6761fd06",
+      "size": 4024
+    },
+    "generated_supervisor": {
+      "path": "/ssd1/cyx/UniLab/20260720-140520_g1_walk_stand_formal_fresh_8iter_oom_r2.supervisor.sh",
+      "sha256": "71f5d90470561e70eb1d21714a7b7f3357246d16f452981501e0dff0d94dc167",
+      "size": 2319
+    },
+    "offline": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/offline.py",
+      "sha256": "1ad714420b1127e38abad8a1379802f8caa6eb685a0006d6b9e4e44486db5b9d",
+      "size": 26473
+    },
+    "persistent_resources": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/persistent_resources.py",
+      "sha256": "7f2c936bfbb7d84a6bc09505801917536aa67785a734e75060e03edfb8d1e463",
+      "size": 6467
+    },
+    "persistent_runtime": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/persistent_runtime.py",
+      "sha256": "4e88ee8af7cf09fbc8b30cbee45cd354886ba34dec8ba84bf7950f5b5d23f442",
+      "size": 7496
+    },
+    "persistent_worker": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/g1_persistent_worker.py",
+      "sha256": "77af161718248f7e046bfcb3717cf68d8ffeda304fa81b17c9c0fdd6ae37bd7f",
+      "size": 21449
+    },
+    "pyproject": {
+      "path": "/ssd1/cyx/UniLab/pyproject.toml",
+      "sha256": "dfa92961e33149d49c6dc625fb305bbfadf08a24a1475ecefea6a32a2752f5d1",
+      "size": 3536
+    },
+    "train_distill": {
+      "path": "/ssd1/cyx/UniLab/scripts/train_distill.py",
+      "sha256": "b0e3f1f6d5760a7318acd5ba694f52992397bcf4a8e2852448444e8441eb273b",
+      "size": 97922
+    },
+    "uv_lock": {
+      "path": "/ssd1/cyx/UniLab/uv.lock",
+      "sha256": "54f6e1952410b41d9e6e7f5d10191e59be5f11b082a869f37acd3190bb1153cd",
+      "size": 844144
+    },
+    "workflow": {
+      "path": "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/workflow.py",
+      "sha256": "22896114219d5e08df9893f158c38c7470675ac6546feac9ae0d74351f86d47c",
+      "size": 56435
+    },
+    "workflow_config": {
+      "path": "/ssd1/cyx/UniLab/conf/distill/workflow/g1_walk_stand.yaml",
+      "sha256": "8e64ab659f1eaae169ecb6dd8b4059e5cc172464e78956b03d07fd954539e4ba",
+      "size": 1294
+    }
+  },
+  "training_executed": false
+}
