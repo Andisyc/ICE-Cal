@@ -154,6 +154,18 @@ if [ -n "$EXECUTION_MODE" ] && [ "$EXECUTION_MODE" != "legacy" ] && [ "$EXECUTIO
     die "--execution-mode must be legacy or persistent_async"
 fi
 
+case "${UNILAB_NATIVE_HEAP_DEBUG:-0}" in
+    0) NATIVE_HEAP_DEBUG=0 ;;
+    1)
+        NATIVE_HEAP_DEBUG=1
+        export PYTHONMALLOC="${PYTHONMALLOC:-debug}"
+        export PYTHONFAULTHANDLER="${PYTHONFAULTHANDLER:-1}"
+        export MALLOC_CHECK_="${MALLOC_CHECK_:-3}"
+        export MALLOC_PERTURB_="${MALLOC_PERTURB_:-165}"
+        ;;
+    *) die "UNILAB_NATIVE_HEAP_DEBUG must be 0 or 1" ;;
+esac
+
 for override in "${HYDRA_OVERRIDES[@]-}"; do
     [ -n "$override" ] || continue
     case "$override" in
@@ -221,6 +233,13 @@ done
 
 printf '[train.sh] workflow_mode=%s\n' "$WORKFLOW_MODE"
 printf '[train.sh] workflow_enabled=owner-cli\n'
+if [ "$NATIVE_HEAP_DEBUG" = "1" ]; then
+    printf '[train.sh] native_heap_debug=enabled\n'
+    printf '[train.sh] allocator_env=PYTHONMALLOC=%s PYTHONFAULTHANDLER=%s MALLOC_CHECK_=%s MALLOC_PERTURB_=%s\n' \
+        "$PYTHONMALLOC" "$PYTHONFAULTHANDLER" "$MALLOC_CHECK_" "$MALLOC_PERTURB_"
+else
+    printf '[train.sh] native_heap_debug=disabled\n'
+fi
 printf '[train.sh] run_dir=%s\n' "$RUN_DIR"
 printf '[train.sh] artifact_dir=%s\n' "$ARTIFACT_DIR"
 if [ -n "$EXECUTION_MODE" ]; then

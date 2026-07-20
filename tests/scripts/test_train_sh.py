@@ -51,6 +51,30 @@ def test_train_sh_fresh_owns_one_paired_time_sorted_identity() -> None:
     assert "algo.seed=7" in output
 
 
+def test_train_sh_native_heap_debug_exports_allocator_diagnostics(monkeypatch) -> None:
+    monkeypatch.setenv("UNILAB_NATIVE_HEAP_DEBUG", "1")
+    for name in (
+        "PYTHONMALLOC",
+        "PYTHONFAULTHANDLER",
+        "MALLOC_CHECK_",
+        "MALLOC_PERTURB_",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    result = _run_train_sh(
+        "--workflow-mode",
+        "fresh",
+        "--run-name",
+        "pytest-native-heap-debug",
+    )
+
+    assert "[train.sh] native_heap_debug=enabled" in result.stdout
+    assert "PYTHONMALLOC=debug" in result.stdout
+    assert "PYTHONFAULTHANDLER=1" in result.stdout
+    assert "MALLOC_CHECK_=3" in result.stdout
+    assert "MALLOC_PERTURB_=165" in result.stdout
+
+
 def test_train_sh_resume_uses_only_the_explicit_existing_identity(tmp_path: Path) -> None:
     run_dir = tmp_path / "existing-run"
     run_dir.mkdir()

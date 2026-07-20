@@ -565,6 +565,75 @@ def test_distillation_runtime_trace_identifies_int_callable_corruption(capsys) -
     assert failure["raw_target_repr"] == "1"
 
 
+def test_distillation_runtime_trace_identifies_target_tensor_list_corruption(
+    monkeypatch,
+    capsys,
+) -> None:
+    from unilab.algos.torch.distill import BehaviorDistillationTrainer, MoEStudentPolicy
+
+    student = MoEStudentPolicy(
+        obs_dim=2,
+        action_dim=2,
+        num_experts=2,
+        expert_hidden_dims=(),
+        router_hidden_dims=(),
+        squash_action=False,
+    )
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=torch.nn.Identity(),
+        optimizer=torch.optim.Adam(student.parameters(), lr=0.0),
+        command_intent_expert_targets={"inactive": 0, "active": 1},
+    )
+
+    def append_corrupted_target(**kwargs) -> None:
+        target_indices = kwargs["target_indices"]
+        target_indices.append(0 if kwargs["row_index"] == 0 else None)
+
+    monkeypatch.setattr(
+        trainer,
+        "_append_runtime_target_index",
+        append_corrupted_target,
+    )
+    with pytest.raises(TypeError, match="NoneType.*interpreted as an integer"):
+        trainer._target_indices_from_labels(
+            labels=("inactive", "active"),
+            targets={"inactive": 0, "active": 1},
+            batch_size=2,
+            num_experts=2,
+            label_name="command_intent",
+            required=True,
+            device=torch.device("cpu"),
+        )
+
+    prefix = "[distill-trainer-runtime] "
+    snapshots = [
+        ast.literal_eval(line.removeprefix(prefix))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(prefix)
+    ]
+    assert len(snapshots) == 1
+    failure = snapshots[0]
+    assert failure["stage"] == "target_index/tensor_failure"
+    assert failure["label_name"] == "command_intent"
+    assert failure["update_number"] == 1
+    assert failure["batch_size"] == 2
+    assert failure["num_experts"] == 2
+    assert failure["target_indices"]["length"] == 2
+    assert failure["target_indices"]["none_count"] == 1
+    assert failure["target_indices"]["non_int_count"] == 1
+    assert failure["target_indices"]["element_type_counts"] == {
+        "NoneType": 1,
+        "int": 1,
+    }
+    assert failure["target_indices"]["invalid_head"] == [
+        {"index": 1, "raw_repr": "None", "raw_type": "NoneType"}
+    ]
+    assert failure["torch_tensor_callable"] is True
+    assert failure["torch_tensor_is_original"] is True
+    assert failure["error_type"] == "TypeError"
+
+
 def test_moe_distillation_trainer_uses_command_intent_expert_behavior_loss() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,

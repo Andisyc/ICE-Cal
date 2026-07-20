@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import gc
 import os
 import sys
 import threading
@@ -18,6 +19,9 @@ from .performance import DistillationStageObservationAccumulator
 
 _DISTILL_RUNTIME_TRACE_INTERVAL = 100
 _ORIGINAL_INT = int
+_ORIGINAL_REPR = repr
+_ORIGINAL_TORCH_TENSOR = torch.tensor
+_ORIGINAL_TYPE = type
 
 
 def _runtime_trace_update(update_number: int) -> bool:
@@ -56,6 +60,58 @@ def _tensor_runtime_snapshot(tensor: torch.Tensor | None) -> dict[str, Any] | No
         "requires_grad": bool(tensor.requires_grad),
         "grad_fn_type": None if tensor.grad_fn is None else type(tensor.grad_fn).__name__,
         "finite": bool(torch.isfinite(tensor.detach()).all()) if tensor.numel() else True,
+    }
+
+
+def _safe_runtime_repr(value: Any) -> str:
+    try:
+        return _ORIGINAL_REPR(value)
+    except BaseException as error:  # pragma: no cover - defensive runtime probe
+        return (
+            "<repr-error "
+            f"type={_ORIGINAL_TYPE(error).__name__} "
+            f"repr={_ORIGINAL_REPR(error)}>"
+        )
+
+
+def _target_index_list_runtime_snapshot(target_indices: list[int]) -> dict[str, Any]:
+    element_type_counts = Counter(
+        _ORIGINAL_TYPE(value).__name__ for value in target_indices
+    )
+    invalid_head = [
+        {
+            "index": index,
+            "raw_type": _ORIGINAL_TYPE(value).__name__,
+            "raw_repr": _safe_runtime_repr(value),
+        }
+        for index, value in enumerate(target_indices)
+        if _ORIGINAL_TYPE(value) is not _ORIGINAL_INT
+    ][:16]
+    length = len(target_indices)
+    boundary_indices = sorted({0, 1, max(0, length - 2), max(0, length - 1)})
+    boundary_entries = [
+        {
+            "index": index,
+            "raw_type": _ORIGINAL_TYPE(target_indices[index]).__name__,
+            "raw_repr": _safe_runtime_repr(target_indices[index]),
+        }
+        for index in boundary_indices
+        if index < length
+    ]
+    return {
+        "type": _ORIGINAL_TYPE(target_indices).__name__,
+        "id": id(target_indices),
+        "length": length,
+        "size_bytes": sys.getsizeof(target_indices),
+        "refcount": sys.getrefcount(target_indices),
+        "gc_tracked": gc.is_tracked(target_indices),
+        "none_count": sum(value is None for value in target_indices),
+        "non_int_count": sum(
+            _ORIGINAL_TYPE(value) is not _ORIGINAL_INT for value in target_indices
+        ),
+        "element_type_counts": dict(sorted(element_type_counts.items())),
+        "boundary_entries": boundary_entries,
+        "invalid_head": invalid_head,
     }
 
 
@@ -301,7 +357,35 @@ class BehaviorDistillationTrainer:
                 update_number=update_number,
                 trace_row=(trace_update and (row_index < 2 or row_index == len(labels) - 1)),
             )
-        target_tensor = torch.tensor(target_indices, dtype=torch.long, device=device)
+        tensor_fn = torch.tensor
+        try:
+            target_tensor = tensor_fn(target_indices, dtype=torch.long, device=device)
+        except Exception as error:
+            _emit_trainer_runtime(
+                "target_index/tensor_failure",
+                update_number=update_number,
+                label_name=label_name,
+                batch_size=batch_size,
+                num_experts=num_experts,
+                device_repr=_safe_runtime_repr(device),
+                dtype_repr=_safe_runtime_repr(torch.long),
+                target_mapping=[
+                    {
+                        "label": _safe_runtime_repr(target_label),
+                        "raw_type": _ORIGINAL_TYPE(raw_target).__name__,
+                        "raw_repr": _safe_runtime_repr(raw_target),
+                    }
+                    for target_label, raw_target in targets.items()
+                ],
+                target_indices=_target_index_list_runtime_snapshot(target_indices),
+                torch_tensor_type=_ORIGINAL_TYPE(tensor_fn).__name__,
+                torch_tensor_repr=_safe_runtime_repr(tensor_fn),
+                torch_tensor_callable=callable(tensor_fn),
+                torch_tensor_is_original=tensor_fn is _ORIGINAL_TORCH_TENSOR,
+                error_type=_ORIGINAL_TYPE(error).__name__,
+                error_repr=_safe_runtime_repr(error),
+            )
+            raise
         if int(target_tensor.min().item()) < 0 or int(target_tensor.max().item()) >= int(
             num_experts
         ):
