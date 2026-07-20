@@ -1780,3 +1780,58 @@ or policy-quality conclusion is authorized.
   Ruff/mypy pass.
 - Decision: local Gate 0 integration PASS; server materialization and final
   fresh training remain unexecuted.
+
+## E108: Formal Runtime Status Correction For r2 And Fresh r1
+
+- Date: 2026-07-20.
+- L0 source: user-provided server command outputs and the pulled
+  `g1_walk_stand_formal_fresh_8iter_20260717_r1.log` in this task conversation;
+  the raw server log is not stored in this checkout.
+- r2 fact: its Gate 0 preflight returned `accepted=true` and
+  `training_executed=false`; its later two-iteration postflight-v2 result also
+  returned `accepted=true`. The oracle read existing artifacts and did not
+  rerun training.
+- Fresh-r1 fact: its Gate 0 preflight returned `accepted=true`; its supervisor
+  created `bootstrap_student.pt` and `dagger_iteration_1.pt` through
+  `dagger_iteration_4.pt`. The next aggregate/update boundary hit CUDA OOM.
+- Decision: r1 is a preserved interrupted identity, not a resume/retry target.
+  It cannot be called an eight-iteration completed candidate. Any fresh r2
+  must use a new frozen output identity after a separately approved resource
+  and workload decision.
+
+## E109: Formal Auto Output Identity Local PASS
+
+- Date: 2026-07-20.
+- Artifact: `evidence/2026-07-20-formal-auto-output-identity-pass.md`.
+- `FormalDaggerAutoOutputIdentity` is the only new owner for a semantic
+  `run_name` to one Gate-0-resolved, lexically time-sorted output stem.
+- The deploy connector freezes the resolved paths and metadata; it rejects
+  mixing `run_name` with manual `run_dir`/`artifact_dir`, and continues to
+  accept explicit legacy manual paths.
+- Local evidence: 56 focused tests, Ruff, mypy, and Atlas validation pass.
+  No server command, Gate 0 materialization, supervisor, or training ran in
+  this step.
+- Decision: local control-surface integration PASS. Choosing a fresh-r2
+  resource/workload spec and authorizing an authenticated no-training Gate 0
+  remain separate human decisions.
+
+## E110: Formal Fresh r2 Local Spec PASS
+
+- Date: 2026-07-20.
+- Artifact: `evidence/2026-07-20-formal-fresh-r2-local-spec-pass.md`.
+- Approved resource containment: `collect_num_envs=32`; bootstrap/DAgger batch
+  stays 512, samples per role stays 65536, eight outer iterations and the
+  147456-update schedule stay unchanged.
+- The r2 JSON supplies only
+  `run_name=g1_walk_stand_formal_fresh_8iter_oom_r2`; it has no manual output
+  path. Fixed-clock connector validation derives both output roots and freezes
+  the same schedule.
+- The owner-derived Hydra compose returns zero with the r2 fields. A direct
+  CLI passthrough was intentionally rejected; the validated route is the
+  existing `build_command()` owner path.
+- Limitation: r1's reported OOM occurs before batch sampling, during complete
+  aggregate CUDA load/validation. The collector change is containment only;
+  it is not an OOM-fix claim. No server command, Gate 0, supervisor, or
+  training ran.
+- Decision: local r2 spec PASS. Authenticated server Gate 0 remains a separate
+  human-authorized step.

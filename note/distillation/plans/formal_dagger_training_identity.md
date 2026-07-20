@@ -1,7 +1,7 @@
 # Formal DAgger Training Identity
 
-Status: FT-0 owner and deploy integration PASS; server materialization pending.
-Date: 2026-07-17
+Status: formal route implemented; historical r2 artifact acceptance PASS; fresh r1 is preserved after OOM; new fresh r2 local spec PASS, authenticated Gate 0 pending separate authorization.
+Date: 2026-07-20
 
 ## Decision
 
@@ -71,7 +71,8 @@ independent runtime and human-authorization boundary.
   `training_executed=false`.
 - Stop condition: any mismatch, missing input, dirty runtime source, config
   disagreement, existing output, failed preflight, or r6 lineage records
-  `BLOCKED`. FT-1 remains closed. PASS returns control with all hashes.
+  `BLOCKED`; that failed Gate 0 authorizes no FT-1 execution. PASS returns
+  control with all hashes.
 
 ### FT-1 / 2: One formal DAgger training execution
 
@@ -155,8 +156,8 @@ rejects r6/HP-7 sentinel lineage and never executes training.
 E102 records the thin deploy connector and local file-level integration PASS.
 It captures source/config/artifact, owner-CLI compose, dependency/import, GPU,
 command, output, supervisor, oracle, and preflight identities without invoking
-training. FT-0 remains PARTIAL only because the formal workload/output spec and
-authenticated server no-training materialization are not yet frozen/executed.
+training. At the time of E102, the formal workload/output spec and authenticated
+server no-training materialization were not yet frozen/executed.
 
 E104 integrates the real aggregate workload discriminator into that connector.
 The one-line materializer loads the manifest-owned aggregate, reads resolved
@@ -166,7 +167,13 @@ observed schedule/total against the spec. A mismatch blocks preflight.
 E105 closes r1 as failed before workload observation or training. The repaired
 connector keeps UniLab route ownership, places Hydra flags before script
 overrides, and binds reviewed teacher/dataset paths into the compose/supervisor
-environment. r2 is the only current executable Gate 0 identity.
+environment. Its r2 successor is the historical accepted Gate 0 identity
+described by E108.
+
+E108 is the current addendum to the older FT-0/FT-1 status: the server r2 Gate
+0 subsequently accepted and its two existing iterations passed the read-only
+postflight-v2 oracle. That acceptance is artifact/lineage evidence only; it
+does not establish RT-10 physical quality or promotion.
 
 ## Final Fresh Eight-Iteration Identity
 
@@ -180,3 +187,35 @@ The effective DAgger schedule is
 `[4096, 8192, 12288, 16384, 20480, 24576, 28672, 32768]`, total `147456`;
 bootstrap plus DAgger is `167456`. Server Gate 0 must recompute it from the real
 role datasets and resolved config before generating the executable supervisor.
+E108 records that this r1 Gate 0 did accept and the supervisor later produced
+through `dagger_iteration_4.pt`; the following aggregate encountered CUDA OOM.
+The identity is preserved, never resumed or overwritten.
+
+## Auto Output Identity Control Surface
+
+E109 adds a non-semantic control surface for the next fresh identity. A new
+reviewed specification may provide a lower-case `run_name` instead of manual
+timestamped `run_dir`/`artifact_dir` strings. At no-training Gate 0, the formal
+identity owner resolves exactly one local-time stem
+`YYYYMMDD-HHMMSS_<run_name>`, derives the output directories, and freezes them
+before the supervisor exists. Manual paths remain a legacy-compatible reviewed
+option; mixing either manual path with `run_name` is rejected.
+
+This automation does not choose batch size, environment count, samples,
+updates, device, workload, OOM mitigation, retry, or resume behavior. A fresh
+r2 still requires a separately reviewed resource/workload specification and an
+authenticated no-training Gate 0.
+
+## Fresh r2 Local Resource Specification
+
+E110 freezes the reviewed local specification
+`formal_dagger_fresh_8iter_r2.spec.json`. It uses automatic
+`run_name=g1_walk_stand_formal_fresh_8iter_oom_r2`, retains the eight-iteration
+fresh workload and 512-sized bootstrap/DAgger batches, and changes only
+`collect_num_envs` from 64 to 32. The local replay calculation remains
+`[4096, 8192, 12288, 16384, 20480, 24576, 28672, 32768]`, total `147456`.
+
+This is collector-concurrency containment, not an established fix for the
+aggregate GPU load/validation OOM. The spec explicitly excludes retry/resume;
+an authenticated server Gate 0 and any training execution remain separate
+human decisions.

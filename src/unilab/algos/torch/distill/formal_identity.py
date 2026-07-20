@@ -9,8 +9,10 @@ materializer.
 from __future__ import annotations
 
 import hashlib
+import re
 import shlex
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,82 @@ class FormalDaggerIdentitySpec:
     bootstrap_updates: int = 0
     adopt_legacy_artifacts: bool = False
     transition_max_env_steps: int | None = None
+
+
+@dataclass(frozen=True)
+class FormalDaggerAutoOutputIdentity:
+    """One Gate 0-resolved, time-sorted formal output identity."""
+
+    run_name: str
+    timestamp: str
+    stem: str
+    run_dir: Path
+    artifact_dir: Path | None
+
+
+_FORMAL_RUN_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def resolve_time_sorted_formal_output_identity(
+    *,
+    repo_root: Path,
+    run_name: str,
+    mode: str,
+    now: datetime,
+    run_root: Path | None = None,
+    artifact_root: Path | None = None,
+) -> FormalDaggerAutoOutputIdentity:
+    """将 human `run_name` 解析为 Gate 0 一次性冻结的输出身份.
+
+    函数名说明:
+        这是 formal output identity owner, 只决定路径和排序语义, 不创建目录或启动训练.
+
+    主链路:
+        上游: Gate 0 materialization spec.
+        下游: FormalDaggerIdentitySpec 的 run_dir/artifact_dir, freeze 和 supervisor.
+
+    语义:
+        `timestamp` 在 Gate 0 解析一次. 同一 supervisor 只能使用已冻结路径,
+        不会在每次启动时生成新时间戳.
+    """
+
+    if mode not in {"fork", "fresh"}:
+        raise ValueError(f"unsupported formal workflow mode: {mode!r}")
+    if not _FORMAL_RUN_NAME_PATTERN.fullmatch(run_name):
+        raise ValueError(
+            "run_name must contain only lowercase letters, digits, underscores, and hyphens "
+            "and start with a letter or digit"
+        )
+
+    # B1: 将一次 Gate 0 时钟解析为可排序且人可读的 identity stem.
+    timestamp = now.strftime("%Y%m%d-%H%M%S")
+    stem = f"{timestamp}_{run_name}"
+
+    # B2: 只在 cold path 派生独立的 workflow 和 fresh role-artifact 根目录.
+    resolved_repo_root = repo_root.resolve()
+    resolved_run_root = (
+        resolved_repo_root / "logs" / "distill_workflow"
+        if run_root is None
+        else (run_root if run_root.is_absolute() else resolved_repo_root / run_root).resolve()
+    )
+    resolved_artifact_root = (
+        resolved_repo_root / "logs" / "distill_role_artifacts"
+        if artifact_root is None
+        else (
+            artifact_root
+            if artifact_root.is_absolute()
+            else resolved_repo_root / artifact_root
+        ).resolve()
+    )
+
+    # B3: 返回纯数据 identity, 由 deploy connector 写入 freeze 而非此 owner 写文件.
+    return FormalDaggerAutoOutputIdentity(
+        run_name=run_name,
+        timestamp=timestamp,
+        stem=stem,
+        run_dir=resolved_run_root / stem,
+        artifact_dir=(resolved_artifact_root / stem if mode == "fresh" else None),
+    )
 
 
 def _file_identity(path: Path) -> dict[str, Any]:

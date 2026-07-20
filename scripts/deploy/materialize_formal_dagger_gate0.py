@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from unilab.algos.torch.distill.formal_identity import (
     build_formal_freeze_document,
     build_formal_oracle_source,
     build_formal_supervisor_source,
+    resolve_time_sorted_formal_output_identity,
 )
 from unilab.algos.torch.distill.offline import (
     required_balanced_replay_updates_for_labels,
@@ -64,9 +66,12 @@ class MaterializationSpec:
     identity: FormalDaggerIdentitySpec
     source_paths: dict[str, Path]
     hard_artifact_paths: dict[str, Path]
+    auto_output_identity: dict[str, str] | None = None
 
 
-def load_materialization_spec(path: Path) -> MaterializationSpec:
+def load_materialization_spec(
+    path: Path, *, now: datetime | None = None
+) -> MaterializationSpec:
     """Parse the reviewed JSON spec and reject incomplete formal identities."""
 
     payload = json.loads(path.read_text())
@@ -81,6 +86,36 @@ def load_materialization_spec(path: Path) -> MaterializationSpec:
     source_paths = {
         name: Path(value).resolve() for name, value in payload.pop("source_paths").items()
     }
+    auto_output_identity: dict[str, str] | None = None
+    run_name = payload.pop("run_name", None)
+    run_root = payload.pop("run_root", None)
+    artifact_root = payload.pop("artifact_root", None)
+    if run_name is not None:
+        conflicting = [field for field in ("run_dir", "artifact_dir") if field in payload]
+        if conflicting:
+            raise ValueError(
+                "run_name cannot be combined with manual output paths: "
+                + ", ".join(conflicting)
+            )
+        resolved_repo_root = Path(payload["repo_root"]).resolve()
+        generated = resolve_time_sorted_formal_output_identity(
+            repo_root=resolved_repo_root,
+            run_name=str(run_name),
+            mode=str(payload.get("mode", "fork")),
+            now=now or datetime.now(),
+            run_root=None if run_root is None else Path(str(run_root)),
+            artifact_root=None if artifact_root is None else Path(str(artifact_root)),
+        )
+        payload["run_dir"] = generated.run_dir
+        if generated.artifact_dir is not None:
+            payload["artifact_dir"] = generated.artifact_dir
+        auto_output_identity = {
+            "run_name": generated.run_name,
+            "timestamp": generated.timestamp,
+            "stem": generated.stem,
+        }
+    elif run_root is not None or artifact_root is not None:
+        raise ValueError("run_root and artifact_root require run_name")
     payload["effective_updates_by_iteration"] = tuple(
         int(value) for value in payload["effective_updates_by_iteration"]
     )
@@ -97,6 +132,7 @@ def load_materialization_spec(path: Path) -> MaterializationSpec:
         identity=FormalDaggerIdentitySpec(**payload),
         source_paths=source_paths,
         hard_artifact_paths=hard_artifact_paths,
+        auto_output_identity=auto_output_identity,
     )
 
 
@@ -296,11 +332,14 @@ def observe_gate0(spec: MaterializationSpec) -> Gate0Observations:
 
 
 def materialize_from_spec(
-    spec_path: Path, *, observations: Gate0Observations | None = None
+    spec_path: Path,
+    *,
+    observations: Gate0Observations | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Write FT-0 artifacts and run only the generated oracle preflight."""
 
-    materialization = load_materialization_spec(spec_path)
+    materialization = load_materialization_spec(spec_path, now=now)
     identity = bind_hard_artifact_environment(
         build_formal_command_identity(materialization.identity), materialization
     )
@@ -357,6 +396,8 @@ def materialize_from_spec(
     freeze["dependency_identity"] = observed.dependency_identity
     freeze["gpu_query"] = observed.gpu_query
     freeze["observed_workload"] = observed.workload_identity
+    if materialization.auto_output_identity is not None:
+        freeze["auto_output_identity"] = materialization.auto_output_identity
     paths["freeze"].write_text(json.dumps(freeze, indent=2, sort_keys=True) + "\n")
 
     preflight = subprocess.run(
@@ -383,6 +424,13 @@ def materialize_from_spec(
         "freeze_path": str(paths["freeze"]),
         "preflight_path": str(paths["preflight"]),
         "preflight_returncode": preflight.returncode,
+        "run_dir": str(materialization.identity.run_dir),
+        "artifact_dir": (
+            None
+            if materialization.identity.artifact_dir is None
+            else str(materialization.identity.artifact_dir)
+        ),
+        "auto_output_identity": materialization.auto_output_identity,
     }
 
 

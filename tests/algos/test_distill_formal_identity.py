@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from unilab.algos.torch.distill.formal_identity import (
     build_formal_freeze_document,
     build_formal_oracle_source,
     build_formal_supervisor_source,
+    resolve_time_sorted_formal_output_identity,
 )
 
 
@@ -160,6 +162,36 @@ def test_formal_identity_requires_fresh_outputs(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError, match="formal output already exists"):
         build_formal_command_identity(spec)
+
+
+def test_time_sorted_output_identity_derives_fresh_paths_from_run_name(tmp_path: Path) -> None:
+    identity = resolve_time_sorted_formal_output_identity(
+        repo_root=tmp_path,
+        run_name="g1_walk_stand_fresh_oom_r2",
+        mode="fresh",
+        now=datetime(2026, 7, 20, 9, 8, 7),
+    )
+
+    assert identity.stem == "20260720-090807_g1_walk_stand_fresh_oom_r2"
+    assert identity.run_dir == (
+        tmp_path / "logs" / "distill_workflow" / identity.stem
+    )
+    assert identity.artifact_dir == (
+        tmp_path / "logs" / "distill_role_artifacts" / identity.stem
+    )
+
+
+@pytest.mark.parametrize("run_name", ["", "../escape", "name/child", "has space"])
+def test_time_sorted_output_identity_rejects_unsafe_run_names(
+    tmp_path: Path, run_name: str
+) -> None:
+    with pytest.raises(ValueError, match="run_name"):
+        resolve_time_sorted_formal_output_identity(
+            repo_root=tmp_path,
+            run_name=run_name,
+            mode="fresh",
+            now=datetime(2026, 7, 20, 9, 8, 7),
+        )
 
 
 def test_formal_supervisor_executes_only_the_frozen_argv(tmp_path: Path) -> None:

@@ -110,37 +110,21 @@ start cleanly from the original parent iteration 3, explicitly promote the r6
 sentinel checkpoint, or evaluate r6 first. A selected route still requires a
 new workload/output/oracle freeze. Do not reuse the r6 supervisor.
 
-The human has now selected the clean, independent formal-training direction.
-`plans/formal_dagger_training_identity.md` freezes the planning boundary:
-formal lineage starts from the original completed parent iteration 3; the r6
-performance sentinel checkpoint and supervisor are excluded. The current step
-is FT-0 no-training identity/oracle materialization. FT-1 real training remains
-closed until FT-0 returns a complete accepted freeze and the human separately
-authorizes execution.
+Current formal state: r2 completed two artifact-accepted iterations under its
+own frozen identity; it is not a physical-policy acceptance. The separate
+fresh-r1 Gate 0 accepted and its supervisor produced through
+`dagger_iteration_4.pt`, then stopped at the next aggregate/update boundary
+with CUDA OOM. E108 is the L1 record; r1 remains preserved and must never be
+resumed, overwritten, or relabeled as an eight-iteration candidate.
 
-E101-E103 complete the FT-0 formal-identity owner, thin deploy connector, local
-file-level preflight integration, and formal r1 spec. The spec has two added
-outer iterations from original
-parent iteration 3, update schedule `[12320, 12352]`, total `24672`, and a new
-output root. The next boundary is one authenticated server no-training
-materialization that recomputes and verifies the schedule. FT-1 remains closed.
+AOI-1/AOI-2 are complete in E109: a new reviewed formal spec can provide one
+semantic `run_name`, and Gate 0 will resolve/freeze exactly one time-sorted
+run/artifact identity. This is an output-control change only; it changes no
+DAgger semantics, resource values, retry behavior, or server execution.
 
-E104 moves schedule recomputation inside the one-line materializer using the
-real aggregate and production offline replay owner. The only next action is the
-authenticated server no-training materialization; FT-1 remains closed.
-
-E105 records r1 Gate 0 as permanently failed with `training_executed=false`.
-The real compose route and teacher/dataset environment binding now pass locally.
-The only current identity is r2; its no-training materialization is next.
-
-The r2 supervisor has since completed two formal iterations and the original
-postflight reports accepted, but its acceptance coverage was incomplete. E106
-adds oracle v2 for checkpoint/scenario/weight/cleanup/metrics/dependency/GPU
-closure. The next action is read-only v2 validation of existing r2 artifacts;
-never rerun training.
-
-E107 defines a separate final clean fresh workload: strict role REUSE, 20,000
-bootstrap updates, eight DAgger iterations, 147,456 DAgger updates, and unique
-run/artifact directories. Local identity, real compose, workload discriminator,
-and fresh oracle-v2 contracts pass. Next is server no-training Gate 0; no final
-fresh training is authorized yet.
+E110 closes the local r2 spec gate: `collect_num_envs=32`, unchanged batch and
+147456-update workload, and
+`run_name=g1_walk_stand_formal_fresh_8iter_oom_r2` all pass fixed-clock
+identity, replay-schedule, and formal owner-compose checks. The current next
+boundary is an explicitly authorized authenticated server Gate 0 only. No
+supervisor or training command is authorized.
