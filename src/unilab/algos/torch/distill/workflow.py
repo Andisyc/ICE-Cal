@@ -767,6 +767,7 @@ def run_multirole_dagger_workflow(
     performance_clock: Callable[[], float] = time.perf_counter,
     status_callback: Callable[[str], None] | None = None,
     iteration_callback: Callable[[int, int], None] | None = None,
+    runtime_sentinel: Callable[[str], None] | None = None,
 ) -> DaggerWorkflowResult:
     resolved_run_dir = Path(run_dir)
     manifest_path = resolved_run_dir / "run_manifest.json"
@@ -867,7 +868,11 @@ def run_multirole_dagger_workflow(
         input_weight_version: int | None = None
         if execution_mode == "persistent_async":
             assert scenario_collector is not None
+            if runtime_sentinel is not None:
+                runtime_sentinel(f"workflow/iteration_{iteration}/before_activate_checkpoint")
             input_weight_version = int(scenario_collector.activate_checkpoint(current_checkpoint))
+            if runtime_sentinel is not None:
+                runtime_sentinel(f"workflow/iteration_{iteration}/after_activate_checkpoint")
             if input_weight_version < 0:
                 raise ValueError(
                     "persistent scenario collector returned a negative weight version: "
@@ -925,7 +930,15 @@ def run_multirole_dagger_workflow(
                         output_path=str(output_path.resolve()),
                         expected_weight_version=input_weight_version,
                     )
+                    if runtime_sentinel is not None:
+                        runtime_sentinel(
+                            f"workflow/iteration_{iteration}/scenario_{scenario.name}/before_collect"
+                        )
                     persistent_result = scenario_collector.collect(request)
+                    if runtime_sentinel is not None:
+                        runtime_sentinel(
+                            f"workflow/iteration_{iteration}/scenario_{scenario.name}/after_collect"
+                        )
                     validate_dagger_collect_result(request, persistent_result)
                     num_samples = int(persistent_result.num_samples)
                 if num_samples <= 0:
@@ -1041,7 +1054,11 @@ def run_multirole_dagger_workflow(
         )
         aggregate_path.parent.mkdir(parents=True, exist_ok=True)
         aggregate_start = float(performance_clock())
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{iteration}/before_aggregate")
         cumulative_num_samples = int(aggregate_datasets(tuple(cumulative_sources), aggregate_path))
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{iteration}/after_aggregate")
         aggregate_seconds = float(performance_clock()) - aggregate_start
         emit_status(
             f"iteration={iteration} aggregated samples={cumulative_num_samples} "

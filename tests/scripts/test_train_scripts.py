@@ -832,6 +832,49 @@ def _train_distill():
     return _load_script("train_distill")
 
 
+def test_distill_torch_serialization_runtime_sentinel_reports_callable_identity(capsys):
+    mod = _train_distill()
+
+    snapshot = mod._probe_torch_serialization_runtime("workflow/after_bootstrap")
+
+    output = capsys.readouterr().out.strip()
+    assert output.startswith("[distill-runtime-sentinel] ")
+    payload = json.loads(output.removeprefix("[distill-runtime-sentinel] "))
+    assert payload == snapshot
+    assert payload["stage"] == "workflow/after_bootstrap"
+    assert payload["pid"] == mod.os.getpid()
+    assert payload["is_storage_type"] == "function"
+    assert payload["is_storage_callable"] is True
+    assert payload["is_storage_module"] == "torch"
+
+
+def test_distill_torch_serialization_runtime_sentinel_fails_fast_on_cell(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    mod = _train_distill()
+    marker = object()
+    cell = (lambda: marker).__closure__[0]
+    monkeypatch.setattr(mod.torch, "is_storage", cell)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "torch serialization runtime identity corrupted: "
+            "stage=workflow/iteration_1/before_aggregate .*type=cell callable=False"
+        ),
+    ):
+        mod._probe_torch_serialization_runtime("workflow/iteration_1/before_aggregate")
+
+    payload = json.loads(
+        capsys.readouterr().out.strip().removeprefix("[distill-runtime-sentinel] ")
+    )
+    assert payload["stage"] == "workflow/iteration_1/before_aggregate"
+    assert payload["is_storage_type"] == "cell"
+    assert payload["is_storage_callable"] is False
+    assert payload["is_storage_module"] is None
+
+
 def test_distill_script_cli_result_compacts_large_metadata():
     mod = _train_distill()
 
@@ -1075,6 +1118,7 @@ def test_distill_single_entry_persistent_execution_routes_factory_and_closes_ser
     assert dagger_inputs["execution_mode"] == "persistent_async"
     assert dagger_inputs["collect_scenario"] is None
     assert dagger_inputs["scenario_collector"] is service
+    assert dagger_inputs["runtime_sentinel"] is mod._probe_torch_serialization_runtime
     performance_context = dagger_inputs["performance_context"]
     assert performance_context.execution_mode == "persistent_async"
     assert performance_context.teacher_checkpoint_sha256 == tuple(

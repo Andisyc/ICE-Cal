@@ -73,6 +73,31 @@ _DISTILL_TASK_NAME_HINTS = frozenset(_OWNER_COMMAND_SAMPLE_FILTERS)
 _CLI_SEQUENCE_SUMMARY_LIMIT = 16
 
 
+def _probe_torch_serialization_runtime(stage: str) -> dict[str, Any]:
+    """Fail fast when the parent process torch serialization identity is corrupted."""
+
+    is_storage = torch.is_storage
+    snapshot = {
+        "stage": str(stage),
+        "pid": os.getpid(),
+        "is_storage_type": type(is_storage).__name__,
+        "is_storage_callable": callable(is_storage),
+        "is_storage_module": getattr(is_storage, "__module__", None),
+    }
+    print(
+        f"[distill-runtime-sentinel] {json.dumps(snapshot, sort_keys=True)}",
+        flush=True,
+    )
+    if not snapshot["is_storage_callable"]:
+        raise RuntimeError(
+            "torch serialization runtime identity corrupted: "
+            f"stage={snapshot['stage']} pid={snapshot['pid']} "
+            f"type={snapshot['is_storage_type']} "
+            f"callable={snapshot['is_storage_callable']}"
+        )
+    return snapshot
+
+
 def _workflow_role_entries(cfg: DictConfig) -> list[dict[str, Any]]:
     entries = OmegaConf.to_container(
         OmegaConf.select(cfg, "training.workflow.roles", default=[]),
@@ -1757,6 +1782,12 @@ def run_single_entry_workflow(
             scenario_specs=scenario_specs,
         )
 
+    runtime_sentinel = (
+        _probe_torch_serialization_runtime if execution_mode == "persistent_async" else None
+    )
+    if runtime_sentinel is not None:
+        runtime_sentinel("workflow/after_bootstrap")
+
     target_iterations = int(OmegaConf.select(cfg, "training.workflow.dagger_iterations", default=8))
     current_iteration = 0
     dagger_logger = OffPolicyLogger(
@@ -1770,16 +1801,28 @@ def run_single_entry_workflow(
         log_backend=str(OmegaConf.select(cfg, "training.logger", default="tensorboard")),
         display_title="UniLab Distillation / DAgger",
     )
+    if runtime_sentinel is not None:
+        runtime_sentinel("workflow/after_logger_construct")
     dagger_logger.start(status="Preparing DAgger workflow...")
+    if runtime_sentinel is not None:
+        runtime_sentinel("workflow/after_logger_start")
 
     def on_iteration(iteration: int, total: int) -> None:
         nonlocal current_iteration
         current_iteration = int(iteration)
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{iteration}/logger_iteration_entry")
         dagger_logger.log_step(current_iteration)
         dagger_logger.log_status(f"Iteration {iteration}/{total}: collecting scenarios", force=True)
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{iteration}/logger_iteration_exit")
 
     def on_status(status: str) -> None:
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{current_iteration}/status_callback_entry")
         dagger_logger.log_status(status, force=True)
+        if runtime_sentinel is not None:
+            runtime_sentinel(f"workflow/iteration_{current_iteration}/status_callback_exit")
 
     def on_update_progress(update: int, total: int, stats: Any) -> None:
         metrics = {
@@ -2142,6 +2185,8 @@ def run_single_entry_workflow(
         )
         if not callable(getattr(scenario_collector, "close", None)):
             raise TypeError("persistent runtime factory result must provide close()")
+        assert runtime_sentinel is not None
+        runtime_sentinel("workflow/after_persistent_runtime_factory")
     cleanup_duration_seconds = 0.0
     cleanup_report: Mapping[str, Any] = {
         "execution_mode": "legacy",
@@ -2167,6 +2212,7 @@ def run_single_entry_workflow(
             performance_clock=performance_clock,
             status_callback=on_status,
             iteration_callback=on_iteration,
+            runtime_sentinel=runtime_sentinel,
         )
     except BaseException:
         dagger_logger.close()

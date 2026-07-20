@@ -849,6 +849,7 @@ def test_multirole_dagger_persistent_execution_preserves_outer_iteration_barrier
         update_student=lambda _dataset, checkpoint: _write(checkpoint, b"student-0") and 2,
     )
     events: list[tuple] = []
+    runtime_stages: list[str] = []
     collector = _RecordingScenarioCollector(events)
 
     def aggregate(sources, output_path: Path) -> int:
@@ -873,6 +874,7 @@ def test_multirole_dagger_persistent_execution_preserves_outer_iteration_barrier
         performance_context=_performance_context(specs),
         aggregate_datasets=aggregate,
         update_student=update,
+        runtime_sentinel=runtime_stages.append,
     )
     finalize_workflow_performance(
         run_dir=run_dir,
@@ -895,6 +897,28 @@ def test_multirole_dagger_persistent_execution_preserves_outer_iteration_barrier
         ("collect", 2, "static_stand", "dagger_iteration_1.pt", 42),
         ("collect", 2, "walk_to_stop", "dagger_iteration_1.pt", 42),
         ("update", "dagger_iteration_1.pt", "dagger_iteration_2.pt"),
+    ]
+    assert runtime_stages == [
+        "workflow/iteration_1/before_activate_checkpoint",
+        "workflow/iteration_1/after_activate_checkpoint",
+        "workflow/iteration_1/scenario_walk_flat/before_collect",
+        "workflow/iteration_1/scenario_walk_flat/after_collect",
+        "workflow/iteration_1/scenario_static_stand/before_collect",
+        "workflow/iteration_1/scenario_static_stand/after_collect",
+        "workflow/iteration_1/scenario_walk_to_stop/before_collect",
+        "workflow/iteration_1/scenario_walk_to_stop/after_collect",
+        "workflow/iteration_1/before_aggregate",
+        "workflow/iteration_1/after_aggregate",
+        "workflow/iteration_2/before_activate_checkpoint",
+        "workflow/iteration_2/after_activate_checkpoint",
+        "workflow/iteration_2/scenario_walk_flat/before_collect",
+        "workflow/iteration_2/scenario_walk_flat/after_collect",
+        "workflow/iteration_2/scenario_static_stand/before_collect",
+        "workflow/iteration_2/scenario_static_stand/after_collect",
+        "workflow/iteration_2/scenario_walk_to_stop/before_collect",
+        "workflow/iteration_2/scenario_walk_to_stop/after_collect",
+        "workflow/iteration_2/before_aggregate",
+        "workflow/iteration_2/after_aggregate",
     ]
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert [item["input_weight_version"] for item in manifest["dagger_iterations"]] == [41, 42]
