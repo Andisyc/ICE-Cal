@@ -16,6 +16,7 @@ FRESH_UPDATES="${FRESH_UPDATES:-16384}"
 LIFECYCLE_UPDATES="${LIFECYCLE_UPDATES:-16384}"
 LIFECYCLE_ROUNDS="${LIFECYCLE_ROUNDS:-3}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-43200}"
+RUN_GROUPS="${RUN_GROUPS:-all}"
 
 OWNER_PATHS="$(
   uv run python - "${RUN_DIR}" <<'PY'
@@ -67,6 +68,7 @@ echo "CHECKPOINT=${CHECKPOINT}"
 echo "EXISTING_APPORT=${EXISTING_APPORT}"
 echo "WORK_ROOT=${WORK_ROOT}"
 echo "GPU_DEVICE=${GPU_DEVICE}"
+echo "RUN_GROUPS=${RUN_GROUPS}"
 
 uv run scripts/deploy/diagnose_distill_real_owner_one_shot.py \
   --work-root "${WORK_ROOT}" \
@@ -80,4 +82,5 @@ uv run scripts/deploy/diagnose_distill_real_owner_one_shot.py \
   --fresh-updates "${FRESH_UPDATES}" \
   --lifecycle-updates "${LIFECYCLE_UPDATES}" \
   --lifecycle-rounds "${LIFECYCLE_ROUNDS}" \
-  --timeout-seconds "${TIMEOUT_SECONDS}"
+  --timeout-seconds "${TIMEOUT_SECONDS}" \
+  --groups "${RUN_GROUPS}"

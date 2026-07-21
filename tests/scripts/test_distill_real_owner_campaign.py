@@ -214,6 +214,29 @@ def test_real_owner_verdict_separates_config_failure_from_native_reproduction() 
     assert verdict["configuration_failed_stages"] == ["offline_cpu_fresh"]
 
 
+def test_real_owner_selected_groups_allow_offline_fresh_only() -> None:
+    groups = diagnose_distill_real_owner_one_shot._selected_groups(
+        "offline_device",
+        [
+            "assembly_device",
+            "offline_device",
+            "gpu_continuous",
+            "gpu_restart_each_round",
+            "gpu_dual_resident",
+        ],
+    )
+
+    assert groups == ["offline_device"]
+
+
+def test_real_owner_selected_groups_reject_unknown_group() -> None:
+    with pytest.raises(ValueError, match="unknown stage group"):
+        diagnose_distill_real_owner_one_shot._selected_groups(
+            "offline_device,gpu_lifecycle_all",
+            ["assembly_device", "offline_device"],
+        )
+
+
 def test_real_owner_verdict_requires_native_evidence_for_reproduced_boundary() -> None:
     verdict = diagnose_distill_real_owner_one_shot._verdict(
         [

@@ -13,7 +13,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -407,6 +407,24 @@ def _verdict(stage_results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _selected_groups(raw_groups: str, known_groups: Iterable[str]) -> list[str]:
+    known = list(known_groups)
+    if raw_groups.strip() == "all":
+        return known
+    selected = [item.strip() for item in raw_groups.split(",") if item.strip()]
+    unknown = sorted(set(selected).difference(known))
+    if unknown:
+        raise ValueError(
+            "unknown stage group(s): "
+            + ",".join(unknown)
+            + "; known groups: "
+            + ",".join(known)
+        )
+    if not selected:
+        raise ValueError("--groups must be 'all' or a comma-separated non-empty group list")
+    return selected
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work-root", type=Path, required=True)
@@ -425,6 +443,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lifecycle-updates", type=int, default=2048)
     parser.add_argument("--lifecycle-rounds", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=float, default=10800.0)
+    parser.add_argument(
+        "--groups",
+        default="all",
+        help=(
+            "Comma-separated stage groups to run. Use 'all' for the full campaign. "
+            "Known groups: assembly_device,offline_device,gpu_continuous,"
+            "gpu_restart_each_round,gpu_dual_resident."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -516,9 +543,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         lifecycle_rounds=int(args.lifecycle_rounds),
         timeout_seconds=float(args.timeout_seconds),
     )
+    selected_groups = _selected_groups(str(args.groups), matrix.keys())
     _write_json(
         work_dir / "differential-contract.json",
         {
+            "selected_groups": selected_groups,
             "assembly_device": "CPU fresh vs GPU fresh; device only",
             "offline_device": "CPU fresh vs GPU fresh; device only; 6000 updates crosses r10 failure 4915",
             "gpu_continuous_vs_restart": (
@@ -543,23 +572,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     stage_results: list[dict[str, Any]] = []
-    for group_name in (
-        "assembly_device",
-        "offline_device",
-        "gpu_continuous",
-        "gpu_restart_each_round",
-    ):
+    for group_name in selected_groups:
+        if group_name == "gpu_dual_resident":
+            continue
         for spec in matrix[group_name]:
             stage_results.append(
                 _run_one_stage(spec, work_dir, kernel_since=campaign_started)
             )
-    stage_results.extend(
-        _run_dual_group(
-            matrix["gpu_dual_resident"],
-            work_dir,
-            kernel_since=campaign_started,
+    if "gpu_dual_resident" in selected_groups:
+        stage_results.extend(
+            _run_dual_group(
+                matrix["gpu_dual_resident"],
+                work_dir,
+                kernel_since=campaign_started,
+            )
         )
-    )
 
     collect_health_snapshot(work_dir / "health-after.json", kernel_since_epoch=campaign_started)
     core_after = _core_inventory()
