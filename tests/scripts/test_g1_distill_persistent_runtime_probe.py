@@ -50,3 +50,31 @@ def test_persistent_runtime_probe_rejects_cleanup_mismatch() -> None:
 
     with pytest.raises(RuntimeError, match="env_close_count"):
         _validate_summary(summary)
+
+
+def test_persistent_runtime_probe_accepts_restart_each_request_summary() -> None:
+    summary = _valid_summary()
+    summary["worker_lifecycle"] = "restart_each_request"
+    summary["sequence"] = [
+        {**row, "worker_pid": index + 10}
+        for index, row in enumerate(summary["sequence"])
+    ]
+    summary.pop("close_report")
+    summary["close_reports"] = [
+        {
+            "worker_pid": index + 10,
+            "student_init_count": 1,
+            "resource_counters": {
+                "teacher_init_count": 1,
+                "env_init_count": 1,
+                "request_count": 1,
+                "reset_count": 1,
+                "request_error_count": 0,
+                "teacher_close_count": 1,
+                "env_close_count": 1,
+            },
+        }
+        for index in range(4)
+    ]
+
+    _validate_summary(summary)
