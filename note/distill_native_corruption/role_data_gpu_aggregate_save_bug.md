@@ -1,0 +1,289 @@
+# Role Data GPU Aggregate Save Bug
+
+## Purpose
+
+This document records the current answer for the distillation native crash investigation.
+It is intentionally written as a white-box debugging artifact: what failed, what was
+proved, what was ruled out, and what boundary should be fixed.
+
+## Current Answer
+
+The strongest current explanation is a device ownership bug in the Role Data
+aggregate assembly path.
+
+Formal training sets `training.device=cuda:0`. The current assembly code passes that
+training device into `build_multitask_distillation_dataset()`, so the large Role Data
+aggregate is constructed on GPU during a cold-path cache/IO phase. The subsequent
+`save_distillation_dataset()` call detaches the tensors to CPU and calls `torch.save()`.
+On the real r10 aggregate identity, this GPU-born aggregate save path reproduced a
+native `SIGSEGV` inside PyTorch serialization.
+
+The fix boundary should be:
+
+```text
+Role Data aggregate assembly/save: CPU-only cold path.
+Offline training/load/update: still uses training.device.
+```
+
+This means the aggregate dataset should be built and saved on CPU, then later loaded
+to the requested training device by the offline distillation update path.
+
+## Observed Runtime Chain
+
+```text
+formal training config: training.device=cuda:0
+-> scripts/train_distill.py::run_multitask_dataset_assembly()
+-> build_multitask_distillation_dataset(..., device=_distill_device(cfg))
+-> GPU-born aggregate with 1,048,576 samples
+-> save_distillation_dataset()
+-> tensor.detach().cpu()
+-> torch.save(payload)
+-> torch.serialization.persistent_id
+-> SIGSEGV
+```
+
+The key code boundary is:
+
+- `scripts/train_distill.py::run_multitask_dataset_assembly()`
+  - currently passes `device=_distill_device(cfg)` into aggregate assembly.
+- `src/unilab/algos/torch/distill/data.py::save_distillation_dataset()`
+  - saves a CPU-detached payload with `torch.save()`.
+- `src/unilab/algos/torch/distill/offline.py::run_offline_distillation_updates()`
+  - later loads and trains on the configured device; this is not the same boundary.
+
+## Evidence Table
+
+| Claim | Evidence | Evidence class | What it proves | What it does not prove |
+| --- | --- | --- | --- | --- |
+| CPU aggregate assembly/save is valid | `aggregate_cpu_fresh` rebuilt and saved/reloaded the r10 aggregate successfully | runtime-confirmed | The source role datasets, metadata, and aggregate semantics are not inherently corrupt | It does not prove GPU-born aggregate save is safe |
+| GPU aggregate assembly/save reproduces the native symptom | `aggregate_gpu_fresh` exited with return code `139`, `Fatal Python error: Segmentation fault` | native-symptom-confirmed | The failure can occur before MoE update, in Role Data aggregate save | It does not identify the first invalid native operation |
+| Python label values are not the writer | Before crash, `scenario_labels` were all legal strings, `invalid_head=[]`, builtins were normal | runtime-confirmed | The observed crash is not explained by bad `scenario_labels`, `target_indices`, or corrupted builtins | It does not prove PyTorch/CUDA native state is healthy |
+| MoE/offline update was not reached in the latest campaign | `offline_cpu_fresh`, `offline_gpu_fresh`, and lifecycle stages stopped at the replay-budget guard | runtime-confirmed | The latest package cannot implicate MoE trainer/update/checkpoint reload | It does not prove those later stages are impossible to fail |
+| No immediate hardware fault was observed | health snapshots showed no Xid/NVRM/kernel error and normal RAM/GPU memory state | runtime-confirmed | The current evidence does not point to a visible hardware/kernel GPU fault | It does not exclude a PyTorch/CUDA native memory bug |
+
+## What Was Ruled Out
+
+These hypotheses are currently weaker than the Role Data GPU aggregate boundary:
+
+- `target_indices` stale list or class aliasing.
+  - Prior bytecode evidence showed `target_indices` is initialized as a fresh list.
+- Bad `scenario_labels` content.
+  - The crash run validated all boundary entries and produced `invalid_head=[]`.
+- MoE Student update as the first observed failing boundary.
+  - The latest campaign did not reach offline update because the replay-budget guard fired first.
+- Checkpoint reload or `PersistentDistillationRuntime` as the first observed failing boundary.
+  - The latest native symptom appeared during aggregate save, before those stages.
+- Simulator or formal live lifecycle as the required trigger.
+  - The crash reproduced in a fresh offline owner-path aggregate assembly process.
+
+## Important Correction From The Investigation
+
+The phrase "directly saving CUDA tensors" is not precise enough.
+
+`save_distillation_dataset()` already calls `.detach().cpu()` before `torch.save()`.
+The problem boundary is more specific:
+
+```text
+large aggregate tensors are born and concatenated on GPU,
+then detached/copied to CPU inside the save path,
+then serialized by torch.save().
+```
+
+The CPU-born version of the same aggregate passes. The GPU-born version segfaults.
+That single-variable contrast is the useful fact.
+
+## Current Evidence Level
+
+```text
+root-cause class:
+  native-symptom-confirmed
+
+confirmed boundary:
+  Role Data aggregate assembly/save with device=cuda:0
+
+victim/detection site:
+  torch.save -> torch.serialization.persistent_id
+
+owner-confirmed:
+  no
+
+first-invalid-operation-confirmed:
+  no
+```
+
+The investigation has not yet proved whether the first invalid operation is a PyTorch
+serialization bug, CUDA allocator/lifetime issue, GPU-to-CPU detach/copy issue, or a
+prior native state corruption. For repository repair, the actionable owner boundary is
+already clear: Role Data aggregate assembly/save is cold-path IO and should not run on
+the training GPU.
+
+## Proposed Repair Boundary
+
+Scope:
+
+- Change `run_multitask_dataset_assembly()` so aggregate assembly/save uses CPU.
+- Preserve offline distillation update behavior: loading and training still use
+  `training.device`.
+- Add a focused contract test proving that a CUDA training config does not make the
+  aggregate assembly owner build the cached dataset on GPU.
+
+Non-scope:
+
+- Do not change MoE trainer/update logic.
+- Do not change checkpoint reload or `PersistentDistillationRuntime`.
+- Do not change role dataset semantics, labels, or balancing policy.
+- Do not start formal DAgger training as part of this repair.
+
+Expected invariant:
+
+```text
+training.device may be cuda:0,
+but Role Data aggregate assembly/save uses CPU.
+```
+
+## Repair Applied
+
+`scripts/train_distill.py::run_multitask_dataset_assembly()` now treats aggregate
+assembly as a CPU-owned Role Data cold path:
+
+```text
+training.device=cuda:0
+-> run_multitask_dataset_assembly()
+-> build_multitask_distillation_dataset(..., device="cpu")
+-> save_distillation_dataset()
+-> later offline load/update still owns movement to training.device
+```
+
+This does not change role labels, balancing semantics, MoE trainer/update behavior,
+checkpoint reload, or persistent runtime behavior. It only removes the training GPU
+from the cache assembly/save owner boundary that reproduced the native PyTorch
+serialization crash.
+
+The focused contract test is:
+
+```text
+tests/scripts/test_train_scripts.py::test_distill_script_builds_multitask_dataset_from_saved_sources
+```
+
+It composes a `training.device=cuda:0` distillation config, runs multitask assembly on
+small saved role datasets, and asserts the aggregate assembly device reported by the
+probe is `cpu`.
+
+## Repair Process Record
+
+Date: 2026-07-22
+
+Human decision:
+
+```text
+Accept the owner-boundary repair:
+Role Data aggregate assembly/save is CPU-only cold-path IO;
+offline training/load/update may still use training.device.
+```
+
+Reason for the decision:
+
+- The existing one-shot owner-path package showed the single useful contrast:
+  `aggregate_cpu_fresh` passed, while `aggregate_gpu_fresh` reproduced `SIGSEGV`
+  inside `torch.save -> torch.serialization.persistent_id`.
+- The same run showed valid labels and normal builtins before the crash, so the
+  immediate failure was not explained by bad `scenario_labels`, bad
+  `target_indices`, or Python builtin rebinding.
+- The offline update / MoE / checkpoint / persistent lifecycle stages were not reached
+  in that package, so the repair must not modify those semantics.
+- `save_distillation_dataset()` already CPU-detaches tensors before serialization;
+  therefore the repaired boundary is not "avoid saving CUDA tensors", but "avoid
+  creating the large aggregate as GPU-born tensors in the cold cache path".
+
+Code change:
+
+```text
+scripts/train_distill.py
+  _ROLE_DATA_ASSEMBLY_DEVICE = "cpu"
+
+  run_multitask_dataset_assembly()
+    before: build_multitask_distillation_dataset(..., device=_distill_device(cfg))
+    after:  build_multitask_distillation_dataset(..., device=_ROLE_DATA_ASSEMBLY_DEVICE)
+
+  probe result now records:
+    aggregate_assembly_device = "cpu"
+```
+
+Contract change:
+
+```text
+tests/scripts/test_train_scripts.py::test_distill_script_builds_multitask_dataset_from_saved_sources
+  sets training.device=cuda:0
+  runs real saved-source multitask assembly
+  asserts probe["aggregate_assembly_device"] == "cpu"
+  still verifies restored role labels and teacher actions
+```
+
+Local validation:
+
+```bash
+uv run pytest tests/scripts/test_train_scripts.py -q -k multitask_dataset
+# 2 passed, 200 deselected
+
+uv run ruff check scripts/train_distill.py tests/scripts/test_train_scripts.py
+# All checks passed
+```
+
+Preserved semantics:
+
+- No change to teacher role datasets.
+- No change to role labels, scenario labels, or balancing semantics.
+- No change to MoE Student architecture.
+- No change to offline update device ownership after dataset load.
+- No change to checkpoint reload.
+- No change to `PersistentDistillationRuntime` or `SharedWeightSync`.
+- No formal DAgger live training was launched as part of this repair.
+
+Remaining uncertainty:
+
+```text
+The first invalid native operation inside PyTorch/CUDA is still not confirmed.
+The repository-level fix is justified because the failing boundary was a cold-path
+owner violation, and the CPU-owned version of the same aggregate identity passed.
+```
+
+Next verification:
+
+```text
+Sync this patch to the server.
+Run the real-owner one-shot campaign once.
+Expected result: aggregate assembly no longer allocates the large aggregate on GPU,
+so the previous aggregate_gpu_fresh torch.save SIGSEGV should disappear.
+Only after that should formal training be considered again.
+```
+
+## Minimal Verification Plan
+
+1. Code-level verification:
+   - Inspect `run_multitask_dataset_assembly()` and confirm it no longer passes
+     `_distill_device(cfg)` to `build_multitask_distillation_dataset()`.
+
+2. Contract test:
+   - Build a config with `training.device=cuda:0`.
+   - Run the aggregate assembly path on a small semantic source fixture.
+   - Assert the saved dataset can be loaded and matches expected labels.
+   - Assert assembly device ownership is CPU or is recorded as CPU in the result.
+
+3. Server one-shot verification:
+   - Re-run only the aggregate CPU/GPU differential or the full offline campaign after
+     the code fix.
+   - Expected result: the previous `aggregate_gpu_fresh` crash disappears because the
+     aggregate assembly owner no longer uses GPU.
+
+## Human Decision Point
+
+The next decision is not whether to keep adding prints. The next decision is whether to
+accept the owner-boundary fix:
+
+```text
+Role Data cache assembly is a CPU cold path,
+not a training-GPU computation path.
+```
+
+If accepted, the repair should be small and local to the assembly owner plus its
+contract test.

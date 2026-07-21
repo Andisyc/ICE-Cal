@@ -870,12 +870,15 @@ def _optional_int_cfg(cfg: DictConfig, path: str) -> int | None:
     return int(value)
 
 
+_ROLE_DATA_ASSEMBLY_DEVICE = "cpu"
+
+
 def run_multitask_dataset_assembly(
     cfg: DictConfig,
     *,
     dataset_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Merge saved role-specific datasets into one cached-target dataset."""
+    """Merge saved role-specific datasets into one CPU-owned cached dataset."""
 
     resolved_dataset_path = dataset_path or OmegaConf.select(
         cfg,
@@ -897,12 +900,13 @@ def run_multitask_dataset_assembly(
             cfg,
             "training.multitask_expected_teacher_action_dim",
         ),
-        device=_distill_device(cfg),
+        device=_ROLE_DATA_ASSEMBLY_DEVICE,
     )
     save_distillation_dataset(resolved_dataset_path, dataset)
     return {
         "distill_source": "multitask_adapter",
         "dataset_path": str(resolved_dataset_path),
+        "aggregate_assembly_device": _ROLE_DATA_ASSEMBLY_DEVICE,
         "dataset_num_samples": dataset.num_samples,
         "dataset_student_obs_dim": dataset.student_obs_dim,
         "dataset_teacher_obs_dim": dataset.teacher_obs_dim,

@@ -2313,6 +2313,7 @@ def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Pa
     )
     cfg = _distill_cfg(
         [
+            "training.device=cuda:0",
             f"training.multitask_dataset_path={merged_path}",
             f"+training.multitask_sources=[{{path:{stand_path},role:stand}},{{path:{walk_path},role:walk_height}}]",
         ]
@@ -2322,6 +2323,7 @@ def test_distill_script_builds_multitask_dataset_from_saved_sources(tmp_path: Pa
 
     assert probe["distill_source"] == "multitask_adapter"
     assert probe["dataset_path"] == str(merged_path)
+    assert probe["aggregate_assembly_device"] == "cpu"
     assert probe["dataset_num_samples"] == 5
     assert probe["dataset_student_obs_dim"] == 99
     assert probe["dataset_teacher_obs_dim"] == 99
