@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from scripts.deploy import diagnose_distill_native_corruption, diagnose_distill_real_owner_one_shot
 from scripts.deploy.check_distill_real_owner_path import (
     _PersistentCheckpointExercise,
     run_aggregate_assembly,
@@ -140,12 +141,19 @@ def test_real_checkpoint_exercise_uses_persistent_runtime_and_unlinks_shared_mem
 
 def test_stage_matrix_keeps_real_cpu_gpu_and_lifecycle_controls_matched(tmp_path: Path) -> None:
     paths = [tmp_path / name for name in ("aggregate.pt", "student.pt", "teacher.pt")]
+    role_env = {
+        "UNILAB_G1_WALK_TEACHER": str(paths[2]),
+        "UNILAB_G1_STAND_TEACHER": str(tmp_path / "stand_teacher.pt"),
+        "UNILAB_G1_WALK_DATASET": str(tmp_path / "walk_dataset.pt"),
+        "UNILAB_G1_STAND_DATASET": str(tmp_path / "stand_dataset.pt"),
+    }
     matrix = build_stage_matrix(
         uv="/usr/bin/uv",
         work_dir=tmp_path / "campaign",
         aggregate=paths[0],
         checkpoint=paths[1],
         teacher_checkpoint=paths[2],
+        role_env=role_env,
         gpu_device="cuda:0",
         batch_size=512,
         fresh_updates=6000,
@@ -182,6 +190,43 @@ def test_stage_matrix_keeps_real_cpu_gpu_and_lifecycle_controls_matched(tmp_path
         for specs in matrix.values()
         for spec in specs
     )
+    assert all(
+        spec.env_overrides["UNILAB_G1_WALK_TEACHER"] == str(paths[2])
+        and spec.env_overrides["UNILAB_G1_STAND_DATASET"].endswith("stand_dataset.pt")
+        for specs in matrix.values()
+        for spec in specs
+    )
+
+
+def test_real_owner_verdict_separates_config_failure_from_native_reproduction() -> None:
+    verdict = diagnose_distill_real_owner_one_shot._verdict(
+        [
+            {
+                "name": "offline_cpu_fresh",
+                "status": "failed",
+                "evidence_level": "unconfirmed",
+                "configuration_error": True,
+            }
+        ]
+    )
+
+    assert verdict["boundary"] == "CAMPAIGN_CONFIGURATION_FAILED"
+    assert verdict["configuration_failed_stages"] == ["offline_cpu_fresh"]
+
+
+def test_real_owner_verdict_requires_native_evidence_for_reproduced_boundary() -> None:
+    verdict = diagnose_distill_real_owner_one_shot._verdict(
+        [
+            {
+                "name": "offline_cpu_fresh",
+                "status": "failed",
+                "evidence_level": "native-symptom-confirmed",
+            }
+        ]
+    )
+
+    assert verdict["boundary"] == "REAL_CPU_OFFLINE_OWNER_PATH_REPRODUCED"
+    assert verdict["native_evidence_failed_stages"] == ["offline_cpu_fresh"]
 
 
 def test_apport_report_is_unpacked_before_gdb_receives_core(
@@ -225,3 +270,13 @@ def test_apport_report_is_unpacked_before_gdb_receives_core(
     assert record["unpacked_core_removed_after_analysis"] is True
     assert "HANDLED_EXCEPTION" in Path(record["gdb_output"]).read_text()
     assert commands[0][0] == "/usr/bin/apport-unpack"
+
+
+def test_gdb_command_file_keeps_python_backtrace_best_effort(tmp_path: Path) -> None:
+    command_file = tmp_path / "gdb.txt"
+
+    diagnose_distill_native_corruption._gdb_command_file(command_file)
+    text = command_file.read_text()
+
+    assert 'run_optional("PY_BT", "thread apply all py-bt")' in text
+    assert "thread apply all py-bt\ninfo sharedlibrary" not in text

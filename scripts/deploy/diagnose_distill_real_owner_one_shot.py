@@ -128,7 +128,6 @@ def _owner_command(
     uv: str,
     *,
     mode: str,
-    name: str,
     stage_dir: Path,
     aggregate: Path,
     checkpoint: Path,
@@ -186,6 +185,7 @@ def build_stage_matrix(
     aggregate: Path,
     checkpoint: Path,
     teacher_checkpoint: Path,
+    role_env: Mapping[str, str],
     gpu_device: str,
     batch_size: int,
     fresh_updates: int,
@@ -201,6 +201,7 @@ def build_stage_matrix(
         # Preserve the original Python exception instead of replacing it with abort().
         "UNILAB_NATIVE_ABORT_ON_CORRUPTION": "0",
     }
+    common_env.update({key: str(value) for key, value in role_env.items()})
 
     def spec(
         name: str,
@@ -217,7 +218,6 @@ def build_stage_matrix(
             command=_owner_command(
                 uv,
                 mode=mode,
-                name=name,
                 stage_dir=stage_dir,
                 aggregate=aggregate,
                 checkpoint=checkpoint,
@@ -311,6 +311,14 @@ def _run_one_stage(spec: StageSpec, work_dir: Path, *, kernel_since: float) -> d
     collect_health_snapshot(stage_dir / "health-before.json", kernel_since_epoch=kernel_since)
     result = run_stage(spec, stage_dir, monitor_interval_seconds=1.0)
     collect_health_snapshot(stage_dir / "health-after.json", kernel_since_epoch=kernel_since)
+    owner_report = stage_dir / "owner-report.json"
+    result["owner_report_exists"] = owner_report.is_file()
+    stderr_path = stage_dir / "stderr.log"
+    if stderr_path.is_file():
+        stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+        if "InterpolationResolutionError" in stderr or "Environment variable" in stderr:
+            result["configuration_error"] = True
+            result["configuration_error_tail"] = stderr[-4000:]
     return result
 
 
@@ -367,17 +375,30 @@ def _verdict(stage_results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     cpu = by_name.get("offline_cpu_fresh", {})
     gpu = by_name.get("offline_gpu_fresh", {})
     failed = [str(row["name"]) for row in stage_results if row.get("status") != "completed"]
-    if cpu.get("status") != "completed":
+    config_failed = [str(row["name"]) for row in stage_results if row.get("configuration_error")]
+    owner_path_failed = [
+        str(row["name"])
+        for row in stage_results
+        if row.get("status") != "completed"
+        and row.get("evidence_level") in {"native-symptom-confirmed", "first-invalid-operation-confirmed"}
+    ]
+    if config_failed:
+        boundary = "CAMPAIGN_CONFIGURATION_FAILED"
+    elif cpu.get("status") != "completed" and str(cpu.get("name")) in owner_path_failed:
         boundary = "REAL_CPU_OFFLINE_OWNER_PATH_REPRODUCED"
-    elif gpu.get("status") != "completed":
+    elif gpu.get("status") != "completed" and str(gpu.get("name")) in owner_path_failed:
         boundary = "REAL_GPU_OFFLINE_OWNER_PATH_REPRODUCED"
-    elif failed:
+    elif any(name in owner_path_failed for name in failed):
         boundary = "GPU_LIFECYCLE_DIFFERENTIAL_REPRODUCED"
+    elif failed:
+        boundary = "OWNER_PATH_FAILED_WITHOUT_NATIVE_EVIDENCE"
     else:
         boundary = "OFFLINE_OWNER_PATH_NOT_REPRODUCED"
     return {
         "boundary": boundary,
         "failed_stages": failed,
+        "configuration_failed_stages": config_failed,
+        "native_evidence_failed_stages": owner_path_failed,
         "root_cause_owner": "unconfirmed until first-invalid-operation evidence",
         "formal_live_training_recommendation": (
             "NOT_AUTHORIZED_AUTOMATICALLY; a clean offline campaign alone does not prove "
@@ -392,6 +413,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--aggregate", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--teacher-checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--stand-teacher-checkpoint",
+        type=Path,
+        default=Path("/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt"),
+    )
     parser.add_argument("--existing-apport", type=Path, required=True)
     parser.add_argument("--gpu-device", default="cuda:0")
     parser.add_argument("--batch-size", type=int, default=512)
@@ -412,15 +438,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     aggregate = args.aggregate.resolve()
     checkpoint = args.checkpoint.resolve()
     teacher_checkpoint = args.teacher_checkpoint.resolve()
+    stand_teacher_checkpoint = args.stand_teacher_checkpoint.resolve()
     existing_apport = args.existing_apport.resolve()
-    for path in (aggregate, checkpoint, teacher_checkpoint, existing_apport):
+    for path in (aggregate, checkpoint, teacher_checkpoint, stand_teacher_checkpoint, existing_apport):
         if not path.is_file():
             raise FileNotFoundError(path)
     sources, _dimensions = _sources_from_seed_aggregate(aggregate)
+    walk_dataset = next(
+        (
+            Path(source["path"]).resolve()
+            for source in sources
+            if source.get("scenario") == "walk_flat" or source.get("role") == "walk_flat"
+        ),
+        None,
+    )
+    stand_dataset = next(
+        (
+            Path(source["path"]).resolve()
+            for source in sources
+            if source.get("scenario") == "static_stand" or source.get("role") == "static_stand"
+        ),
+        None,
+    )
+    if walk_dataset is None or stand_dataset is None:
+        raise ValueError("seed aggregate must expose walk_flat and static_stand source paths")
+    role_env = {
+        "UNILAB_G1_WALK_TEACHER": str(teacher_checkpoint),
+        "UNILAB_G1_STAND_TEACHER": str(stand_teacher_checkpoint),
+        "UNILAB_G1_WALK_DATASET": str(walk_dataset),
+        "UNILAB_G1_STAND_DATASET": str(stand_dataset),
+    }
     input_paths = [
         aggregate,
         checkpoint,
         teacher_checkpoint,
+        stand_teacher_checkpoint,
         *(Path(source["path"]) for source in sources),
     ]
     input_paths = list(dict.fromkeys(path.resolve() for path in input_paths))
@@ -432,6 +484,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     preflight["native_abort_policy"] = (
         "UNILAB_NATIVE_ABORT_ON_CORRUPTION=0 for all new stages so original exceptions survive"
     )
+    preflight["role_environment"] = role_env
     _write_json(work_dir / "preflight.json", preflight)
     identity_before = preflight["inputs"]
     core_before = _core_inventory()
@@ -455,6 +508,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         aggregate=aggregate,
         checkpoint=checkpoint,
         teacher_checkpoint=teacher_checkpoint,
+        role_env=role_env,
         gpu_device=str(args.gpu_device),
         batch_size=int(args.batch_size),
         fresh_updates=int(args.fresh_updates),

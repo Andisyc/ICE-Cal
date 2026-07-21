@@ -752,27 +752,28 @@ set print pretty on
 set print elements 256
 info threads
 thread apply all bt full
-thread apply all py-bt
-info sharedlibrary
-info files
-set $tstate = (PyThreadState*)_PyRuntime.gilstate.tstate_current._value
-p $tstate
-p $tstate->curexc_type
-p $tstate->curexc_value
-p $tstate->curexc_traceback
-p $tstate->exc_info
-p $tstate->exc_info->exc_type
-p $tstate->exc_info->exc_value
-p $tstate->exc_info->exc_traceback
 python
 import gdb
+
+def run_optional(label, command):
+    print(f"### {label}")
+    try:
+        gdb.execute(command)
+    except Exception as error:
+        print(f"{label}_ERROR: {error!r}")
+
+run_optional("PY_BT", "thread apply all py-bt")
+run_optional("INFO_SHAREDLIBRARY", "info sharedlibrary")
+run_optional("INFO_FILES", "info files")
+
 expressions = {
-    "CUREXC_TYPE": "$tstate->curexc_type",
-    "CUREXC_VALUE": "$tstate->curexc_value",
-    "CUREXC_TRACEBACK": "$tstate->curexc_traceback",
-    "HANDLED_EXCEPTION_TYPE": "$tstate->exc_info->exc_type",
-    "HANDLED_EXCEPTION": "$tstate->exc_info->exc_value",
-    "HANDLED_TRACEBACK": "$tstate->exc_info->exc_traceback",
+    "TSTATE": "(PyThreadState*)_PyRuntime.gilstate.tstate_current._value",
+    "CUREXC_TYPE": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->curexc_type",
+    "CUREXC_VALUE": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->curexc_value",
+    "CUREXC_TRACEBACK": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->curexc_traceback",
+    "HANDLED_EXCEPTION_TYPE": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->exc_info->exc_type",
+    "HANDLED_EXCEPTION": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->exc_info->exc_value",
+    "HANDLED_TRACEBACK": "((PyThreadState*)_PyRuntime.gilstate.tstate_current._value)->exc_info->exc_traceback",
 }
 helper = globals().get("PyObjectPtr")
 for label, expression in expressions.items():
