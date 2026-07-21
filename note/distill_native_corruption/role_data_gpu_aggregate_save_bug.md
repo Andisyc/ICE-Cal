@@ -287,3 +287,129 @@ not a training-GPU computation path.
 
 If accepted, the repair should be small and local to the assembly owner plus its
 contract test.
+
+## 2026-07-22 Offline Fresh Evidence
+
+Artifact:
+
+```text
+20260722-012517_distill-real-owner-one-shot-RETURN_ME.tar.gz
+```
+
+Selected groups:
+
+```text
+offline_device only
+```
+
+Result:
+
+```text
+offline_cpu_fresh: FAIL, 4.05s, native-symptom-confirmed
+offline_gpu_fresh: PASS, 111.99s, runtime-confirmed
+```
+
+The CPU fresh failure happened before optimizer/update work:
+
+```text
+load_distillation_dataset()
+-> torch.load(map_location=cpu)
+-> build_distillation_dataset()
+-> _validate_command_intents()
+-> command_intent_validation/corruption_detected
+```
+
+Observed impossible object fact:
+
+```text
+index: 17957
+raw_type: str
+raw_repr: "'active'"
+normalized: "<class 'frame'>"
+```
+
+Interpretation:
+
+- The raw loaded value was a normal Python string.
+- The validator's normalization step produced an impossible value for that raw object.
+- `builtins.str`, `builtins.isinstance`, `builtins.type`, `builtins.tuple`, and
+  `builtins.list` were reported as original and callable.
+- No new native core was produced because the stage used
+  `UNILAB_NATIVE_ABORT_ON_CORRUPTION=0`.
+- The same aggregate/checkpoint identity completed the GPU fresh offline path for
+  8192 updates, including checkpoint reload and `SharedWeightSync` cleanup.
+
+This changes the active debugging boundary:
+
+```text
+previous useful boundary:
+  GPU-born aggregate assembly/save -> torch.save SIGSEGV
+
+current useful boundary:
+  CPU fresh offline load -> command_intents validation impossible normalization
+```
+
+The current symptom is no longer tied to formal DAgger live training. It is available
+through a short offline CPU owner path and should be captured there.
+
+Current classification:
+
+```text
+root-cause class:
+  native-symptom-confirmed / impossible Python object transformation
+
+victim/detection site:
+  src/unilab/algos/torch/distill/data.py::_validate_command_intents()
+
+unconfirmed native component:
+  still unknown; first invalid write/free/op not captured
+```
+
+Next plan:
+
+```text
+Run only offline_cpu_fresh.
+Set UNILAB_NATIVE_ABORT_ON_CORRUPTION=1.
+Abort at command_intent_validation/corruption_detected.
+Harvest the new Apport/core artifact and inspect the active Python frame, locals,
+globals, and native thread state at the exact detector site.
+```
+
+Non-scope for the next plan:
+
+- Do not run formal training.
+- Do not run GPU fresh again.
+- Do not run aggregate/lifecycle/dual-resident stages.
+- Do not change label/data semantics before the first-invalid-operation evidence is
+  captured.
+
+Implemented capture entry:
+
+```text
+scripts/deploy/run_distill_offline_cpu_abort_capture.sh
+```
+
+This wrapper sets:
+
+```text
+RUN_GROUPS=offline_device
+STAGE_NAMES=offline_cpu_fresh
+NATIVE_ABORT_ON_CORRUPTION=1
+BATCH_SIZE=2048
+FRESH_UPDATES=8192
+```
+
+Server command:
+
+```bash
+cd /ssd1/cyx/UniLab
+bash scripts/deploy/run_distill_offline_cpu_abort_capture.sh
+```
+
+Expected evidence:
+
+```text
+offline_cpu_fresh aborts at command_intent_validation/corruption_detected.
+The campaign harvests the new Apport/core candidate into RETURN_ME.tar.gz.
+The next review reads the new core/GDB output instead of running another live test.
+```

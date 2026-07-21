@@ -17,6 +17,8 @@ LIFECYCLE_UPDATES="${LIFECYCLE_UPDATES:-16384}"
 LIFECYCLE_ROUNDS="${LIFECYCLE_ROUNDS:-3}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-43200}"
 RUN_GROUPS="${RUN_GROUPS:-all}"
+STAGE_NAMES="${STAGE_NAMES:-all}"
+NATIVE_ABORT_ON_CORRUPTION="${NATIVE_ABORT_ON_CORRUPTION:-0}"
 
 OWNER_PATHS="$(
   uv run python - "${RUN_DIR}" <<'PY'
@@ -69,6 +71,13 @@ echo "EXISTING_APPORT=${EXISTING_APPORT}"
 echo "WORK_ROOT=${WORK_ROOT}"
 echo "GPU_DEVICE=${GPU_DEVICE}"
 echo "RUN_GROUPS=${RUN_GROUPS}"
+echo "STAGE_NAMES=${STAGE_NAMES}"
+echo "NATIVE_ABORT_ON_CORRUPTION=${NATIVE_ABORT_ON_CORRUPTION}"
+
+EXTRA_ARGS=()
+if [[ "${NATIVE_ABORT_ON_CORRUPTION}" == "1" ]]; then
+  EXTRA_ARGS+=(--native-abort-on-corruption)
+fi
 
 uv run scripts/deploy/diagnose_distill_real_owner_one_shot.py \
   --work-root "${WORK_ROOT}" \
@@ -83,4 +92,6 @@ uv run scripts/deploy/diagnose_distill_real_owner_one_shot.py \
   --lifecycle-updates "${LIFECYCLE_UPDATES}" \
   --lifecycle-rounds "${LIFECYCLE_ROUNDS}" \
   --timeout-seconds "${TIMEOUT_SECONDS}" \
-  --groups "${RUN_GROUPS}"
+  --groups "${RUN_GROUPS}" \
+  --stage-names "${STAGE_NAMES}" \
+  "${EXTRA_ARGS[@]}"

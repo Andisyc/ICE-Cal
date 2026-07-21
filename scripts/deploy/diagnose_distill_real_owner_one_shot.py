@@ -192,14 +192,16 @@ def build_stage_matrix(
     lifecycle_updates: int,
     lifecycle_rounds: int,
     timeout_seconds: float,
+    native_abort_on_corruption: bool = False,
 ) -> dict[str, list[StageSpec]]:
     """Build matched controls; each group changes only its named variable."""
 
     common_env = {
         "HYDRA_FULL_ERROR": "1",
         "PYTHONFAULTHANDLER": "1",
-        # Preserve the original Python exception instead of replacing it with abort().
-        "UNILAB_NATIVE_ABORT_ON_CORRUPTION": "0",
+        "UNILAB_NATIVE_ABORT_ON_CORRUPTION": (
+            "1" if native_abort_on_corruption else "0"
+        ),
     }
     common_env.update({key: str(value) for key, value in role_env.items()})
 
@@ -425,6 +427,15 @@ def _selected_groups(raw_groups: str, known_groups: Iterable[str]) -> list[str]:
     return selected
 
 
+def _selected_stage_names(raw_stage_names: str | None) -> set[str] | None:
+    if raw_stage_names is None or raw_stage_names.strip() in ("", "all"):
+        return None
+    selected = {item.strip() for item in raw_stage_names.split(",") if item.strip()}
+    if not selected:
+        raise ValueError("--stage-names must be 'all' or a comma-separated stage list")
+    return selected
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work-root", type=Path, required=True)
@@ -451,6 +462,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Known groups: assembly_device,offline_device,gpu_continuous,"
             "gpu_restart_each_round,gpu_dual_resident."
         ),
+    )
+    parser.add_argument(
+        "--stage-names",
+        default=None,
+        help="Optional comma-separated stage-name filter inside selected groups.",
+    )
+    parser.add_argument(
+        "--native-abort-on-corruption",
+        action="store_true",
+        help="Set UNILAB_NATIVE_ABORT_ON_CORRUPTION=1 for new stages.",
     )
     return parser.parse_args(argv)
 
@@ -509,7 +530,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "checkpoint reload, or persistent runtime owners"
     )
     preflight["native_abort_policy"] = (
-        "UNILAB_NATIVE_ABORT_ON_CORRUPTION=0 for all new stages so original exceptions survive"
+        "UNILAB_NATIVE_ABORT_ON_CORRUPTION=1 for selected new stages"
+        if bool(args.native_abort_on_corruption)
+        else "UNILAB_NATIVE_ABORT_ON_CORRUPTION=0 for all new stages so original exceptions survive"
     )
     preflight["role_environment"] = role_env
     _write_json(work_dir / "preflight.json", preflight)
@@ -542,12 +565,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         lifecycle_updates=int(args.lifecycle_updates),
         lifecycle_rounds=int(args.lifecycle_rounds),
         timeout_seconds=float(args.timeout_seconds),
+        native_abort_on_corruption=bool(args.native_abort_on_corruption),
     )
     selected_groups = _selected_groups(str(args.groups), matrix.keys())
+    selected_stage_names = _selected_stage_names(args.stage_names)
     _write_json(
         work_dir / "differential-contract.json",
         {
             "selected_groups": selected_groups,
+            "selected_stage_names": (
+                None if selected_stage_names is None else sorted(selected_stage_names)
+            ),
+            "native_abort_on_corruption": bool(args.native_abort_on_corruption),
             "assembly_device": "CPU fresh vs GPU fresh; device only",
             "offline_device": "CPU fresh vs GPU fresh; device only; 6000 updates crosses r10 failure 4915",
             "gpu_continuous_vs_restart": (
@@ -576,16 +605,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         if group_name == "gpu_dual_resident":
             continue
         for spec in matrix[group_name]:
+            if selected_stage_names is not None and spec.name not in selected_stage_names:
+                continue
             stage_results.append(
                 _run_one_stage(spec, work_dir, kernel_since=campaign_started)
             )
     if "gpu_dual_resident" in selected_groups:
+        dual_specs = matrix["gpu_dual_resident"]
+        if selected_stage_names is not None:
+            dual_specs = [
+                spec for spec in dual_specs if spec.name in selected_stage_names
+            ]
         stage_results.extend(
-            _run_dual_group(
-                matrix["gpu_dual_resident"],
-                work_dir,
-                kernel_since=campaign_started,
-            )
+            _run_dual_group(dual_specs, work_dir, kernel_since=campaign_started)
+        )
+    if not stage_results:
+        raise ValueError(
+            "no stages selected; check --groups and --stage-names"
         )
 
     collect_health_snapshot(work_dir / "health-after.json", kernel_since_epoch=campaign_started)

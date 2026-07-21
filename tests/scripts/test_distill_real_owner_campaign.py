@@ -196,6 +196,26 @@ def test_stage_matrix_keeps_real_cpu_gpu_and_lifecycle_controls_matched(tmp_path
         for specs in matrix.values()
         for spec in specs
     )
+    abort_matrix = build_stage_matrix(
+        uv="/usr/bin/uv",
+        work_dir=tmp_path / "abort-campaign",
+        aggregate=paths[0],
+        checkpoint=paths[1],
+        teacher_checkpoint=paths[2],
+        role_env=role_env,
+        gpu_device="cuda:0",
+        batch_size=512,
+        fresh_updates=6000,
+        lifecycle_updates=2048,
+        lifecycle_rounds=3,
+        timeout_seconds=60.0,
+        native_abort_on_corruption=True,
+    )
+    assert all(
+        spec.env_overrides["UNILAB_NATIVE_ABORT_ON_CORRUPTION"] == "1"
+        for specs in abort_matrix.values()
+        for spec in specs
+    )
 
 
 def test_real_owner_verdict_separates_config_failure_from_native_reproduction() -> None:
@@ -235,6 +255,13 @@ def test_real_owner_selected_groups_reject_unknown_group() -> None:
             "offline_device,gpu_lifecycle_all",
             ["assembly_device", "offline_device"],
         )
+
+
+def test_real_owner_selected_stage_names_allow_single_cpu_capture() -> None:
+    assert diagnose_distill_real_owner_one_shot._selected_stage_names(
+        "offline_cpu_fresh"
+    ) == {"offline_cpu_fresh"}
+    assert diagnose_distill_real_owner_one_shot._selected_stage_names("all") is None
 
 
 def test_real_owner_verdict_requires_native_evidence_for_reproduced_boundary() -> None:
