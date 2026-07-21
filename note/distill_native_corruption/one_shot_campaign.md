@@ -1,5 +1,10 @@
 # Distillation Native-Corruption One-Shot Campaign
 
+> Superseded for the current investigation by
+> `note/distill_native_corruption/real_owner_offline_campaign.md`. The lifecycle and
+> synthetic stress paths below are supporting evidence only; they do not replace the
+> real aggregate/MoE/checkpoint/persistent-runtime campaign.
+
 ## Problem
 
 The persistent G1 distillation workflow has produced language-semantics-impossible

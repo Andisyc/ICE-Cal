@@ -743,6 +743,178 @@ def create_archive(work_dir: Path) -> Path:
     return archive
 
 
+def _gdb_command_file(path: Path) -> None:
+    """Write a CPython-aware core script that preserves the handled exception."""
+
+    path.write_text(
+        """set pagination off
+set print pretty on
+set print elements 256
+info threads
+thread apply all bt full
+thread apply all py-bt
+info sharedlibrary
+info files
+set $tstate = (PyThreadState*)_PyRuntime.gilstate.tstate_current._value
+p $tstate
+p $tstate->curexc_type
+p $tstate->curexc_value
+p $tstate->curexc_traceback
+p $tstate->exc_info
+p $tstate->exc_info->exc_type
+p $tstate->exc_info->exc_value
+p $tstate->exc_info->exc_traceback
+python
+import gdb
+expressions = {
+    "CUREXC_TYPE": "$tstate->curexc_type",
+    "CUREXC_VALUE": "$tstate->curexc_value",
+    "CUREXC_TRACEBACK": "$tstate->curexc_traceback",
+    "HANDLED_EXCEPTION_TYPE": "$tstate->exc_info->exc_type",
+    "HANDLED_EXCEPTION": "$tstate->exc_info->exc_value",
+    "HANDLED_TRACEBACK": "$tstate->exc_info->exc_traceback",
+}
+helper = globals().get("PyObjectPtr")
+for label, expression in expressions.items():
+    try:
+        value = gdb.parse_and_eval(expression)
+        if int(value) == 0:
+            print(f"{label}: NULL")
+        elif helper is None:
+            print(f"{label}: pointer={value}")
+        else:
+            obj = helper.from_pyobject_ptr(value)
+            print(f"{label}: {obj.get_truncated_repr(8192)}")
+    except Exception as error:
+        print(f"{label}_ERROR: {error!r}")
+end
+""",
+        encoding="utf-8",
+    )
+
+
+def analyze_native_core_artifact(
+    *,
+    artifact: Path,
+    capture_dir: Path,
+    gdb_path: str | None,
+    apport_unpack_path: str | None,
+) -> dict[str, Any]:
+    """Analyze raw cores directly and Apport reports only after ``apport-unpack``."""
+
+    artifact = artifact.resolve()
+    capture_dir.mkdir(parents=True, exist_ok=True)
+    record: dict[str, Any] = {
+        "path": str(artifact),
+        "exists": artifact.is_file(),
+        "readable": os.access(artifact, os.R_OK),
+        "artifact_kind": "apport-report" if artifact.suffix == ".crash" else "raw-core",
+        "gdb_status": "skipped",
+    }
+    if not artifact.is_file():
+        record["status"] = "missing"
+        return record
+    stat = artifact.stat()
+    record.update(
+        {
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "mode": oct(stat.st_mode & 0o777),
+        }
+    )
+    if not record["readable"]:
+        record["status"] = "unreadable"
+        return record
+
+    core_path = artifact
+    executable = Path("/usr/bin/python3.10")
+    unpack_dir: Path | None = None
+    if artifact.suffix == ".crash":
+        if apport_unpack_path is None:
+            record.update({"status": "unavailable", "reason": "apport-unpack unavailable"})
+            return record
+        unpack_dir = capture_dir / "apport-unpacked"
+        unpack_dir.mkdir(parents=True, exist_ok=False)
+        unpack_result = subprocess.run(
+            [apport_unpack_path, str(artifact), str(unpack_dir)],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
+        )
+        (capture_dir / "apport-unpack.log").write_text(
+            unpack_result.stdout + unpack_result.stderr,
+            encoding="utf-8",
+        )
+        record["apport_unpack_returncode"] = unpack_result.returncode
+        record["apport_unpack_dir"] = str(unpack_dir)
+        core_path = unpack_dir / "CoreDump"
+        executable_path = unpack_dir / "ExecutablePath"
+        if executable_path.is_file():
+            candidate = Path(executable_path.read_text(encoding="utf-8").strip())
+            if candidate.is_file():
+                executable = candidate
+        if unpack_result.returncode != 0 or not core_path.is_file():
+            record.update(
+                {
+                    "status": "unpack-failed",
+                    "core_path_passed_to_gdb": None,
+                }
+            )
+            return record
+    elif not executable.is_file():
+        executable = Path(sys.executable).resolve()
+
+    record["executable"] = str(executable)
+    record["core_path_passed_to_gdb"] = str(core_path)
+    if gdb_path is None:
+        record.update({"status": "unpacked", "reason": "gdb unavailable"})
+    else:
+        command_file = capture_dir / "gdb-core-commands.txt"
+        _gdb_command_file(command_file)
+        output_path = capture_dir / "gdb-all-threads-and-exception.txt"
+        command = (
+            gdb_path,
+            "-q",
+            str(executable),
+            str(core_path),
+            "-batch",
+            "-x",
+            str(command_file),
+        )
+        record["gdb_command"] = list(command)
+        try:
+            result = subprocess.run(
+                list(command),
+                cwd=ROOT_DIR,
+                capture_output=True,
+                text=True,
+                timeout=1200,
+                check=False,
+            )
+        except Exception as error:
+            record.update({"status": "gdb-error", "gdb_status": "error", "error": repr(error)})
+        else:
+            output_path.write_text(result.stdout + result.stderr, encoding="utf-8")
+            record.update(
+                {
+                    "status": "analyzed" if result.returncode == 0 else "gdb-failed",
+                    "gdb_status": "completed" if result.returncode == 0 else "failed",
+                    "gdb_returncode": result.returncode,
+                    "gdb_output": str(output_path),
+                }
+            )
+
+    # The original Apport report remains untouched. Only the multi-GB extracted
+    # copy is removed so the retrieval archive contains metadata and GDB evidence.
+    if unpack_dir is not None and core_path.is_file():
+        record["unpacked_core_size"] = core_path.stat().st_size
+        core_path.unlink()
+        record["unpacked_core_removed_after_analysis"] = True
+    return record
+
+
 def harvest_native_cores(
     *,
     work_dir: Path,
@@ -768,56 +940,15 @@ def harvest_native_cores(
     capture_dir = work_dir / "native_cores"
     capture_dir.mkdir(parents=True, exist_ok=True)
     records: list[dict[str, Any]] = []
-    for index, path in enumerate(sorted(candidates, key=lambda item: item.stat().st_mtime)):
-        stat = path.stat()
-        record: dict[str, Any] = {
-            "path": str(path),
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
-            "mode": oct(stat.st_mode & 0o777),
-            "readable": os.access(path, os.R_OK),
-            "gdb_status": "skipped",
-        }
-        if gdb_path is not None and record["readable"]:
-            executable = Path("/usr/bin/python3.10")
-            if not executable.is_file():
-                executable = Path(sys.executable).resolve()
-            output_path = capture_dir / f"core-{index:02d}-gdb-all-threads.txt"
-            command = (
-                gdb_path,
-                "-q",
-                str(executable),
-                str(path),
-                "-batch",
-                "-ex",
-                "set pagination off",
-                "-ex",
-                "info threads",
-                "-ex",
-                "thread apply all bt full",
-                "-ex",
-                "thread apply all py-bt",
-                "-ex",
-                "info sharedlibrary",
+    for index, path in enumerate(sorted(set(candidates), key=lambda item: item.stat().st_mtime)):
+        records.append(
+            analyze_native_core_artifact(
+                artifact=path,
+                capture_dir=capture_dir / f"core-{index:02d}",
+                gdb_path=gdb_path,
+                apport_unpack_path=shutil.which("apport-unpack"),
             )
-            try:
-                result = subprocess.run(
-                    list(command),
-                    cwd=ROOT_DIR,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    check=False,
-                )
-            except Exception as error:
-                record["gdb_status"] = "error"
-                record["gdb_error"] = repr(error)
-            else:
-                output_path.write_text(result.stdout + result.stderr, encoding="utf-8")
-                record["gdb_status"] = "completed" if result.returncode == 0 else "failed"
-                record["gdb_returncode"] = result.returncode
-                record["gdb_output"] = str(output_path)
-        records.append(record)
+        )
     result = {
         "since_epoch": since_epoch,
         "candidate_count": len(records),
