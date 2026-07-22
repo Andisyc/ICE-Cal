@@ -413,3 +413,40 @@ offline_cpu_fresh aborts at command_intent_validation/corruption_detected.
 The campaign harvests the new Apport/core candidate into RETURN_ME.tar.gz.
 The next review reads the new core/GDB output instead of running another live test.
 ```
+
+## 2026-07-22: formal-run diagnostic output gate
+
+Observed fact:
+
+```text
+g1-walk-stand-ownerfix-r1-console.log reached workflow/iteration_4/after_aggregate
+and update_number=14300 without Traceback/SIGABRT/SIGSEGV/KeyboardInterrupt in
+the pulled log. The last lines were ordinary target_index diagnostic prints.
+```
+
+Boundary result:
+
+```text
+CPU-owner aggregate assembly/save/load passed through iteration 4.
+The run was not a crash log; it was stopped or truncated during offline update.
+```
+
+Engineering correction:
+
+```text
+The temporary [distill-data-runtime], [distill-trainer-runtime], and
+[distill-offline-runtime] breadcrumbs are now opt-in through
+UNILAB_DISTILL_RUNTIME_DEBUG=1.
+Default formal training no longer emits the high-volume target_index trace.
+```
+
+Verification:
+
+```text
+uv run pytest tests/algos/test_distill_runtime_debug.py -q
+uv run pytest tests/scripts/test_train_scripts.py -q -k multitask_dataset
+uv run ruff check src/unilab/algos/torch/distill/trainer.py \
+  src/unilab/algos/torch/distill/data.py \
+  src/unilab/algos/torch/distill/offline.py \
+  tests/algos/test_distill_runtime_debug.py
+```

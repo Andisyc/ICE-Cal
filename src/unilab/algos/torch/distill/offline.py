@@ -20,7 +20,11 @@ from .performance import (
     DistillationStageObservation,
     DistillationStageObservationAccumulator,
 )
-from .trainer import BehaviorDistillationTrainer, DistillationBatch
+from .trainer import (
+    BehaviorDistillationTrainer,
+    DistillationBatch,
+    _distill_runtime_debug_enabled,
+)
 
 _DISTILL_OFFLINE_TRACE_INTERVAL = 100
 
@@ -44,6 +48,8 @@ def _offline_batch_runtime_snapshot(
 
 
 def _emit_offline_runtime(stage: str, **fields: Any) -> None:
+    if not _distill_runtime_debug_enabled():
+        return
     current_int = builtins.int
     trace = sys.gettrace()
     profile = sys.getprofile()

@@ -167,28 +167,6 @@ Use the published [UniLab documentation](https://unilabsim.github.io/UniLab-doc/
 - [Development Standard](https://unilabsim.github.io/UniLab-doc/en/4-developer_guide/0-index.html): contracts, layering, and validation boundaries
 - [ADR Index](https://unilabsim.github.io/UniLab-doc/adr/ADR-0000-index.html): accepted architecture decisions
 
-## 💬 Community
-
-Join our [Discord server](https://discord.gg/EPCuguRmGX) to chat with the community and get help.
-
-<p align="center">
-  <img src="docs/sphinx/source/_static/assets/unilab-wechat-assistant.jpg" alt="UniLab WeChat assistant QR code" width="180">
-</p>
-
-<p align="center">Add the assistant on WeChat to join the group. Please include <code>UniLab community</code> in your request.</p>
-
-## ⭐ Star History
-
-<p align="center">
-  <a href="https://www.star-history.com/unilabsim/UniLab">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&theme=dark&legend=top-left" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" />
-      <img src="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" alt="UniLab Star History Chart" width="70%">
-    </picture>
-  </a>
-</p>
-
 ## 🧾 Citation
 
 ### UniLab

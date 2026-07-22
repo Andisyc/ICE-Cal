@@ -18,14 +18,23 @@ from torch import nn
 from .performance import DistillationStageObservationAccumulator
 
 _DISTILL_RUNTIME_TRACE_INTERVAL = 100
+_DISTILL_RUNTIME_DEBUG_ENV = "UNILAB_DISTILL_RUNTIME_DEBUG"
+_DISTILL_RUNTIME_DEBUG_FALSE_VALUES = {"", "0", "false", "no", "off"}
 _ORIGINAL_INT = int
 _ORIGINAL_REPR = repr
 _ORIGINAL_TORCH_TENSOR = torch.tensor
 _ORIGINAL_TYPE = type
 
 
+def _distill_runtime_debug_enabled() -> bool:
+    value = os.environ.get(_DISTILL_RUNTIME_DEBUG_ENV, "0")
+    return value.strip().lower() not in _DISTILL_RUNTIME_DEBUG_FALSE_VALUES
+
+
 def _runtime_trace_update(update_number: int) -> bool:
-    return update_number == 1 or update_number % _DISTILL_RUNTIME_TRACE_INTERVAL == 0
+    return _distill_runtime_debug_enabled() and (
+        update_number == 1 or update_number % _DISTILL_RUNTIME_TRACE_INTERVAL == 0
+    )
 
 
 def _label_counts(labels: tuple[str, ...] | None) -> dict[str, int]:
@@ -116,6 +125,8 @@ def _target_index_list_runtime_snapshot(target_indices: list[int]) -> dict[str, 
 
 
 def _emit_trainer_runtime(stage: str, **fields: Any) -> None:
+    if not _distill_runtime_debug_enabled():
+        return
     snapshot = {"stage": stage, **_runtime_identity_snapshot(), **fields}
     print(f"[distill-trainer-runtime] {snapshot!r}", flush=True)
 

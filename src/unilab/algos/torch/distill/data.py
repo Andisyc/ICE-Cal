@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import torch
 
-from .trainer import DistillationBatch
+from .trainer import DistillationBatch, _distill_runtime_debug_enabled
 
 _ORIGINAL_CALLABLE = callable
 _ORIGINAL_ISINSTANCE = isinstance
@@ -285,6 +285,8 @@ def _scenario_label_debug_snapshot(
 
 
 def _emit_data_runtime(stage: str, **fields: Any) -> None:
+    if not _distill_runtime_debug_enabled():
+        return
     is_storage = torch.is_storage
     current_int = builtins.int
     current_isinstance = builtins.isinstance
