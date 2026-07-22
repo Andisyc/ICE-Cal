@@ -149,6 +149,47 @@ def test_behavior_distillation_checkpoint_roundtrip(tmp_path) -> None:
         assert torch.allclose(source_param, target_param)
 
 
+def test_offline_distillation_checkpoint_can_omit_optimizer_state(tmp_path) -> None:
+    from unilab.algos.torch.distill import (
+        BehaviorDistillationTrainer,
+        MLPStudentPolicy,
+        build_distillation_dataset,
+        run_offline_distillation_updates,
+    )
+
+    student = MLPStudentPolicy(obs_dim=5, action_dim=3, hidden_dims=(8,))
+    teacher = torch.nn.Linear(7, 3)
+    optimizer = torch.optim.Adam(student.parameters(), lr=1e-2)
+    trainer = BehaviorDistillationTrainer(
+        student=student,
+        teacher=teacher,
+        optimizer=optimizer,
+    )
+    dataset = build_distillation_dataset(
+        torch.randn(4, 5),
+        torch.randn(4, 7),
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=7,
+        expected_teacher_action_dim=3,
+        teacher_actions=torch.randn(4, 3),
+    )
+    checkpoint_path = tmp_path / "student_no_optimizer.pt"
+
+    run_offline_distillation_updates(
+        trainer,
+        dataset,
+        batch_size=2,
+        max_updates=1,
+        checkpoint_path=checkpoint_path,
+        save_optimizer_state=False,
+    )
+
+    raw = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    assert "student_state_dict" in raw
+    assert "optimizer_state_dict" not in raw
+    assert not list(tmp_path.glob(".student_no_optimizer.pt.tmp.*"))
+
+
 def test_behavior_distillation_rejects_batch_shape_mismatch() -> None:
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,
@@ -2234,6 +2275,173 @@ def test_multitask_scenario_failure_emits_raw_source_provenance_snapshot(
             "raw_type": "type",
         }
     ]
+
+
+def test_multitask_source_annotation_failure_reports_source_context(
+    tmp_path,
+    capsys,
+) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    source_path = tmp_path / "walk_flat_bad_intent.pt"
+    save_distillation_dataset(
+        source_path,
+        build_distillation_dataset(
+            torch.zeros(3, 5),
+            torch.zeros(3, 5),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+            metadata={
+                "command_sample_filter": "active",
+                "command_seen_samples": 5,
+                "command_selected_samples": 3,
+                "command_intent_counts": {"inactive": 1, "active": 2},
+            },
+            teacher_actions=torch.zeros(3, 3),
+            commands=torch.zeros(3, 3),
+            command_intents=("active", "inactive", "active"),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="multitask source scenario annotation failed",
+    ) as exc_info:
+        build_multitask_distillation_dataset(
+            [
+                {
+                    "source_index": 7,
+                    "path": source_path,
+                    "role": "walk_flat",
+                    "scenario": "walk_flat",
+                }
+            ],
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+        )
+
+    assert str(source_path) in str(exc_info.value)
+    assert '"source_index": 7' in str(exc_info.value)
+    assert '"requested_scenario": "walk_flat"' in str(exc_info.value)
+    assert '"expected_intent": "active"' in str(exc_info.value)
+    assert '"index": 1' in str(exc_info.value)
+
+    output_lines = capsys.readouterr().out.splitlines()
+    snapshots = [
+        json.loads(line.removeprefix("[distill-source-annotation-sentinel] "))
+        for line in output_lines
+        if line.startswith("[distill-source-annotation-sentinel] ")
+    ]
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot["stage"] == "multitask/source_annotation_failure"
+    assert snapshot["source_index"] == 7
+    assert snapshot["path"] == str(source_path)
+    assert snapshot["role"] == "walk_flat"
+    assert snapshot["requested_scenario"] == "walk_flat"
+    assert snapshot["command_intents"]["expected_intent"] == "active"
+    assert snapshot["command_intents"]["expected_mismatch_head"] == [
+        {
+            "index": 1,
+            "normalized": "inactive",
+            "repr": "'inactive'",
+            "type": "str",
+        }
+    ]
+    assert snapshot["metadata"] == {
+        "command_intent_counts": {"active": 2, "inactive": 1},
+        "command_sample_filter": "active",
+        "command_seen_samples": 5,
+        "command_selected_samples": 3,
+    }
+
+
+def test_multitask_uses_dataset_workflow_scenario_metadata_as_owner_contract(
+    tmp_path,
+) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    source_path = tmp_path / "walk_flat_metadata_owned.pt"
+    save_distillation_dataset(
+        source_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 5),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+            metadata={"workflow_scenario": "walk_flat"},
+            teacher_actions=torch.zeros(2, 3),
+            commands=torch.full((2, 3), 0.4),
+            command_intents=("active", "active"),
+        ),
+    )
+
+    merged = build_multitask_distillation_dataset(
+        [{"path": source_path, "role": "walk_flat"}],
+        expected_student_obs_dim=5,
+        expected_teacher_obs_dim=5,
+        expected_teacher_action_dim=3,
+    )
+
+    assert merged.scenario_labels == ("walk_flat", "walk_flat")
+    assert merged.metadata["source_scenarios"] == ["walk_flat"]
+
+
+def test_multitask_rejects_source_scenario_metadata_drift(
+    tmp_path,
+) -> None:
+    from unilab.algos.torch.distill import (
+        build_distillation_dataset,
+        build_multitask_distillation_dataset,
+        save_distillation_dataset,
+    )
+
+    source_path = tmp_path / "static_stand_metadata_owned.pt"
+    save_distillation_dataset(
+        source_path,
+        build_distillation_dataset(
+            torch.zeros(2, 5),
+            torch.zeros(2, 5),
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+            metadata={"workflow_scenario": "static_stand"},
+            teacher_actions=torch.zeros(2, 3),
+            commands=torch.zeros(2, 3),
+            command_intents=("inactive", "inactive"),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="multitask source scenario contract mismatch",
+    ) as exc_info:
+        build_multitask_distillation_dataset(
+            [
+                {
+                    "path": source_path,
+                    "role": "walk_flat",
+                    "scenario": "walk_flat",
+                }
+            ],
+            expected_student_obs_dim=5,
+            expected_teacher_obs_dim=5,
+            expected_teacher_action_dim=3,
+        )
+
+    assert '"metadata_workflow_scenario": "static_stand"' in str(exc_info.value)
+    assert '"requested_scenario": "walk_flat"' in str(exc_info.value)
 
 
 def test_multitask_workflow_scenario_annotation_preserves_row_roles(tmp_path) -> None:

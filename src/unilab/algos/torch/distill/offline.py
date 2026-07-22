@@ -495,6 +495,7 @@ def run_offline_distillation_updates(
     progress_interval: int = 0,
     progress_callback: Callable[[int, int, Any], None] | None = None,
     performance_clock: Callable[[], float] | None = None,
+    save_optimizer_state: bool = True,
 ) -> OfflineDistillationRunResult:
     """Run a bounded sequential offline distillation loop over a validated dataset."""
 
@@ -701,7 +702,7 @@ def run_offline_distillation_updates(
             save_distillation_checkpoint(
                 resolved_checkpoint_path,
                 student=trainer.student,
-                optimizer=trainer.optimizer,
+                optimizer=trainer.optimizer if save_optimizer_state else None,
                 agent_steps=samples_seen,
                 teacher_metadata=teacher_metadata,
                 distill_runtime_cfg=distill_runtime_cfg,

@@ -184,7 +184,7 @@ def _label_counts(labels: tuple[str, ...]) -> dict[str, int]:
 def _command_intent_debug_snapshot(
     command_intents: Sequence[Any],
 ) -> dict[str, Any]:
-    normalized = tuple(str(intent) for intent in command_intents)
+    normalized = tuple(_ORIGINAL_STR(intent) for intent in command_intents)
     return {
         "type": type(command_intents).__name__,
         "length": len(normalized),
@@ -200,6 +200,104 @@ def _command_intent_debug_snapshot(
             if intent not in {"active", "inactive"}
         ][:10],
     }
+
+
+def _expected_command_intent_for_scenario(scenario: str | None) -> str | None:
+    if scenario == "walk_flat":
+        return "active"
+    if scenario == "static_stand":
+        return "inactive"
+    return None
+
+
+def _command_intent_contract_debug_snapshot(
+    command_intents: Sequence[Any] | None,
+    *,
+    expected_intent: str | None,
+) -> dict[str, Any] | None:
+    if command_intents is None:
+        return None
+    normalized = tuple(_ORIGINAL_STR(intent) for intent in command_intents)
+    snapshot = _command_intent_debug_snapshot(command_intents)
+    snapshot["expected_intent"] = expected_intent
+    snapshot["expected_mismatch_head"] = (
+        []
+        if expected_intent is None
+        else [
+            {
+                "index": index,
+                "type": _ORIGINAL_TYPE(command_intents[index]).__name__,
+                "repr": _safe_runtime_repr(command_intents[index]),
+                "normalized": intent,
+            }
+            for index, intent in enumerate(normalized)
+            if intent != expected_intent
+        ][:10]
+    )
+    return snapshot
+
+
+def _multitask_source_debug_snapshot(
+    *,
+    source_index: int,
+    path: Path,
+    role: str,
+    scenario: str | None,
+    dataset: DistillationTensorDataset,
+    error: BaseException | None = None,
+) -> dict[str, Any]:
+    metadata = dict(dataset.metadata)
+    metadata_keys = (
+        "source",
+        "scenario_annotation",
+        "workflow_scenario",
+        "command_sample_filter",
+        "command_seen_samples",
+        "command_selected_samples",
+        "command_intent_counts",
+        "scenario_counts",
+        "role_label_counts",
+        "num_samples",
+    )
+    expected_intent = _expected_command_intent_for_scenario(scenario)
+    snapshot: dict[str, Any] = {
+        "source_index": int(source_index),
+        "path": str(path),
+        "role": role,
+        "requested_scenario": scenario,
+        "num_samples": dataset.num_samples,
+        "student_obs_shape": tuple(dataset.student_obs.shape),
+        "teacher_obs_shape": tuple(dataset.teacher_obs.shape),
+        "teacher_actions_shape": (
+            None if dataset.teacher_actions is None else tuple(dataset.teacher_actions.shape)
+        ),
+        "commands_shape": None if dataset.commands is None else tuple(dataset.commands.shape),
+        "command_intents": _command_intent_contract_debug_snapshot(
+            dataset.command_intents,
+            expected_intent=expected_intent,
+        ),
+        "scenario_labels": (
+            None
+            if dataset.scenario_labels is None
+            else _scenario_label_debug_snapshot(dataset.scenario_labels)
+        ),
+        "metadata": {key: metadata[key] for key in metadata_keys if key in metadata},
+    }
+    if error is not None:
+        snapshot["error_type"] = _ORIGINAL_TYPE(error).__name__
+        snapshot["error"] = _ORIGINAL_STR(error)
+        snapshot["error_repr"] = _safe_runtime_repr(error)
+    return snapshot
+
+
+def _metadata_workflow_scenario(dataset: DistillationTensorDataset) -> str | None:
+    value = dataset.metadata.get("workflow_scenario")
+    if value in (None, ""):
+        return None
+    scenario = _ORIGINAL_STR(value)
+    if scenario not in _TRANSITION_SCENARIOS:
+        raise ValueError(f"dataset metadata workflow_scenario is invalid: {scenario!r}")
+    return scenario
 
 
 def _safe_runtime_repr(value: Any) -> str:
@@ -825,15 +923,18 @@ def build_multitask_distillation_dataset(
     source_has_commands: bool | None = None
     source_has_command_intents: bool | None = None
     source_transition_presence: dict[str, bool] | None = None
-    for source in sources:
+    for loop_source_index, source in enumerate(sources):
+        source_index = int(source.get("source_index", loop_source_index))
         path = Path(_source_value(source, "path"))
         role = str(_source_value(source, "role"))
         scenario = source.get("scenario")
+        requested_scenario = None if scenario in (None, "") else str(scenario)
         _emit_data_runtime(
             "multitask/before_source_load",
+            source_index=source_index,
             path=str(path),
             role=role,
-            scenario=None if scenario in (None, "") else str(scenario),
+            scenario=requested_scenario,
         )
         dataset = load_distillation_dataset(
             path,
@@ -842,13 +943,73 @@ def build_multitask_distillation_dataset(
             expected_teacher_action_dim=expected_teacher_action_dim,
             device=device,
         )
-        if scenario not in (None, ""):
-            dataset = annotate_distillation_dataset_scenario(dataset, str(scenario))
+        metadata_scenario = _metadata_workflow_scenario(dataset)
+        if requested_scenario is None:
+            requested_scenario = metadata_scenario
+        elif metadata_scenario is not None and metadata_scenario != requested_scenario:
+            snapshot = {
+                "stage": "multitask/source_scenario_contract_mismatch",
+                "pid": os.getpid(),
+                **_multitask_source_debug_snapshot(
+                    source_index=source_index,
+                    path=path,
+                    role=role,
+                    scenario=requested_scenario,
+                    dataset=dataset,
+                ),
+                "metadata_workflow_scenario": metadata_scenario,
+            }
+            print(
+                "[distill-source-contract-sentinel] "
+                + json.dumps(snapshot, sort_keys=True),
+                flush=True,
+            )
+            raise ValueError(
+                "multitask source scenario contract mismatch: "
+                + json.dumps(snapshot, sort_keys=True)
+            )
+        if requested_scenario is not None:
+            try:
+                dataset = annotate_distillation_dataset_scenario(
+                    dataset,
+                    requested_scenario,
+                )
+            except ValueError as error:
+                snapshot = {
+                    "stage": "multitask/source_annotation_failure",
+                    "pid": os.getpid(),
+                    **_multitask_source_debug_snapshot(
+                        source_index=source_index,
+                        path=path,
+                        role=role,
+                        scenario=requested_scenario,
+                        dataset=dataset,
+                        error=error,
+                    ),
+                }
+                _emit_data_runtime(
+                    "multitask/source_annotation_failure",
+                    **{
+                        key: value
+                        for key, value in snapshot.items()
+                        if key != "stage"
+                    },
+                )
+                print(
+                    "[distill-source-annotation-sentinel] "
+                    + json.dumps(snapshot, sort_keys=True),
+                    flush=True,
+                )
+                raise ValueError(
+                    "multitask source scenario annotation failed: "
+                    + json.dumps(snapshot, sort_keys=True)
+                ) from error
         _emit_data_runtime(
             "multitask/after_source_annotation",
+            source_index=source_index,
             path=str(path),
             role=role,
-            scenario=None if scenario in (None, "") else str(scenario),
+            scenario=requested_scenario,
             num_samples=dataset.num_samples,
             student_obs_shape=tuple(dataset.student_obs.shape),
             teacher_obs_shape=tuple(dataset.teacher_obs.shape),
@@ -929,7 +1090,7 @@ def build_multitask_distillation_dataset(
         source_sample_counts.append(dataset.num_samples)
         source_metadata.append(dict(dataset.metadata))
         source_preserve_role_labels.append(preserve_row_labels)
-        source_scenarios.append(None if scenario in (None, "") else str(scenario))
+        source_scenarios.append(requested_scenario)
 
     if source_transition_presence is None:
         raise RuntimeError("multitask source transition presence was not initialized")
@@ -1292,13 +1453,19 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
         payload_value_types={key: type(value).__name__ for key, value in payload.items()},
         num_samples=dataset.num_samples,
     )
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = resolved_path.with_name(
+        f".{resolved_path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+    )
     try:
-        torch.save(payload, resolved_path)
+        torch.save(payload, tmp_path)
+        tmp_path.replace(resolved_path)
     except Exception as error:
         native_abort_requested = _native_abort_for_impossible_callable_error_requested(error)
         _emit_data_runtime(
             "serialization/torch_save_failure",
             path=str(resolved_path),
+            tmp_path=str(tmp_path),
             error_type=type(error).__name__,
             error_repr=repr(error),
             native_abort_requested=native_abort_requested,
@@ -1306,6 +1473,9 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
         if native_abort_requested:
             _abort_for_native_capture()
         raise
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
     _emit_data_runtime(
         "serialization/after_torch_save",
         path=str(resolved_path),

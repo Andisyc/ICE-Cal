@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import os
+import uuid
 from pathlib import Path
 from typing import Any, Mapping, cast
 
 import torch
 from torch import nn
+
+
+def _cpu_checkpoint_value(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, Mapping):
+        return {key: _cpu_checkpoint_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_cpu_checkpoint_value(item) for item in value)
+    if isinstance(value, list):
+        return [_cpu_checkpoint_value(item) for item in value]
+    return value
 
 
 def save_distillation_checkpoint(
@@ -22,16 +36,24 @@ def save_distillation_checkpoint(
     resolved_path = Path(path)
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
-        "student_state_dict": student.state_dict(),
+        "student_state_dict": _cpu_checkpoint_value(student.state_dict()),
         "agent_steps": int(agent_steps),
         "teacher_metadata": dict(teacher_metadata or {}),
         "distill_runtime_cfg": dict(distill_runtime_cfg or {}),
     }
     if optimizer is not None:
-        payload["optimizer_state_dict"] = optimizer.state_dict()
+        payload["optimizer_state_dict"] = _cpu_checkpoint_value(optimizer.state_dict())
     if obs_normalizer is not None:
-        payload["obs_normalizer"] = obs_normalizer.state_dict()
-    torch.save(payload, resolved_path)
+        payload["obs_normalizer"] = _cpu_checkpoint_value(obs_normalizer.state_dict())
+    tmp_path = resolved_path.with_name(
+        f".{resolved_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
+    )
+    try:
+        torch.save(payload, tmp_path)
+        tmp_path.replace(resolved_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
     if not resolved_path.is_file():
         raise FileNotFoundError(f"distillation checkpoint was not saved: {resolved_path}")
 

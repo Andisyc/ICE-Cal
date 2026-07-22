@@ -1,20 +1,46 @@
-{'i': 0, 'path': '/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 131072, 'command_intents': {'active': 131072}, 'scenario_labels': {}}
-{'i': 1, 'path': '/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 131072, 'command_intents': {'inactive': 131072}, 'scenario_labels': {}}
-{'i': 2, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 3, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 4, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 9430, 'inactive': 56106}, 'scenario_labels': {'walk_to_stop': 65536}}
-{'i': 5, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 6, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 7, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 9629, 'inactive': 55907}, 'scenario_labels': {'walk_to_stop': 65536}}
-{'i': 8, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 9, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 10, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 2192, 'inactive': 63344}, 'scenario_labels': {'walk_to_stop': 65536}}
-{'i': 11, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 12, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 13, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1224, 'inactive': 64312}, 'scenario_labels': {'walk_to_stop': 65536}}
-{'i': 14, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 15, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 16, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1108, 'inactive': 64428}, 'scenario_labels': {'walk_to_stop': 65536}}
-{'i': 17, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
-{'i': 18, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
-{'i': 19, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1008, 'inactive': 64528}, 'scenario_labels': {'walk_to_stop': 65536}}
+Traceback (most recent call last):
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2395, in <module>
+    _run_main_with_native_fail_stop()
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2385, in _run_main_with_native_fail_stop
+    main()
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 223, in run_and_report
+    raise ex
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/hydra.py", line 132, in run
+    _ = ret.return_value
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 260, in return_value
+    raise self._return_value
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2278, in main
+    print(_format_cli_result(run_single_entry_workflow(cfg)))
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2201, in run_single_entry_workflow
+    dagger_result = run_multirole_dagger_workflow(
+  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/workflow.py", line 1074, in run_multirole_dagger_workflow
+    raw_update_result = update_student(aggregate_path, current_checkpoint, output_checkpoint)
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2141, in update_dagger_student
+    result = run_offline_dataset_update(
+  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 817, in run_offline_dataset_update
+    result = run_offline_distillation_updates(
+  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/offline.py", line 633, in run_offline_distillation_updates
+    stats = trainer.update(batch, performance=performance)
+  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/trainer.py", line 735, in update
+    self.student.train()
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2855, in train
+    module.train(mode)
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2855, in train
+    module.train(mode)
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2853, in train
+    self.training = mode
+  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1966, in __setattr__
+    elif params is not None and name in params:
+TypeError: argument of type '_ParameterMeta' is not iterable

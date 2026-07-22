@@ -1069,6 +1069,116 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
     assert result["checkpoint_path"].endswith("checkpoints/dagger_iteration_8.pt")
 
 
+def test_distill_workflow_dagger_update_does_not_resume_or_save_optimizer_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    mod = _train_distill()
+    cfg = _distill_cfg(["training.workflow.enabled=true"])
+    teacher_path = tmp_path / "teacher.pt"
+    teacher_path.write_bytes(b"teacher")
+    cfg.training.workflow.run_dir = str(tmp_path / "run")
+    cfg.training.workflow.artifact_dir = str(tmp_path / "artifacts")
+    cfg.training.workflow.dagger_updates_per_iteration = 3
+    cfg.training.workflow.roles = [
+        {
+            "role": "stand",
+            "task": "g1_stand_still/mujoco",
+            "teacher_checkpoint_path": str(teacher_path),
+        }
+    ]
+
+    monkeypatch.setattr(
+        mod,
+        "run_bootstrap_workflow",
+        lambda **kwargs: SimpleNamespace(
+            run_dir=Path(kwargs["run_dir"]),
+            manifest_path=Path(kwargs["run_dir"]) / "run_manifest.json",
+            role_decisions={"stand": "COLLECT"},
+            bootstrap_dataset_path=Path(kwargs["run_dir"]) / "datasets" / "bootstrap_merged.pt",
+            bootstrap_num_samples=8,
+            checkpoint_path=Path(kwargs["run_dir"]) / "checkpoints" / "bootstrap_student.pt",
+            bootstrap_updates=2,
+        ),
+    )
+
+    captured_update_cfgs: list[Any] = []
+
+    def fake_offline_update(update_cfg, **_kwargs):
+        captured_update_cfgs.append(update_cfg)
+        return {
+            "update_count": 3,
+            "performance_stage_observations": [
+                {
+                    "stage": "learner_batch_staging",
+                    "duration_seconds": 0.0,
+                    "row_count": 1,
+                    "env_step_count": 0,
+                    "success": True,
+                    "error": None,
+                    "cleanup_state": "not_applicable",
+                },
+                {
+                    "stage": "learner_forward",
+                    "duration_seconds": 0.0,
+                    "row_count": 1,
+                    "env_step_count": 0,
+                    "success": True,
+                    "error": None,
+                    "cleanup_state": "not_applicable",
+                },
+                {
+                    "stage": "learner_backward",
+                    "duration_seconds": 0.0,
+                    "row_count": 1,
+                    "env_step_count": 0,
+                    "success": True,
+                    "error": None,
+                    "cleanup_state": "not_applicable",
+                },
+                {
+                    "stage": "checkpoint_save",
+                    "duration_seconds": 0.0,
+                    "row_count": 1,
+                    "env_step_count": 0,
+                    "success": True,
+                    "error": None,
+                    "cleanup_state": "not_applicable",
+                },
+            ],
+        }
+
+    def fake_dagger(**kwargs):
+        update_result = kwargs["update_student"](
+            tmp_path / "aggregate.pt",
+            tmp_path / "input_student.pt",
+            tmp_path / "output_student.pt",
+        )
+        assert update_result.updates == 3
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            completed_iterations=1,
+            checkpoint_path=run_dir / "checkpoints" / "dagger_iteration_1.pt",
+            cumulative_num_samples=24,
+        )
+
+    monkeypatch.setattr(mod, "run_offline_dataset_update", fake_offline_update)
+    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(mod, "finalize_workflow_performance", lambda **_kwargs: None)
+
+    mod.run_single_entry_workflow(cfg)
+
+    assert len(captured_update_cfgs) == 1
+    update_cfg = captured_update_cfgs[0]
+    assert update_cfg.training.offline_resume_optimizer is False
+    assert update_cfg.training.offline_save_optimizer is False
+    assert update_cfg.training.offline_init_checkpoint == str(tmp_path / "input_student.pt")
+
+
 def test_distill_single_entry_persistent_execution_routes_factory_and_closes_service(
     tmp_path: Path,
     monkeypatch,
@@ -2534,6 +2644,7 @@ def test_distill_script_collects_live_env_dataset_with_owner_projection(tmp_path
         [
             "training.collect_num_samples=3",
             "training.collect_num_envs=2",
+            "+training.collect_workflow_scenario=walk_flat",
         ]
     )
     dataset_path = tmp_path / "collected_dataset.pt"
@@ -2585,6 +2696,7 @@ def test_distill_script_collects_live_env_dataset_with_owner_projection(tmp_path
     assert restored.metadata["student_drop_index"] is None
     assert restored.metadata["teacher_obs_key"] == "obs"
     assert restored.metadata["synthetic_teacher_tail"] is False
+    assert restored.metadata["workflow_scenario"] == "walk_flat"
 
 
 def test_distill_script_collects_stand_still_dataset_with_owner_config(tmp_path: Path):

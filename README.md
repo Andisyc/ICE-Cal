@@ -40,44 +40,7 @@ Start with the `Quick Demo` below to run the primary training command. The recom
 - **Config-owned tasks:** Hydra owner YAML files select task, reward, backend, and algorithm settings together; backend switching is expressed as `task=<task>/<backend>`.
 - **Cross-platform setup paths:** The repository tracks Linux CUDA, Linux ROCm, Linux XPU, and Apple Silicon / macOS setup flows.
 
-## 🚀 Quick Demo
-
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/dance.jpg" alt="dance demo" width="100%">
-      <br>
-      <sub><b>dance</b><br>G1 motion tracking</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/wallflip.jpg" alt="wallflip demo" width="100%">
-      <br>
-      <sub><b>wallflip</b><br>G1 wall flip</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/teaser.jpg" alt="teaser demo" width="100%">
-      <br>
-      <sub><b>teaser</b><br>MotrixSim teaser</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/boxtracking.jpg" alt="boxtracking demo" width="100%">
-      <br>
-      <sub><b>boxtracking</b><br>G1 box tracking</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/inhandgrasp.jpg" alt="inhandgrasp demo" width="100%">
-      <br>
-      <sub><b>inhandgrasp</b><br>Sharpa in-hand</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/sphinx/source/_static/demos/locomani.jpg" alt="locomani demo" width="100%">
-      <br>
-      <sub><b>locomani</b><br>Go2 loco-manipulation</sub>
-    </td>
-  </tr>
-</table>
+## 🚀 Installation
 
 ```bash
 # 0. If uv is not installed
@@ -105,57 +68,30 @@ make setup-motrix
 uv run demo dance
 ```
 
-Available demo names: `teaser`, `dance`, `wallflip`, `boxtracking`, `locomani`, `inhandgrasp`. See the [Unified CLI](https://unilabsim.github.io/UniLab-doc/en/2-user_guide/1-training/1-cli_reference.html) page for the full list and flags.
-
-> Mainland China users: motions, scenes, and demo checkpoints are pulled from Hugging Face on first run. If `huggingface.co` is unreachable, point the client at the community mirror before running demo commands:
->
-> ```bash
-> export HF_ENDPOINT=https://hf-mirror.com
-> ```
-
-For training and evaluation:
-
-```bash
-uv run train --algo appo --task go2_joystick_flat --sim motrix
-
-uv run eval --algo appo --task go2_joystick_flat --sim motrix --load-run -1
-
-# Headless Motrix video export for Linux/server runs
-uv run eval --algo appo --task go2_joystick_flat --sim motrix --load-run -1 --render-mode record
-```
-
-This routes through the `go2_joystick_flat/motrix` task owner config and keeps backend selection explicit.
-
-On macOS / MacBook, the UniLab CLI routes Motrix interactive playback through `mxpython` when needed. Motrix defaults to interactive playback; use `--render-mode record` for headless video export or `--render-mode none` to skip playback. Detailed script-level commands are in the [Training Guide](https://unilabsim.github.io/UniLab-doc/en/2-user_guide/1-training/0-index.html).
-
-## 🏃 Example Runs
+## 🏃 Training Cmd
 
 ```bash
 uv run train --algo sac --task g1_walk_flat --sim mujoco
 ```
 
+## 🏃 Sim2Sim Cmd
+
 ```bash
-uv run train --algo sac --task g1_motion_tracking --sim motrix
+uv run scripts/play_interactive.py \
+  --algo sac \
+  --task g1_walk_flat \
+  --sim mujoco interactive.action_mode=policy interactive.keyboard=true
 ```
 
 ```bash
-uv run train --algo appo --task sharpa_inhand --sim mujoco --profile hora
+UNILAB_G1_ACTION_TRACE=1 UNILAB_G1_ACTION_TRACE_INTERVAL=20 \
+./start.sh g1_stand_still 2026-07-09_22-02-36_mujoco
 ```
-
-> Grasp caches auto-download from Hugging Face (`unilabsim/unilab-caches`) on first run into `src/unilab/assets/caches/`; no manual step is needed. To regenerate locally for custom scales (slow):
->
-> ```bash
-> bash scripts/sharpa_collect_grasps.sh 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5
-> ```
 
 ```bash
-uv run train --algo ppo --task go2_arm_manip_loco --sim motrix
-uv run eval --algo ppo --task go2_arm_manip_loco --sim motrix --load-run -1
+./start.sh --algo distill --task g1_walk_flat \
+  --checkpoint-path /path/to/checkpoint/dagger_iteration_8.pt
 ```
-
-Use `uv run train` for training, `uv run eval` for checkpoint playback, and `uv run demo` for the local demo preset. These commands keep algorithm, task, and backend selection explicit.
-
-More training commands, script-level entrypoints, algorithm matrix, resume flow, and W&B details are in the [Training Guide](https://unilabsim.github.io/UniLab-doc/en/2-user_guide/1-training/0-index.html).
 
 ## 📚 Documentation
 

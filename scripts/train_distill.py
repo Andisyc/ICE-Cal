@@ -837,6 +837,9 @@ def run_offline_dataset_update(
         balance_quotas=offline_balance_quotas,
         min_balanced_replay_passes=offline_replay_passes,
         min_balanced_replay_labels=offline_replay_labels,
+        save_optimizer_state=bool(
+            OmegaConf.select(cfg, "training.offline_save_optimizer", default=True)
+        ),
         progress_interval=(
             progress_interval if progress_enabled or progress_callback is not None else 0
         ),
@@ -1340,6 +1343,9 @@ def run_collect_dataset(
             "task_name": str(OmegaConf.select(cfg, "training.task_name")),
             "sim_backend": str(OmegaConf.select(cfg, "training.sim_backend", default="mujoco")),
         }
+        workflow_scenario = OmegaConf.select(cfg, "training.collect_workflow_scenario")
+        if workflow_scenario not in (None, ""):
+            metadata["workflow_scenario"] = str(workflow_scenario)
         if teacher_policy_checkpoint_path is not None:
             metadata["teacher_policy_checkpoint_path"] = str(teacher_policy_checkpoint_path)
         if rollout_policy_checkpoint_path is not None:
@@ -1852,6 +1858,8 @@ def run_single_entry_workflow(
         checkpoint_path: Path,
         _iteration: int,
         output_path: Path,
+        *,
+        workflow_scenario: str | None = None,
     ) -> int | WorkflowScenarioCollectionResult:
         role_cfg = OmegaConf.create(
             OmegaConf.to_container(role_cfgs[output_spec.role], resolve=True)
@@ -1859,6 +1867,8 @@ def run_single_entry_workflow(
         role_cfg.training.collect_action_mode = "student_policy"
         role_cfg.training.collect_rollout_checkpoint_path = str(checkpoint_path)
         role_cfg.training.collect_role_label = output_spec.role
+        if workflow_scenario is not None:
+            role_cfg.training.collect_workflow_scenario = workflow_scenario
         role_cfg.training.collect_num_samples = int(
             OmegaConf.select(
                 cfg,
@@ -1899,6 +1909,7 @@ def run_single_entry_workflow(
                 checkpoint_path,
                 _iteration,
                 output_path,
+                workflow_scenario=scenario.name,
             )
         if scenario.name != "walk_to_stop":
             raise ValueError(f"unsupported transition workflow scenario: {scenario.name!r}")
@@ -2071,21 +2082,33 @@ def run_single_entry_workflow(
     ) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         assembly_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
-        assembly_cfg.training.multitask_sources = [
-            {
+        source_records = []
+        for source_index, source in enumerate(sources):
+            source_record = {
+                "source_index": source_index,
                 "path": str(source.path),
                 "role": source.role,
-                **(
-                    {
-                        "scenario": source.scenario,
-                        "preserve_row_role_labels": source.preserve_row_role_labels,
-                    }
-                    if source.scenario is not None
-                    else {}
-                ),
             }
-            for source in sources
-        ]
+            if source.scenario is not None:
+                source_record["scenario"] = source.scenario
+                source_record["preserve_row_role_labels"] = source.preserve_row_role_labels
+            source_records.append(source_record)
+        source_snapshot_path = output_path.parent / f"{output_path.name}.sources.json"
+        source_snapshot_path.write_text(
+            json.dumps(
+                {
+                    "schema": "unilab.distill.workflow.aggregate_sources.v1",
+                    "aggregate_path": str(output_path),
+                    "source_count": len(source_records),
+                    "sources": source_records,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        assembly_cfg.training.multitask_sources = source_records
         assembly_cfg.training.multitask_expected_student_obs_dim = specs[0].student_obs_dim
         assembly_cfg.training.multitask_expected_teacher_obs_dim = specs[0].teacher_obs_dim
         assembly_cfg.training.multitask_expected_teacher_action_dim = specs[0].teacher_action_dim
@@ -2099,6 +2122,8 @@ def run_single_entry_workflow(
     ) -> WorkflowStudentUpdateResult:
         update_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
         update_cfg.training.offline_init_checkpoint = str(input_checkpoint_path)
+        update_cfg.training.offline_resume_optimizer = False
+        update_cfg.training.offline_save_optimizer = False
         update_cfg.training.offline_repeat_dataset = True
         update_cfg.training.offline_shuffle = True
         update_cfg.training.offline_balance_key = str(
