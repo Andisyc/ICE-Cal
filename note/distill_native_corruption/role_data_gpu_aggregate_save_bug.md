@@ -449,4 +449,68 @@ uv run ruff check src/unilab/algos/torch/distill/trainer.py \
   src/unilab/algos/torch/distill/data.py \
   src/unilab/algos/torch/distill/offline.py \
   tests/algos/test_distill_runtime_debug.py
+
+## 2026-07-22: iteration-7 aggregate replay plan
+Observed fact:
+g1-walk-stand-ownerfix-r2 failed at:
+run_multirole_dagger_workflow()
+-> aggregate_datasets(tuple(cumulative_sources), aggregate_path)
+-> run_multitask_dataset_assembly()
+-> build_multitask_distillation_dataset()
+-> annotate_distillation_dataset_scenario()
+with:
+ValueError: walk_flat scenario annotation conflicts with command_intents
+
+The pulled manifest-source scan showed all manifest-recorded sources before iteration 7
+were semantically valid:
+- bootstrap walk source: scenario=walk_flat, command_intents=active only.
+- bootstrap stand source: scenario=static_stand, command_intents=inactive only.
+- iteration 1-6 walk_flat sources: active only.
+- iteration 1-6 static_stand sources: inactive only.
+- iteration 1-6 walk_to_stop sources: mixed active/inactive with scenario_labels=walk_to_stop.
+
+Correction:
+The previous bootstrap-source hypothesis is ruled out by this scan.
+The missing boundary is the transient iteration-7 source list. Those files exist before
+aggregate, but are not written into run_manifest.json until after aggregate/update
+succeeds. Therefore manifest-only scans cannot prove the failing source.
+
+New diagnostic entry:
+scripts/deploy/replay_distill_iteration_aggregate.py
+  Rebuilds the exact pre-aggregate source list:
+  bootstrap_sources
+  + completed iteration scenario_artifacts
+  + pending datasets/dagger_iteration_N/{scenario}.pt
+  Then runs:
+  raw torch.load snapshot
+  -> load_distillation_dataset()
+  -> annotate_distillation_dataset_scenario()
+  -> build_multitask_distillation_dataset()
+
+Wrapper:
+scripts/deploy/run_distill_iteration_aggregate_replay.sh
+  Runs the replay on the server, captures precheck/console/report, and packages
+  RETURN_ME.tar.gz. It does not save the rebuilt aggregate by default, so the
+  returned archive stays small.
+
+Local validation:
+UV_CACHE_DIR=.uv-cache uv run python -m py_compile scripts/deploy/replay_distill_iteration_aggregate.py
+UV_CACHE_DIR=.uv-cache uv run ruff check scripts/deploy/replay_distill_iteration_aggregate.py
+bash -n scripts/deploy/run_distill_iteration_aggregate_replay.sh
+Result: pass.
+
+Semantic fixture validation:
+A tiny fake run with valid bootstrap + pending iteration sources passed aggregate replay.
+The same fixture with pending walk_flat command_intents=[active,inactive] failed with:
+SOURCE_ANNOTATE_FAILED
+first_failed_scenario=walk_flat
+first_failed_error=ValueError('walk_flat scenario annotation conflicts with command_intents')
+
+Next evidence boundary:
+Run the wrapper on the server for ownerfix-r2 iteration 7.
+Expected decisive outcomes:
+- SOURCE_ANNOTATE_FAILED: identifies the concrete pending source path and label head.
+- AGGREGATE_FAILED: source-level annotation passed, but full concat/build failed.
+- PASS: files/schema are clean; the original failure then points to runtime mutation,
+  server code identity drift, or a source-list mismatch in the live process.
 ```

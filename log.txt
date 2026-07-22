@@ -1,43 +1,20 @@
-(base) chengyuxuan@ubuntu-msi:/ssd1/cyx/UniLab$ bash ./logs/native_core/r11-cell-call-offline-replay.sh 
-Reading symbols from /ssd1/cyx/UniLab/.venv/bin/python...
-Reading symbols from /ssd1/cyx/UniLab/logs/native_core/r10/python-debug-symbols/usr/lib/debug/.build-id/9e/cd5728d1a111aa5750dc097488d70d81906753.debug...
-Breakpoint 1 at 0x1531a0: file ../Objects/call.c, line 174.
-Catchpoint 2 (signal SIGABRT)
-[Thread debugging using libthread_db enabled]
-Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-[New Thread 0x7ffeb19ff640 (LWP 19388)]
-[New Thread 0x7ffeb11fe640 (LWP 19389)]
-[New Thread 0x7ffeb09fd640 (LWP 19390)]
-[New Thread 0x7ffeb01fc640 (LWP 19391)]
-[New Thread 0x7ffeaf9fb640 (LWP 19392)]
-[New Thread 0x7ffeaf1fa640 (LWP 19393)]
-[New Thread 0x7ffeae9f9640 (LWP 19394)]
-[New Thread 0x7ffeae1f8640 (LWP 19395)]
-[New Thread 0x7ffead9f7640 (LWP 19396)]
-[New Thread 0x7ffead1f6640 (LWP 19397)]
-[New Thread 0x7ffeac9f5640 (LWP 19398)]
-[New Thread 0x7ffeac1f4640 (LWP 19399)]
-[New Thread 0x7ffeab9f3640 (LWP 19400)]
-[New Thread 0x7ffeab1f2640 (LWP 19401)]
-[New Thread 0x7ffeaa9f1640 (LWP 19402)]
-[New Thread 0x7ffeaa1f0640 (LWP 19403)]
-[New Thread 0x7ffea99ef640 (LWP 19404)]
-[New Thread 0x7ffea91ee640 (LWP 19405)]
-[New Thread 0x7ffea89ed640 (LWP 19406)]
-[New Thread 0x7ffea81ec640 (LWP 19407)]
-[New Thread 0x7ffea79eb640 (LWP 19408)]
-[New Thread 0x7ffea71ea640 (LWP 19409)]
-[New Thread 0x7ffea69e9640 (LWP 19410)]
-[New Thread 0x7ffea61e8640 (LWP 19411)]
-[New Thread 0x7ffea59e7640 (LWP 19412)]
-[New Thread 0x7ffea51e6640 (LWP 19413)]
-[New Thread 0x7ffea49e5640 (LWP 19414)]
-[New Thread 0x7ffea41e4640 (LWP 19415)]
-[New Thread 0x7ffea39e3640 (LWP 19416)]
-[New Thread 0x7ffea31e2640 (LWP 19417)]
-[New Thread 0x7ffea29e1640 (LWP 19418)]
-[New Thread 0x7ffe9f77e640 (LWP 19433)]
-[New Thread 0x7ffe9c9ff640 (LWP 19437)]
-[New Thread 0x7ffe91fff640 (LWP 19438)]
-[distill-data-runtime] {'stage': 'serialization/before_torch_load', 'pid': 19385, 'thread_id': 140737352443008, 'torch_is_storage_type': 'function', 'torch_is_storage_repr': '<function is_storage at 0x7fff75b0e4d0>', 'torch_is_storage_callable': True, 'builtins_int_type': 'type', 'builtins_int_repr': "<class 'int'>", 'builtins_int_callable': True, 'builtins_isinstance_type': 'builtin_function_or_method', 'builtins_isinstance_repr': '<built-in function isinstance>', 'builtins_isinstance_callable': True, 'builtins_isinstance_is_original': True, 'builtins_str_type': 'type', 'builtins_str_repr': "<class 'str'>", 'builtins_str_callable': True, 'builtins_str_is_original': True, 'builtins_type_type': 'type', 'builtins_type_repr': "<class 'type'>", 'builtins_type_callable': True, 'builtins_type_is_original': True, 'builtins_tuple_type': 'type', 'builtins_tuple_repr': "<class 'tuple'>", 'builtins_tuple_callable': True, 'builtins_tuple_is_original': True, 'builtins_list_type': 'type', 'builtins_list_repr': "<class 'list'>", 'builtins_list_callable': True, 'builtins_list_is_original': True, 'sys_trace_type': None, 'sys_trace_repr': None, 'sys_profile_type': None, 'sys_profile_repr': None, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260721-010752_g1-walk-stand-native-core-r10/datasets/dagger_iteration_4_aggregate.pt', 'device': 'cuda:0', 'file_exists': True, 'file_size': 1025889122}
-[distill-data-runtime] {'stage': 'serialization/after_torch_load', 'pid': 19385, 'thread_id': 140737352443008, 'torch_is_storage_type': 'function', 'torch_is_storage_repr': '<function is_storage at 0x7fff75b0e4d0>', 'torch_is_storage_callable': True, 'builtins_int_type': 'type', 'builtins_int_repr': "<class 'int'>", 'builtins_int_callable': True, 'builtins_isinstance_type': 'builtin_function_or_method', 'builtins_isinstance_repr': '<built-in function isinstance>', 'builtins_isinstance_callable': True, 'builtins_isinstance_is_original': True, 'builtins_str_type': 'type', 'builtins_str_repr': "<class 'str'>", 'builtins_str_callable': True, 'builtins_str_is_original': True, 'builtins_type_type': 'type', 'builtins_type_repr': "<class 'type'>", 'builtins_type_callable': True, 'builtins_type_is_original': True, 'builtins_tuple_type': 'type', 'builtins_tuple_repr': "<class 'tuple'>", 'builtins_tuple_callable': True, 'builtins_tuple_is_original': True, 'builtins_list_type': 'type', 'builtins_list_repr': "<class 'list'>", 'builtins_list_callable': True, 'builtins_list_is_original': True, 'sys_trace_type': None, 'sys_trace_repr': None, 'sys_profile_type': None, 'sys_profile_repr': None, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260721-010752_g1-walk-stand-native-core-r10/datasets/dagger_iteration_4_aggregate.pt', 'device': 'cuda:0', 'payload_type': 'dict', 'payload_keys': ['command_after', 'command_before', 'command_intents', 'commands', 'metadata', 'num_samples', 'role_labels', 'scenario_labels', 'student_obs', 'student_obs_dim', 'teacher_action_dim', 'teacher_actions', 'teacher_obs', 'teacher_obs_dim', 'transition_ages'], 'payload_value_types': {'student_obs': 'Tensor', 'teacher_obs': 'Tensor', 'metadata': 'dict', 'role_labels': 'list', 'teacher_actions': 'Tensor', 'commands': 'Tensor', 'command_intents': 'list', 'scenario_labels': 'list', 'transition_ages': 'Tensor', 'command_before': 'Tensor', 'command_after': 'Tensor', 'student_obs_dim': 'int', 'teacher_obs_dim': 'int', 'teacher_action_dim': 'int', 'num_samples': 'int'}}
+{'i': 0, 'path': '/ssd1/cyx/UniLab/model/teacher/walk_flat_teacher_policy.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 131072, 'command_intents': {'active': 131072}, 'scenario_labels': {}}
+{'i': 1, 'path': '/ssd1/cyx/UniLab/model/teacher/stand_teacher_policy.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 131072, 'command_intents': {'inactive': 131072}, 'scenario_labels': {}}
+{'i': 2, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 3, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 4, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_1/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 9430, 'inactive': 56106}, 'scenario_labels': {'walk_to_stop': 65536}}
+{'i': 5, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 6, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 7, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_2/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 9629, 'inactive': 55907}, 'scenario_labels': {'walk_to_stop': 65536}}
+{'i': 8, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 9, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 10, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_3/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 2192, 'inactive': 63344}, 'scenario_labels': {'walk_to_stop': 65536}}
+{'i': 11, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 12, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 13, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_4/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1224, 'inactive': 64312}, 'scenario_labels': {'walk_to_stop': 65536}}
+{'i': 14, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 15, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 16, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_5/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1108, 'inactive': 64428}, 'scenario_labels': {'walk_to_stop': 65536}}
+{'i': 17, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/walk_flat.pt', 'role': 'walk_flat', 'scenario': 'walk_flat', 'num_samples': 65536, 'command_intents': {'active': 65536}, 'scenario_labels': {}}
+{'i': 18, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/static_stand.pt', 'role': 'stand', 'scenario': 'static_stand', 'num_samples': 65536, 'command_intents': {'inactive': 65536}, 'scenario_labels': {}}
+{'i': 19, 'path': '/ssd1/cyx/UniLab/logs/distill_workflow/20260722-151433_g1-walk-stand-ownerfix-r2/datasets/dagger_iteration_6/walk_to_stop.pt', 'role': 'walk_flat', 'scenario': 'walk_to_stop', 'num_samples': 65536, 'command_intents': {'active': 1008, 'inactive': 64528}, 'scenario_labels': {'walk_to_stop': 65536}}
