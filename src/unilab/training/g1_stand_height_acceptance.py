@@ -178,12 +178,47 @@ def _require_fixed_target(config: Mapping[str, Any], *, expected_target_height: 
         )
 
 
+def _require_target_range(
+    config: Mapping[str, Any],
+    *,
+    expected_height_range: tuple[float, float],
+    expected_default_height: float,
+) -> None:
+    env = _require_mapping(config.get("env"), name="config.env")
+    commands = _require_mapping(env.get("commands"), name="config.env.commands")
+    height_range = commands.get("height_range")
+    if not isinstance(height_range, (list, tuple)) or len(height_range) != 2:
+        raise ValueError("config.env.commands.height_range must contain two values")
+    observed = np.asarray(height_range, dtype=np.float64)
+    expected = np.asarray(expected_height_range, dtype=np.float64)
+    if not np.all(np.isfinite(expected)) or not float(expected[0]) < float(expected[1]):
+        raise ValueError(
+            "expected_height_range must contain two finite ascending values, "
+            f"got {expected.tolist()}"
+        )
+    if not np.allclose(observed, expected, rtol=0.0, atol=1.0e-9):
+        raise ValueError(
+            "Stage-2 height range mismatch: "
+            f"expected={expected.tolist()} observed={observed.tolist()}"
+        )
+    default_height = commands.get("default_height")
+    if default_height is None or not np.isclose(
+        float(default_height), float(expected_default_height), rtol=0.0, atol=1.0e-9
+    ):
+        raise ValueError(
+            "Stage-2 default height mismatch: "
+            f"expected={expected_default_height} observed={default_height}"
+        )
+
+
 def load_run_identity(
     *,
     run_dir: str | Path,
     checkpoint_path: str | Path,
     expected_sha256: str,
     expected_target_height: float,
+    expected_height_range: tuple[float, float] | None = None,
+    expected_default_height: float | None = None,
 ) -> RunIdentity:
     """Validate immutable artifact and training-config identity before rollout."""
 
@@ -227,7 +262,16 @@ def load_run_identity(
         raise ValueError(f"expected backend {EXPECTED_SIM_BACKEND}, got {sim_backend}")
     if algo != EXPECTED_ALGO:
         raise ValueError(f"expected algorithm {EXPECTED_ALGO}, got {algo}")
-    _require_fixed_target(config, expected_target_height=expected_target_height)
+    if expected_height_range is None:
+        _require_fixed_target(config, expected_target_height=expected_target_height)
+    else:
+        if expected_default_height is None:
+            raise ValueError("expected_default_height is required for Stage-2 range acceptance")
+        _require_target_range(
+            config,
+            expected_height_range=expected_height_range,
+            expected_default_height=expected_default_height,
+        )
 
     max_tilt_deg = float(reward.get("max_tilt_deg", float("nan")))
     if not np.isfinite(max_tilt_deg) or max_tilt_deg <= 0.0:
@@ -462,6 +506,8 @@ def run_acceptance(
     device: str,
     max_height_mae: float = 0.05,
     min_double_support_fraction: float = 0.90,
+    expected_height_range: tuple[float, float] | None = None,
+    expected_default_height: float | None = None,
     create_env_fn: Callable[..., Any] = create_env,
     load_policy_fn: Callable[..., Callable[[np.ndarray], np.ndarray]] = load_policy,
     ensure_registries_fn: Callable[[], None] = ensure_registries,
@@ -484,10 +530,20 @@ def run_acceptance(
         checkpoint_path=checkpoint_path,
         expected_sha256=expected_sha256,
         expected_target_height=expected_target_height,
+        expected_height_range=expected_height_range,
+        expected_default_height=expected_default_height,
     )
     effective_seed = identity.effective_seed if seed is None else int(seed)
     apply_training_seed(effective_seed, torch_runtime=True, cuda=device.startswith("cuda"))
     cfg = OmegaConf.create(identity.config)
+    if expected_height_range is not None:
+        # Range identity is checked above; each physical probe then fixes a copied config.
+        cfg.env.commands.height_range = [
+            float(expected_target_height),
+            float(expected_target_height),
+        ]
+        cfg.env.commands.default_height = float(expected_target_height)
+        cfg.env.commands.random_height_during_walking = True
     ensure_registries_fn()
     env_override = BackendAdapter(
         cfg, root_dir=ROOT_DIR, algo_name=EXPECTED_ALGO
@@ -599,3 +655,76 @@ def run_acceptance(
         }
     )
     return report
+
+
+def run_range_acceptance(
+    *,
+    run_dir: str | Path,
+    checkpoint_path: str | Path,
+    expected_sha256: str,
+    expected_height_range: tuple[float, float],
+    expected_default_height: float,
+    num_envs: int,
+    warmup_steps: int,
+    evaluation_steps: int,
+    seed: int | None,
+    device: str,
+    max_height_mae: float = 0.05,
+    min_double_support_fraction: float = 0.90,
+    create_env_fn: Callable[..., Any] = create_env,
+    load_policy_fn: Callable[..., Callable[[np.ndarray], np.ndarray]] = load_policy,
+    ensure_registries_fn: Callable[[], None] = ensure_registries,
+    run_target_fn: Callable[..., dict[str, Any]] = run_acceptance,
+) -> dict[str, Any]:
+    """Accept a Stage-2 checkpoint only when low/mid/high fixed probes all pass."""
+
+    low, high = (float(value) for value in expected_height_range)
+    if not np.isfinite(low) or not np.isfinite(high) or not low < high:
+        raise ValueError(
+            f"expected_height_range must contain two finite ascending values, got {[low, high]}"
+        )
+    probe_targets = (low, 0.5 * (low + high), high)
+    target_reports: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    for target_height in probe_targets:
+        report = run_target_fn(
+            run_dir=run_dir,
+            checkpoint_path=checkpoint_path,
+            expected_sha256=expected_sha256,
+            expected_target_height=target_height,
+            expected_height_range=(low, high),
+            expected_default_height=float(expected_default_height),
+            num_envs=num_envs,
+            warmup_steps=warmup_steps,
+            evaluation_steps=evaluation_steps,
+            seed=seed,
+            device=device,
+            max_height_mae=max_height_mae,
+            min_double_support_fraction=min_double_support_fraction,
+            create_env_fn=create_env_fn,
+            load_policy_fn=load_policy_fn,
+            ensure_registries_fn=ensure_registries_fn,
+        )
+        target_reports.append(report)
+        label = f"{target_height:.6f}"
+        for check in report["checks"]:
+            checks.append(
+                {
+                    **check,
+                    "name": f"target/{label}/{check['name']}",
+                }
+            )
+
+    verdict = "PASS" if all(report["verdict"] == "PASS" for report in target_reports) else "FAIL"
+    return {
+        "verdict": verdict,
+        "identity": target_reports[0]["identity"],
+        "contract": {
+            **target_reports[0]["contract"],
+            "expected_height_range": [low, high],
+            "expected_default_height": float(expected_default_height),
+            "probe_targets": list(probe_targets),
+        },
+        "target_reports": target_reports,
+        "checks": checks,
+    }

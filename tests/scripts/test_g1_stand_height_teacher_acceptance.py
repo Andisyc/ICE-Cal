@@ -12,7 +12,11 @@ from unilab.training import g1_stand_height_acceptance as acceptance
 
 
 def _write_run_identity(
-    tmp_path: Path, *, task_name: str = "G1StandHeight"
+    tmp_path: Path,
+    *,
+    task_name: str = "G1StandHeight",
+    height_range: tuple[float, float] = (0.754, 0.754),
+    default_height: float = 0.754,
 ) -> tuple[Path, Path, str]:
     run_dir = tmp_path / "run"
     run_dir.mkdir(parents=True)
@@ -35,8 +39,9 @@ def _write_run_identity(
             },
             "env": {
                 "commands": {
-                    "height_range": [0.754, 0.754],
-                    "default_height": 0.754,
+                    "height_range": list(height_range),
+                    "default_height": default_height,
+                    "random_height_during_walking": height_range[0] != height_range[1],
                 }
             },
             "reward": {"max_tilt_deg": 65.0},
@@ -232,3 +237,140 @@ def test_run_acceptance_connects_identity_policy_env_and_metrics(tmp_path: Path)
     assert report["rollout"]["executed_steps"] == 3
     assert report["metrics"]["scored_sample_count"] == 4
     assert fake_env.closed is True
+
+
+def test_range_acceptance_probes_low_mid_high_and_fails_closed(tmp_path: Path) -> None:
+    run_dir, checkpoint, digest = _write_run_identity(
+        tmp_path,
+        height_range=(0.65, 0.754),
+    )
+    observed_targets: list[float] = []
+
+    def run_target_fn(**kwargs):
+        target = float(kwargs["expected_target_height"])
+        observed_targets.append(target)
+        passed = not np.isclose(target, 0.702)
+        return {
+            "verdict": "PASS" if passed else "FAIL",
+            "identity": {"checkpoint_sha256": digest},
+            "contract": {"actor_obs_dim": 99, "target_obs_index": 96},
+            "checks": [
+                {
+                    "level": "PASS" if passed else "FAIL",
+                    "name": "quality/height_mae",
+                    "detail": f"target={target}",
+                }
+            ],
+        }
+
+    report = acceptance.run_range_acceptance(
+        run_dir=run_dir,
+        checkpoint_path=checkpoint,
+        expected_sha256=digest,
+        expected_height_range=(0.65, 0.754),
+        expected_default_height=0.754,
+        num_envs=2,
+        warmup_steps=1,
+        evaluation_steps=2,
+        seed=7,
+        device="cpu",
+        run_target_fn=run_target_fn,
+    )
+
+    assert observed_targets == pytest.approx([0.65, 0.702, 0.754])
+    assert report["contract"]["probe_targets"] == pytest.approx(observed_targets)
+    assert report["verdict"] == "FAIL"
+    assert [check["name"] for check in report["checks"]] == [
+        "target/0.650000/quality/height_mae",
+        "target/0.702000/quality/height_mae",
+        "target/0.754000/quality/height_mae",
+    ]
+
+
+def test_stage2_range_identity_and_probe_config_are_strict(tmp_path: Path) -> None:
+    run_dir, checkpoint, digest = _write_run_identity(
+        tmp_path,
+        height_range=(0.65, 0.754),
+    )
+    observed_cfg: dict[str, object] = {}
+
+    class ProbeEnv:
+        num_envs = 1
+        obs_groups_spec = {"obs": 99, "critic": 102}
+        action_space = types.SimpleNamespace(shape=(29,))
+        cfg = types.SimpleNamespace(sensor=types.SimpleNamespace(upvector="upvector"))
+        _backend = types.SimpleNamespace(
+            get_sensor_data=lambda name: (
+                np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32)
+                if name == "upvector"
+                else np.ones(1, dtype=np.float32)
+            )
+        )
+
+        def __init__(self, target: float):
+            self.target = target
+            self.state = types.SimpleNamespace(
+                obs={
+                    "obs": np.pad(np.asarray([[target]], dtype=np.float32), ((0, 0), (96, 2))),
+                    "critic": np.zeros((1, 102), dtype=np.float32),
+                },
+                info={
+                    "commands": np.zeros((1, 3), dtype=np.float32),
+                    "height_commands": np.asarray([[target]], dtype=np.float32),
+                    "steps": np.zeros(1, dtype=np.uint32),
+                },
+                terminated=np.zeros(1, dtype=bool),
+                truncated=np.zeros(1, dtype=bool),
+            )
+
+        def set_autoreset(self, enabled: bool) -> None:
+            assert enabled is False
+
+        def init_state(self):
+            return self.state
+
+        def step(self, actions):
+            self.state.info["steps"] += 1
+            return self.state
+
+        def _terrain_relative_base_height(self):
+            return np.asarray([self.target], dtype=np.float32)
+
+        def close(self):
+            pass
+
+    def create_env_fn(cfg, **kwargs):
+        observed_cfg["range"] = list(cfg.env.commands.height_range)
+        observed_cfg["default"] = float(cfg.env.commands.default_height)
+        return ProbeEnv(float(cfg.env.commands.default_height))
+
+    report = acceptance.run_acceptance(
+        run_dir=run_dir,
+        checkpoint_path=checkpoint,
+        expected_sha256=digest,
+        expected_target_height=0.65,
+        expected_height_range=(0.65, 0.754),
+        expected_default_height=0.754,
+        num_envs=1,
+        warmup_steps=0,
+        evaluation_steps=1,
+        seed=7,
+        device="cpu",
+        create_env_fn=create_env_fn,
+        load_policy_fn=lambda *args, **kwargs: (
+            lambda obs: np.zeros((obs.shape[0], 29), dtype=np.float32)
+        ),
+        ensure_registries_fn=lambda: None,
+    )
+
+    assert observed_cfg == {"range": [0.65, 0.65], "default": 0.65}
+    assert report["verdict"] == "PASS"
+    with pytest.raises(ValueError, match="Stage-2 height range mismatch"):
+        acceptance.load_run_identity(
+            run_dir=run_dir,
+            checkpoint_path=checkpoint,
+            expected_sha256=digest,
+            expected_target_height=0.65,
+            expected_height_range=(0.60, 0.754),
+            expected_default_height=0.754,
+        )
