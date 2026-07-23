@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -10,8 +11,10 @@ from unilab.algos.torch.common.normalization import EmpiricalNormalization
 from unilab.algos.torch.fast_sac.learner import FastSACLearner, SACActor
 from unilab.algos.torch.offpolicy.checkpoint_adapter import (
     G1_HEIGHT_ACTOR_ADAPTER_ID,
+    G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID,
     adapt_g1_height_actor_state,
     adapt_g1_height_normalizer_state,
+    load_g1_height_actor_continuation_warm_start,
     load_g1_height_actor_warm_start,
     materialize_g1_height_actor_checkpoint,
 )
@@ -170,3 +173,159 @@ def test_actor_only_warm_start_keeps_critic_and_optimizers_fresh(tmp_path: Path)
     for key, value in qtarget_before.items():
         torch.testing.assert_close(learner.qnet_target.state_dict()[key], value)
     assert learner.get_state_dict()["actor_warm_start"] == metadata
+
+
+def _assert_nested_equal(actual, expected) -> None:
+    if isinstance(expected, torch.Tensor):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    elif isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key in expected:
+            _assert_nested_equal(actual[key], expected[key])
+    elif isinstance(expected, (list, tuple)):
+        assert len(actual) == len(expected)
+        for actual_value, expected_value in zip(actual, expected, strict=True):
+            _assert_nested_equal(actual_value, expected_value)
+    else:
+        assert actual == expected
+
+
+def test_99d_actor_continuation_is_strict_and_isolates_training_state(tmp_path: Path) -> None:
+    source_actor = _randomized_actor(99)
+    source_path = tmp_path / "stage1.pt"
+    torch.save(
+        {
+            "actor": source_actor.state_dict(),
+            "qnet": {"ignored": torch.full((2,), 99.0)},
+            "qnet_target": {"ignored": torch.full((2,), 98.0)},
+            "actor_optimizer": {"ignored": True},
+            "q_optimizer": {"ignored": True},
+            "alpha_optimizer": {"ignored": True},
+            "log_alpha": torch.tensor([42.0]),
+            "update_count": 12345,
+        },
+        source_path,
+    )
+    learner = FastSACLearner(
+        obs_dim=99,
+        action_dim=3,
+        critic_obs_dim=102,
+        device="cpu",
+        actor_hidden_dim=32,
+        critic_hidden_dim=16,
+        num_atoms=5,
+        use_layer_norm=True,
+        use_compile=False,
+    )
+    before = copy.deepcopy(learner.get_state_dict())
+
+    metadata = load_g1_height_actor_continuation_warm_start(learner, source_path)
+
+    assert metadata["adapter_id"] == G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID
+    for key, value in source_actor.state_dict().items():
+        torch.testing.assert_close(learner.actor.state_dict()[key], value, rtol=0, atol=0)
+    observations = torch.randn(7, 99)
+    for expected, actual in zip(
+        source_actor(observations), learner.actor(observations), strict=True
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    after = learner.get_state_dict()
+    for key in (
+        "qnet",
+        "qnet_target",
+        "actor_optimizer",
+        "q_optimizer",
+        "alpha_optimizer",
+        "log_alpha",
+        "update_count",
+    ):
+        _assert_nested_equal(after[key], before[key])
+
+
+@pytest.mark.parametrize("source_dim", [98, 100])
+def test_99d_actor_continuation_rejects_wrong_source_dimension(
+    tmp_path: Path, source_dim: int
+) -> None:
+    source_path = tmp_path / f"wrong-{source_dim}.pt"
+    torch.save({"actor": _randomized_actor(source_dim).state_dict()}, source_path)
+    learner = FastSACLearner(
+        obs_dim=99,
+        action_dim=3,
+        critic_obs_dim=102,
+        device="cpu",
+        actor_hidden_dim=32,
+        critic_hidden_dim=16,
+        num_atoms=5,
+        use_layer_norm=True,
+        use_compile=False,
+    )
+
+    with pytest.raises(ValueError, match="source actor input dim"):
+        load_g1_height_actor_continuation_warm_start(learner, source_path)
+
+
+def test_99d_actor_continuation_rejects_keys_and_normalizer(tmp_path: Path) -> None:
+    learner = FastSACLearner(
+        obs_dim=99,
+        action_dim=3,
+        critic_obs_dim=102,
+        device="cpu",
+        actor_hidden_dim=32,
+        critic_hidden_dim=16,
+        num_atoms=5,
+        use_layer_norm=True,
+        use_compile=False,
+    )
+    state = _randomized_actor(99).state_dict()
+    state.pop("fc_mu.bias")
+    bad_keys = tmp_path / "bad-keys.pt"
+    torch.save({"actor": state}, bad_keys)
+    with pytest.raises(ValueError, match="state keys mismatch"):
+        load_g1_height_actor_continuation_warm_start(learner, bad_keys)
+
+    bad_normalizer = tmp_path / "bad-normalizer.pt"
+    torch.save(
+        {"actor": _randomized_actor(99).state_dict(), "obs_normalizer": {"bad": 1}},
+        bad_normalizer,
+    )
+    with pytest.raises(ValueError, match="no active obs_normalizer"):
+        load_g1_height_actor_continuation_warm_start(learner, bad_normalizer)
+
+
+def test_99d_actor_continuation_rejects_shape_and_payload(tmp_path: Path) -> None:
+    learner = FastSACLearner(
+        obs_dim=99,
+        action_dim=3,
+        critic_obs_dim=102,
+        device="cpu",
+        actor_hidden_dim=32,
+        critic_hidden_dim=16,
+        num_atoms=5,
+        use_layer_norm=True,
+        use_compile=False,
+    )
+    bad_shape = tmp_path / "bad-shape.pt"
+    torch.save(
+        {
+            "actor": SACActor(
+                obs_dim=99,
+                action_dim=3,
+                hidden_dim=64,
+                use_layer_norm=True,
+                device="cpu",
+            ).state_dict()
+        },
+        bad_shape,
+    )
+    with pytest.raises(ValueError, match="state shape mismatch"):
+        load_g1_height_actor_continuation_warm_start(learner, bad_shape)
+
+    malformed = tmp_path / "malformed.pt"
+    torch.save(["not", "a", "mapping"], malformed)
+    with pytest.raises(ValueError, match="payload must be a mapping"):
+        load_g1_height_actor_continuation_warm_start(learner, malformed)
+
+    missing_actor = tmp_path / "missing-actor.pt"
+    torch.save({"qnet": {}}, missing_actor)
+    with pytest.raises(ValueError, match="does not contain actor state"):
+        load_g1_height_actor_continuation_warm_start(learner, missing_actor)

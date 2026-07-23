@@ -4436,6 +4436,46 @@ def test_offpolicy_actor_warm_start_is_noop_without_checkpoint():
     assert mod.apply_configured_actor_warm_start("sac", cfg, object()) is None
 
 
+def test_offpolicy_configured_actor_continuation_dispatches_strict_loader(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    mod = _offpolicy()
+    checkpoint = tmp_path / "stage1.pt"
+    checkpoint.write_bytes(b"fixture")
+    import unilab.algos.torch.offpolicy.checkpoint_adapter as adapter_module
+
+    cfg = _offpolicy_cfg(
+        [
+            "task=sac/g1_stand_height/mujoco",
+            f"algo.actor_warm_start_checkpoint={checkpoint}",
+            "algo.actor_warm_start_adapter="
+            f"{adapter_module.G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID}",
+        ]
+    )
+    learner = object()
+    captured = {}
+
+    def fake_load(target_learner, source_path):
+        captured.update(learner=target_learner, source_path=source_path)
+        return {
+            "adapter_id": adapter_module.G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID,
+            "parent_checkpoint_sha256": "b" * 64,
+        }
+
+    monkeypatch.setattr(
+        adapter_module,
+        "load_g1_height_actor_continuation_warm_start",
+        fake_load,
+    )
+    metadata = mod.apply_configured_actor_warm_start(
+        "sac", cfg, types.SimpleNamespace(learner=learner)
+    )
+
+    assert captured == {"learner": learner, "source_path": str(checkpoint)}
+    assert metadata["adapter_id"] == adapter_module.G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID
+
+
 def test_offpolicy_main_failure_summary_and_skips_playback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):

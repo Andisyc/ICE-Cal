@@ -160,6 +160,8 @@ def apply_configured_actor_warm_start(
     adapter_id = OmegaConf.select(cfg, "algo.actor_warm_start_adapter")
     from unilab.algos.torch.offpolicy.checkpoint_adapter import (
         G1_HEIGHT_ACTOR_ADAPTER_ID,
+        G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID,
+        load_g1_height_actor_continuation_warm_start,
         load_g1_height_actor_warm_start,
     )
 
@@ -167,12 +169,15 @@ def apply_configured_actor_warm_start(
         raise ValueError("actor-only G1 height warm start currently supports only SAC")
     if str(cfg.training.task_name) != "G1StandHeight":
         raise ValueError("G1 height actor adapter may only initialize G1StandHeight")
-    if adapter_id != G1_HEIGHT_ACTOR_ADAPTER_ID:
+    loaders = {
+        G1_HEIGHT_ACTOR_ADAPTER_ID: load_g1_height_actor_warm_start,
+        G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID: (load_g1_height_actor_continuation_warm_start),
+    }
+    if adapter_id not in loaders:
         raise ValueError(
-            "algo.actor_warm_start_adapter must be "
-            f"{G1_HEIGHT_ACTOR_ADAPTER_ID!r}, got {adapter_id!r}"
+            f"algo.actor_warm_start_adapter must be one of {sorted(loaders)!r}, got {adapter_id!r}"
         )
-    metadata = load_g1_height_actor_warm_start(runner.learner, str(checkpoint))
+    metadata = loaders[adapter_id](runner.learner, str(checkpoint))
     print(
         "[ActorWarmStart] "
         f"adapter={metadata['adapter_id']} "

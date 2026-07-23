@@ -15,6 +15,7 @@ import torch
 from torch import nn
 
 G1_HEIGHT_ACTOR_ADAPTER_ID = "g1_height_actor_obs_98_to_99_v1"
+G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID = "g1_height_actor_obs_99_to_99_v1"
 G1_HEIGHT_SOURCE_OBS_DIM = 98
 G1_HEIGHT_TARGET_OBS_DIM = 99
 G1_HEIGHT_INSERTION_INDEX = 96
@@ -74,8 +75,7 @@ def adapt_g1_height_actor_state(
         )
     if not 0 <= int(insertion_index) <= source_dim:
         raise ValueError(
-            f"G1 height adapter insertion index must be in [0, {source_dim}], "
-            f"got {insertion_index}"
+            f"G1 height adapter insertion index must be in [0, {source_dim}], got {insertion_index}"
         )
 
     adapted = _clone_tensor_state(actor_state, name="actor")
@@ -250,9 +250,7 @@ def _validate_state_dict_compatibility(
     if target_keys != source_keys:
         missing = sorted(target_keys - source_keys)
         unexpected = sorted(source_keys - target_keys)
-        raise ValueError(
-            f"{name} state keys mismatch: missing={missing}, unexpected={unexpected}"
-        )
+        raise ValueError(f"{name} state keys mismatch: missing={missing}, unexpected={unexpected}")
     mismatches = {
         key: (tuple(source[key].shape), tuple(target[key].shape))
         for key in sorted(target_keys)
@@ -300,7 +298,9 @@ def load_g1_height_actor_warm_start(
     adapted_normalizer_state = payload.get("obs_normalizer")
     target_normalizer = getattr(learner, "obs_normalizer", None)
     if adapted_normalizer_state is not None:
-        if not isinstance(target_normalizer, nn.Module) or isinstance(target_normalizer, nn.Identity):
+        if not isinstance(target_normalizer, nn.Module) or isinstance(
+            target_normalizer, nn.Identity
+        ):
             raise ValueError(
                 "source checkpoint contains obs_normalizer but target learner has no active "
                 "obs_normalizer"
@@ -315,5 +315,83 @@ def load_g1_height_actor_warm_start(
     if adapted_normalizer_state is not None:
         target_normalizer.load_state_dict(adapted_normalizer_state, strict=True)
     metadata = dict(payload["actor_obs_adapter"])
+    learner.actor_warm_start_metadata = metadata
+    return metadata
+
+
+def load_g1_height_actor_continuation_warm_start(
+    learner: Any,
+    parent_checkpoint_path: str | Path,
+) -> dict[str, Any]:
+    """Strictly load only a 99-D actor into a fresh 99-D learner."""
+
+    parent = Path(parent_checkpoint_path).resolve()
+    if not parent.is_file():
+        raise FileNotFoundError(f"parent checkpoint does not exist: {parent}")
+    checkpoint = torch.load(parent, map_location="cpu", weights_only=True)
+    if not isinstance(checkpoint, Mapping):
+        raise ValueError("source SAC checkpoint payload must be a mapping")
+    source_actor = checkpoint.get("actor")
+    if not isinstance(source_actor, Mapping):
+        raise ValueError("source SAC checkpoint does not contain actor state")
+    source_actor_state = _clone_tensor_state(source_actor, name="actor")
+    source_first_key, source_first_weight = _first_rank2_weight(source_actor_state)
+    if int(source_first_weight.shape[1]) != G1_HEIGHT_TARGET_OBS_DIM:
+        raise ValueError(
+            "G1 height continuation source actor input dim must be "
+            f"{G1_HEIGHT_TARGET_OBS_DIM}, got {int(source_first_weight.shape[1])} "
+            f"({source_first_key})"
+        )
+
+    actor = getattr(learner, "actor", None)
+    if not isinstance(actor, nn.Module):
+        raise ValueError("actor warm start requires learner.actor to be an nn.Module")
+    target_actor_state = actor.state_dict()
+    _validate_state_dict_compatibility(
+        target_actor_state,
+        source_actor_state,
+        name="actor continuation warm start",
+    )
+    _, target_first_weight = _first_rank2_weight(target_actor_state)
+    if int(target_first_weight.shape[1]) != G1_HEIGHT_TARGET_OBS_DIM:
+        raise ValueError(
+            "actor continuation warm start target input dim must be "
+            f"{G1_HEIGHT_TARGET_OBS_DIM}, got {int(target_first_weight.shape[1])}"
+        )
+
+    source_normalizer = checkpoint.get("obs_normalizer")
+    target_normalizer = getattr(learner, "obs_normalizer", None)
+    if source_normalizer is not None:
+        if not isinstance(source_normalizer, Mapping):
+            raise ValueError("source obs_normalizer state must be a mapping")
+        if not isinstance(target_normalizer, nn.Module) or isinstance(
+            target_normalizer, nn.Identity
+        ):
+            raise ValueError(
+                "source checkpoint contains obs_normalizer but target learner has no active "
+                "obs_normalizer"
+            )
+        source_normalizer_state = _clone_tensor_state(
+            source_normalizer,
+            name="obs_normalizer",
+        )
+        _validate_state_dict_compatibility(
+            target_normalizer.state_dict(),
+            source_normalizer_state,
+            name="obs_normalizer continuation warm start",
+        )
+
+    actor.load_state_dict(source_actor_state, strict=True)
+    if source_normalizer is not None:
+        target_normalizer.load_state_dict(source_normalizer_state, strict=True)
+    metadata = {
+        "adapter_id": G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID,
+        "migration_scope": "actor_and_optional_obs_normalizer_only",
+        "source_obs_dim": G1_HEIGHT_TARGET_OBS_DIM,
+        "target_obs_dim": G1_HEIGHT_TARGET_OBS_DIM,
+        "first_weight_key": source_first_key,
+        "parent_checkpoint_path": str(parent),
+        "parent_checkpoint_sha256": _file_sha256(parent),
+    }
     learner.actor_warm_start_metadata = metadata
     return metadata
