@@ -1,9 +1,10 @@
 ---
 contract_id: DISTILL-METHOD-v001
-status: active
+status: superseded
 effective_date: 2026-07-15
-updated_date: 2026-07-15
+updated_date: 2026-07-23
 supersedes: null
+superseded_by: DISTILL-METHOD-v002
 scope: G1 standing, walking, and later height-control multi-teacher distillation
 concept_figure: note/architecture/concept/03_g1_multiteacher_distillation_method.data.json
 ---

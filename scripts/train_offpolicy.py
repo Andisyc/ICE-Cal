@@ -147,6 +147,40 @@ def build_offpolicy_env_cfg_override(algo_name: str, cfg: DictConfig) -> dict[st
     )
 
 
+def apply_configured_actor_warm_start(
+    algo_name: str,
+    cfg: DictConfig,
+    runner: Any,
+) -> dict[str, Any] | None:
+    """Apply the explicit G1 actor-only warm start before runner.learn()."""
+
+    checkpoint = OmegaConf.select(cfg, "algo.actor_warm_start_checkpoint")
+    if checkpoint in (None, ""):
+        return None
+    adapter_id = OmegaConf.select(cfg, "algo.actor_warm_start_adapter")
+    from unilab.algos.torch.offpolicy.checkpoint_adapter import (
+        G1_HEIGHT_ACTOR_ADAPTER_ID,
+        load_g1_height_actor_warm_start,
+    )
+
+    if algo_name != "sac":
+        raise ValueError("actor-only G1 height warm start currently supports only SAC")
+    if str(cfg.training.task_name) != "G1StandHeight":
+        raise ValueError("G1 height actor adapter may only initialize G1StandHeight")
+    if adapter_id != G1_HEIGHT_ACTOR_ADAPTER_ID:
+        raise ValueError(
+            "algo.actor_warm_start_adapter must be "
+            f"{G1_HEIGHT_ACTOR_ADAPTER_ID!r}, got {adapter_id!r}"
+        )
+    metadata = load_g1_height_actor_warm_start(runner.learner, str(checkpoint))
+    print(
+        "[ActorWarmStart] "
+        f"adapter={metadata['adapter_id']} "
+        f"parent_sha256={metadata['parent_checkpoint_sha256']}"
+    )
+    return metadata
+
+
 def build_runner(algo_name: str, cfg: DictConfig):
     """Build algorithm runner from unified Hydra config."""
     env_cfg_override = build_offpolicy_env_cfg_override(algo_name, cfg)
@@ -692,6 +726,7 @@ def main(cfg: DictConfig) -> None:
             runner = None
             try:
                 runner = build_runner(algo_name, cfg)
+                apply_configured_actor_warm_start(algo_name, cfg, runner)
                 runner.learn(
                     max_iterations=cfg.algo.max_iterations,
                     save_interval=cfg.algo.save_interval,

@@ -266,6 +266,58 @@ def test_height_obs_appends_target_height_after_velocity_command() -> None:
     )
 
 
+def test_stand_height_actor_obs_is_99d_without_mode_observation() -> None:
+    info, linvel, gyro, gravity, dof_pos, dof_vel = _obs_fixture()
+    info["commands"][:] = 0.0
+    env = _fake_g1_obs_env(mode_observation=False, height_obs=True)
+
+    obs = env._compute_obs(info, linvel, gyro, gravity, dof_pos, dof_vel)
+
+    assert env.obs_groups_spec == {"obs": 99, "critic": 102}
+    assert obs["obs"].shape == (2, 99)
+    np.testing.assert_allclose(obs["obs"][:, 96], info["height_commands"][:, 0])
+
+
+def test_standing_height_penalties_follow_per_env_target() -> None:
+    dtype = get_global_dtype()
+    env = object.__new__(G1WalkEnv)
+    env._reward_cfg = SimpleNamespace(
+        base_height_target=0.754,
+        stand_support_height_margin=0.02,
+    )
+    env._stand_support_relative_height = lambda: np.asarray([0.65, 0.754], dtype=dtype)
+    env._stand_mode_mask = lambda ctx: np.ones((ctx.num_envs,), dtype=dtype)
+    ctx = _height_reward_ctx(
+        [0.65, 0.754],
+        np.asarray([0.65, 0.754], dtype=dtype),
+    )
+
+    support_penalty = env._reward_stand_support_height_margin_l2(ctx)
+    base_penalty = env._reward_stand_base_height_deficit_l1(ctx)
+
+    np.testing.assert_allclose(support_penalty, 0.0)
+    np.testing.assert_allclose(base_penalty, 0.0)
+
+
+def test_standing_height_target_keeps_scalar_legacy_fallback() -> None:
+    dtype = get_global_dtype()
+    env = object.__new__(G1WalkEnv)
+    env._reward_cfg = SimpleNamespace(
+        base_height_target=0.754,
+        stand_support_height_margin=0.02,
+    )
+    env._stand_mode_mask = lambda ctx: np.ones((ctx.num_envs,), dtype=dtype)
+    ctx = _height_reward_ctx([0.70, 0.754], 0.754)
+
+    penalty = env._reward_stand_base_height_deficit_l1(ctx)
+
+    np.testing.assert_allclose(
+        penalty,
+        np.asarray([0.034, 0.0], dtype=dtype),
+        atol=1.0e-7,
+    )
+
+
 def test_height_tracking_config_keeps_original_walking_reward_boundary() -> None:
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
         cfg = compose(config_name="config", overrides=["task=sac/g1_walk_height/mujoco"])

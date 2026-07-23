@@ -72,6 +72,101 @@ def _load_deploy_script(name: str) -> Any:
     return mod
 
 
+@pytest.mark.parametrize(
+    ("task", "task_name"),
+    [
+        ("g1_walk_height", "G1WalkHeight"),
+        ("g1_stand_height", "G1StandHeight"),
+    ],
+)
+def test_g1_height_tracking_live_path_owner_contracts(task, task_name):
+    mod = _load_deploy_script("check_unilab_g1_height_tracking_live_path")
+
+    cfg = mod._compose_cfg(task)
+    contract = mod._task_contract(task)
+
+    assert cfg.training.task_name == task_name
+    assert contract.registry_task_name == task_name
+    assert contract.actor_obs_dim == 99
+    assert contract.critic_obs_dim == 102
+
+
+def test_g1_height_tracking_live_path_stand_height_contract():
+    mod = _load_deploy_script("check_unilab_g1_height_tracking_live_path")
+
+    class FakeBackend:
+        def get_sensor_data(self, name):
+            if name == "upvector":
+                return np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32)
+            if name.startswith(("left_foot_contact_", "right_foot_contact_")):
+                return np.asarray([1.0], dtype=np.float32)
+            raise KeyError(name)
+
+    obs = np.zeros((1, 99), dtype=np.float32)
+    obs[:, 96] = 0.7
+    state = types.SimpleNamespace(
+        obs={
+            "obs": obs,
+            "critic": np.zeros((1, 102), dtype=np.float32),
+        },
+        info={
+            "commands": np.zeros((1, 3), dtype=np.float32),
+            "height_commands": np.asarray([[0.7]], dtype=np.float32),
+            "log": {"reward/track_base_height_exp_smooth": 1.0},
+        },
+        reward=np.asarray([1.0], dtype=np.float32),
+        terminated=np.asarray([False]),
+    )
+
+    class FakeEnv:
+        num_envs = 1
+        action_space = types.SimpleNamespace(shape=(29,))
+        obs_groups_spec = {"obs": 99, "critic": 102}
+        cfg = types.SimpleNamespace(sensor=types.SimpleNamespace(upvector="upvector"))
+        _backend = FakeBackend()
+        closed = False
+
+        def init_state(self):
+            return state
+
+        def step(self, actions):
+            assert actions.shape == (1, 29)
+            return state
+
+        def _terrain_relative_base_height(self):
+            return np.asarray([0.71], dtype=np.float32)
+
+        def close(self):
+            self.closed = True
+
+    fake_env = FakeEnv()
+    captured: dict[str, Any] = {}
+
+    def create_env_fn(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_env
+
+    checks, details = mod.run_check(
+        task="g1_stand_height",
+        num_envs=1,
+        steps=1,
+        seed=7,
+        create_env_fn=create_env_fn,
+    )
+
+    assert not any(check.level == "FAIL" for check in checks)
+    assert details["height_tracking/config_task"] == "G1StandHeight"
+    assert details["height_tracking/obs_dim"] == 99
+    assert details["height_tracking/critic_dim"] == 102
+    assert details["height_tracking/commands_max_abs"] == 0.0
+    assert details["height_tracking/double_support_fraction"] == 1.0
+    assert details["height_tracking/terminated_total"] == 0
+    assert captured["args"][0].training.task_name == "G1StandHeight"
+    assert captured["kwargs"]["sim_backend"] == "mujoco"
+    assert fake_env.closed is True
+
+
 def test_analyze_offpolicy_trace_reports_training_e2e(tmp_path, capsys):
     trace_path = tmp_path / "trace.json"
     trace_path.write_text(
@@ -4293,6 +4388,52 @@ def test_offpolicy_build_failure_summary_preserves_failed_status():
     assert summary["total_env_steps"] == 12
     assert summary["error_type"] == "RuntimeError"
     assert summary["error"] == "collector died"
+
+
+def test_offpolicy_configured_actor_warm_start_calls_owner_before_training(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    mod = _offpolicy()
+    checkpoint = tmp_path / "legacy.pt"
+    checkpoint.write_bytes(b"fixture")
+    cfg = _offpolicy_cfg(
+        [
+            "task=sac/g1_stand_height/mujoco",
+            f"algo.actor_warm_start_checkpoint={checkpoint}",
+        ]
+    )
+    learner = object()
+    captured: dict[str, Any] = {}
+
+    import unilab.algos.torch.offpolicy.checkpoint_adapter as adapter_module
+
+    def fake_load(target_learner, source_path):
+        captured["learner"] = target_learner
+        captured["source_path"] = source_path
+        return {
+            "adapter_id": adapter_module.G1_HEIGHT_ACTOR_ADAPTER_ID,
+            "parent_checkpoint_sha256": "a" * 64,
+        }
+
+    monkeypatch.setattr(adapter_module, "load_g1_height_actor_warm_start", fake_load)
+
+    metadata = mod.apply_configured_actor_warm_start(
+        "sac",
+        cfg,
+        types.SimpleNamespace(learner=learner),
+    )
+
+    assert captured == {"learner": learner, "source_path": str(checkpoint)}
+    assert metadata is not None
+    assert metadata["adapter_id"] == adapter_module.G1_HEIGHT_ACTOR_ADAPTER_ID
+
+
+def test_offpolicy_actor_warm_start_is_noop_without_checkpoint():
+    mod = _offpolicy()
+    cfg = _offpolicy_cfg(["task=sac/g1_stand_height/mujoco"])
+
+    assert mod.apply_configured_actor_warm_start("sac", cfg, object()) is None
 
 
 def test_offpolicy_main_failure_summary_and_skips_playback(

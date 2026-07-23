@@ -483,6 +483,7 @@ class FastSACLearner:
 
         # Step counter
         self.update_count = 0
+        self.actor_warm_start_metadata: dict[str, Any] | None = None
 
         # AMP scaler for mixed precision (fp16 only; bf16 has fp32 range and skips scaler)
         self.scaler = (
@@ -798,7 +799,7 @@ class FastSACLearner:
 
     def get_state_dict(self) -> Dict[str, Any]:
         """Save all components."""
-        return {
+        state: Dict[str, Any] = {
             "actor": self.actor.state_dict(),
             "qnet": self.qnet.state_dict(),
             "qnet_target": self.qnet_target.state_dict(),
@@ -808,6 +809,9 @@ class FastSACLearner:
             "alpha_optimizer": self.alpha_optimizer.state_dict(),
             "update_count": self.update_count,
         }
+        if self.actor_warm_start_metadata is not None:
+            state["actor_warm_start"] = dict(self.actor_warm_start_metadata)
+        return state
 
     def load_state_dict(self, state_dict: Dict) -> None:
         """Load all components."""
@@ -819,6 +823,8 @@ class FastSACLearner:
         self.q_optimizer.load_state_dict(state_dict["q_optimizer"])
         self.alpha_optimizer.load_state_dict(state_dict["alpha_optimizer"])
         self.update_count = state_dict.get("update_count", 0)
+        metadata = state_dict.get("actor_warm_start")
+        self.actor_warm_start_metadata = dict(metadata) if isinstance(metadata, dict) else None
 
 
 # ---------------------------------------------------------------------------

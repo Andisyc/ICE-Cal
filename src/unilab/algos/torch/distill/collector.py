@@ -132,6 +132,18 @@ def _info_array(
     return arr
 
 
+def _target_height_array(
+    info: Mapping[str, Any],
+    key: str,
+    *,
+    expected_rows: int,
+) -> np.ndarray:
+    target_height = _info_array(info, key, expected_rows=expected_rows)
+    if target_height.shape[1] != 1:
+        raise ValueError(f"Info key {key!r} must have shape (N, 1), got {target_height.shape}")
+    return target_height
+
+
 def _command_sample_mask(
     info: Mapping[str, Any],
     *,
@@ -421,6 +433,10 @@ def collect_transition_distillation_dataset_from_env(
     student_projection: str = "identity",
     student_drop_index: int | None = None,
     command_info_key: str = "commands",
+    target_height_info_key: str | None = None,
+    walking_role_label: str = "walk_flat",
+    standing_role_label: str = "stand",
+    scenario_label: str = "walk_to_stop",
     max_env_steps: int | None = None,
     metadata: Mapping[str, Any] | None = None,
     initial_reset: tuple[Any, Any] | None = None,
@@ -445,6 +461,10 @@ def collect_transition_distillation_dataset_from_env(
         raise ValueError(f"pre_switch_steps must be positive, got {pre_switch_steps}")
     if int(min_post_switch_steps) < 0:
         raise ValueError(f"min_post_switch_steps must be non-negative, got {min_post_switch_steps}")
+    if not str(walking_role_label) or not str(standing_role_label):
+        raise ValueError("transition role labels must be non-empty")
+    if not str(scenario_label):
+        raise ValueError("transition scenario_label must be non-empty")
     action_shape = getattr(getattr(env, "action_space", None), "shape", None)
     if action_shape is None:
         raise ValueError("env.action_space.shape must be defined for transition collection")
@@ -514,6 +534,7 @@ def collect_transition_distillation_dataset_from_env(
     teacher_chunks: list[torch.Tensor] = []
     teacher_action_chunks: list[torch.Tensor] = []
     command_chunks: list[torch.Tensor] = []
+    target_height_chunks: list[torch.Tensor] = []
     command_before_chunks: list[torch.Tensor] = []
     command_after_chunks: list[torch.Tensor] = []
     role_labels: list[str] = []
@@ -557,6 +578,15 @@ def collect_transition_distillation_dataset_from_env(
             str(command_info_key),
             expected_rows=num_envs,
         )[:, :3]
+        current_target_height = (
+            None
+            if target_height_info_key in (None, "")
+            else _target_height_array(
+                current_info,
+                str(target_height_info_key),
+                expected_rows=num_envs,
+            )
+        )
         with _performance_span(performance, "teacher_inference"):
             walking_actions = _policy_actions(
                 walking_teacher_policy,
@@ -612,6 +642,10 @@ def collect_transition_distillation_dataset_from_env(
             command_chunks.append(
                 torch.as_tensor(current_commands[:take], dtype=torch.float32).clone()
             )
+            if current_target_height is not None:
+                target_height_chunks.append(
+                    torch.as_tensor(current_target_height[:take], dtype=torch.float32).clone()
+                )
             command_before_chunks.append(
                 torch.as_tensor(active_command_rows[:take], dtype=torch.float32).clone()
             )
@@ -621,11 +655,14 @@ def collect_transition_distillation_dataset_from_env(
             transition_age_chunks.append(
                 torch.as_tensor(transition_ages[:take], dtype=torch.int64).clone()
             )
-            role_labels.extend("stand" if value else "walk_flat" for value in post_switch[:take])
+            role_labels.extend(
+                str(standing_role_label) if value else str(walking_role_label)
+                for value in post_switch[:take]
+            )
             command_intents.extend(
                 "inactive" if value else "active" for value in post_switch[:take]
             )
-            scenario_labels.extend("walk_to_stop" for _ in range(take))
+            scenario_labels.extend(str(scenario_label) for _ in range(take))
             post_switch_rows += int(np.count_nonzero(post_switch[:take]))
             collected_count += take
             action_abs_max = max(action_abs_max, float(np.max(np.abs(rollout_actions))))
@@ -683,7 +720,7 @@ def collect_transition_distillation_dataset_from_env(
     payload.update(
         {
             "source": "live_env_transition_rollout",
-            "scenario": "walk_to_stop",
+            "scenario": str(scenario_label),
             "teacher_obs_key": str(teacher_obs_key),
             "teacher_projection": str(teacher_projection),
             "student_projection": str(student_projection),
@@ -699,6 +736,11 @@ def collect_transition_distillation_dataset_from_env(
             "walk_command": walk_command_np.tolist(),
             "zero_command": zero_command_rows[0].tolist(),
             "command_info_key": str(command_info_key),
+            "target_height_info_key": (
+                None if target_height_info_key in (None, "") else str(target_height_info_key)
+            ),
+            "walking_role_label": str(walking_role_label),
+            "standing_role_label": str(standing_role_label),
             "env_steps": int(env_steps),
             "switch_count": int(switch_count),
             "post_switch_rows": int(post_switch_rows),
@@ -718,6 +760,11 @@ def collect_transition_distillation_dataset_from_env(
             role_labels=tuple(role_labels[: int(num_samples)]),
             teacher_actions=torch.cat(teacher_action_chunks, dim=0)[: int(num_samples)],
             commands=torch.cat(command_chunks, dim=0)[: int(num_samples)],
+            target_height=(
+                torch.cat(target_height_chunks, dim=0)[: int(num_samples)]
+                if target_height_chunks
+                else None
+            ),
             command_intents=tuple(command_intents[: int(num_samples)]),
             scenario_labels=tuple(scenario_labels[: int(num_samples)]),
             transition_ages=transition_ages_tensor,
@@ -749,6 +796,7 @@ def collect_distillation_dataset_from_env(
     rollout_policy: torch.nn.Module | None = None,
     command_sample_filter: str = "none",
     command_info_key: str = "commands",
+    target_height_info_key: str | None = None,
     command_xy_threshold: float = 0.05,
     command_yaw_threshold: float = 0.05,
     max_env_steps: int | None = None,
@@ -813,6 +861,7 @@ def collect_distillation_dataset_from_env(
     teacher_chunks: list[torch.Tensor] = []
     teacher_action_chunks: list[torch.Tensor] = []
     command_chunks: list[torch.Tensor] = []
+    target_height_chunks: list[torch.Tensor] = []
     command_intent_chunks: list[str] = []
     env_steps = 0
     collected_count = 0
@@ -851,6 +900,15 @@ def collect_distillation_dataset_from_env(
             )
             if command_sample_filter != "none"
             else None
+        )
+        target_height_np = (
+            None
+            if target_height_info_key in (None, "")
+            else _target_height_array(
+                current_info,
+                str(target_height_info_key),
+                expected_rows=teacher_np.shape[0],
+            )
         )
         command_active = (
             command_active_mask(
@@ -911,6 +969,9 @@ def collect_distillation_dataset_from_env(
             selected_student_np = student_np[row_mask]
             selected_actions = label_actions[row_mask] if label_actions is not None else None
             selected_commands = commands_np[row_mask] if commands_np is not None else None
+            selected_target_height = (
+                target_height_np[row_mask] if target_height_np is not None else None
+            )
             selected_command_active = (
                 command_active[row_mask] if command_active is not None else None
             )
@@ -934,6 +995,10 @@ def collect_distillation_dataset_from_env(
                     command_intent_chunks.extend(
                         "active" if bool(value) else "inactive"
                         for value in selected_command_active[:take]
+                    )
+                if selected_target_height is not None:
+                    target_height_chunks.append(
+                        torch.as_tensor(selected_target_height[:take], dtype=torch.float32)
                     )
                 collected_count += int(take)
             if actions is not None:
@@ -977,6 +1042,9 @@ def collect_distillation_dataset_from_env(
             "teacher_projection": str(teacher_projection),
             "student_projection": str(student_projection),
             "student_drop_index": student_drop_index,
+            "target_height_info_key": (
+                None if target_height_info_key in (None, "") else str(target_height_info_key)
+            ),
             "action_mode": str(action_mode),
             "action_seed": None if action_seed is None else int(action_seed),
             "action_abs_max": float(action_abs_max),
@@ -1014,6 +1082,9 @@ def collect_distillation_dataset_from_env(
                 torch.cat(teacher_action_chunks, dim=0) if teacher_action_chunks else None
             ),
             commands=torch.cat(command_chunks, dim=0) if command_chunks else None,
+            target_height=(
+                torch.cat(target_height_chunks, dim=0) if target_height_chunks else None
+            ),
             command_intents=(tuple(command_intent_chunks) if command_intent_chunks else None),
             role_labels=(normalized_role_label,) * int(num_samples)
             if normalized_role_label is not None

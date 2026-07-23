@@ -171,6 +171,11 @@ def _indexed_batch(dataset: DistillationTensorDataset, indices: torch.Tensor) ->
             else dataset.teacher_actions.index_select(0, indices)
         ),
         commands=None if dataset.commands is None else dataset.commands.index_select(0, indices),
+        target_height=(
+            None
+            if dataset.target_height is None
+            else dataset.target_height.index_select(0, indices)
+        ),
         command_intents=(
             None
             if dataset.command_intents is None

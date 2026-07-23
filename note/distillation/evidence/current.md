@@ -88,8 +88,8 @@ Date: 2026-07-15
   - the UniLab entry and viewer now canonicalize file or preview-server access to
     `http://127.0.0.1:8766/`, so `/open-source` is owned by the Atlas server;
   - the FEMR-style contract was revalidated by clicking the rendered Runtime
-    source row for `src/unilab/cli.py:172`: the page reported `opened`, the server
-    logged the same location, and the VS Code CLI exited with code 0;
+    source row for `src/unilab/cli.py` at line 172: the page reported `opened`,
+    the server logged the same location, and the VS Code CLI exited with code 0;
   - dry-run validation returned HTTP 200 for the valid location and HTTP 400
     for traversal, missing-file, and zero-line requests.
 - Limitation: source navigation proves the human code-reading interaction, not
@@ -315,8 +315,8 @@ Date: 2026-07-15
   with a real MuJoCo g1_walk_flat/mujoco environment.
 - Class: live integration failure; root cause localized to the shared playback
   reset-contract owner.
-- Command:
-  uv run python scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py
+- Historical command, preserving the original executable and argv components:
+  `uv run` + `python scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py`
   --task g1_walk_flat/mujoco --action-mode policy --device cpu
   --make-temp-policy-checkpoint --temp-student-model-type moe
   --reset-repetitions 32 --steps 0
@@ -339,17 +339,21 @@ Date: 2026-07-15
   scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py.
 - Class: live integration gate passed for reset lifecycle; policy quality is
   intentionally untested.
-- Command:
-  uv run python scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py
+- Historical command, preserving the original executable and argv components:
+  `uv run` + `python scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py`
   --task g1_walk_flat/mujoco --action-mode policy --device cpu
   --make-temp-policy-checkpoint --temp-student-model-type moe
   --reset-repetitions 32 --steps 1
 - Results: focused owner/sentinel tests 16 passed; Ruff and syntax checks
   passed; the live sentinel exited 0 with 32/32 reset records passing.
-- Runtime facts: reset_command_abs_max=0,
-  reset_actor_command_abs_max=0, reset_command_mismatch_abs_max=0,
-  reset_gait_enabled_max=0, reset_base_qvel_norm_max=0,
-  actions_shape=(1,29), and policy_action_nonzero=0.049958.
+- Runtime facts:
+  - `reset_command_abs_max=0`;
+  - `reset_actor_command_abs_max=0`;
+  - `reset_command_mismatch_abs_max=0`;
+  - `reset_gait_enabled_max=0`;
+  - `reset_base_qvel_norm_max=0`;
+  - `actions_shape=(1,29)`;
+  - `policy_action_nonzero=0.049958`.
 - Decision: RT-3 is complete. RT-4 may now measure standing-teacher recovery
   authority on synchronized post-walk states; do not infer that the student
   can stand, walk, or recover from this lifecycle gate.
@@ -1871,3 +1875,137 @@ or policy-quality conclusion is authorized.
   or formal materialization occurred.
 - Decision: ordinary launcher control surface PASS.  It does not replace formal
   Gate 0/FT-1 controls or authorize a training command.
+
+## E113: StandHeight + Walk Step 4 Deterministic Workflow PASS
+
+- Date: 2026-07-23.
+- Scope: the new 99-D `g1_stand_height_walk` workflow, its two role profiles,
+  `target_height` data propagation, two-expert update/reload behavior, and
+  legacy 98-D isolation. No simulator, training, or real checkpoint was in
+  scope.
+- Source commands:
+  - `uv --cache-dir E:\unilab\.uv-cache run ruff check` over the ten Step 4
+    Python owner/test files: PASS.
+  - `uv --cache-dir E:\unilab\.uv-cache run pytest tests/algos/test_stand_height_walk_distillation.py tests/scripts/test_stand_height_walk_distill_workflow.py tests/algos/test_distill_workflow.py tests/scripts/test_train_scripts.py::test_distill_walk_stand_workflow_profile_composes_teacher_roles -q`:
+    `27 passed in 20.56s`.
+- Class: contract-confirmed and deterministic integration-confirmed.
+- Facts:
+  - `walk` and `stand_height` compose as separate 99-D roles with one shared
+    29-D action contract; `active -> expert 0` and `inactive -> expert 1`.
+  - `target_height` is validated as `(N, 1)` and survives collector, save/load,
+    batch slicing, multitask merge, offline batches, and DAgger aggregation.
+  - selected-expert update leaves inactive expert parameters and optimizer
+    state unchanged; strict checkpoint reload produces one finite 29-D action.
+  - the legacy `g1_walk_stand` profile remains unchanged, and mixed 98-D/99-D
+    sources or inconsistent `target_height` presence fail closed.
+  - the only initial focused-test failure was a fixture that omitted both
+    `commands` and `target_height`; the fixture was isolated so commands and
+    intent match, leaving only the intended `target_height` incompatibility.
+    The `data.py` fail-closed ordering and business contract were unchanged.
+- Limitations: this evidence proves deterministic contracts and connectors
+  only. It does not prove MuJoCo execution, teacher/student policy quality,
+  non-nominal live transitions, repeated reset, or any real checkpoint.
+- Decision: Step 4 deterministic implementation is PASS. Step 5 and all
+  training/checkpoint operations remain unopened pending explicit human
+  authorization.
+
+## E114: StandHeight + Walk Steps 2-3 Deterministic Evidence Recovery
+
+- Date: 2026-07-23.
+- Scope: preserve the exact retained validation claims for the implemented
+  `G1StandHeight` boundary and the actor-only 98-D to 99-D warm-start boundary.
+  This is evidence recovery from the task transcript, not a fresh test run.
+- L0 sources:
+  - Codex task turn `019f8f0e-4909-7c21-911d-289dc900b8f7` records the Step 2
+    scope as four focused test files covering task observation/commands,
+    dynamic rewards, Hydra registration, and legacy-task isolation. Its final
+    report is `108 passed, 24 warnings in 19.46s` and identifies the warnings
+    as Gymnasium `Box` boundary-conversion warnings.
+  - Codex task turn `019f8f12-704f-77d3-a8aa-bb82779cb0d5` records six
+    checkpoint-adapter tests plus two `train_offpolicy` connector tests. Its
+    final report is `8 passed in 6.77s`.
+- Class: conversation-backed deterministic contract and connector evidence.
+- Facts:
+  - Step 2 proves the new task composes, exposes a 99-D actor observation,
+    applies each environment's target height in the standing reward path, and
+    preserves the legacy public task contracts within the focused suite.
+  - Step 3 proves actor and optional normalizer migration, actor-output
+    equivalence within `1e-6`, adapter metadata/hash persistence, and isolation
+    of fresh critics, target critics, and optimizers.
+- Limitations:
+  - the retained Step 2 report preserves the suite scope and aggregate result,
+    but not the exact pytest argv or four test filenames;
+  - neither turn accessed a real checkpoint, started MuJoCo, trained a policy,
+    or established teacher/student physical quality;
+  - the suites were not rerun during the later documentation-only closeout.
+- Decision: Steps 2 and 3 are deterministic PASS. E113 separately closes Step
+  4. Step 5, checkpoint qualification, training, and physical acceptance remain
+  unopened.
+
+## E115: G1StandHeight Step 5 One-Environment Live Route PASS
+
+- Date: 2026-07-23.
+- Scope: extend the existing G1 height-tracking sentinel to the isolated
+  `g1_stand_height` owner and execute one real MuJoCo environment for one zero-
+  action step. No checkpoint, learner, optimizer, or training run was in scope.
+- Source commands:
+  - `uv --cache-dir E:\unilab\.uv-cache run pytest tests/scripts/test_train_scripts.py::test_g1_height_tracking_live_path_owner_contracts tests/scripts/test_train_scripts.py::test_g1_height_tracking_live_path_stand_height_contract tests/config/test_reward_injection.py::test_offpolicy_g1_stand_height_is_isolated_99d_height_contract tests/envs/locomotion/g1/test_g1_height_tracking_contract.py::test_stand_height_actor_obs_is_99d_without_mode_observation -q`:
+    `5 passed in 4.21s`.
+  - `uv --cache-dir E:\unilab\.uv-cache run ruff check scripts/deploy/check_unilab_g1_height_tracking_live_path.py tests/scripts/test_train_scripts.py`:
+    PASS.
+  - `uv --cache-dir E:\unilab\.uv-cache run scripts/deploy/check_unilab_g1_height_tracking_live_path.py --task g1_stand_height --num-envs 1 --steps 1 --seed 7`:
+    exit 0.
+  - Public training CLI with `--cfg job --resolve`, fixed
+    `env.commands.height_range=[0.754,0.754]`, and `training.no_play=true`:
+    exit 0 without entering `main()` or `runner.learn()`.
+- Runtime facts:
+  - route identity is `g1_stand_height -> G1StandHeight` on MuJoCo;
+  - actor/critic dimensions are `99/102`, and actor observation index 96 equals
+    `height_commands[:, 0]`;
+  - target height is `0.741594 m`, measured terrain-relative height is
+    `0.753042 m`, and signed error is `0.011449 m`;
+  - velocity-command max absolute value is `0`, tilt is `0.065611 deg`, double-
+    support fraction is `1.0`, and termination count is `0`;
+  - observation, critic observation, reward, target, measured height, tilt, and
+    support snapshot are finite;
+  - Gymnasium emitted two known `Box` cast-overflow warnings; the sentinel
+    checks and exit status remained PASS.
+- Training preflight facts: `G1StandHeight`, MuJoCo, `2048` environments,
+  `5000` iterations, save interval `1000`, fixed stage-1 height `0.754 m`, no
+  playback, and `actor_warm_start_checkpoint=null` resolved successfully.
+- Limitations: this is one zero-action step near reset. It proves the live task
+  route and structured snapshot only, not learned height tracking, long-horizon
+  balance, repeated reset, transition behavior, checkpoint compatibility, GPU
+  memory, or policy quality.
+- Decision: Step 5 live-route gate is PASS and the fresh stage-1 SSH command is
+  compose-confirmed. Training has not started.
+
+## E116: StandHeight + Walk Async Runtime Connector PASS
+
+- Date: 2026-07-23.
+- Scope: verify that fresh `G1StandHeight` SAC training selects the repository
+  off-policy async/double-buffer owner and that the 99-D two-role workflow can
+  opt into the existing persistent DAgger runtime. No simulator, training, or
+  real checkpoint was in scope.
+- Source commands:
+  - `uv --cache-dir E:\unilab\.uv-cache run pytest tests/algos/test_offpolicy_double_buffer_runner.py::test_default_sac_dispatches_to_double_buffer_runner tests/scripts/test_train_scripts.py::test_distill_single_entry_persistent_execution_uses_production_factory tests/scripts/test_stand_height_walk_distill_workflow.py::test_persistent_connector_preserves_two_height_aware_roles_and_scenarios -q`:
+    `3 passed in 3.83s`.
+  - `uv --cache-dir E:\unilab\.uv-cache run ruff check tests/scripts/test_stand_height_walk_distill_workflow.py`:
+    PASS.
+- Facts:
+  - SAC runner assembly selects `DoubleBufferOffPolicyRunner`, which inherits
+    the `AsyncRunner` collector lifecycle and uses one-tick replay prefetch.
+  - `g1_stand_height_walk` passes both 99-D role configs, both
+    `height_commands` target-height keys, and `walk_flat`, `static_stand`, and
+    `walk_to_stop` scenarios to the persistent G1 runtime factory.
+  - the DAgger connector receives `execution_mode=persistent_async`, suppresses
+    the legacy scenario callback, owns one resident service, and closes it once.
+  - no production code or default execution mode changed; this was a missing
+    cross-product connector test over existing owners.
+- Limitations: checkpoint files and the resident service were synthetic; no
+  worker process, environment, collection, learner update, timing comparison,
+  or policy-quality route ran. E67 remains authoritative: persistent execution
+  has no proven stable end-to-end speedup and remains explicit opt-in.
+- Decision: the v002 workflow is connector-confirmed on the optional persistent
+  runtime. Fresh StandHeight SAC teacher training already uses the repository
+  async/double-buffer path without an additional CLI switch.

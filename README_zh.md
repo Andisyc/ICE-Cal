@@ -110,7 +110,7 @@ uv run demo dance
 
 > 中国大陆用户：动作、场景和 demo checkpoint 首次运行时会从 Hugging Face 拉取。如果 `huggingface.co`
 > 无法访问，请在运行 demo 命令前先将客户端切到社区镜像：
->
+> 
 > ```bash
 > export HF_ENDPOINT=https://hf-mirror.com
 > ```
@@ -145,7 +145,7 @@ uv run train --algo appo --task sharpa_inhand --sim mujoco --profile hora
 ```
 
 > Grasp cache 首次训练时会自动从 Hugging Face (`unilabsim/unilab-caches`) 下载到 `src/unilab/assets/caches/`，无需手动操作；如需为自定义 scale 重新生成（较慢）：
->
+> 
 > ```bash
 > bash scripts/sharpa_collect_grasps.sh 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5
 > ```

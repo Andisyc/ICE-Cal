@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_stand_still/mujoco
+  - _self_
+training:
+  task_name: G1StandHeight
+  sim_backend: mujoco
+algo:
+  actor_warm_start_adapter: g1_height_actor_obs_98_to_99_v1
+env:
+  commands:
+    height_range: [0.65, 0.754]
+    default_height: 0.754
+    random_height_during_walking: true
+    observe_height_command: true
+reward:
+  scales:
+    track_base_height_exp_smooth: 4.0
+  base_height_target: 0.754

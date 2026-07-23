@@ -104,6 +104,7 @@ uv run scripts/generate_support_matrix.py --write
 | SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested |
 | SAC (torch) | `g1_flip_tracking` (G1 flip tracking) | Tested | Registered |
 | SAC (torch) | `g1_wall_flip_tracking` (G1 wall flip tracking) | Tested | Registered |
+| SAC (torch) | `g1_stand_height` (g1 stand height) | Tested | - |
 | SAC (torch) | `g1_stand_still` (g1 stand still) | Tested | - |
 | SAC (torch) | `g1_walk_height` (g1 walk height) | Tested | - |
 | SAC (torch) | `g1_wbt_obs` (g1 wbt obs) | Tested | Registered |

@@ -241,6 +241,9 @@ class PersistentG1DistillationWorker:
                 rollout_policy=self.student,
                 command_sample_filter=str(cfg.training.collect_command_sample_filter),
                 command_info_key=str(cfg.training.collect_command_info_key),
+                target_height_info_key=OmegaConf.select(
+                    cfg, "training.collect_target_height_info_key"
+                ),
                 command_xy_threshold=float(cfg.training.collect_command_xy_threshold),
                 command_yaw_threshold=float(cfg.training.collect_command_yaw_threshold),
                 max_env_steps=None if max_env_steps is None else int(max_env_steps),
@@ -259,8 +262,29 @@ class PersistentG1DistillationWorker:
     ):
         if request.scenario != "walk_to_stop":
             raise ValueError(f"unsupported persistent transition scenario: {request.scenario!r}")
-        walk_role, stand_role = (str(value) for value in scenario["source_roles"])
+        source_roles = tuple(str(value) for value in scenario["source_roles"])
+        roles_by_filter: dict[str, list[str]] = {"active": [], "inactive": []}
+        for role in source_roles:
+            command_filter = str(self.role_cfgs[role].training.collect_command_sample_filter)
+            if command_filter in roles_by_filter:
+                roles_by_filter[command_filter].append(role)
+        if any(len(roles) != 1 for roles in roles_by_filter.values()):
+            raise ValueError(
+                "persistent walk_to_stop requires one active and one inactive role, "
+                f"got {roles_by_filter}"
+            )
+        walk_role = roles_by_filter["active"][0]
+        stand_role = roles_by_filter["inactive"][0]
         walk_cfg = self.role_cfgs[walk_role]
+        stand_cfg = self.role_cfgs[stand_role]
+        walk_target_height_info_key = OmegaConf.select(
+            walk_cfg, "training.collect_target_height_info_key"
+        )
+        stand_target_height_info_key = OmegaConf.select(
+            stand_cfg, "training.collect_target_height_info_key"
+        )
+        if walk_target_height_info_key != stand_target_height_info_key:
+            raise ValueError("persistent transition roles must agree on target-height info key")
         walk_identity = self._identity_by_role[walk_role]
         stand_bundle = self.resources.acquire(self._identity_by_role[stand_role])
         rollout_policy: torch.nn.Module | None = self.student
@@ -292,6 +316,10 @@ class PersistentG1DistillationWorker:
                     walk_cfg, "training.collect_student_drop_index"
                 ),
                 command_info_key=str(walk_cfg.training.collect_command_info_key),
+                target_height_info_key=walk_target_height_info_key,
+                walking_role_label=walk_role,
+                standing_role_label=stand_role,
+                scenario_label=request.scenario,
                 max_env_steps=self.workflow_cfg["transition_max_env_steps"],
                 metadata=self._metadata(
                     request=request,

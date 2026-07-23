@@ -126,6 +126,7 @@ def _attach_role_label(
         role_labels=(label,) * dataset.num_samples,
         teacher_actions=dataset.teacher_actions,
         commands=dataset.commands,
+        target_height=dataset.target_height,
         command_intents=dataset.command_intents,
     )
 
@@ -173,6 +174,7 @@ def _aggregate_dagger_datasets(
         role_labels=cat_labels("role_labels"),
         teacher_actions=cat_tensor("teacher_actions"),
         commands=cat_tensor("commands"),
+        target_height=cat_tensor("target_height"),
         command_intents=cat_labels("command_intents"),
     )
 
@@ -193,6 +195,7 @@ def run_iterative_dagger_updates(
     student_drop_index: int | None = None,
     command_sample_filter: str = "none",
     command_info_key: str = "commands",
+    target_height_info_key: str | None = None,
     command_xy_threshold: float = 0.05,
     command_yaw_threshold: float = 0.05,
     max_env_steps: int | None = None,
@@ -241,6 +244,7 @@ def run_iterative_dagger_updates(
             rollout_policy=rollout_policy,
             command_sample_filter=str(command_sample_filter),
             command_info_key=str(command_info_key),
+            target_height_info_key=target_height_info_key,
             command_xy_threshold=float(command_xy_threshold),
             command_yaw_threshold=float(command_yaw_threshold),
             max_env_steps=max_env_steps,

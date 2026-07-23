@@ -11,8 +11,24 @@ const readJson = (relative) => JSON.parse(fs.readFileSync(path.join(atlasRoot, r
 const runtime = readJson("runtime/01_unilab_runtime_atlas.data.json");
 const methodToCode = readJson("architecture/02_g1_distillation_method_to_code.data.json");
 const concept = readJson("concept/03_g1_multiteacher_distillation_method.data.json");
+const activeMethodIds = new Set((concept.nodes || []).map((node) => node.contract_id));
+if (activeMethodIds.size !== 1) {
+  throw new Error(`Concept Figure must map to exactly one active method contract: ${[...activeMethodIds]}`);
+}
+const [activeMethodId] = activeMethodIds;
+if (!/^DISTILL-METHOD-v\d{3}$/.test(activeMethodId || "")) {
+  throw new Error(`invalid active method contract id: ${activeMethodId}`);
+}
 const contract = fs.readFileSync(
-  path.join(repoRoot, "note/distillation/contracts/active/method/DISTILL-METHOD-v001.md"),
+  path.join(repoRoot, `note/distillation/contracts/active/method/${activeMethodId}.md`),
+  "utf8",
+);
+const contractRegistry = fs.readFileSync(
+  path.join(repoRoot, "note/distillation/contracts/README.md"),
+  "utf8",
+);
+const trainingContract = fs.readFileSync(
+  path.join(repoRoot, "note/distillation/contracts/active/training/DISTILL-TRAIN-v003.md"),
   "utf8",
 );
 const viewer = fs.readFileSync(path.join(here, "architecture_atlas.html"), "utf8");
@@ -73,6 +89,15 @@ if (server.includes('open -a "Visual Studio Code"')) {
 }
 
 if (concept.layout !== "method_figure") throw new Error("concept must use method_figure");
+if (!contract.includes(`contract_id: ${activeMethodId}`) || !contract.includes("status: active")) {
+  throw new Error(`active method contract metadata mismatch: ${activeMethodId}`);
+}
+if (!contractRegistry.includes(`[${activeMethodId}](active/method/${activeMethodId}.md) | active`)) {
+  throw new Error(`contract registry does not select ${activeMethodId}`);
+}
+if (!trainingContract.includes(`method_contract: ${activeMethodId}`)) {
+  throw new Error(`active training contract does not reference ${activeMethodId}`);
+}
 if ((concept.zones || []).length || (concept.callouts || []).length || (concept.acceptance || []).length) {
   throw new Error("Concept Figure contains forbidden framing metadata");
 }
@@ -85,6 +110,9 @@ for (const node of concept.nodes || []) {
   }
   if (!node.design_id || !node.contract_id || !node.contract_anchor) {
     throw new Error(`${node.id} missing contract mapping`);
+  }
+  if (node.contract_id !== activeMethodId) {
+    throw new Error(`${node.id} maps to non-active contract ${node.contract_id}`);
   }
   if (/[。.!！?？；;]$/.test(String(node.summary || "").trim())) {
     throw new Error(`${node.id} summary ends with punctuation`);

@@ -70,7 +70,13 @@ _OWNER_COMMAND_SAMPLE_FILTERS = {
     "G1WalkFlat": "active",
     "G1StandStill": "inactive",
 }
-_DISTILL_TASK_NAME_HINTS = frozenset(_OWNER_COMMAND_SAMPLE_FILTERS)
+_HEIGHT_OWNER_COMMAND_SAMPLE_FILTERS = {
+    "G1WalkHeight": "active",
+    "G1StandHeight": "inactive",
+}
+_DISTILL_TASK_NAME_HINTS = frozenset(
+    {*_OWNER_COMMAND_SAMPLE_FILTERS, *_HEIGHT_OWNER_COMMAND_SAMPLE_FILTERS}
+)
 _CLI_SEQUENCE_SUMMARY_LIMIT = 16
 
 
@@ -206,6 +212,9 @@ def _workflow_owner_fingerprint_cfg(role_cfg: DictConfig) -> dict[str, Any]:
             "sim_backend": str(role_cfg.training.sim_backend),
             "collect_action_mode": str(role_cfg.training.collect_action_mode),
             "collect_command_sample_filter": str(role_cfg.training.collect_command_sample_filter),
+            "collect_target_height_info_key": OmegaConf.select(
+                role_cfg, "training.collect_target_height_info_key"
+            ),
             "collect_command_xy_threshold": float(role_cfg.training.collect_command_xy_threshold),
             "collect_command_yaw_threshold": float(role_cfg.training.collect_command_yaw_threshold),
         },
@@ -1113,6 +1122,9 @@ def _expected_owner_command_sample_filter(cfg: DictConfig) -> str | None:
     teacher_task_name = _teacher_task_name_for_collection(cfg)
     if task_name == "G1WalkFlat" and teacher_task_name == "G1StandStill":
         return "inactive"
+    target_height_info_key = OmegaConf.select(cfg, "training.collect_target_height_info_key")
+    if target_height_info_key not in (None, ""):
+        return _HEIGHT_OWNER_COMMAND_SAMPLE_FILTERS.get(task_name)
     return _OWNER_COMMAND_SAMPLE_FILTERS.get(task_name)
 
 
@@ -1166,6 +1178,41 @@ def _require_collected_command_intent_contract(cfg: DictConfig, dataset: Any) ->
         )
 
 
+def _require_collected_target_height_contract(cfg: DictConfig, dataset: Any) -> None:
+    info_key = OmegaConf.select(cfg, "training.collect_target_height_info_key")
+    if info_key in (None, ""):
+        return
+    if str(info_key) != "height_commands":
+        raise ValueError(
+            "99-D height collection requires "
+            "training.collect_target_height_info_key=height_commands"
+        )
+    target_height = dataset.target_height
+    if target_height is None:
+        raise ValueError("99-D height collection must persist dataset.target_height")
+    if tuple(target_height.shape) != (int(dataset.num_samples), 1):
+        raise ValueError(
+            "collected target_height shape mismatch: "
+            f"expected={(int(dataset.num_samples), 1)} got={tuple(target_height.shape)}"
+        )
+    if int(dataset.student_obs_dim) != 99 or int(dataset.teacher_obs_dim) != 99:
+        raise ValueError("height-aware role data requires 99-D student and teacher observations")
+    if not torch.equal(dataset.student_obs[:, 96:97], target_height):
+        raise ValueError(
+            "student observation target-height column does not match dataset.target_height"
+        )
+    if not torch.equal(dataset.teacher_obs[:, 96:97], target_height):
+        raise ValueError(
+            "teacher observation target-height column does not match dataset.target_height"
+        )
+    if str(OmegaConf.select(cfg, "training.task_name")) == "G1WalkHeight":
+        if bool(OmegaConf.select(cfg, "env.commands.random_height_during_walking")):
+            raise ValueError("Walk role must use fixed nominal target height")
+        nominal_height = float(OmegaConf.select(cfg, "env.commands.default_height"))
+        if not torch.equal(target_height, torch.full_like(target_height, nominal_height)):
+            raise ValueError("Walk role target height must stay at its nominal owner-config value")
+
+
 def _collect_command_distribution_overrides(cfg: DictConfig) -> dict[str, Any]:
     expected_filter = _expected_owner_command_sample_filter(cfg)
     actual_filter = str(
@@ -1197,13 +1244,17 @@ def _apply_collect_command_distribution_overrides(cfg: DictConfig) -> dict[str, 
 
 
 def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
-    """Keep teacher-target collection scoped to explicit 98-D flat/standing routes."""
+    """Require an explicit legacy-98-D or height-aware-99-D owner route."""
 
     task_name = str(OmegaConf.select(cfg, "training.task_name"))
     teacher_task_name = _teacher_task_name_for_collection(cfg)
-    allowed_tasks = {"G1WalkFlat", "G1StandStill"}
-    if task_name not in allowed_tasks:
-        raise ValueError("teacher target collection only supports 98-D G1WalkFlat/G1StandStill")
+    legacy_tasks = {"G1WalkFlat", "G1StandStill"}
+    height_tasks = {"G1WalkHeight", "G1StandHeight"}
+    if task_name not in legacy_tasks | height_tasks:
+        raise ValueError(
+            "teacher target collection only supports explicit G1 flat/stand or "
+            "height-aware owner routes"
+        )
     cross_stand_teacher = task_name == "G1WalkFlat" and teacher_task_name == "G1StandStill"
     if teacher_task_name != task_name and not cross_stand_teacher:
         raise ValueError(
@@ -1219,8 +1270,11 @@ def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
                 "G1WalkFlat collection with a G1StandStill teacher requires "
                 "training.collect_command_sample_filter=inactive"
             )
-    if int(cfg.teacher.obs_dim) != 98 or int(cfg.student.obs_dim) != 98:
-        raise ValueError("teacher target collection requires 98-D teacher and student obs")
+    expected_obs_dim = 98 if task_name in legacy_tasks else 99
+    if int(cfg.teacher.obs_dim) != expected_obs_dim or int(cfg.student.obs_dim) != expected_obs_dim:
+        raise ValueError(
+            f"teacher target collection requires {expected_obs_dim}-D teacher and student obs"
+        )
     if str(OmegaConf.select(cfg, "training.collect_teacher_obs_key", default="obs")) != "obs":
         raise ValueError("teacher target collection requires training.collect_teacher_obs_key=obs")
     if (
@@ -1237,8 +1291,18 @@ def _require_teacher_policy_collection_route(cfg: DictConfig) -> None:
         raise ValueError("teacher target collection does not support collect_student_drop_index")
     if OmegaConf.select(cfg, "training.collect_action_seed") is not None:
         raise ValueError("teacher target collection does not use training.collect_action_seed")
-    if bool(OmegaConf.select(cfg, "env.commands.observe_height_command", default=False)):
-        raise ValueError("teacher target collection must not use height-command observations")
+    observes_height = bool(
+        OmegaConf.select(cfg, "env.commands.observe_height_command", default=False)
+    )
+    target_height_info_key = OmegaConf.select(cfg, "training.collect_target_height_info_key")
+    if task_name in legacy_tasks:
+        if observes_height or target_height_info_key not in (None, ""):
+            raise ValueError("98-D teacher target collection must not use height commands")
+    elif not observes_height or str(target_height_info_key) != "height_commands":
+        raise ValueError(
+            "99-D teacher target collection requires observed height_commands and "
+            "training.collect_target_height_info_key=height_commands"
+        )
 
 
 def _resolve_collect_rollout_checkpoint(cfg: DictConfig) -> Path:
@@ -1377,6 +1441,7 @@ def run_collect_dataset(
             command_info_key=str(
                 OmegaConf.select(cfg, "training.collect_command_info_key", default="commands")
             ),
+            target_height_info_key=OmegaConf.select(cfg, "training.collect_target_height_info_key"),
             command_xy_threshold=float(
                 OmegaConf.select(cfg, "training.collect_command_xy_threshold", default=0.05)
             ),
@@ -1389,6 +1454,7 @@ def run_collect_dataset(
             performance_clock=performance_clock,
         )
         _require_collected_command_intent_contract(cfg, dataset)
+        _require_collected_target_height_contract(cfg, dataset)
         write_start = None if performance_clock is None else float(performance_clock())
         save_distillation_dataset(resolved_dataset_path, dataset)
         if performance_clock is not None:
@@ -1483,6 +1549,9 @@ def run_collect_dataset(
         "collect_command_seen_samples": dataset.metadata.get("command_seen_samples"),
         "collect_command_selected_samples": dataset.metadata.get("command_selected_samples"),
         "collect_command_intent_counts": dataset.metadata.get("command_intent_counts"),
+        "collect_target_height_shape": (
+            None if dataset.target_height is None else tuple(dataset.target_height.shape)
+        ),
         "collect_command_distribution_overrides": dataset.metadata.get(
             "command_distribution_overrides"
         ),
@@ -1578,6 +1647,7 @@ def run_online_dagger_update(
             command_info_key=str(
                 OmegaConf.select(cfg, "training.collect_command_info_key", default="commands")
             ),
+            target_height_info_key=OmegaConf.select(cfg, "training.collect_target_height_info_key"),
             command_xy_threshold=float(
                 OmegaConf.select(cfg, "training.collect_command_xy_threshold", default=0.05)
             ),
@@ -1700,6 +1770,9 @@ def run_single_entry_workflow(
                 command_xy_threshold=float(role_cfg.training.collect_command_xy_threshold),
                 command_yaw_threshold=float(role_cfg.training.collect_command_yaw_threshold),
                 owner_config=_workflow_owner_fingerprint_cfg(role_cfg),
+                target_height_info_key=OmegaConf.select(
+                    role_cfg, "training.collect_target_height_info_key"
+                ),
             )
         )
 
@@ -1913,12 +1986,38 @@ def run_single_entry_workflow(
             )
         if scenario.name != "walk_to_stop":
             raise ValueError(f"unsupported transition workflow scenario: {scenario.name!r}")
-        if set(("walk_flat", "stand")) - set(role_cfgs):
-            raise ValueError("walk_to_stop scenario requires walk_flat and stand role owners")
+        scenario_role_cfgs = {
+            role: role_cfgs[role] for role in scenario.source_roles if role in role_cfgs
+        }
+        if len(scenario_role_cfgs) != 2:
+            raise ValueError("walk_to_stop scenario requires exactly two configured source roles")
+        roles_by_filter: dict[str, list[str]] = {"active": [], "inactive": []}
+        for role, role_cfg in scenario_role_cfgs.items():
+            command_filter = str(role_cfg.training.collect_command_sample_filter)
+            if command_filter in roles_by_filter:
+                roles_by_filter[command_filter].append(role)
+        if any(len(roles) != 1 for roles in roles_by_filter.values()):
+            raise ValueError(
+                "walk_to_stop scenario requires one active Walk role and one inactive "
+                f"Stand role, got {roles_by_filter}"
+            )
+        walk_role = roles_by_filter["active"][0]
+        stand_role = roles_by_filter["inactive"][0]
         request_start = float(performance_clock())
         device = _distill_device(cfg)
-        walk_cfg = role_cfgs["walk_flat"]
-        stand_cfg = role_cfgs["stand"]
+        walk_cfg = role_cfgs[walk_role]
+        stand_cfg = role_cfgs[stand_role]
+        walk_target_height_info_key = OmegaConf.select(
+            walk_cfg, "training.collect_target_height_info_key"
+        )
+        stand_target_height_info_key = OmegaConf.select(
+            stand_cfg, "training.collect_target_height_info_key"
+        )
+        if walk_target_height_info_key != stand_target_height_info_key:
+            raise ValueError(
+                "transition roles must agree on collect_target_height_info_key: "
+                f"walk={walk_target_height_info_key!r} stand={stand_target_height_info_key!r}"
+            )
         loaded_student = load_distillation_student_policy(checkpoint_path, device=device)
         student = loaded_student.policy
         rollout_policy: torch.nn.Module | None = student
@@ -2008,6 +2107,10 @@ def run_single_entry_workflow(
                     "training.collect_student_drop_index",
                 ),
                 command_info_key=str(walk_cfg.training.collect_command_info_key),
+                target_height_info_key=walk_target_height_info_key,
+                walking_role_label=walk_role,
+                standing_role_label=stand_role,
+                scenario_label=scenario.name,
                 max_env_steps=(
                     None
                     if transition_max_env_steps in (None, "")

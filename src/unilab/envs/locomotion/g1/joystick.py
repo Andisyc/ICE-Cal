@@ -1546,7 +1546,7 @@ class G1WalkEnv(G1BaseEnv):
         return np.asarray(base_z - contacted_foot_z, dtype=dtype)
 
     def _reward_stand_support_height_margin_l2(self, ctx: RewardContext):
-        target = float(self._reward_cfg.base_height_target)
+        target = self._stand_height_target(ctx)
         margin = float(self._reward_cfg.stand_support_height_margin)
         support_height = self._stand_support_relative_height()
         low_deficit = np.maximum(target - margin - support_height, 0.0)
@@ -1556,7 +1556,7 @@ class G1WalkEnv(G1BaseEnv):
         )
 
     def _reward_stand_base_height_deficit_l1(self, ctx: RewardContext):
-        target = float(self._reward_cfg.base_height_target)
+        target = self._stand_height_target(ctx)
         margin = float(self._reward_cfg.stand_support_height_margin)
         if ctx.base_height is None:
             base_height = self._terrain_relative_base_height()
@@ -1564,6 +1564,20 @@ class G1WalkEnv(G1BaseEnv):
             base_height = np.asarray(ctx.base_height, dtype=get_global_dtype())
         low_deficit = np.maximum(target - margin - base_height, 0.0)
         return np.asarray(low_deficit * self._stand_mode_mask(ctx), dtype=get_global_dtype())
+
+    def _stand_height_target(self, ctx: RewardContext) -> np.ndarray:
+        """Resolve the per-environment standing target with scalar legacy fallback."""
+        target = np.asarray(ctx.base_height_target, dtype=get_global_dtype())
+        if target.ndim == 0:
+            return np.full((ctx.num_envs,), float(target), dtype=get_global_dtype())
+        if target.ndim == 2 and target.shape == (ctx.num_envs, 1):
+            target = target[:, 0]
+        if target.shape != (ctx.num_envs,):
+            raise ValueError(
+                "standing height target must be scalar or have shape "
+                f"({ctx.num_envs},), got {target.shape}"
+            )
+        return np.asarray(target, dtype=get_global_dtype())
 
     def _reward_stand_both_feet_contact(self, ctx: RewardContext):
         left_contact = compute_aggregated_foot_contact(self._backend, LEFT_FOOT_CONTACT_SENSORS)
@@ -1809,6 +1823,12 @@ class G1StandStillCfg(G1WalkFlatCfg):
     )
 
 
+@registry.envcfg("G1StandHeight")
+@dataclass
+class G1StandHeightCfg(G1StandStillCfg):
+    pass
+
+
 @registry.envcfg("G1WalkRough")
 @dataclass
 class G1WalkRoughCfg(G1WalkFlatCfg):
@@ -1823,5 +1843,6 @@ registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkFlat", G1WalkEnv, sim_backend="motrix")
 registry.register_env("G1WalkHeight", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1StandStill", G1WalkEnv, sim_backend="mujoco")
+registry.register_env("G1StandHeight", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="mujoco")
 registry.register_env("G1WalkRough", G1WalkEnv, sim_backend="motrix")

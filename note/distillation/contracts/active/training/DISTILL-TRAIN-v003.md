@@ -1,9 +1,9 @@
 contract_id: DISTILL-TRAIN-v003
 status: active
 effective_date: 2026-07-17
-updated_date: 2026-07-17
+updated_date: 2026-07-23
 supersedes: DISTILL-TRAIN-v002
-method_contract: DISTILL-METHOD-v001
+method_contract: DISTILL-METHOD-v002
 concept_figure: note/architecture/concept/03_g1_multiteacher_distillation_method.data.json
 integration_status: complete
 promotion_status: deferred
@@ -77,5 +77,8 @@ checkpoint identity mismatch fails closed.
   `NO_STABLE_SPEEDUP` verdict.
 - E70/E71: production-readiness and Architecture alignment.
 - E86: repository `make test-all` PASS.
+- E116: v002 StandHeight/Walk persistent connector and cleanup PASS with
+  synthetic fixtures; the E67 speedup verdict and explicit-opt-in decision are
+  unchanged.
 - Separate live gates: RT-10 physical acceptance and optional Motrix runtime
   remain outside this contract's completed integration claim.

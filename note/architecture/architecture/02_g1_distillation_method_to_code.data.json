@@ -26,7 +26,7 @@
           "objects": ["DictConfig", "operation mode", "training.workflow.execution_mode", "persistent runtime factory", "teacher checkpoint", "student init"],
           "files": [
             {"id":"DT-SRC-001","path":"conf/distill/config.yaml","sourceLine":1,"role":"Hydra defaults","functions":[]},
-            {"id":"DT-SRC-002","path":"scripts/train_distill.py","sourceLine":1382,"role":"distillation assembly","functions":["run_single_entry_workflow()","run_collect_dataset()","run_multitask_dataset_assembly()","run_offline_dataset_update()","run_online_dagger_update()","main()"]},
+            {"id":"DT-SRC-002","path":"scripts/train_distill.py","sourceLine":2402,"role":"distillation assembly","functions":["run_single_entry_workflow()","run_collect_dataset()","run_multitask_dataset_assembly()","run_offline_dataset_update()","run_online_dagger_update()","main()"]},
             {"id":"DT-SRC-020","path":"conf/distill/workflow/g1_walk_stand.yaml","sourceLine":1,"role":"walk/stand workflow profile","functions":[]}
           ],
           "mainRoute": [
@@ -36,7 +36,7 @@
           ],
           "mainRouteTitles": ["选择正式操作", "验证 Owner Contract", "调用领域 Owner"],
           "review": ["先确认本次命令只触发一个正式操作", "检查 checkpoint 参数是否指向预期父模型"],
-          "tests": ["S0 config compose", "S2 train_distill entry connectivity", "S2 legacy/persistent execution-mode dispatch"],
+          "tests": ["S0 config compose", "S2 train_distill entry connectivity", "S2 legacy/persistent execution-mode dispatch", "S2 E116 v002 persistent_async connector"],
           "gap": "persistent_async 已完成接入且 HP-6/E86 production gate PASS, 但 E67 为 NO_STABLE_SPEEDUP; promotion deferred, 默认 legacy, 低层诊断分支显式标记仍待收口"
         },
         {
@@ -45,9 +45,10 @@
           "summary": "按角色与 scenario 复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
           "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage outer iteration barrier resume 与 fork",
           "mustNot": "不加载大 tensor 来判断文件存在性, 不在 scenario collection 中发布 student_(k+1), 不把 route pass 当作物理质量",
-          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "FormalDaggerIdentitySpec", "formal freeze", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
+          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "target_height_info_key", "walk|stand_height", "active->0|inactive->1", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "FormalDaggerIdentitySpec", "formal freeze", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
           "files": [
-            {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":14,"role":"workflow stage owner","functions":["preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
+            {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":123,"role":"workflow stage owner","functions":["RoleArtifactSpec","preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
+            {"id":"DT-SRC-047","path":"conf/distill/workflow/g1_stand_height_walk.yaml","sourceLine":1,"role":"v002 99-D two-role/two-expert workflow owner","functions":[]},
             {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]},
             {"id":"DT-SRC-034","path":"src/unilab/algos/torch/distill/async_runtime.py","sourceLine":20,"role":"persistent collector request/result interface","functions":["validate_dagger_collect_result()","PersistentDaggerCollectorRunner.collect()"]},
             {"id":"DT-SRC-035","path":"src/unilab/algos/torch/distill/persistent_runtime.py","sourceLine":31,"role":"shared resident student owner","functions":["PersistentDistillationRuntime.activate_checkpoint()","PersistentDistillationRuntime.collect()","PersistentDistillationRuntime.close()"]},
@@ -69,8 +70,8 @@
           ],
           "mainRouteTitles": ["按角色判定 Artifact", "定义 Scenario Quota", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
           "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查同一 iteration 全部 scenario 是否共享 student_k checkpoint/version", "检查 student_(k+1) activation 是否晚于 updater"],
-          "tests": ["S1 hash/schema decisions", "S2 Bootstrap connectivity", "S2 DAgger resume/fork scenario-identity probe", "S2 persistent barrier event trace", "S2 exact resource lifecycle and dataset differential", "S4 bounded G1 MuJoCo lifecycle"],
-          "gap": "E65/E67 已完成 two-iteration amortization 与多重复判定: cache/residual amortization confirmed, 但 NO_STABLE_SPEEDUP 且无 HP-5 owner; HP-6/E86 production gate PASS, promotion deferred"
+          "tests": ["S0 E113 v002 99-D/two-role compose", "S1 hash/schema/target-height decisions", "S2 E113 single-entry connector", "S2 E116 v002 persistent_async connector", "S2 Bootstrap connectivity", "S2 DAgger resume/fork scenario-identity probe", "S2 persistent barrier event trace", "S2 exact resource lifecycle and dataset differential", "S4 bounded G1 MuJoCo lifecycle PENDING"],
+          "gap": "E113/E116 已 deterministic-confirmed 新 99-D walk/stand_height workflow、persistent_async opt-in connector 且 legacy g1_walk_stand 不变; qualified teacher artifacts、two-teacher workflow live route 与 policy quality 未证明"
         }
       ]
     },
@@ -83,22 +84,29 @@
         {
           "id": "DT-MOD-TEACHER",
           "title": "Teacher Policy",
-          "summary": "加载并冻结 SAC teacher actor",
-          "owns": "teacher input dimension actor architecture optional normalizer 与 detached action",
-          "mustNot": "不决定某个 observation 属于 standing walking 或 height role",
-          "objects": ["DistillationTeacherSpec", "LoadedTeacherPolicy", "29-D action"],
+          "summary": "显式适配 legacy actor 后加载并冻结 99-D SAC teacher actor",
+          "owns": "98-D to 99-D actor-only migration teacher input dimension actor architecture optional normalizer 与 detached action",
+          "mustNot": "不决定某个 observation 属于 StandHeight 或 Walk role, 不用 strict=False 迁移维度",
+          "objects": ["DistillationTeacherSpec", "LoadedTeacherPolicy", "98-D to 99-D actor adapter", "AsyncRunner", "DoubleBufferOffPolicyRunner", "one_tick replay prefetch", "29-D action"],
           "files": [
-            {"id":"DT-SRC-003","path":"src/unilab/algos/torch/distill/teacher.py","sourceLine":140,"role":"teacher checkpoint contract","functions":["validate_sac_teacher_checkpoint_contract()","load_sac_teacher_policy()","LoadedTeacherPolicy.forward()"]}
+            {"id":"DT-SRC-003","path":"src/unilab/algos/torch/distill/teacher.py","sourceLine":117,"role":"teacher checkpoint contract","functions":["validate_sac_teacher_checkpoint_contract()","load_sac_teacher_policy()","LoadedTeacherPolicy.forward()"]},
+            {"id":"DT-SRC-048","path":"src/unilab/algos/torch/offpolicy/checkpoint_adapter.py","sourceLine":61,"role":"explicit 98-D to 99-D actor-only adapter","functions":["adapt_g1_height_actor_state()","adapt_g1_height_normalizer_state()","materialize_g1_height_actor_checkpoint()","load_g1_height_actor_warm_start()"]},
+            {"id":"DT-SRC-049","path":"tests/algos/test_offpolicy_checkpoint_adapter.py","sourceLine":1,"role":"adapter equivalence and isolation contracts","functions":[]},
+            {"id":"DT-SRC-055","path":"scripts/train_offpolicy.py","sourceLine":184,"role":"StandHeight SAC async runner assembly","functions":["build_runner()"]},
+            {"id":"DT-SRC-056","path":"src/unilab/algos/torch/offpolicy/double_buffer_runner.py","sourceLine":41,"role":"AsyncRunner-backed teacher training runtime","functions":["DoubleBufferOffPolicyRunner.learn()"]},
+            {"id":"DT-SRC-057","path":"tests/algos/test_offpolicy_double_buffer_runner.py","sourceLine":581,"role":"E116 async dispatch contract","functions":["test_default_sac_dispatches_to_double_buffer_runner()"]}
           ],
           "mainRoute": [
-            "B1 teacher.py::validate_sac_teacher_checkpoint_contract(): checkpoint + spec -> verified actor input dim",
-            "B2 teacher.py::load_sac_teacher_policy(): verified checkpoint -> frozen SAC actor",
-            "B3 LoadedTeacherPolicy.forward(): teacher observation -> detached teacher action"
+            "B1 checkpoint_adapter.py actor-only migration: legacy 98-D actor + normalizer -> output-equivalent 99-D payload",
+            "B2 train_offpolicy.py + double_buffer_runner.py: fresh/adapted actor + StandHeight config -> async-trained 99-D SAC checkpoint",
+            "B3 teacher.py::validate_sac_teacher_checkpoint_contract(): checkpoint + spec -> verified actor input dim",
+            "B4 teacher.py::load_sac_teacher_policy(): verified checkpoint -> frozen SAC actor",
+            "B5 LoadedTeacherPolicy.forward(): teacher observation -> detached teacher action"
           ],
-          "mainRouteTitles": ["验证 Teacher 维度", "加载冻结 Actor", "生成监督动作"],
+          "mainRouteTitles": ["显式迁移 Actor", "异步训练 Teacher", "验证 Teacher 维度", "加载冻结 Actor", "生成监督动作"],
           "review": ["确认 teacher task 和 checkpoint 语义一致", "确认 normalizer 状态没有被静默忽略"],
-          "tests": ["S1 teacher checkpoint dim guard", "S2 checkpoint load contract"],
-          "gap": "height teacher 尚不存在"
+          "tests": ["S1 Step 3 actor/normalizer output equivalence", "S1 Step 3 critic/optimizer isolation", "S2 E116 SAC async/double-buffer dispatch", "S1 teacher checkpoint dim guard", "S2 checkpoint load contract"],
+          "gap": "Step 3 显式 actor adapter 与 warm-start connector 已由 8 passed deterministic-confirmed; qualified StandHeight/Walk teacher checkpoint 与 policy quality 仍缺失"
         },
         {
           "id": "DT-MOD-COLLECTOR",
@@ -106,13 +114,15 @@
           "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态; transition collector 作为独立场景 owner",
           "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection collection metadata 与 opt-in stage observations",
           "mustNot": "不训练 student, 不把 finite action 当作物理质量",
-          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "performance_clock", "DistillationStageObservation"],
+          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "target_height[N,1]", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "performance_clock", "DistillationStageObservation"],
           "files": [
-            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":282,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_set_transition_command_rows()"]},
-            {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":989,"role":"collection connector","functions":["run_collect_dataset()"]}
+            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":783,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_set_transition_command_rows()"]},
+            {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":1324,"role":"99-D collection connector and index-96 height guard","functions":["run_collect_dataset()","_require_collected_target_height_contract()"]},
+            {"id":"DT-SRC-050","path":"conf/distill/task/g1_stand_height/mujoco.yaml","sourceLine":1,"role":"StandHeight 99-D inactive role profile","functions":[]},
+            {"id":"DT-SRC-051","path":"conf/distill/task/g1_walk_height_nominal/mujoco.yaml","sourceLine":1,"role":"Walk 99-D nominal-height active role profile","functions":[]}
           ],
           "mainRoute": [
-            "B1 collector.py projection: env obs dict -> 98-D student/teacher rows",
+            "B1 collector.py projection + info capture: env obs dict + height_commands -> profile-declared rows with optional target_height[N,1]",
             "B2 collector.py command mask: commands + thresholds -> selected intent rows",
             "B3 collector.py rollout/label policies: selected states -> teacher targets + executed actions",
             "B4 transition owner: student-state rows -> atomic active/zero command switch -> command-intent rollout expert -> role-labelled targets",
@@ -120,30 +130,30 @@
             "B6 opt-in performance accumulator: owner spans -> copied dataset metadata -> worker pass-through"
           ],
           "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "执行 Transition Scenario", "生成 Dataset", "记录 Owner Stage"],
-          "review": ["检查 inactive 数据是否真的零指令", "检查 done/reset 后的行是否仍保持语义"],
-          "tests": ["S1 projection/filter", "S1/S2 HP-4a2b fake-clock observations", "S2 teacher/student rollout", "S4 live collection"],
-          "gap": "collector 与 reset/resource timing 已通过 E61/E65/E67 runtime-confirmed, 但端到端 NO_STABLE_SPEEDUP; HP-6/E86 production gate PASS; RT-10 physical acceptance 未完成"
+          "review": ["检查 inactive 数据是否真的零指令", "检查 obs index 96 与保存的 target_height 完全一致", "检查 done/reset 后的行是否仍保持语义"],
+          "tests": ["S1 E113 target_height collection fixture", "S1 projection/filter", "S1/S2 HP-4a2b fake-clock observations", "S2 E113 99-D connector", "S2 teacher/student rollout", "S4 live collection PENDING"],
+          "gap": "E113 已 deterministic-confirmed height_commands 到 target_height 的 collector/connector 路径; workflow live collection、reset 与物理验收未执行"
         },
         {
           "id": "DT-MOD-DATA",
           "title": "Distillation Dataset",
-          "summary": "验证 保存 加载并合并 role-labelled 与 transition-labelled tensor evidence",
-          "owns": "tensor shape optional fields label preservation transition chronology metadata 与 batch slicing",
+          "summary": "验证 保存 加载并合并带 target_height 的 role-labelled 与 transition-labelled tensor evidence",
+          "owns": "tensor shape target_height[N,1] optional-field presence label preservation transition chronology metadata 与 batch slicing",
           "mustNot": "不改变 teacher action 或重新解释 command intent",
-          "objects": ["DistillationTensorDataset", "role_labels", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "source metadata"],
+          "objects": ["DistillationTensorDataset", "role_labels", "command_intents", "target_height", "scenario_labels", "transition_ages", "command_before", "command_after", "source metadata"],
           "files": [
-            {"id":"DT-SRC-006","path":"src/unilab/algos/torch/distill/data.py","sourceLine":148,"role":"dataset schema","functions":["DistillationTensorDataset","build_distillation_dataset()","annotate_distillation_dataset_scenario()","build_multitask_distillation_dataset()"]},
-            {"id":"DT-SRC-007","path":"scripts/train_distill.py","sourceLine":622,"role":"multitask assembly connector","functions":["run_multitask_dataset_assembly()"]}
+            {"id":"DT-SRC-006","path":"src/unilab/algos/torch/distill/data.py","sourceLine":608,"role":"dataset schema","functions":["DistillationTensorDataset","build_distillation_dataset()","annotate_distillation_dataset_scenario()","build_multitask_distillation_dataset()"]},
+            {"id":"DT-SRC-007","path":"scripts/train_distill.py","sourceLine":888,"role":"multitask assembly connector","functions":["run_multitask_dataset_assembly()"]}
           ],
           "mainRoute": [
             "B1 build_distillation_dataset(): raw tensors + labels -> validated role dataset",
-            "B2 save/load helpers: validated dataset -> roundtrip artifact",
-            "B3 build_multitask_distillation_dataset(): role sources -> merged stand/walk dataset"
+            "B2 save/load/batch helpers: validated role/intent/target_height fields -> roundtrip artifact and slices",
+            "B3 build_multitask_distillation_dataset(): dimension-compatible role sources -> merged dataset or fail-closed 98-D/99-D boundary"
           ],
           "mainRouteTitles": ["验证 Dataset Schema", "持久化语义字段", "合并多角色数据"],
-          "review": ["检查 98-D contract 与所有 source 一致", "确认 role 与 intent 在 roundtrip 后未丢失"],
-          "tests": ["S1 schema/roundtrip", "S2 multitask merge"],
-          "gap": "E27 real-artifact schema/collector/workflow merge passed; E28 physical candidate acceptance failed, incompatible extensions continue fail closed"
+          "review": ["检查 v002 source 全部为 99-D 且 legacy 98-D 保持隔离", "确认 role、intent 与 target_height 在 roundtrip 后未丢失"],
+          "tests": ["S1 E113 target_height shape/save/load/batch roundtrip", "S1 E113 legacy 98-D/v002 99-D fail-closed isolation", "S2 E113 multitask and DAgger aggregation"],
+          "gap": "E113 已 deterministic-confirmed 99-D 两角色、target_height roundtrip 与 legacy 98-D 隔离; qualified real role artifacts 和 policy quality 未产生"
         }
       ]
     },
@@ -159,19 +169,19 @@
           "summary": "计算所有 expert action 与 router 输出并生成一个 29-D action",
           "owns": "expert networks router logits route probabilities hard/soft action composition",
           "mustNot": "不从 checkpoint 文件名推断角色, 不拥有 command threshold",
-          "objects": ["expert_actions[B,E,29]", "route_probs[B,E]", "student_action[B,29]"],
+          "objects": ["student_obs[B,99]", "exactly two experts", "walk/active->0", "stand_height/inactive->1", "expert_actions[B,2,29]", "route_probs[B,2]", "student_action[B,29]"],
           "files": [
             {"id":"DT-SRC-008","path":"src/unilab/algos/torch/distill/moe_student.py","sourceLine":43,"role":"student architecture","functions":["MoEStudentPolicy","forward()"]}
           ],
           "mainRoute": [
-            "B1 MoEStudentPolicy._validate_obs(): actor obs -> valid 98-D batch",
+            "B1 MoEStudentPolicy._validate_obs(): actor obs -> profile-declared 98-D legacy or 99-D v002 batch",
             "B2 expert/router forward: valid obs -> expert actions + route probabilities",
             "B3 routing composition: expert outputs + mode -> one student action"
           ],
           "mainRouteTitles": ["验证 Student Observation", "计算专家与 Router", "组合部署动作"],
           "review": ["确认 expert 0/1 的语义来自 contract", "确认 soft mixture 不冒充 pure expert 验收"],
-          "tests": ["S1 model shape/routing", "S2 checkpoint reload"],
-          "gap": "expert 2 当前无 accepted teacher role"
+          "tests": ["S0/S1 E113 two-expert mapping and 99-D shape", "S1 model shape/routing", "S2 E113 strict checkpoint reload"],
+          "gap": "E113 已 deterministic-confirmed exactly two 99-D experts、strict roundtrip 与 legacy profile 隔离; trained student checkpoint 和闭环质量未产生"
         },
         {
           "id": "DT-MOD-TRAINER",
@@ -181,7 +191,7 @@
           "mustNot": "不采集 env state, 不决定 checkpoint 是否物理合格",
           "objects": ["DistillationBatch", "teacher_action", "selected_expert_targets", "BehaviorDistillationStats"],
           "files": [
-            {"id":"DT-SRC-009","path":"src/unilab/algos/torch/distill/trainer.py","sourceLine":400,"role":"loss and optimizer owner","functions":["BehaviorDistillationTrainer.update()","_expert_behavior_action()","_clear_inactive_expert_grads()"]}
+            {"id":"DT-SRC-009","path":"src/unilab/algos/torch/distill/trainer.py","sourceLine":167,"role":"loss and optimizer owner","functions":["BehaviorDistillationTrainer.update()","_expert_behavior_action()","_clear_inactive_expert_grads()"]}
           ],
           "mainRoute": [
             "B1 trainer.update(): batch teacher fields -> detached teacher action",
@@ -191,8 +201,8 @@
           ],
           "mainRouteTitles": ["读取 Teacher Target", "选择行为 Expert", "计算监督 Loss", "隔离并更新参数"],
           "review": ["确认 inactive expert grad=None", "确认 router loss 系数与部署路由语义一致"],
-          "tests": ["S1 loss/grad", "T-regression inactive expert drift"],
-          "gap": "低单步 MSE 仍不能推出闭环稳定"
+          "tests": ["S1 E113 selected-expert parameter/optimizer isolation", "S1 loss/grad", "T-regression inactive expert drift"],
+          "gap": "E113 已 deterministic-confirmed selected expert only update; 低单步 MSE 与参数隔离仍不能推出闭环稳定"
         },
         {
           "id": "DT-MOD-DAGGER",
@@ -200,22 +210,22 @@
           "summary": "执行当前角色 expert 查询 teacher 并聚合历轮状态",
           "owns": "fixed and command-conditioned rollout expert iteration aggregation immediate updates 与 DAgger metadata",
           "mustNot": "不使用 soft mixture 代表 pure role expert, 不覆盖旧迭代数据",
-          "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "BalancedLabelIndexPools", "samples_seen"],
+          "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "target_height[N,1]", "BalancedLabelIndexPools", "samples_seen"],
           "files": [
-            {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":38,"role":"online DAgger owner","functions":["resolve_command_intent_rollout_policies()","run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
-            {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1151,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
+            {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":53,"role":"online DAgger owner","functions":["resolve_command_intent_rollout_policies()","run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
+            {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1567,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
             ,{"id":"DT-SRC-040","path":"src/unilab/algos/torch/distill/offline.py","sourceLine":56,"role":"invocation-local balanced label-pool cache, replay-budget, and offline learner staging owner","functions":["BalancedLabelIndexPools","required_balanced_replay_updates_for_labels()","run_offline_distillation_updates()"]}
           ],
           "mainRoute": [
             "B1 _resolve_dagger_rollout_policy(): intent/role mapping -> fixed rollout expert",
             "B2 collect_distillation_dataset_from_env(): current expert states -> teacher-labelled iteration dataset",
-            "B3 _aggregate_dagger_datasets(): prior + current iterations -> cumulative evidence",
+            "B3 _aggregate_dagger_datasets(): prior + current role/intent/target_height rows -> cumulative evidence",
             "B4 run_offline_distillation_updates(): one immutable pool cache per loaded cumulative dataset -> equivalent balanced batches -> updated selected expert"
           ],
           "mainRouteTitles": ["锁定 Rollout Expert", "采集 Student States", "聚合历轮证据", "更新对应 Expert"],
           "review": ["检查 rollout/loss/deploy expert 三者一致", "检查每轮数据量与真实 episode 覆盖"],
-          "tests": ["S1 HP-7c pool identity/RNG/memory contracts", "S2 iterative aggregation and formal offline integration", "T-regression expert-conditioned rollout", "S4 HP-7c bounded live pending"],
-          "gap": "HP-7c owner/S1/S2 and E95 production-path CUDA sentinel pass; bounded persistent end-to-end evidence pending; repeated-reset 与 walk-to-stop acceptance remains separate"
+          "tests": ["S1 E113 target_height DAgger aggregation", "S1 HP-7c pool identity/RNG/memory contracts", "S2 iterative aggregation and formal offline integration", "T-regression expert-conditioned rollout", "S4 bounded live PENDING"],
+          "gap": "E113 已 deterministic-confirmed target_height 聚合与两角色 connector; non-nominal transition、repeated reset 与 bounded live acceptance remains separate"
         }
       ]
     },
@@ -279,17 +289,20 @@
         {
           "id": "DT-MOD-TESTS",
           "title": "Contracts & Sentinels",
-          "summary": "测试 tensor dataflow optimizer checkpoint 和 playback route",
+          "summary": "测试 99-D tensor dataflow 两角色 两专家 optimizer checkpoint 和 playback route",
           "owns": "deterministic regression integration probe 与 live evidence inventory",
           "mustNot": "不把 fake tensor 或一次启动等同于机器人策略质量",
-          "objects": ["S/T matrix", "contract fixtures", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "run-local metrics artifact", "live sentinel output", "evidence ledger"],
+          "objects": ["S/T matrix", "E113", "E115", "E116", "99-D/two-role/two-expert fixtures", "target_height roundtrip fixture", "persistent_async connector fixture", "legacy isolation fixture", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "run-local metrics artifact", "live sentinel output", "evidence ledger"],
           "files": [
             {"id":"DT-SRC-016","path":"tests/algos/test_g1_distillation_contract.py","sourceLine":1,"role":"algorithm/data contracts","functions":[]},
             {"id":"DT-SRC-017","path":"tests/scripts/test_train_scripts.py","sourceLine":1,"role":"entrypoint connectivity","functions":[]},
             {"id":"DT-SRC-018","path":"tests/visualization/test_interactive_playback.py","sourceLine":1,"role":"playback contracts","functions":[]},
             {"id":"DT-SRC-019","path":"scripts/deploy/check_unilab_g1_distill_playback_live_sentinel.py","sourceLine":166,"role":"current weak live sentinel","functions":["run_check()"]},
             {"id":"DT-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"HP-4 request workflow learner cleanup identity and atomic artifact owner","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
-            {"id":"DT-SRC-039","path":"tests/algos/test_distill_performance.py","sourceLine":1,"role":"HP-4a fake-clock and persistence contracts","functions":[]}
+            {"id":"DT-SRC-039","path":"tests/algos/test_distill_performance.py","sourceLine":1,"role":"HP-4a fake-clock and persistence contracts","functions":[]},
+            {"id":"DT-SRC-052","path":"tests/algos/test_stand_height_walk_distillation.py","sourceLine":1,"role":"Step 4 data/update/checkpoint deterministic contracts","functions":[]},
+            {"id":"DT-SRC-053","path":"tests/scripts/test_stand_height_walk_distill_workflow.py","sourceLine":1,"role":"Step 4 and E116 Hydra/profile/persistent connector contracts","functions":[]},
+            {"id":"DT-SRC-054","path":"scripts/deploy/check_unilab_g1_height_tracking_live_path.py","sourceLine":1,"role":"Step 5 bounded StandHeight live-route sentinel","functions":["run_check()"]}
           ],
           "mainRoute": [
             "B1 contract tests: semantic fixture -> local invariant result",
@@ -299,8 +312,8 @@
           ],
           "mainRouteTitles": ["验证局部语义", "验证正式连接", "采集真实运行事实", "更新人类验收状态"],
           "review": ["区分 PASS route 与 PASS policy quality", "确保失败场景记录 checkpoint identity 和 command schedule"],
-          "tests": ["S0-S2 current suites", "S1/S3 HP-4a metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S4 E61/E65/E67 MuJoCo timing and A/B accepted; NO_STABLE_SPEEDUP", "S4 E28 physical acceptance BLOCKED"],
-          "gap": "HP-4 request/workflow/learner/cleanup timing 与 r8/r9/r10 A/B 已 runtime-confirmed, 但 NO_STABLE_SPEEDUP; HP-6/E86 production gate PASS; promotion deferred, RT-10 physical acceptance 未完成"
+          "tests": ["S0-S2 E113 Step 4 Ruff PASS and 27 passed in 20.56s", "S3/S4 E115 one-env StandHeight MuJoCo route and training compose PASS", "S2 E116 async runner and v002 persistent connector 3 passed in 3.83s", "S0-S2 current suites", "S1/S3 HP-4a metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S4 E61/E65/E67 MuJoCo timing and A/B accepted; NO_STABLE_SPEEDUP", "S4 physical acceptance BLOCKED"],
+          "gap": "E115 runtime-confirms the bounded StandHeight task route and E116 confirms async connectors only; real checkpoint、training、long-horizon tracking、transition 与 policy-quality evidence 均未执行"
         }
       ]
     }

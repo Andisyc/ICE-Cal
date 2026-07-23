@@ -202,6 +202,34 @@ def test_offpolicy_g1_stand_still_is_explicit_expert_contract():
     assert override["reward_config"]["stand_support_height_margin"] == 0.02
 
 
+def test_offpolicy_g1_stand_height_is_isolated_99d_height_contract():
+    """StandHeight inherits standing support while exposing a sampled height command."""
+    from pathlib import Path
+
+    from unilab.training import BackendAdapter
+
+    with initialize(config_path="../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(config_name="config", overrides=["task=sac/g1_stand_height/mujoco"])
+
+    override = BackendAdapter(
+        cfg, root_dir=Path.cwd(), algo_name="sac"
+    ).build_task_env_cfg_override()
+
+    assert cfg.training.task_name == "G1StandHeight"
+    assert cfg.env.commands.vel_limit == [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    assert cfg.env.commands.height_range == [0.65, 0.754]
+    assert cfg.env.commands.default_height == 0.754
+    assert cfg.env.commands.random_height_during_walking is True
+    assert cfg.env.commands.observe_height_command is True
+    assert cfg.reward.scales.track_base_height_exp_smooth == 4.0
+    assert cfg.reward.scales.stand_base_height_deficit_l1 == -240.0
+    assert cfg.reward.scales.stand_support_height_margin_l2 == -1500.0
+    assert cfg.algo.actor_warm_start_checkpoint is None
+    assert cfg.algo.actor_warm_start_adapter == "g1_height_actor_obs_98_to_99_v1"
+    assert override["commands"]["observe_height_command"] is True
+    assert override["commands"]["height_range"] == [0.65, 0.754]
+
+
 def test_offpolicy_g1_stand_still_pose_anchor_relaxes_loaded_leg_support():
     """Standing keeps upstream upper-body posture but relaxes loaded leg support."""
     with initialize(config_path="../../conf/offpolicy", version_base="1.3"):

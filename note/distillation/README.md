@@ -8,7 +8,7 @@ not the current design authority.
 
 1. [Concept Figure](../architecture/concept/03_g1_multiteacher_distillation_method.data.json)
    - Human-controlled method intent.
-2. [Active Method Contract](contracts/active/method/DISTILL-METHOD-v001.md)
+2. [Active Method Contract](contracts/active/method/DISTILL-METHOD-v002.md)
    - Accepted semantics and design-point details.
 3. [Current Task Canvas](task_canvas.md)
    - Current problem, verified facts, active proposal, and next decision.
@@ -17,9 +17,13 @@ Stop after these three unless a concrete question requires deeper evidence.
 
 ## Drill Down By Question
 
-- Current workflow implementation plan:
+- Current StandHeight/Walk implementation plan:
+  [Five-Step Implementation Plan](plans/stand_height_walk_two_teacher_implementation.md)
+- Inherited single-entry training workflow:
   [Single-Entry Training Workflow](plans/single_entry_training_workflow_proposal.md)
-- Current acceptance state: [Checklist](checklists/current.md)
+- Current StandHeight/Walk acceptance state:
+  [Checklist](checklists/stand_height_walk_two_teacher.md)
+- Legacy workflow acceptance state: [Checklist](checklists/current.md)
 - Verified facts: [Current Evidence](evidence/current.md)
 - Archived reset/stop diagnosis:
   [Playback Reset And Stop-Transition Root Causes](evidence/2026-07-15-playback-reset-and-stop-transition-root-causes.md)
@@ -47,15 +51,28 @@ accumulation.
 
 ## Current Method In One Sentence
 
-Use command intent to select standing, walking, and later height-control teacher
-evidence, train role-specialized experts inside one MoE student, and deploy one
-checkpoint whose routing follows the same intent contract.
+Use velocity intent to select a 99-D StandHeight or Walk teacher, train two
+role-specialized experts inside one MoE student, and deploy one checkpoint whose
+routing follows the same intent and target-height contract.
 
 ## Current Boundary
 
-- Standing and walking teachers exist.
-- Height control remains an accepted future teacher role, but no qualified
-  height teacher checkpoint is currently part of the active training route.
+- Existing 98-D standing and walking teachers are legacy sources.
+- The `G1StandHeight` task, explicit 98-D to 99-D actor adapter, and unified
+  two-expert 99-D workflow are complete at their deterministic boundaries.
+- E114 preserves the retained Step 2 result (`108 passed, 24 warnings in
+  19.46s`) and Step 3 result (`8 passed in 6.77s`); E113 records Step 4 Ruff
+  PASS and `27 passed in 20.56s`. These are contract and connector results, not
+  policy-quality evidence.
+- E115 confirms one real `G1StandHeight` MuJoCo environment for one step,
+  including 99-D input, target index 96, zero command, support/tilt snapshot,
+  no termination, and a no-training SSH-command compose preflight.
+- E116 confirms that StandHeight SAC dispatches through the existing
+  async/double-buffer runner and that the 99-D two-role workflow can explicitly
+  opt into the persistent DAgger runtime; its focused suite is `3 passed in
+  3.83s` with Ruff PASS. This is connector evidence, not a speedup result.
+- Qualified StandHeight and Walk teacher checkpoints, a trained v002 student,
+  and physical acceptance evidence do not yet exist. Training has not started.
 - Existing local student checkpoints and the RT-8 bounded candidate are
   candidate artifacts only. None is a promoted or accepted policy.
 - Playback reset/command ordering is repaired and contract/live-reset tested;

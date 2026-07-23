@@ -133,15 +133,23 @@ def test_g1_walk_flat_cfg_defaults_match_walk_profile():
 
 
 def test_g1_stand_still_cfg_adds_support_sensor_fragment_without_polluting_walk():
-    from unilab.envs.locomotion.g1.joystick import G1StandStillCfg, G1WalkFlatCfg
+    from unilab.envs.locomotion.g1.joystick import (
+        G1StandHeightCfg,
+        G1StandStillCfg,
+        G1WalkFlatCfg,
+    )
 
     walk_cfg = G1WalkFlatCfg()
     stand_cfg = G1StandStillCfg()
+    stand_height_cfg = G1StandHeightCfg()
 
     assert walk_cfg.scene.fragment_files == []
-    assert stand_cfg.scene.model_file.endswith("robots/g1/scene_flat.xml")
+    assert Path(stand_cfg.scene.model_file).as_posix().endswith("robots/g1/scene_flat.xml")
     assert len(stand_cfg.scene.fragment_files) == 1
-    assert stand_cfg.scene.fragment_files[0].endswith("robots/g1/stand_support_task.xml")
+    assert Path(stand_cfg.scene.fragment_files[0]).as_posix().endswith(
+        "robots/g1/stand_support_task.xml"
+    )
+    assert stand_height_cfg.scene == stand_cfg.scene
 
 
 def test_g1_walk_tasks_register_to_algorithm_agnostic_env_base():

@@ -243,3 +243,4 @@ def test_g1_walk_tasks_are_registered():
 
     assert registry.contains("G1WalkFlat")
     assert registry.contains("G1WalkRough")
+    assert registry.contains("G1StandHeight")

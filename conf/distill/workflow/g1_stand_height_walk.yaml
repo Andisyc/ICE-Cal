@@ -1,0 +1,55 @@
+# @package _global_
+
+teacher:
+  obs_dim: 99
+  action_dim: 29
+
+student:
+  model_type: moe
+  obs_dim: 99
+  action_dim: 29
+  num_experts: 2
+  routing_mode: hard
+
+algo:
+  role_loss_coef: 0.25
+  role_expert_targets:
+    walk: 0
+    stand_height: 1
+  command_intent_loss_coef: 0.25
+  command_intent_expert_targets:
+    active: 0
+    inactive: 1
+  expert_behavior_loss_source: command_intent
+
+training:
+  task_name: G1StandHeightWalk
+  workflow:
+    schema_version: 2
+    roles:
+      - role: walk
+        task: g1_walk_height_nominal/mujoco
+        teacher_checkpoint_path: ${oc.env:UNILAB_G1_WALK_HEIGHT_TEACHER}
+        dataset_path: ${oc.env:UNILAB_G1_WALK_HEIGHT_DATASET,''}
+      - role: stand_height
+        task: g1_stand_height/mujoco
+        teacher_checkpoint_path: ${oc.env:UNILAB_G1_STAND_HEIGHT_TEACHER}
+        dataset_path: ${oc.env:UNILAB_G1_STAND_HEIGHT_DATASET,''}
+    scenarios:
+      - name: walk_flat
+        kind: role
+        source_roles: [walk]
+        quota: 0.5
+      - name: static_stand
+        kind: role
+        source_roles: [stand_height]
+        quota: 0.25
+      - name: walk_to_stop
+        kind: transition
+        source_roles: [walk, stand_height]
+        quota: 0.25
+    dagger_balance_key: scenario
+    dagger_balanced_labels: [walk_flat, static_stand, walk_to_stop]
+    transition_min_post_switch_steps: 20
+    dagger_min_transition_replay_passes: 8
+    dagger_min_transition_replay_labels: [walk_to_stop]

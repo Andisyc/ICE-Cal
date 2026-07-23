@@ -138,6 +138,7 @@ class RoleArtifactSpec:
     command_xy_threshold: float
     command_yaw_threshold: float
     owner_config: Mapping[str, Any]
+    target_height_info_key: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "teacher_checkpoint_path", Path(self.teacher_checkpoint_path))
@@ -169,6 +170,7 @@ class RoleArtifactSpec:
             "command_info_key": self.command_info_key,
             "command_xy_threshold": self.command_xy_threshold,
             "command_yaw_threshold": self.command_yaw_threshold,
+            "target_height_info_key": self.target_height_info_key,
             "owner_config": self.owner_config,
         }
 
@@ -196,6 +198,7 @@ class RoleArtifactManifest:
     command_yaw_threshold: float
     owner_config_sha256: str
     num_samples: int
+    target_height_info_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -304,6 +307,7 @@ def create_role_artifact_manifest(
         command_yaw_threshold=float(spec.command_yaw_threshold),
         owner_config_sha256=config_fingerprint(spec.owner_config),
         num_samples=int(num_samples),
+        target_height_info_key=spec.target_height_info_key,
     )
 
 
@@ -372,6 +376,7 @@ _COMPATIBILITY_FIELDS = (
     "student_projection",
     "student_drop_index",
     "command_info_key",
+    "target_height_info_key",
 )
 
 
@@ -392,6 +397,7 @@ def _expected_manifest_values(spec: RoleArtifactSpec) -> dict[str, Any]:
         "student_drop_index": spec.student_drop_index,
         "command_sample_filter": spec.command_sample_filter,
         "command_info_key": spec.command_info_key,
+        "target_height_info_key": spec.target_height_info_key,
         "command_xy_threshold": float(spec.command_xy_threshold),
         "command_yaw_threshold": float(spec.command_yaw_threshold),
         "owner_config_sha256": config_fingerprint(spec.owner_config),
@@ -452,7 +458,7 @@ def preflight_role_artifact(
         mismatches.append("teacher_checkpoint_sha256")
     if file_sha256(spec.dataset_path) != manifest.dataset_sha256:
         mismatches.append("dataset_sha256")
-    if require_row_role_labels:
+    if require_row_role_labels or spec.target_height_info_key is not None:
         try:
             dataset = load_distillation_dataset(
                 spec.dataset_path,
@@ -464,7 +470,10 @@ def preflight_role_artifact(
             mismatches.append("dataset_schema")
         else:
             if dataset.role_labels is None:
-                mismatches.append("role_labels")
+                if require_row_role_labels:
+                    mismatches.append("role_labels")
+            if spec.target_height_info_key is not None and dataset.target_height is None:
+                mismatches.append("target_height")
     if mismatches:
         return RoleArtifactPreflight(
             role=spec.role,
@@ -534,6 +543,8 @@ def adopt_legacy_role_artifact(spec: RoleArtifactSpec) -> RoleArtifactManifest:
     if expected_task_name not in (None, ""):
         checks["task_name"] = expected_task_name
     mismatches = [key for key, expected in checks.items() if metadata.get(key) != expected]
+    if spec.target_height_info_key is not None and dataset.target_height is None:
+        mismatches.append("target_height")
     teacher_path = metadata.get("teacher_policy_checkpoint_path")
     if teacher_path in (None, ""):
         mismatches.append("teacher_policy_checkpoint_path")

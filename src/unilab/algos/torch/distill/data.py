@@ -80,6 +80,25 @@ def _validate_commands(
     return _validate_command_tensor("commands", commands, num_samples=num_samples)
 
 
+def _validate_target_height(
+    target_height: torch.Tensor | None,
+    *,
+    num_samples: int,
+) -> torch.Tensor | None:
+    if target_height is None:
+        return None
+    if target_height.ndim != 2 or int(target_height.shape[-1]) != 1:
+        raise ValueError(f"target_height must have shape (N, 1), got {tuple(target_height.shape)}")
+    if int(target_height.shape[0]) != int(num_samples):
+        raise ValueError(
+            "target_height batch size mismatch: "
+            f"target_height={int(target_height.shape[0])} samples={int(num_samples)}"
+        )
+    if not torch.isfinite(target_height).all():
+        raise ValueError("target_height must contain only finite values")
+    return target_height
+
+
 def _validate_command_tensor(
     name: str,
     commands: torch.Tensor | None,
@@ -272,6 +291,9 @@ def _multitask_source_debug_snapshot(
             None if dataset.teacher_actions is None else tuple(dataset.teacher_actions.shape)
         ),
         "commands_shape": None if dataset.commands is None else tuple(dataset.commands.shape),
+        "target_height_shape": (
+            None if dataset.target_height is None else tuple(dataset.target_height.shape)
+        ),
         "command_intents": _command_intent_contract_debug_snapshot(
             dataset.command_intents,
             expected_intent=expected_intent,
@@ -304,11 +326,7 @@ def _safe_runtime_repr(value: Any) -> str:
     try:
         return _ORIGINAL_REPR(value)
     except BaseException as error:  # pragma: no cover - defensive runtime probe
-        return (
-            "<repr-error "
-            f"type={_ORIGINAL_TYPE(error).__name__} "
-            f"repr={_ORIGINAL_REPR(error)}>"
-        )
+        return f"<repr-error type={_ORIGINAL_TYPE(error).__name__} repr={_ORIGINAL_REPR(error)}>"
 
 
 def _scenario_label_debug_snapshot(
@@ -596,6 +614,7 @@ class DistillationTensorDataset:
     role_labels: tuple[str, ...] | None = None
     teacher_actions: torch.Tensor | None = None
     commands: torch.Tensor | None = None
+    target_height: torch.Tensor | None = None
     command_intents: tuple[str, ...] | None = None
     scenario_labels: tuple[str, ...] | None = None
     transition_ages: torch.Tensor | None = None
@@ -631,6 +650,7 @@ class DistillationTensorDataset:
                 None if self.teacher_actions is None else self.teacher_actions.to(device)
             ),
             commands=None if self.commands is None else self.commands.to(device),
+            target_height=(None if self.target_height is None else self.target_height.to(device)),
             transition_ages=(
                 None if self.transition_ages is None else self.transition_ages.to(device)
             ),
@@ -654,6 +674,7 @@ class DistillationTensorDataset:
                 None if self.teacher_actions is None else self.teacher_actions[start:end]
             ),
             commands=None if self.commands is None else self.commands[start:end],
+            target_height=(None if self.target_height is None else self.target_height[start:end]),
             command_intents=(
                 None if self.command_intents is None else self.command_intents[start:end]
             ),
@@ -681,6 +702,7 @@ def build_distillation_dataset(
     role_labels: list[str] | tuple[str, ...] | None = None,
     teacher_actions: torch.Tensor | None = None,
     commands: torch.Tensor | None = None,
+    target_height: torch.Tensor | None = None,
     command_intents: list[str] | tuple[str, ...] | None = None,
     scenario_labels: list[str] | tuple[str, ...] | None = None,
     transition_ages: torch.Tensor | None = None,
@@ -717,6 +739,10 @@ def build_distillation_dataset(
             )
     validated_commands = _validate_commands(
         commands,
+        num_samples=int(student_obs.shape[0]),
+    )
+    validated_target_height = _validate_target_height(
+        target_height,
         num_samples=int(student_obs.shape[0]),
     )
     metadata_dict = dict(metadata or {})
@@ -777,6 +803,7 @@ def build_distillation_dataset(
         role_labels=validated_role_labels,
         teacher_actions=teacher_actions,
         commands=validated_commands,
+        target_height=validated_target_height,
         command_intents=validated_command_intents,
         scenario_labels=validated_scenario_labels,
         transition_ages=validated_transition_ages,
@@ -867,6 +894,7 @@ def annotate_distillation_dataset_scenario(
         role_labels=dataset.role_labels,
         teacher_actions=dataset.teacher_actions,
         commands=commands,
+        target_height=dataset.target_height,
         command_intents=dataset.command_intents,
         scenario_labels=(scenario,) * dataset.num_samples,
         transition_ages=torch.full(
@@ -921,6 +949,7 @@ def build_multitask_distillation_dataset(
     source_teacher_obs_dim: int | None = None
     source_teacher_action_dim: int | None = None
     source_has_commands: bool | None = None
+    source_has_target_height: bool | None = None
     source_has_command_intents: bool | None = None
     source_transition_presence: dict[str, bool] | None = None
     for loop_source_index, source in enumerate(sources):
@@ -960,8 +989,7 @@ def build_multitask_distillation_dataset(
                 "metadata_workflow_scenario": metadata_scenario,
             }
             print(
-                "[distill-source-contract-sentinel] "
-                + json.dumps(snapshot, sort_keys=True),
+                "[distill-source-contract-sentinel] " + json.dumps(snapshot, sort_keys=True),
                 flush=True,
             )
             raise ValueError(
@@ -989,15 +1017,10 @@ def build_multitask_distillation_dataset(
                 }
                 _emit_data_runtime(
                     "multitask/source_annotation_failure",
-                    **{
-                        key: value
-                        for key, value in snapshot.items()
-                        if key != "stage"
-                    },
+                    **{key: value for key, value in snapshot.items() if key != "stage"},
                 )
                 print(
-                    "[distill-source-annotation-sentinel] "
-                    + json.dumps(snapshot, sort_keys=True),
+                    "[distill-source-annotation-sentinel] " + json.dumps(snapshot, sort_keys=True),
                     flush=True,
                 )
                 raise ValueError(
@@ -1015,6 +1038,9 @@ def build_multitask_distillation_dataset(
             teacher_obs_shape=tuple(dataset.teacher_obs.shape),
             teacher_actions_shape=(
                 None if dataset.teacher_actions is None else tuple(dataset.teacher_actions.shape)
+            ),
+            target_height_shape=(
+                None if dataset.target_height is None else tuple(dataset.target_height.shape)
             ),
             command_intents=(
                 None
@@ -1041,6 +1067,11 @@ def build_multitask_distillation_dataset(
             source_has_commands = has_commands
         elif has_commands != source_has_commands:
             raise ValueError("multitask sources must either all include commands or none")
+        has_target_height = dataset.target_height is not None
+        if source_has_target_height is None:
+            source_has_target_height = has_target_height
+        elif has_target_height != source_has_target_height:
+            raise ValueError("multitask sources must either all include target_height or none")
         has_command_intents = dataset.command_intents is not None
         if source_has_command_intents is None:
             source_has_command_intents = has_command_intents
@@ -1107,6 +1138,14 @@ def build_multitask_distillation_dataset(
         if source_has_commands
         else None
     )
+    target_height = (
+        torch.cat(
+            [dataset.target_height for dataset in datasets if dataset.target_height is not None],
+            dim=0,
+        )
+        if source_has_target_height
+        else None
+    )
     command_intents = (
         tuple(
             intent
@@ -1171,13 +1210,9 @@ def build_multitask_distillation_dataset(
                 "multitask/scenario_concat_chunk",
                 **source_range,
                 observation_timing="post_flatten_slice_check",
-                source_scenario_labels=_scenario_label_debug_snapshot(
-                    dataset.scenario_labels
-                ),
+                source_scenario_labels=_scenario_label_debug_snapshot(dataset.scenario_labels),
                 aggregate_slice=_scenario_label_debug_snapshot(aggregate_slice),
-                source_matches_aggregate_slice=(
-                    dataset.scenario_labels == aggregate_slice
-                ),
+                source_matches_aggregate_slice=(dataset.scenario_labels == aggregate_slice),
             )
         _emit_data_runtime(
             "multitask/scenario_concat_complete",
@@ -1235,10 +1270,9 @@ def build_multitask_distillation_dataset(
         teacher_obs_shape=tuple(teacher_obs.shape),
         teacher_actions_shape=tuple(teacher_actions.shape),
         commands_shape=None if commands is None else tuple(commands.shape),
+        target_height_shape=(None if target_height is None else tuple(target_height.shape)),
         command_intents=(
-            None
-            if command_intents is None
-            else _command_intent_debug_snapshot(command_intents)
+            None if command_intents is None else _command_intent_debug_snapshot(command_intents)
         ),
         scenario_labels=(
             None
@@ -1262,9 +1296,7 @@ def build_multitask_distillation_dataset(
     if command_intents is not None:
         metadata["command_intent_counts"] = _label_counts(command_intents)
     before_final_validation = (
-        None
-        if command_intents is None
-        else _command_intent_debug_snapshot(command_intents)
+        None if command_intents is None else _command_intent_debug_snapshot(command_intents)
     )
     before_final_scenario_validation = (
         None
@@ -1294,6 +1326,7 @@ def build_multitask_distillation_dataset(
             role_labels=role_labels,
             teacher_actions=teacher_actions,
             commands=commands,
+            target_height=target_height,
             command_intents=command_intents,
             scenario_labels=scenario_labels,
             transition_ages=transition_ages,
@@ -1345,9 +1378,7 @@ def build_multitask_distillation_dataset(
                     {
                         **source_range,
                         "num_samples": dataset.num_samples,
-                        "scenario_labels": _scenario_label_debug_snapshot(
-                            dataset.scenario_labels
-                        ),
+                        "scenario_labels": _scenario_label_debug_snapshot(dataset.scenario_labels),
                     }
                 )
             scenario_snapshot = {
@@ -1406,10 +1437,7 @@ def build_multitask_distillation_dataset(
             "before_final_validation": before_final_validation,
             "after_final_validation_failure": _command_intent_debug_snapshot(command_intents),
         }
-        print(
-            "[distill-command-intent-sentinel] "
-            + json.dumps(snapshot, sort_keys=True)
-        )
+        print("[distill-command-intent-sentinel] " + json.dumps(snapshot, sort_keys=True))
         raise
 
 
@@ -1425,6 +1453,9 @@ def save_distillation_dataset(path: str | Path, dataset: DistillationTensorDatas
             None if dataset.teacher_actions is None else dataset.teacher_actions.detach().cpu()
         ),
         "commands": None if dataset.commands is None else dataset.commands.detach().cpu(),
+        "target_height": (
+            None if dataset.target_height is None else dataset.target_height.detach().cpu()
+        ),
         "command_intents": (
             None if dataset.command_intents is None else list(dataset.command_intents)
         ),
@@ -1528,6 +1559,7 @@ def load_distillation_dataset(
     )
     teacher_actions = payload.get("teacher_actions")
     commands = payload.get("commands")
+    target_height = payload.get("target_height")
     transition_ages = payload.get("transition_ages")
     command_before = payload.get("command_before")
     command_after = payload.get("command_after")
@@ -1541,6 +1573,7 @@ def load_distillation_dataset(
         role_labels=payload.get("role_labels"),
         teacher_actions=None if teacher_actions is None else teacher_actions.to(device),
         commands=None if commands is None else commands.to(device),
+        target_height=None if target_height is None else target_height.to(device),
         command_intents=payload.get("command_intents"),
         scenario_labels=payload.get("scenario_labels"),
         transition_ages=(None if transition_ages is None else transition_ages.to(device)),

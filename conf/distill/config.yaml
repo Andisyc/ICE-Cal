@@ -137,6 +137,7 @@ training:
   collect_student_drop_index: null
   collect_command_sample_filter: none
   collect_command_info_key: commands
+  collect_target_height_info_key: null
   collect_command_xy_threshold: 0.05
   collect_command_yaw_threshold: 0.05
   collect_max_env_steps: null

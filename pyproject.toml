@@ -71,6 +71,9 @@ required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
+[tool.uv.extra-build-dependencies]
+mujoco-uni = ["wheel"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
