@@ -107,6 +107,9 @@ training:
     dagger_min_transition_replay_passes: 8
     dagger_min_transition_replay_labels: [walk_to_stop]
     transition_walk_command: [0.4, 0.0, 0.0]
+    transition_walk_commands: []
+    transition_walk_target_height: null
+    transition_post_switch_target_heights: []
     transition_max_env_steps: null
   dagger_iterations: 8
   dagger_samples_per_iteration: 65536

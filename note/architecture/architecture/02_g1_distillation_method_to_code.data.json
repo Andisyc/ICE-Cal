@@ -36,7 +36,7 @@
           ],
           "mainRouteTitles": ["选择正式操作", "验证 Owner Contract", "调用领域 Owner"],
           "review": ["先确认本次命令只触发一个正式操作", "检查 checkpoint 参数是否指向预期父模型"],
-          "tests": ["S0 config compose", "S2 train_distill entry connectivity", "S2 legacy/persistent execution-mode dispatch", "S2 E116 v002 persistent_async connector"],
+          "tests": ["S0 config compose", "S2 train_distill entry connectivity", "S2 legacy/persistent execution-mode dispatch", "S2 E116 v002 persistent_async connector", "S2 E117 legacy non-nominal grid connector"],
           "gap": "persistent_async 已完成接入且 HP-6/E86 production gate PASS, 但 E67 为 NO_STABLE_SPEEDUP; promotion deferred, 默认 legacy, 低层诊断分支显式标记仍待收口"
         },
         {
@@ -45,10 +45,10 @@
           "summary": "按角色与 scenario 复用或采集数据并执行 Bootstrap 与多轮累计 DAgger",
           "owns": "artifact preflight scenario manifest quota stage machine checkpoint lineage outer iteration barrier resume 与 fork",
           "mustNot": "不加载大 tensor 来判断文件存在性, 不在 scenario collection 中发布 student_(k+1), 不把 route pass 当作物理质量",
-          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "target_height_info_key", "walk|stand_height", "active->0|inactive->1", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "FormalDaggerIdentitySpec", "formal freeze", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
+          "objects": ["RoleArtifactSpec", "WorkflowScenarioSpec", "ArtifactDecision", "target_height_info_key", "transition_walk_commands[3,3]", "transition_post_switch_target_heights[3]", "transition_walk_target_height=0.754", "walk|stand_height", "active->0|inactive->1", "DaggerCollectRequest", "DaggerCollectResult", "PersistentDistillationRuntime", "SharedWeightSync", "FormalDaggerIdentitySpec", "formal freeze", "expected_weight_version", "run_manifest.json", "scenario_artifacts", "WorkflowDatasetSource"],
           "files": [
             {"id":"DT-SRC-021","path":"src/unilab/algos/torch/distill/workflow.py","sourceLine":123,"role":"workflow stage owner","functions":["RoleArtifactSpec","preflight_role_artifacts()","run_bootstrap_workflow()","run_multirole_dagger_workflow()","_validate_workflow_scenarios()","fork_workflow_run()"]},
-            {"id":"DT-SRC-047","path":"conf/distill/workflow/g1_stand_height_walk.yaml","sourceLine":1,"role":"v002 99-D two-role/two-expert workflow owner","functions":[]},
+            {"id":"DT-SRC-047","path":"conf/distill/workflow/g1_stand_height_walk.yaml","sourceLine":1,"role":"v002 99-D two-role/two-expert and 3x3 transition-grid workflow owner","functions":[]},
             {"id":"DT-SRC-022","path":"tests/algos/test_distill_workflow.py","sourceLine":1,"role":"workflow semantic fixtures","functions":[]},
             {"id":"DT-SRC-034","path":"src/unilab/algos/torch/distill/async_runtime.py","sourceLine":20,"role":"persistent collector request/result interface","functions":["validate_dagger_collect_result()","PersistentDaggerCollectorRunner.collect()"]},
             {"id":"DT-SRC-035","path":"src/unilab/algos/torch/distill/persistent_runtime.py","sourceLine":31,"role":"shared resident student owner","functions":["PersistentDistillationRuntime.activate_checkpoint()","PersistentDistillationRuntime.collect()","PersistentDistillationRuntime.close()"]},
@@ -63,15 +63,15 @@
           ],
           "mainRoute": [
             "B1 preflight_role_artifacts(): role contract + immutable files -> REUSE/COLLECT/STALE/INCOMPATIBLE",
-            "B2 WorkflowScenarioSpec: scenario roles + quota -> manifest contract",
+            "B2 WorkflowScenarioSpec + transition grid config: scenario roles + quota + command-height cases -> manifest and collection contract",
             "B3 run_bootstrap_workflow(): role decisions -> collected/reused role data + bootstrap checkpoint",
             "B4 run_multirole_dagger_workflow(): activate student_k checkpoint/version once + scenarios -> cumulative dataset + student_(k+1)",
             "B5 fork_workflow_run(): completed parent sources + scenario/row-role identity -> resumable active-schema chain"
           ],
           "mainRouteTitles": ["按角色判定 Artifact", "定义 Scenario Quota", "自动执行 Bootstrap", "循环执行多角色 DAgger", "提交可恢复 Manifest"],
           "review": ["检查新增 role 是否只触发自己的 COLLECT", "检查同一 iteration 全部 scenario 是否共享 student_k checkpoint/version", "检查 student_(k+1) activation 是否晚于 updater"],
-          "tests": ["S0 E113 v002 99-D/two-role compose", "S1 hash/schema/target-height decisions", "S2 E113 single-entry connector", "S2 E116 v002 persistent_async connector", "S2 Bootstrap connectivity", "S2 DAgger resume/fork scenario-identity probe", "S2 persistent barrier event trace", "S2 exact resource lifecycle and dataset differential", "S4 bounded G1 MuJoCo lifecycle PENDING"],
-          "gap": "E113/E116 已 deterministic-confirmed 新 99-D walk/stand_height workflow、persistent_async opt-in connector 且 legacy g1_walk_stand 不变; qualified teacher artifacts、two-teacher workflow live route 与 policy quality 未证明"
+          "tests": ["S0 E113 v002 99-D/two-role compose", "S0/S2 E117 exact 3x3 grid and legacy/persistent connector parity", "S1 hash/schema/target-height decisions", "S2 E113 single-entry connector", "S2 E116 v002 persistent_async connector", "S2 Bootstrap connectivity", "S2 DAgger resume/fork scenario-identity probe", "S2 persistent barrier event trace", "S2 exact resource lifecycle and dataset differential", "S4 repaired fork PENDING"],
+          "gap": "E117 已 deterministic-confirmed 3x3 transition grid 和 legacy/persistent connector; round-2 parent 仍未通过 non-nominal gate, repaired fork 与 policy quality 未证明"
         }
       ]
     },
@@ -112,11 +112,11 @@
           "id": "DT-MOD-COLLECTOR",
           "title": "Role Collector",
           "summary": "在 live env 中按 command intent 采集 teacher 或 student rollout 状态; transition collector 作为独立场景 owner",
-          "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection collection metadata 与 opt-in stage observations",
+          "owns": "obs projection action source command filter done reset command-conditioned rollout expert selection command-height case assignment atomic input refresh per-case metadata 与 opt-in stage observations",
           "mustNot": "不训练 student, 不把 finite action 当作物理质量",
-          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "target_height[N,1]", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "performance_clock", "DistillationStageObservation"],
+          "objects": ["student_obs", "teacher_obs", "teacher_actions", "commands", "target_height[N,1]", "_TransitionCaseAssignment", "3x3 command-height cases", "command_intents", "scenario_labels", "transition_ages", "command_before", "command_after", "performance_clock", "DistillationStageObservation"],
           "files": [
-            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":783,"role":"live collection owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_set_transition_command_rows()"]},
+            {"id":"DT-SRC-004","path":"src/unilab/algos/torch/distill/collector.py","sourceLine":580,"role":"live collection and transition-grid owner","functions":["collect_distillation_dataset_from_env()","collect_transition_distillation_dataset_from_env()","_build_transition_case_assignment()","_set_transition_input_rows()"]},
             {"id":"DT-SRC-005","path":"scripts/train_distill.py","sourceLine":1324,"role":"99-D collection connector and index-96 height guard","functions":["run_collect_dataset()","_require_collected_target_height_contract()"]},
             {"id":"DT-SRC-050","path":"conf/distill/task/g1_stand_height/mujoco.yaml","sourceLine":1,"role":"StandHeight 99-D inactive role profile","functions":[]},
             {"id":"DT-SRC-051","path":"conf/distill/task/g1_walk_height_nominal/mujoco.yaml","sourceLine":1,"role":"Walk 99-D nominal-height active role profile","functions":[]}
@@ -125,14 +125,14 @@
             "B1 collector.py projection + info capture: env obs dict + height_commands -> profile-declared rows with optional target_height[N,1]",
             "B2 collector.py command mask: commands + thresholds -> selected intent rows",
             "B3 collector.py rollout/label policies: selected states -> teacher targets + executed actions",
-            "B4 transition owner: student-state rows -> atomic active/zero command switch -> command-intent rollout expert -> role-labelled targets",
+            "B4 transition owner: command x height case rows -> active command + 0.754 target -> atomic zero command + case target refresh -> matching expert relabel + per-case horizon evidence",
             "B5 build_distillation_dataset(): collected chunks -> persisted semantic dataset",
             "B6 opt-in performance accumulator: owner spans -> copied dataset metadata -> worker pass-through"
           ],
           "mainRouteTitles": ["投影 Observation", "筛选 Command Intent", "执行并标注动作", "执行 Transition Scenario", "生成 Dataset", "记录 Owner Stage"],
           "review": ["检查 inactive 数据是否真的零指令", "检查 obs index 96 与保存的 target_height 完全一致", "检查 done/reset 后的行是否仍保持语义"],
-          "tests": ["S1 E113 target_height collection fixture", "S1 projection/filter", "S1/S2 HP-4a2b fake-clock observations", "S2 E113 99-D connector", "S2 teacher/student rollout", "S4 live collection PENDING"],
-          "gap": "E113 已 deterministic-confirmed height_commands 到 target_height 的 collector/connector 路径; workflow live collection、reset 与物理验收未执行"
+          "tests": ["S1 E113 target_height collection fixture", "S1 E117 9-case command/height/index-96/teacher roundtrip", "S1 E117 missing-owner/env-row/horizon fail-closed", "S1 projection/filter", "S1/S2 HP-4a2b fake-clock observations", "S2 E117 legacy/persistent connector parity", "S2 teacher/student rollout", "S4 repaired fork PENDING"],
+          "gap": "E117 已 deterministic-confirmed 3x3 case dataflow、legacy fallback 与 connector parity; real env collection、retrained checkpoint 与物理验收未执行"
         },
         {
           "id": "DT-MOD-DATA",
@@ -208,9 +208,9 @@
           "id": "DT-MOD-DAGGER",
           "title": "Student-State DAgger",
           "summary": "执行当前角色 expert 查询 teacher 并聚合历轮状态",
-          "owns": "fixed and command-conditioned rollout expert iteration aggregation immediate updates 与 DAgger metadata",
+          "owns": "fixed and command-conditioned rollout expert scenario aggregation cumulative updates 与 DAgger lineage metadata",
           "mustNot": "不使用 soft mixture 代表 pure role expert, 不覆盖旧迭代数据",
-          "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "target_height[N,1]", "BalancedLabelIndexPools", "samples_seen"],
+          "objects": ["rollout expert", "iteration dataset", "aggregate dataset", "target_height[N,1]", "transition_cases metadata", "BalancedLabelIndexPools", "samples_seen"],
           "files": [
             {"id":"DT-SRC-010","path":"src/unilab/algos/torch/distill/dagger.py","sourceLine":53,"role":"online DAgger owner","functions":["resolve_command_intent_rollout_policies()","run_iterative_dagger_updates()","_resolve_dagger_rollout_policy()","_aggregate_dagger_datasets()"]},
             {"id":"DT-SRC-011","path":"scripts/train_distill.py","sourceLine":1567,"role":"online DAgger connector","functions":["run_online_dagger_update()"]}
@@ -218,14 +218,14 @@
           ],
           "mainRoute": [
             "B1 _resolve_dagger_rollout_policy(): intent/role mapping -> fixed rollout expert",
-            "B2 collect_distillation_dataset_from_env(): current expert states -> teacher-labelled iteration dataset",
+            "B2 role/transition collectors: current expert states + configured command-height cases -> teacher-labelled iteration datasets",
             "B3 _aggregate_dagger_datasets(): prior + current role/intent/target_height rows -> cumulative evidence",
             "B4 run_offline_distillation_updates(): one immutable pool cache per loaded cumulative dataset -> equivalent balanced batches -> updated selected expert"
           ],
           "mainRouteTitles": ["锁定 Rollout Expert", "采集 Student States", "聚合历轮证据", "更新对应 Expert"],
           "review": ["检查 rollout/loss/deploy expert 三者一致", "检查每轮数据量与真实 episode 覆盖"],
-          "tests": ["S1 E113 target_height DAgger aggregation", "S1 HP-7c pool identity/RNG/memory contracts", "S2 iterative aggregation and formal offline integration", "T-regression expert-conditioned rollout", "S4 bounded live PENDING"],
-          "gap": "E113 已 deterministic-confirmed target_height 聚合与两角色 connector; non-nominal transition、repeated reset 与 bounded live acceptance remains separate"
+          "tests": ["S1 E113 target_height DAgger aggregation", "S1/S2 E117 non-nominal transition distribution and connector parity", "S1 HP-7c pool identity/RNG/memory contracts", "S2 iterative aggregation and formal offline integration", "T-regression expert-conditioned rollout", "S4 repaired fork PENDING"],
+          "gap": "E117 已 deterministic-confirmed non-nominal transition collection distribution; cumulative SSH fork、repeated reset 与 bounded live acceptance remain separate"
         }
       ]
     },
@@ -292,7 +292,7 @@
           "summary": "测试 99-D tensor dataflow 两角色 两专家 optimizer checkpoint 和 playback route",
           "owns": "deterministic regression integration probe 与 live evidence inventory",
           "mustNot": "不把 fake tensor 或一次启动等同于机器人策略质量",
-          "objects": ["S/T matrix", "E113", "E115", "E116", "99-D/two-role/two-expert fixtures", "target_height roundtrip fixture", "persistent_async connector fixture", "legacy isolation fixture", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "run-local metrics artifact", "live sentinel output", "evidence ledger"],
+          "objects": ["S/T matrix", "E113", "E115", "E116", "E117", "99-D/two-role/two-expert fixtures", "9-case command-height fixture", "target_height roundtrip fixture", "persistent_async connector fixture", "legacy isolation fixture", "DistillationStageObservation", "DistillationMetricIdentity", "DistillationStageMetric", "run-local metrics artifact", "live sentinel output", "evidence ledger"],
           "files": [
             {"id":"DT-SRC-016","path":"tests/algos/test_g1_distillation_contract.py","sourceLine":1,"role":"algorithm/data contracts","functions":[]},
             {"id":"DT-SRC-017","path":"tests/scripts/test_train_scripts.py","sourceLine":1,"role":"entrypoint connectivity","functions":[]},
@@ -301,8 +301,10 @@
             {"id":"DT-SRC-038","path":"src/unilab/algos/torch/distill/performance.py","sourceLine":1,"role":"HP-4 request workflow learner cleanup identity and atomic artifact owner","functions":["DistillationPerformanceRunContext.enrich_request()","DistillationPerformanceRunContext.enrich_workflow_iteration()","DistillationPerformanceRunContext.enrich_cleanup()","DistillationMetricsRecorder.write()","load_distillation_metrics()"]},
             {"id":"DT-SRC-039","path":"tests/algos/test_distill_performance.py","sourceLine":1,"role":"HP-4a fake-clock and persistence contracts","functions":[]},
             {"id":"DT-SRC-052","path":"tests/algos/test_stand_height_walk_distillation.py","sourceLine":1,"role":"Step 4 data/update/checkpoint deterministic contracts","functions":[]},
-            {"id":"DT-SRC-053","path":"tests/scripts/test_stand_height_walk_distill_workflow.py","sourceLine":1,"role":"Step 4 and E116 Hydra/profile/persistent connector contracts","functions":[]},
+            {"id":"DT-SRC-053","path":"tests/scripts/test_stand_height_walk_distill_workflow.py","sourceLine":184,"role":"Step 4/E116 plus E117 Hydra and legacy-grid connector contracts","functions":["test_legacy_transition_connector_forwards_non_nominal_grid()"]},
             {"id":"DT-SRC-054","path":"scripts/deploy/check_unilab_g1_height_tracking_live_path.py","sourceLine":1,"role":"Step 5 bounded StandHeight live-route sentinel","functions":["run_check()"]}
+            ,{"id":"DT-SRC-058","path":"tests/algos/test_distill_g1_persistent_worker.py","sourceLine":151,"role":"E117 Hydra-to-worker and worker-to-collector grid connector contracts","functions":["test_persistent_runtime_builder_forwards_transition_grid()"]}
+            ,{"id":"DT-SRC-059","path":"tests/algos/test_distill_persistent_differential.py","sourceLine":1,"role":"E117 legacy/persistent transition semantic differential","functions":[]}
           ],
           "mainRoute": [
             "B1 contract tests: semantic fixture -> local invariant result",
@@ -312,8 +314,8 @@
           ],
           "mainRouteTitles": ["验证局部语义", "验证正式连接", "采集真实运行事实", "更新人类验收状态"],
           "review": ["区分 PASS route 与 PASS policy quality", "确保失败场景记录 checkpoint identity 和 command schedule"],
-          "tests": ["S0-S2 E113 Step 4 Ruff PASS and 27 passed in 20.56s", "S3/S4 E115 one-env StandHeight MuJoCo route and training compose PASS", "S2 E116 async runner and v002 persistent connector 3 passed in 3.83s", "S0-S2 current suites", "S1/S3 HP-4a metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S4 E61/E65/E67 MuJoCo timing and A/B accepted; NO_STABLE_SPEEDUP", "S4 physical acceptance BLOCKED"],
-          "gap": "E115 runtime-confirms the bounded StandHeight task route and E116 confirms async connectors only; real checkpoint、training、long-horizon tracking、transition 与 policy-quality evidence 均未执行"
+          "tests": ["S0-S2 E113 Step 4 Ruff PASS and 27 passed in 20.56s", "S3/S4 E115 one-env StandHeight MuJoCo route and training compose PASS", "S2 E116 async runner and v002 persistent connector 3 passed in 3.83s", "S0-S2 E117 transition repair 10 + 7 passed and Ruff PASS", "S1/S3 HP-4a metrics schema", "S2 HP-4a2a worker observations", "S1/S2 HP-4a2b collector observations", "S2/S3 HP-4a2c identity/artifact/resume", "S1/S2/S3 HP-4a2d workflow learner cleanup persistence", "S4 E61/E65/E67 MuJoCo timing and A/B accepted; NO_STABLE_SPEEDUP", "S4 repaired-fork physical acceptance PENDING"],
+          "gap": "E117 confirms the repaired dataflow and connectors only; new SSH fork、real checkpoint evaluation、long-horizon recovery 与 policy-quality acceptance 均未执行"
         }
       ]
     }

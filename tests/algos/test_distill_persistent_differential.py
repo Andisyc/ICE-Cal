@@ -99,7 +99,7 @@ class _TransitionEnv:
             (),
             {
                 "obs": self._obs(self.step_calls),
-                "info": {"commands": self.commands.copy()},
+                "info": {"commands": self.commands},
                 "terminated": np.zeros((2,), dtype=bool),
                 "truncated": np.zeros((2,), dtype=bool),
                 "final_observation": None,

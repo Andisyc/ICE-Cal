@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.data import build_distillation_dataset
@@ -48,7 +49,13 @@ class _Env:
         self.close_calls += 1
 
 
-def _role_cfg(*, task_name: str, checkpoint: Path, command_filter: str) -> dict:
+def _role_cfg(
+    *,
+    task_name: str,
+    checkpoint: Path,
+    command_filter: str,
+    target_height_info_key: str | None = None,
+) -> dict:
     return {
         "training": {
             "task_name": task_name,
@@ -59,6 +66,7 @@ def _role_cfg(*, task_name: str, checkpoint: Path, command_filter: str) -> dict:
             "collect_student_drop_index": None,
             "collect_command_sample_filter": command_filter,
             "collect_command_info_key": "commands",
+            "collect_target_height_info_key": target_height_info_key,
             "collect_command_xy_threshold": 0.05,
             "collect_command_yaw_threshold": 0.05,
             "collect_max_env_steps": None,
@@ -140,6 +148,72 @@ def _collector_performance_metadata(
     }
 
 
+def test_persistent_runtime_builder_forwards_transition_grid(monkeypatch) -> None:
+    import unilab.algos.torch.distill.g1_persistent_worker as worker_module
+
+    captured: dict = {}
+
+    class FakeRuntime:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(worker_module, "PersistentDistillationRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        worker_module.mp,
+        "get_context",
+        lambda _method: SimpleNamespace(Queue=lambda **_kwargs: object()),
+    )
+    cfg = OmegaConf.create(
+        {
+            "training": {
+                "device": "cpu",
+                "workflow": {
+                    "collect_num_envs": 64,
+                    "dagger_samples_per_role": 65536,
+                    "transition_pre_switch_steps": 8,
+                    "transition_min_post_switch_steps": 20,
+                    "transition_walk_command": [0.4, 0.0, 0.0],
+                    "transition_walk_commands": [
+                        [0.4, 0.0, 0.0],
+                        [0.0, 0.4, 0.0],
+                        [0.0, 0.0, 0.4],
+                    ],
+                    "transition_walk_target_height": 0.754,
+                    "transition_post_switch_target_heights": [0.650, 0.702, 0.754],
+                    "transition_max_env_steps": None,
+                },
+            }
+        }
+    )
+
+    runtime = worker_module.build_persistent_g1_distillation_runtime(
+        cfg=cfg,
+        role_cfgs={"walk": OmegaConf.create({})},
+        role_specs=[SimpleNamespace(role="walk", task="g1_walk_height_nominal/mujoco")],
+        scenario_specs=[
+            SimpleNamespace(
+                as_dict=lambda: {
+                    "name": "walk_to_stop",
+                    "kind": "transition",
+                    "source_roles": ["walk", "stand_height"],
+                }
+            )
+        ],
+    )
+
+    assert isinstance(runtime, FakeRuntime)
+    workflow_cfg = captured["worker_kwargs"]["workflow_cfg"]
+    assert workflow_cfg["transition_walk_commands"] == [
+        [0.4, 0.0, 0.0],
+        [0.0, 0.4, 0.0],
+        [0.0, 0.0, 0.4],
+    ]
+    assert workflow_cfg["transition_walk_target_height"] == pytest.approx(0.754)
+    assert workflow_cfg["transition_post_switch_target_heights"] == pytest.approx(
+        [0.650, 0.702, 0.754]
+    )
+
+
 def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
     tmp_path: Path,
     monkeypatch,
@@ -209,8 +283,11 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
             ),
         )
 
+    transition_inputs: dict = {}
+
     def transition_collect(_env, *, num_samples, metadata, **kwargs):
         assert kwargs["initial_reset"] is not None
+        transition_inputs.update(kwargs)
         half = num_samples // 2
         return build_distillation_dataset(
             torch.zeros((num_samples, 8)),
@@ -259,11 +336,13 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
                 task_name="G1WalkFlat",
                 checkpoint=walk_teacher,
                 command_filter="active",
+                target_height_info_key="height_commands",
             ),
             "stand": _role_cfg(
                 task_name="G1StandStill",
                 checkpoint=stand_teacher,
                 command_filter="inactive",
+                target_height_info_key="height_commands",
             ),
         },
         role_specs=[
@@ -285,6 +364,13 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
             "transition_pre_switch_steps": 2,
             "transition_min_post_switch_steps": 0,
             "transition_walk_command": [0.4, 0.0, 0.0],
+            "transition_walk_commands": [
+                [0.4, 0.0, 0.0],
+                [0.0, 0.4, 0.0],
+                [0.0, 0.0, 0.4],
+            ],
+            "transition_walk_target_height": 0.754,
+            "transition_post_switch_target_heights": [0.650, 0.702, 0.754],
             "transition_max_env_steps": None,
         },
         initial_checkpoint_path=str(student_checkpoint),
@@ -352,6 +438,16 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
         assert [result.metrics["artifact_write_seconds"] for result in results] == [
             pytest.approx(0.25)
         ] * 4
+        assert transition_inputs["walk_commands"] == [
+            [0.4, 0.0, 0.0],
+            [0.0, 0.4, 0.0],
+            [0.0, 0.0, 0.4],
+        ]
+        assert transition_inputs["nominal_walk_target_height"] == pytest.approx(0.754)
+        assert transition_inputs["post_switch_target_heights"] == pytest.approx(
+            [0.650, 0.702, 0.754]
+        )
+        assert transition_inputs["target_height_info_key"] == "height_commands"
         assert len(worker.resources.cache_keys) == 2
     finally:
         worker.close()

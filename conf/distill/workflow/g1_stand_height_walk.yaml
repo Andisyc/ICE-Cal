@@ -51,5 +51,11 @@ training:
     dagger_balance_key: scenario
     dagger_balanced_labels: [walk_flat, static_stand, walk_to_stop]
     transition_min_post_switch_steps: 20
+    transition_walk_commands:
+      - [0.4, 0.0, 0.0]
+      - [0.0, 0.4, 0.0]
+      - [0.0, 0.0, 0.4]
+    transition_walk_target_height: 0.754
+    transition_post_switch_target_heights: [0.650, 0.702, 0.754]
     dagger_min_transition_replay_passes: 8
     dagger_min_transition_replay_labels: [walk_to_stop]

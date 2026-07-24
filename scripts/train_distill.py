@@ -2062,6 +2062,21 @@ def run_single_entry_workflow(
                 "training.workflow.transition_max_env_steps",
                 default=0,
             )
+            transition_walk_commands = OmegaConf.select(
+                cfg,
+                "training.workflow.transition_walk_commands",
+                default=[],
+            )
+            transition_walk_target_height = OmegaConf.select(
+                cfg,
+                "training.workflow.transition_walk_target_height",
+                default=None,
+            )
+            transition_post_switch_target_heights = OmegaConf.select(
+                cfg,
+                "training.workflow.transition_post_switch_target_heights",
+                default=[],
+            )
             dataset = collect_transition_distillation_dataset_from_env(
                 env,
                 num_samples=int(
@@ -2099,6 +2114,17 @@ def run_single_entry_workflow(
                         default=[0.4, 0.0, 0.0],
                     )
                 ),
+                walk_commands=[
+                    [float(value) for value in command] for command in transition_walk_commands
+                ],
+                nominal_walk_target_height=(
+                    None
+                    if transition_walk_target_height in (None, "")
+                    else float(transition_walk_target_height)
+                ),
+                post_switch_target_heights=[
+                    float(value) for value in transition_post_switch_target_heights
+                ],
                 teacher_obs_key=str(walk_cfg.training.collect_teacher_obs_key),
                 teacher_projection=str(walk_cfg.training.collect_teacher_projection),
                 student_projection=str(walk_cfg.training.collect_student_projection),

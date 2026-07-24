@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -357,18 +357,133 @@ def _reset_done_rows_after_step(
     return next_obs, next_info, done_count, 0, done_count
 
 
-def _set_transition_command_rows(
+@dataclass(frozen=True)
+class _TransitionCaseAssignment:
+    walk_commands: np.ndarray
+    post_switch_target_heights: np.ndarray | None
+    case_commands: np.ndarray
+    case_target_heights: np.ndarray | None
+    env_case_indices: np.ndarray
+    active_command_rows: np.ndarray
+    nominal_target_rows: np.ndarray | None
+    post_switch_target_rows: np.ndarray | None
+
+
+def _build_transition_case_assignment(
+    *,
+    num_envs: int,
+    walk_command: np.ndarray | tuple[float, float, float],
+    walk_commands: Sequence[Sequence[float]] | np.ndarray | None,
+    target_height_info_key: str | None,
+    nominal_walk_target_height: float | None,
+    post_switch_target_heights: Sequence[float] | np.ndarray | None,
+) -> _TransitionCaseAssignment:
+    if walk_commands is None or np.asarray(walk_commands).size == 0:
+        fallback_command = np.asarray(walk_command, dtype=np.float32)
+        if fallback_command.shape != (3,):
+            raise ValueError(
+                "walk_command must have shape (3,) when transition walk commands "
+                f"are not configured, got {fallback_command.shape}"
+            )
+        configured_commands = fallback_command.reshape(1, 3)
+    else:
+        configured_commands = np.asarray(walk_commands, dtype=np.float32)
+    if configured_commands.ndim != 2 or configured_commands.shape[1] != 3:
+        raise ValueError(
+            "transition walk commands must have shape (num_commands, 3), "
+            f"got {configured_commands.shape}"
+        )
+    if not np.all(np.isfinite(configured_commands)):
+        raise ValueError("transition walk commands must contain only finite values")
+    active_commands = command_active_mask(
+        configured_commands,
+        xy_threshold=0.05,
+        yaw_threshold=0.05,
+    )
+    if not bool(np.all(active_commands)):
+        invalid = np.flatnonzero(~active_commands).tolist()
+        raise ValueError(
+            "every transition walk command must be active under the command thresholds; "
+            f"inactive_indices={invalid}"
+        )
+
+    configured_targets = (
+        np.asarray([], dtype=np.float32)
+        if post_switch_target_heights is None
+        else np.asarray(post_switch_target_heights, dtype=np.float32)
+    )
+    if configured_targets.ndim != 1:
+        raise ValueError(
+            "post-switch target heights must have shape (num_heights,), "
+            f"got {configured_targets.shape}"
+        )
+    if not np.all(np.isfinite(configured_targets)):
+        raise ValueError("post-switch target heights must contain only finite values")
+
+    if configured_targets.size == 0:
+        if nominal_walk_target_height is not None:
+            raise ValueError("nominal_walk_target_height requires post_switch_target_heights")
+        case_commands = configured_commands.copy()
+        case_targets = None
+        nominal_target_rows = None
+        post_switch_target_rows = None
+    else:
+        if target_height_info_key in (None, ""):
+            raise ValueError("post-switch target heights require target_height_info_key")
+        if nominal_walk_target_height is None or not np.isfinite(float(nominal_walk_target_height)):
+            raise ValueError(
+                "post-switch target heights require a finite nominal_walk_target_height"
+            )
+        case_commands = np.repeat(
+            configured_commands,
+            repeats=int(configured_targets.shape[0]),
+            axis=0,
+        )
+        case_targets = np.tile(configured_targets, int(configured_commands.shape[0]))
+        nominal_target_rows = np.full(
+            (int(num_envs), 1),
+            float(nominal_walk_target_height),
+            dtype=np.float32,
+        )
+        post_switch_target_rows = None
+
+    case_count = int(case_commands.shape[0])
+    if int(num_envs) < case_count:
+        raise ValueError(
+            "transition collection requires at least one env row per command-height case: "
+            f"num_envs={int(num_envs)} case_count={case_count}"
+        )
+    env_case_indices = np.arange(int(num_envs), dtype=np.int64) % case_count
+    active_command_rows = case_commands[env_case_indices].copy()
+    if case_targets is not None:
+        post_switch_target_rows = case_targets[env_case_indices, None].copy()
+
+    return _TransitionCaseAssignment(
+        walk_commands=configured_commands,
+        post_switch_target_heights=(None if configured_targets.size == 0 else configured_targets),
+        case_commands=case_commands,
+        case_target_heights=case_targets,
+        env_case_indices=env_case_indices,
+        active_command_rows=active_command_rows,
+        nominal_target_rows=nominal_target_rows,
+        post_switch_target_rows=post_switch_target_rows,
+    )
+
+
+def _set_transition_input_rows(
     env: Any,
     *,
     command_info_key: str,
     command_rows: np.ndarray,
+    target_height_info_key: str | None = None,
+    target_height_rows: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Atomically update vectorized commands and refresh policy observations."""
+    """Atomically update transition inputs before one observation refresh."""
 
     state = getattr(env, "state", None)
     info = getattr(state, "info", None)
     commands = info.get(command_info_key) if isinstance(info, Mapping) else None
-    commands_np = np.asarray(commands, dtype=np.float32) if commands is not None else None
+    commands_np = np.asarray(commands) if commands is not None else None
     command_rows = np.asarray(command_rows, dtype=np.float32)
     if commands_np is None or commands_np.ndim != 2 or commands_np.shape[1] < 3:
         raise RuntimeError(
@@ -382,7 +497,37 @@ def _set_transition_command_rows(
         )
     if not np.all(np.isfinite(command_rows)):
         raise ValueError("transition command rows must contain only finite values")
+
+    normalized_target_key = (
+        None if target_height_info_key in (None, "") else str(target_height_info_key)
+    )
+    if normalized_target_key is None and target_height_rows is not None:
+        raise ValueError("transition target-height rows require target_height_info_key")
+    target_height_np: np.ndarray | None = None
+    target_rows_np: np.ndarray | None = None
+    if normalized_target_key is not None and target_height_rows is not None:
+        target_heights = info.get(normalized_target_key) if isinstance(info, Mapping) else None
+        target_height_np = np.asarray(target_heights) if target_heights is not None else None
+        target_rows_np = np.asarray(target_height_rows, dtype=np.float32)
+        expected_target_shape = (commands_np.shape[0], 1)
+        if target_height_np is None or target_height_np.shape != expected_target_shape:
+            observed_shape = getattr(target_height_np, "shape", None)
+            raise RuntimeError(
+                "transition collection requires env.state.info[target_height_info_key] "
+                f"with shape {expected_target_shape}, got {observed_shape}"
+            )
+        if target_rows_np.shape != expected_target_shape:
+            raise ValueError(
+                "transition target-height rows shape mismatch: "
+                f"expected {expected_target_shape}, got {target_rows_np.shape}"
+            )
+        if not np.all(np.isfinite(target_rows_np)):
+            raise ValueError("transition target-height rows must contain only finite values")
+
+    # Validate both fields before mutating either input owner.
     commands_np[:, :3] = command_rows.astype(commands_np.dtype, copy=False)
+    if target_height_np is not None and target_rows_np is not None:
+        target_height_np[:, :] = target_rows_np.astype(target_height_np.dtype, copy=False)
     refresh_state = getattr(env, "refresh_state", None)
     if not callable(refresh_state):
         raise RuntimeError("transition collection requires env.refresh_state()")
@@ -393,7 +538,24 @@ def _set_transition_command_rows(
     refreshed_obs = getattr(refreshed_state, "obs", None)
     refreshed_info = getattr(refreshed_state, "info", None)
     if not isinstance(refreshed_obs, dict) or not isinstance(refreshed_info, Mapping):
-        raise RuntimeError("transition command refresh must return dict obs and info")
+        raise RuntimeError("transition input refresh must return dict obs and info")
+    observed_commands = np.asarray(refreshed_info.get(command_info_key))
+    if (
+        observed_commands.ndim != 2
+        or observed_commands.shape[0] != command_rows.shape[0]
+        or observed_commands.shape[1] < 3
+        or not np.allclose(observed_commands[:, :3], command_rows, atol=1.0e-6, rtol=0.0)
+    ):
+        raise RuntimeError("transition command rows changed during observation refresh")
+    if normalized_target_key is not None and target_rows_np is not None:
+        observed_targets = np.asarray(refreshed_info.get(normalized_target_key))
+        if observed_targets.shape != target_rows_np.shape or not np.allclose(
+            observed_targets,
+            target_rows_np,
+            atol=1.0e-6,
+            rtol=0.0,
+        ):
+            raise RuntimeError("transition target-height rows changed during observation refresh")
     return refreshed_obs, dict(refreshed_info)
 
 
@@ -428,6 +590,9 @@ def collect_transition_distillation_dataset_from_env(
     pre_switch_steps: int = 8,
     min_post_switch_steps: int = 0,
     walk_command: np.ndarray | tuple[float, float, float] = (0.4, 0.0, 0.0),
+    walk_commands: Sequence[Sequence[float]] | np.ndarray | None = None,
+    nominal_walk_target_height: float | None = None,
+    post_switch_target_heights: Sequence[float] | np.ndarray | None = None,
     teacher_obs_key: str = "obs",
     teacher_projection: str = "identity",
     student_projection: str = "identity",
@@ -491,19 +656,14 @@ def collect_transition_distillation_dataset_from_env(
                 f"rollout_policies_by_intent is missing intents: {sorted(missing_intents)}"
             )
     action_dim = int(action_shape[0])
-    walk_command_np = np.asarray(walk_command, dtype=np.float32)
-    if walk_command_np.shape != (3,):
-        raise ValueError(f"walk_command must have shape (3,), got {walk_command_np.shape}")
-    if not np.all(np.isfinite(walk_command_np)):
-        raise ValueError("walk_command must contain only finite values")
-    if not np.any(
-        command_active_mask(
-            walk_command_np.reshape(1, 3),
-            xy_threshold=0.05,
-            yaw_threshold=0.05,
-        )
-    ):
-        raise ValueError("walk_command must be active under the command thresholds")
+    transition_cases = _build_transition_case_assignment(
+        num_envs=num_envs,
+        walk_command=walk_command,
+        walk_commands=walk_commands,
+        target_height_info_key=target_height_info_key,
+        nominal_walk_target_height=nominal_walk_target_height,
+        post_switch_target_heights=post_switch_target_heights,
+    )
     effective_max_env_steps = (
         int(max_env_steps)
         if max_env_steps is not None
@@ -522,12 +682,14 @@ def collect_transition_distillation_dataset_from_env(
         num_envs=num_envs,
         initial_reset=initial_reset,
     )
-    active_command_rows = np.broadcast_to(walk_command_np, (num_envs, 3)).copy()
+    active_command_rows = transition_cases.active_command_rows
     zero_command_rows = np.zeros((num_envs, 3), dtype=np.float32)
-    obs, current_info = _set_transition_command_rows(
+    obs, current_info = _set_transition_input_rows(
         env,
         command_info_key=str(command_info_key),
         command_rows=active_command_rows,
+        target_height_info_key=target_height_info_key,
+        target_height_rows=transition_cases.nominal_target_rows,
     )
 
     student_chunks: list[torch.Tensor] = []
@@ -551,6 +713,9 @@ def collect_transition_distillation_dataset_from_env(
     done_seen_samples = 0
     action_abs_max = 0.0
     synthetic_teacher_tail = False
+    case_sample_counts = np.zeros((transition_cases.case_commands.shape[0],), dtype=np.int64)
+    case_post_switch_counts = np.zeros_like(case_sample_counts)
+    case_max_post_switch_ages = np.full_like(case_sample_counts, -1)
     performance = (
         None
         if performance_clock is None
@@ -655,6 +820,14 @@ def collect_transition_distillation_dataset_from_env(
             transition_age_chunks.append(
                 torch.as_tensor(transition_ages[:take], dtype=torch.int64).clone()
             )
+            taken_case_indices = transition_cases.env_case_indices[:take]
+            np.add.at(case_sample_counts, taken_case_indices, 1)
+            taken_post_switch = post_switch[:take]
+            if bool(np.any(taken_post_switch)):
+                post_case_indices = taken_case_indices[taken_post_switch]
+                post_ages = transition_ages[:take][taken_post_switch]
+                np.add.at(case_post_switch_counts, post_case_indices, 1)
+                np.maximum.at(case_max_post_switch_ages, post_case_indices, post_ages)
             role_labels.extend(
                 str(standing_role_label) if value else str(walking_role_label)
                 for value in post_switch[:take]
@@ -694,18 +867,32 @@ def collect_transition_distillation_dataset_from_env(
         transition_ages[switch_mask] = 0
         switch_count += int(np.count_nonzero(switch_mask))
 
-        command_rows = np.broadcast_to(walk_command_np, (num_envs, 3)).copy()
+        command_rows = active_command_rows.copy()
         command_rows[post_switch] = zero_command_rows[post_switch]
+        target_height_rows = None
+        if transition_cases.nominal_target_rows is not None:
+            if transition_cases.post_switch_target_rows is None:
+                raise RuntimeError("transition post-switch target rows unexpectedly missing")
+            target_height_rows = transition_cases.nominal_target_rows.copy()
+            target_height_rows[post_switch] = transition_cases.post_switch_target_rows[post_switch]
         if done_count > 0 or bool(np.any(switch_mask)):
-            obs, current_info = _set_transition_command_rows(
+            obs, current_info = _set_transition_input_rows(
                 env,
                 command_info_key=str(command_info_key),
                 command_rows=command_rows,
+                target_height_info_key=target_height_info_key,
+                target_height_rows=target_height_rows,
             )
 
     if switch_count == 0 or post_switch_rows == 0:
         raise RuntimeError(
             "transition collection did not produce both pre-switch and post-switch rows"
+        )
+    missing_case_indices = np.flatnonzero(case_post_switch_counts == 0).tolist()
+    if missing_case_indices:
+        raise RuntimeError(
+            "transition collection did not produce post-switch rows for every case: "
+            f"missing_case_indices={missing_case_indices}"
         )
     transition_ages_tensor = torch.cat(transition_age_chunks, dim=0)[: int(num_samples)]
     post_switch_ages = transition_ages_tensor[transition_ages_tensor >= 0]
@@ -715,6 +902,32 @@ def collect_transition_distillation_dataset_from_env(
             "transition collection did not reach the configured post-switch horizon: "
             f"max_post_switch_age={max_post_switch_age} "
             f"required={int(min_post_switch_steps) - 1}"
+        )
+    if int(min_post_switch_steps) > 0:
+        required_case_age = int(min_post_switch_steps) - 1
+        short_case_indices = np.flatnonzero(case_max_post_switch_ages < required_case_age).tolist()
+        if short_case_indices:
+            raise RuntimeError(
+                "transition collection did not reach the configured post-switch horizon "
+                "for every case: "
+                f"short_case_indices={short_case_indices} required={required_case_age}"
+            )
+    transition_case_metadata = []
+    for case_index, case_command in enumerate(transition_cases.case_commands):
+        case_target = (
+            None
+            if transition_cases.case_target_heights is None
+            else float(transition_cases.case_target_heights[case_index])
+        )
+        transition_case_metadata.append(
+            {
+                "index": int(case_index),
+                "walk_command": case_command.tolist(),
+                "post_switch_target_height": case_target,
+                "sample_count": int(case_sample_counts[case_index]),
+                "post_switch_sample_count": int(case_post_switch_counts[case_index]),
+                "max_post_switch_age": int(case_max_post_switch_ages[case_index]),
+            }
         )
     payload = dict(metadata or {})
     payload.update(
@@ -733,7 +946,18 @@ def collect_transition_distillation_dataset_from_env(
             "pre_switch_steps": int(pre_switch_steps),
             "min_post_switch_steps": int(min_post_switch_steps),
             "max_post_switch_age": int(max_post_switch_age),
-            "walk_command": walk_command_np.tolist(),
+            "walk_command": transition_cases.walk_commands[0].tolist(),
+            "walk_commands": transition_cases.walk_commands.tolist(),
+            "nominal_walk_target_height": (
+                None if nominal_walk_target_height is None else float(nominal_walk_target_height)
+            ),
+            "post_switch_target_heights": (
+                None
+                if transition_cases.post_switch_target_heights is None
+                else transition_cases.post_switch_target_heights.tolist()
+            ),
+            "transition_case_count": len(transition_case_metadata),
+            "transition_cases": transition_case_metadata,
             "zero_command": zero_command_rows[0].tolist(),
             "command_info_key": str(command_info_key),
             "target_height_info_key": (

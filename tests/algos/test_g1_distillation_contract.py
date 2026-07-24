@@ -1692,9 +1692,7 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
         if line.startswith(prefix)
     ]
     multitask_stages = [
-        snapshot["stage"]
-        for snapshot in snapshots
-        if snapshot["stage"].startswith("multitask/")
+        snapshot["stage"] for snapshot in snapshots if snapshot["stage"].startswith("multitask/")
     ]
     assert multitask_stages == [
         "multitask/entry",
@@ -1735,9 +1733,7 @@ def test_distillation_data_runtime_trace_wraps_torch_save_and_load(
         if line.startswith(prefix)
     ]
     serialization = [
-        snapshot
-        for snapshot in snapshots
-        if snapshot["stage"].startswith("serialization/")
+        snapshot for snapshot in snapshots if snapshot["stage"].startswith("serialization/")
     ]
     assert [snapshot["stage"] for snapshot in serialization] == [
         "serialization/before_torch_save",
@@ -1838,9 +1834,7 @@ def test_serialization_callable_corruption_requests_native_abort(
     monkeypatch.setattr(
         data_module.torch,
         "save",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            TypeError("'cell' object is not callable")
-        ),
+        lambda *args, **kwargs: (_ for _ in ()).throw(TypeError("'cell' object is not callable")),
     )
     monkeypatch.setattr(
         data_module,
@@ -1989,9 +1983,7 @@ def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
         "length": 4,
         "type": "tuple",
     }
-    assert snapshot["after_final_validation_failure"] == snapshot[
-        "before_final_validation"
-    ]
+    assert snapshot["after_final_validation_failure"] == snapshot["before_final_validation"]
 
 
 def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
@@ -2159,9 +2151,7 @@ def test_multitask_distillation_dataset_merges_transition_fields(tmp_path, capsy
         if line.startswith(prefix)
     ]
     scenario_snapshots = [
-        snapshot
-        for snapshot in snapshots
-        if snapshot["stage"].startswith("multitask/scenario_")
+        snapshot for snapshot in snapshots if snapshot["stage"].startswith("multitask/scenario_")
     ]
     assert [snapshot["stage"] for snapshot in scenario_snapshots] == [
         "multitask/scenario_source_ready",
@@ -2171,9 +2161,7 @@ def test_multitask_distillation_dataset_merges_transition_fields(tmp_path, capsy
         "multitask/scenario_concat_complete",
     ]
     assert scenario_snapshots[0]["path"] == str(stand_path)
-    assert scenario_snapshots[0]["scenario_labels"]["label_counts"] == {
-        "static_stand": 2
-    }
+    assert scenario_snapshots[0]["scenario_labels"]["label_counts"] == {"static_stand": 2}
     assert scenario_snapshots[2]["global_start"] == 0
     assert scenario_snapshots[2]["global_stop"] == 2
     assert scenario_snapshots[2]["observation_timing"] == "post_flatten_slice_check"
@@ -2680,6 +2668,65 @@ class _TransitionDistillEnv:
         return self.state
 
 
+class _HeightTransitionDistillEnv:
+    def __init__(self, *, num_envs: int = 9, include_target_height: bool = True) -> None:
+        self.num_envs = int(num_envs)
+        self.action_space = type("ActionSpace", (), {"shape": (29,)})()
+        self.include_target_height = bool(include_target_height)
+        self.step_calls = 0
+        self.commands = np.zeros((self.num_envs, 3), dtype=np.float32)
+        self.height_commands = np.full((self.num_envs, 1), 0.754, dtype=np.float32)
+        self.input_history: list[tuple[np.ndarray, np.ndarray]] = []
+        self.state = None
+
+    def _obs(self) -> dict[str, np.ndarray]:
+        actor_obs = np.zeros((self.num_envs, 99), dtype=np.float32)
+        actor_obs[:, 93:96] = self.commands
+        actor_obs[:, 96:97] = self.height_commands
+        return {"obs": actor_obs}
+
+    def _info(self) -> dict[str, np.ndarray]:
+        info = {"commands": self.commands}
+        if self.include_target_height:
+            info["height_commands"] = self.height_commands
+        return info
+
+    def _state(self):
+        return type(
+            "State",
+            (),
+            {
+                "obs": self._obs(),
+                "info": self._info(),
+                "terminated": np.zeros((self.num_envs,), dtype=np.bool_),
+                "truncated": np.zeros((self.num_envs,), dtype=np.bool_),
+                "final_observation": None,
+            },
+        )()
+
+    def init_state(self) -> None:
+        self.state = self._state()
+
+    def reset(self, env_indices):
+        indices = np.asarray(env_indices, dtype=np.int32).reshape(-1)
+        self.commands[indices] = 0.0
+        self.height_commands[indices] = 0.754
+        self.state = self._state()
+        reset_info = {key: value[indices].copy() for key, value in self._info().items()}
+        return {"obs": self.state.obs["obs"][indices].copy()}, reset_info
+
+    def refresh_state(self):
+        self.input_history.append((self.commands.copy(), self.height_commands.copy()))
+        self.state = self._state()
+        return self.state
+
+    def step(self, actions):
+        assert actions.shape == (self.num_envs, 29)
+        self.step_calls += 1
+        self.state = self._state()
+        return self.state
+
+
 def test_collect_distillation_dataset_from_env_projects_student_obs() -> None:
     from unilab.algos.torch.distill import collect_distillation_dataset_from_env
 
@@ -2861,6 +2908,206 @@ def test_collect_transition_distillation_dataset_enforces_post_switch_horizon() 
 
     assert dataset.metadata["min_post_switch_steps"] == 3
     assert dataset.metadata["max_post_switch_age"] == 2
+
+
+def test_collect_transition_distillation_dataset_covers_command_height_grid() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def __init__(self, value: float) -> None:
+            super().__init__()
+            self.value = float(value)
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full(
+                (obs.shape[0], 29),
+                self.value,
+                dtype=obs.dtype,
+                device=obs.device,
+            )
+
+    class HeightEchoPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return obs[:, 96:97].expand(-1, 29)
+
+    walk_commands = np.asarray(
+        [
+            [0.4, 0.0, 0.0],
+            [0.0, 0.4, 0.0],
+            [0.0, 0.0, 0.4],
+        ],
+        dtype=np.float32,
+    )
+    post_switch_heights = np.asarray([0.650, 0.702, 0.754], dtype=np.float32)
+    expected_case_commands = np.repeat(walk_commands, 3, axis=0)
+    expected_case_heights = np.tile(post_switch_heights, 3).reshape(-1, 1)
+    env = _HeightTransitionDistillEnv()
+
+    dataset = collect_transition_distillation_dataset_from_env(
+        env,
+        num_samples=27,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        walking_teacher_policy=ConstantPolicy(-0.5),
+        standing_teacher_policy=HeightEchoPolicy(),
+        rollout_policy=ConstantPolicy(0.0),
+        pre_switch_steps=1,
+        min_post_switch_steps=2,
+        walk_commands=walk_commands,
+        nominal_walk_target_height=0.754,
+        post_switch_target_heights=post_switch_heights,
+        target_height_info_key="height_commands",
+        walking_role_label="walk",
+        standing_role_label="stand_height",
+    )
+
+    assert dataset.target_height is not None
+    assert dataset.commands is not None
+    assert dataset.command_before is not None
+    assert dataset.command_after is not None
+    assert dataset.teacher_actions is not None
+    assert dataset.transition_ages is not None
+    active_rows = dataset.transition_ages < 0
+    inactive_rows = ~active_rows
+    assert int(active_rows.sum()) == 9
+    assert int(inactive_rows.sum()) == 18
+    expected_commands = torch.as_tensor(expected_case_commands)
+    expected_heights = torch.as_tensor(expected_case_heights)
+    assert torch.allclose(dataset.commands[active_rows], expected_commands)
+    assert torch.equal(dataset.commands[inactive_rows], torch.zeros((18, 3)))
+    assert torch.allclose(
+        dataset.command_before,
+        expected_commands.repeat((3, 1)),
+    )
+    assert torch.allclose(dataset.command_after, dataset.commands)
+    assert torch.allclose(
+        dataset.target_height[active_rows],
+        torch.full((9, 1), 0.754),
+    )
+    assert torch.allclose(
+        dataset.target_height[inactive_rows],
+        expected_heights.repeat((2, 1)),
+    )
+    assert torch.allclose(dataset.student_obs[:, 93:96], dataset.commands)
+    assert torch.allclose(dataset.student_obs[:, 96:97], dataset.target_height)
+    assert torch.allclose(
+        dataset.teacher_actions[active_rows],
+        torch.full((9, 29), -0.5),
+    )
+    assert torch.allclose(
+        dataset.teacher_actions[inactive_rows, :1],
+        dataset.target_height[inactive_rows],
+    )
+    assert dataset.metadata["transition_case_count"] == 9
+    transition_cases = dataset.metadata["transition_cases"]
+    assert [case["sample_count"] for case in transition_cases] == [3] * 9
+    assert [case["post_switch_sample_count"] for case in transition_cases] == [2] * 9
+    assert [case["max_post_switch_age"] for case in transition_cases] == [1] * 9
+    np.testing.assert_allclose(
+        [case["walk_command"] for case in transition_cases],
+        expected_case_commands,
+    )
+    np.testing.assert_allclose(
+        [case["post_switch_target_height"] for case in transition_cases],
+        expected_case_heights[:, 0],
+    )
+    assert len(env.input_history) == 2
+    np.testing.assert_allclose(env.input_history[0][0], expected_case_commands)
+    np.testing.assert_allclose(env.input_history[0][1], 0.754)
+    np.testing.assert_allclose(env.input_history[1][0], 0.0)
+    np.testing.assert_allclose(env.input_history[1][1], expected_case_heights)
+
+
+def test_collect_transition_distillation_dataset_preserves_legacy_height() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ZeroPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 29), dtype=obs.dtype, device=obs.device)
+
+    dataset = collect_transition_distillation_dataset_from_env(
+        _HeightTransitionDistillEnv(num_envs=2),
+        num_samples=8,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        walking_teacher_policy=ZeroPolicy(),
+        standing_teacher_policy=ZeroPolicy(),
+        rollout_policy=ZeroPolicy(),
+        pre_switch_steps=2,
+        target_height_info_key="height_commands",
+    )
+
+    assert dataset.target_height is not None
+    assert torch.allclose(dataset.target_height, torch.full((8, 1), 0.754))
+    assert torch.allclose(dataset.student_obs[:, 96:97], dataset.target_height)
+    assert dataset.metadata["transition_case_count"] == 1
+    assert dataset.metadata["post_switch_target_heights"] is None
+
+
+def test_collect_transition_distillation_dataset_grid_fails_closed() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ZeroPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 29), dtype=obs.dtype, device=obs.device)
+
+    kwargs = {
+        "num_samples": 27,
+        "expected_student_obs_dim": 99,
+        "expected_teacher_obs_dim": 99,
+        "walking_teacher_policy": ZeroPolicy(),
+        "standing_teacher_policy": ZeroPolicy(),
+        "rollout_policy": ZeroPolicy(),
+        "pre_switch_steps": 1,
+        "walk_commands": [
+            [0.4, 0.0, 0.0],
+            [0.0, 0.4, 0.0],
+            [0.0, 0.0, 0.4],
+        ],
+        "nominal_walk_target_height": 0.754,
+        "post_switch_target_heights": [0.650, 0.702, 0.754],
+        "target_height_info_key": "height_commands",
+    }
+
+    with pytest.raises(ValueError, match="one env row per command-height case"):
+        collect_transition_distillation_dataset_from_env(
+            _HeightTransitionDistillEnv(num_envs=8),
+            **kwargs,
+        )
+    with pytest.raises(RuntimeError, match="target_height_info_key"):
+        collect_transition_distillation_dataset_from_env(
+            _HeightTransitionDistillEnv(include_target_height=False),
+            **kwargs,
+        )
+
+
+def test_collect_transition_distillation_dataset_rejects_malformed_fallback_command() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ZeroPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 3), dtype=obs.dtype, device=obs.device)
+
+    with pytest.raises(ValueError, match=r"walk_command must have shape \(3,\)"):
+        collect_transition_distillation_dataset_from_env(
+            _TransitionDistillEnv(),
+            num_samples=8,
+            expected_student_obs_dim=8,
+            expected_teacher_obs_dim=8,
+            walking_teacher_policy=ZeroPolicy(),
+            standing_teacher_policy=ZeroPolicy(),
+            rollout_policy=ZeroPolicy(),
+            pre_switch_steps=2,
+            walk_command=np.zeros((3, 1), dtype=np.float32),
+        )
 
 
 def test_collect_distillation_dataset_from_env_attaches_role_label() -> None:

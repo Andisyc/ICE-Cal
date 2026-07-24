@@ -2,7 +2,7 @@
 contract_id: DISTILL-METHOD-v002
 status: active
 effective_date: 2026-07-23
-updated_date: 2026-07-23
+updated_date: 2026-07-24
 supersedes: DISTILL-METHOD-v001
 scope: G1 StandHeight and Walk two-teacher command-intent MoE distillation
 concept_figure: note/architecture/concept/03_g1_multiteacher_distillation_method.data.json
@@ -22,11 +22,11 @@ their action targets into one undifferentiated policy.
 
 | design_id | Canonical name | block_id | Contract section | Current code/evidence gap |
 | --- | --- | --- | --- | --- |
-| DISTILL-DP-01 | Teacher Policies | DT-M-01 | [Teacher Policies](#teacher-policies) | StandHeight task and actor-only warm start are deterministic-confirmed; qualified teacher checkpoints absent |
-| DISTILL-DP-02 | Command Intent | DT-M-02 | [Command Intent](#command-intent) | Deterministic routing passed; height-aware live transitions not yet proven |
-| DISTILL-DP-03 | Role Data | DT-M-03 | [Role Data](#role-data) | 99-D two-role schema, roundtrip, and legacy isolation passed; qualified real artifacts absent |
-| DISTILL-DP-04 | MoE Student | DT-M-04 | [MoE Student](#moe-student) | 99-D two-expert workflow, update isolation, and strict reload passed; trained checkpoint absent |
-| DISTILL-DP-05 | Student-State DAgger | DT-M-05 | [Student-State DAgger](#student-state-dagger) | Physical acceptance remains unproven |
+| DISTILL-DP-01 | Teacher Policies | DT-M-01 | [Teacher Policies](#teacher-policies) | Remote teacher identities and role artifacts are recorded; bytes were not reread in the local repair task |
+| DISTILL-DP-02 | Command Intent | DT-M-02 | [Command Intent](#command-intent) | Deterministic 3x3 transition routing passed; retrained live transitions are unproven |
+| DISTILL-DP-03 | Role Data | DT-M-03 | [Role Data](#role-data) | 99-D schema, roundtrip, legacy isolation, and per-case transition metadata passed locally |
+| DISTILL-DP-04 | MoE Student | DT-M-04 | [MoE Student](#moe-student) | Round-2 student exists but failed the governed non-nominal transition gate |
+| DISTILL-DP-05 | Student-State DAgger | DT-M-05 | [Student-State DAgger](#student-state-dagger) | Repaired collection distribution has not run on SSH |
 
 ## Teacher Policies
 
@@ -148,15 +148,15 @@ their action targets into one undifferentiated policy.
 
 ## Current Acceptance Status
 
-The method semantics are active, and Steps 2-4 are complete at their
+The method semantics are active, and Steps 2-4 remain complete at their
 deterministic boundaries. E114 preserves the retained Step 2 result (`108
 passed, 24 warnings in 19.46s`) and Step 3 result (`8 passed in 6.77s`); E113
-records Step 4 Ruff PASS and `27 passed in 20.56s`. These results prove local
-contracts and connector behavior only. E115 additionally confirms the bounded
-one-environment `G1StandHeight` MuJoCo route and training-command compose, with
-no checkpoint access or training. E116 confirms the StandHeight SAC
-async/double-buffer dispatch and the new workflow's explicit
-`persistent_async` connector while retaining the governed `legacy` default and
-the E67 `NO_STABLE_SPEEDUP` limitation. No qualified StandHeight or Walk teacher
-checkpoint, trained two-expert 99-D student checkpoint, or policy-quality
-evidence exists yet.
+records Step 4 Ruff PASS and `27 passed in 20.56s`. E115 confirms the bounded
+one-environment `G1StandHeight` route, and E116 confirms async/double-buffer and
+explicit `persistent_async` connectors while retaining the governed `legacy`
+default and E67 `NO_STABLE_SPEEDUP` limitation. E117 records the current
+round-2 99-D student failure and a deterministic command x recovery-height
+DAgger distribution repair (`10 + 7` focused tests and Ruff PASS). Remote
+teacher, dataset, and student identities are conversation-backed; their bytes
+were not read locally. The repaired fork, repeated-reset transition behavior,
+and final policy-quality acceptance remain unexecuted.

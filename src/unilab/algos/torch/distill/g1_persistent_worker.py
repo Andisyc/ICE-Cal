@@ -309,6 +309,11 @@ class PersistentG1DistillationWorker:
                 pre_switch_steps=int(self.workflow_cfg["transition_pre_switch_steps"]),
                 min_post_switch_steps=int(self.workflow_cfg["transition_min_post_switch_steps"]),
                 walk_command=tuple(self.workflow_cfg["transition_walk_command"]),
+                walk_commands=self.workflow_cfg.get("transition_walk_commands", ()),
+                nominal_walk_target_height=self.workflow_cfg.get("transition_walk_target_height"),
+                post_switch_target_heights=self.workflow_cfg.get(
+                    "transition_post_switch_target_heights", ()
+                ),
                 teacher_obs_key=str(walk_cfg.training.collect_teacher_obs_key),
                 teacher_projection=str(walk_cfg.training.collect_teacher_projection),
                 student_projection=str(walk_cfg.training.collect_student_projection),
@@ -492,6 +497,9 @@ def build_persistent_g1_distillation_runtime(
             "transition_pre_switch_steps",
             "transition_min_post_switch_steps",
             "transition_walk_command",
+            "transition_walk_commands",
+            "transition_walk_target_height",
+            "transition_post_switch_target_heights",
             "transition_max_env_steps",
         )
     }

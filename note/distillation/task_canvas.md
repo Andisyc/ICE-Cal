@@ -19,24 +19,24 @@ teacher, and distill both into a unified 99-D, two-expert MoE student.
 
 | Design ID | Canonical name | Active meaning | Current gap |
 | --- | --- | --- | --- |
-| DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | task and actor-only adapter implemented; qualified checkpoints absent |
-| DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | deterministic routing passed; non-nominal live transition unproven |
-| DISTILL-DP-03 | Role Data | explicit 99-D role/intent/height/teacher rows | schema, roundtrip, and legacy isolation passed; qualified real artifacts absent |
-| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | deterministic workflow/update/reload passed; trained checkpoint absent |
-| DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | physical acceptance |
+| DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | remote teacher identities and role artifacts are recorded; bytes were not reread locally |
+| DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | deterministic 3x3 transition grid passed; retrained live transition unproven |
+| DISTILL-DP-03 | Role Data | explicit 99-D role/intent/height/teacher rows | schema, roundtrip, legacy isolation, and per-case metadata passed locally |
+| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | round-2 student exists but failed the governed non-nominal transition gate |
+| DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | repaired collection distribution has not run on SSH |
 
 ## Current Step
 
-Step 5 / 5 is complete at the bounded live-route boundary. E115 confirms one
-real `G1StandHeight` MuJoCo environment with a 99-D actor observation, target
-height at index 96, zero velocity command, finite support/tilt/reward facts,
-and no one-step termination. No checkpoint was read and training did not start.
-The post-closure E116 connector check also confirms that StandHeight SAC uses
-the repository async/double-buffer runner and that the new two-role workflow
-can explicitly opt into the resident persistent runtime. The distillation
-default remains `legacy` because stable speedup is not proven.
+The non-nominal transition DAgger repair is complete at the local deterministic
+boundary. E117 records the round-2 student failure, the old collector's
+single-forward/fixed-height distribution gap, and the new command x recovery-
+height grid routed through both legacy and `persistent_async` connectors.
+No local checkpoint, MuJoCo process, learner, or training run was used.
 
-Implementation plan:
+Current repair plan:
+`note/distillation/plans/non_nominal_transition_dagger_repair.md`.
+
+Completed pre-training baseline plan:
 `note/distillation/plans/stand_height_walk_two_teacher_implementation.md`.
 
 Acceptance checklist:
@@ -58,17 +58,24 @@ Acceptance checklist:
 - E116: async owner connector suite `3 passed in 3.83s` and focused Ruff PASS;
   99-D roles, target-height keys, all three scenarios, resident service routing,
   and cleanup are connector-confirmed with synthetic fixtures.
+- E117: transition core-path suite `10 passed, 95 deselected in 0.71s`,
+  workflow/persistent connector suite `7 passed in 4.64s`, and focused Ruff
+  lint/format PASS. Nine command-height cases, active `0.754 m`, post-switch
+  `0.650/0.702/0.754 m`, observation index 96, teacher relabeling, per-case
+  horizon evidence, legacy fallback, and both connectors are deterministic PASS.
 
 ## Active Files And Commands
 
 - Contract/figure: v002 contract and `03_g1_multiteacher_distillation_method.data.json`.
-- Current plan/checklist: `stand_height_walk_two_teacher_implementation.md` and
+- Current plan/checklist: `non_nominal_transition_dagger_repair.md` and
   `stand_height_walk_two_teacher.md`.
-- Implemented Step 4 owners: `conf/distill/workflow/g1_stand_height_walk.yaml`,
-  the two height-aware role profiles, and distill collector/data/workflow/
-  trainer/DAgger connectors.
+- Repair owners: `conf/distill/workflow/g1_stand_height_walk.yaml`,
+  `src/unilab/algos/torch/distill/collector.py`, `scripts/train_distill.py`,
+  and `src/unilab/algos/torch/distill/g1_persistent_worker.py`.
 - Deterministic evidence owners:
-  `tests/algos/test_stand_height_walk_distillation.py` and
+  `tests/algos/test_g1_distillation_contract.py`,
+  `tests/algos/test_distill_persistent_differential.py`,
+  `tests/algos/test_distill_g1_persistent_worker.py`, and
   `tests/scripts/test_stand_height_walk_distill_workflow.py`.
 - Async owners: `src/unilab/ipc/async_runner.py`,
   `src/unilab/algos/torch/offpolicy/double_buffer_runner.py`, and
@@ -79,23 +86,20 @@ Acceptance checklist:
 
 ## Unresolved Risks
 
-- No qualified local `G1StandStill` or `G1WalkFlat` teacher checkpoint is
-  currently available for conversion and training.
-- `F:\download\dagger_iteration_8.pt` is a student artifact, not an accepted
-  teacher source.
-- Teacher training and final DAgger are material compute boundaries; connector
-  tests cannot establish policy quality.
-- Repeated reset, long-horizon height tracking, and non-nominal
-  Walk-to-StandHeight behavior remain unexecuted.
-- Existing user changes in `README_zh.md`,
-  `note/g1_agile_height_distill_moe_migration.md`, `pyproject.toml`, and
-  `.local-build/` must remain untouched.
+- The repaired collector has not produced a remote dataset or checkpoint.
+- The current round-2 checkpoint failed four of nine non-nominal recovery cases;
+  it remains an unpromoted parent artifact, not acceptance evidence.
+- Local deterministic fixtures prove routing and persistence contracts only;
+  repeated reset, long-horizon recovery, and physical policy quality require a
+  new SSH fork and the governed live gate.
+- The implementation is still local and uncommitted. The server cannot use the
+  new grid until the selected branch is committed, pushed, and pulled.
+- `.codex-tmp/` and `.local-build/` remain excluded from source changes.
 
 ## Next Step
 
-The repository is stopped immediately before material training. The
-preflighted next command is the fresh fixed-`0.754 m` SAC command recorded in
-the implementation plan; it already selects the async/double-buffer off-policy
-runner, and the human will launch it over SSH. Warm-starting,
-range expansion, final DAgger, promotion, commit, push, and PR remain outside
-the completed pre-training closure.
+Stop before material training. After the human approves a scoped commit/push
+and pulls it on SSH, fork one new outer DAgger iteration from
+`20260724-110852_stand_height_walk_dagger_round2` with the exact command in the
+current repair plan. Then run the same nominal and non-nominal acceptance gates
+against the new checkpoint. The current round-2 run must remain immutable.

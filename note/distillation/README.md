@@ -17,7 +17,9 @@ Stop after these three unless a concrete question requires deeper evidence.
 
 ## Drill Down By Question
 
-- Current StandHeight/Walk implementation plan:
+- Current non-nominal transition repair plan:
+  [DAgger Distribution Repair](plans/non_nominal_transition_dagger_repair.md)
+- Completed StandHeight/Walk pre-training plan:
   [Five-Step Implementation Plan](plans/stand_height_walk_two_teacher_implementation.md)
 - Inherited single-entry training workflow:
   [Single-Entry Training Workflow](plans/single_entry_training_workflow_proposal.md)
@@ -71,14 +73,20 @@ routing follows the same intent and target-height contract.
   async/double-buffer runner and that the 99-D two-role workflow can explicitly
   opt into the persistent DAgger runtime; its focused suite is `3 passed in
   3.83s` with Ruff PASS. This is connector evidence, not a speedup result.
-- Qualified StandHeight and Walk teacher checkpoints, a trained v002 student,
-  and physical acceptance evidence do not yet exist. Training has not started.
-- Existing local student checkpoints and the RT-8 bounded candidate are
-  candidate artifacts only. None is a promoted or accepted policy.
+- E117 records a real 99-D round-2 student parent that failed four of nine
+  non-nominal Walk-to-StandHeight cases, plus the local command x recovery-
+  height collection repair. The repair has `10 + 7` focused tests and Ruff
+  PASS, but has not been trained or evaluated.
+- Remote StandHeight/Walk teacher identities, role datasets, and student runs
+  now exist. This checkout did not read their bytes; exact paths and runtime
+  claims remain conversation-backed evidence in E117.
+- Existing student checkpoints, including the round-2 parent, are candidate
+  artifacts only. None is a promoted or accepted policy.
 - Playback reset/command ordering is repaired and contract/live-reset tested;
   transition policy quality remains a separate unresolved boundary.
-- Stop-transition collection and the scenario workflow are implemented; the
-  RT-8 candidate still fails the physical walk-to-stop acceptance gate.
+- Stop-transition collection now includes forward/lateral/yaw crossed with
+  `0.650/0.702/0.754 m` recovery targets while active walking stays at
+  `0.754 m`; the repaired SSH fork and physical gate remain unexecuted.
 - The seven-command training workflow is intended only for diagnostics, but
   its explicit diagnostic-only labeling remains an open checklist item. The
   accepted public path is the single-entry workflow owned by

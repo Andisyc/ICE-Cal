@@ -20,14 +20,16 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | StandHeight one-env live route | G1 env/sentinel | S3/S4 / T-live | PASS | E115: one-env/one-step MuJoCo snapshot and training compose preflight |
 | StandHeight SAC async runner dispatch | off-policy runner | S2 / T-connect | PASS | E116: `AsyncRunner` + `DoubleBufferOffPolicyRunner` owner dispatch |
 | 99-D workflow persistent runtime opt-in | distill runtime/workflow | S2 / T-connect+lifecycle | PASS | E116: two roles, three scenarios, target-height keys, and one service close; `3 passed in 3.83s` |
-| StandHeight teacher physical quality | training/acceptance owner | S4 / T-live+differential | BLOCKED | trained checkpoint required |
-| Two-teacher DAgger transitions | workflow/acceptance owner | S4 / T-live | BLOCKED | qualified teachers and student required |
+| Non-nominal command x height transition collection | collector/workflow | S0/S1/S2 / T-value+roundtrip+connect | PASS | E117: exact 3x3 grid, active 0.754 m, post-switch targets, index-96/teacher roundtrip, legacy and persistent connectors; `10 + 7 passed` |
+| StandHeight teacher physical quality | training/acceptance owner | S4 / T-live+differential | PASS | E117: user-provided Stage-2 gate passed at 0.650/0.702/0.754 m; exact checkpoint identity retained |
+| Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live | PARTIAL | E117: round-2 parent failed 4/9 recovery cases; repaired fork not trained or evaluated |
 
 ## Stop Condition
 
 Steps 2-4 deterministic implementation are closed by E114 and E113. Step 5's
 bounded live route is closed by E115, and E116 closes the optional async
-connector boundary without changing the `legacy` distillation default. Teacher training, checkpoint
-qualification, student distillation, and physical acceptance remain separate
-gates and require exact checkpoint/run identity. No shape, load, deterministic
-fixture, or one-step sentinel result is policy-quality evidence.
+connector boundary without changing the `legacy` distillation default. E117
+closes the local non-nominal collection-distribution repair. A new immutable
+SSH fork and its physical acceptance remain open and require exact
+checkpoint/run identity. No shape, load, or deterministic fixture result is
+policy-quality evidence.

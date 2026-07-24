@@ -59,6 +59,18 @@ def test_new_two_expert_workflow_composes_without_changing_legacy(
     }
     assert [entry["role"] for entry in new_roles] == ["walk", "stand_height"]
     assert new_cfg.training.workflow.schema_version == 2
+    assert OmegaConf.to_container(
+        new_cfg.training.workflow.transition_walk_commands,
+        resolve=True,
+    ) == [
+        [0.4, 0.0, 0.0],
+        [0.0, 0.4, 0.0],
+        [0.0, 0.0, 0.4],
+    ]
+    assert new_cfg.training.workflow.transition_walk_target_height == pytest.approx(0.754)
+    assert list(new_cfg.training.workflow.transition_post_switch_target_heights) == pytest.approx(
+        [0.650, 0.702, 0.754]
+    )
 
     assert legacy_cfg.teacher.obs_dim == 98
     assert legacy_cfg.student.obs_dim == 98
@@ -68,6 +80,9 @@ def test_new_two_expert_workflow_composes_without_changing_legacy(
         "walk_flat",
         "stand",
     ]
+    assert list(legacy_cfg.training.workflow.transition_walk_commands) == []
+    assert legacy_cfg.training.workflow.transition_walk_target_height is None
+    assert list(legacy_cfg.training.workflow.transition_post_switch_target_heights) == []
 
 
 def test_height_role_owner_profiles_enforce_99d_and_nominal_walk(
@@ -164,6 +179,128 @@ def test_single_entry_connector_builds_two_height_aware_specs_without_env(
     ]
     assert callable(captured["dagger"]["collect_scenario"])
     assert result["checkpoint_path"].endswith("dagger_iteration_1.pt")
+
+
+def test_legacy_transition_connector_forwards_non_nominal_grid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_new_workflow_env(monkeypatch, tmp_path)
+    cfg = _compose(
+        [
+            "workflow=g1_stand_height_walk",
+            "training.workflow.enabled=true",
+            "training.workflow.dagger_iterations=1",
+        ]
+    )
+    cfg.training.workflow.run_dir = str(tmp_path / "run")
+    cfg.training.workflow.artifact_dir = str(tmp_path / "artifacts")
+    captured: dict[str, Any] = {}
+
+    def fake_bootstrap(**kwargs):
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            role_decisions={"walk": "COLLECT", "stand_height": "COLLECT"},
+            bootstrap_dataset_path=run_dir / "datasets" / "bootstrap_merged.pt",
+            bootstrap_num_samples=4,
+            checkpoint_path=run_dir / "checkpoints" / "bootstrap_student.pt",
+            bootstrap_updates=1,
+        )
+
+    def fake_dagger(**kwargs):
+        scenario = next(item for item in kwargs["scenario_specs"] if item.name == "walk_to_stop")
+        captured["collection_result"] = kwargs["collect_scenario"](
+            scenario,
+            tmp_path / "student.pt",
+            1,
+            tmp_path / "walk_to_stop.pt",
+        )
+        run_dir = Path(kwargs["run_dir"])
+        return SimpleNamespace(
+            run_dir=run_dir,
+            manifest_path=run_dir / "run_manifest.json",
+            completed_iterations=1,
+            checkpoint_path=run_dir / "checkpoints" / "dagger_iteration_1.pt",
+            cumulative_num_samples=27,
+        )
+
+    class FakeEnv:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_env = FakeEnv()
+
+    class FakeAdapter:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def build_task_env_cfg_override(self) -> dict:
+            return {"scene": {"model_file": "fake.xml"}}
+
+    def fake_transition_collect(_env, **kwargs):
+        captured["transition"] = kwargs
+        observations = [
+            train_distill.DistillationStageObservation(
+                stage=stage,
+                duration_seconds=0.0,
+                row_count=27 if stage != "env_step" else 0,
+                env_step_count=2 if stage == "env_step" else 0,
+                success=True,
+                error=None,
+                cleanup_state="not_applicable",
+            ).as_dict()
+            for stage in train_distill.COLLECTOR_REQUEST_STAGE_NAMES
+        ]
+        return SimpleNamespace(
+            num_samples=27,
+            metadata={
+                "env_steps": 2,
+                "performance_stage_observations": observations,
+            },
+        )
+
+    monkeypatch.setattr(train_distill, "run_bootstrap_workflow", fake_bootstrap)
+    monkeypatch.setattr(train_distill, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(
+        train_distill,
+        "load_distillation_student_policy",
+        lambda *_args, **_kwargs: SimpleNamespace(policy=object(), distill_runtime_cfg={}),
+    )
+    monkeypatch.setattr(
+        train_distill,
+        "load_sac_teacher_policy",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(train_distill, "ensure_registries", lambda: None)
+    monkeypatch.setattr(train_distill, "BackendAdapter", FakeAdapter)
+    monkeypatch.setattr(train_distill, "create_env", lambda *_args, **_kwargs: fake_env)
+    monkeypatch.setattr(
+        train_distill,
+        "collect_transition_distillation_dataset_from_env",
+        fake_transition_collect,
+    )
+    monkeypatch.setattr(train_distill, "save_distillation_dataset", lambda *_args: None)
+    monkeypatch.setattr(train_distill, "finalize_workflow_performance", lambda **_kwargs: None)
+
+    train_distill.run_single_entry_workflow(cfg)
+
+    transition = captured["transition"]
+    assert transition["walk_commands"] == [
+        [0.4, 0.0, 0.0],
+        [0.0, 0.4, 0.0],
+        [0.0, 0.0, 0.4],
+    ]
+    assert transition["nominal_walk_target_height"] == pytest.approx(0.754)
+    assert transition["post_switch_target_heights"] == pytest.approx([0.650, 0.702, 0.754])
+    assert transition["target_height_info_key"] == "height_commands"
+    assert transition["expected_student_obs_dim"] == 99
+    assert transition["expected_teacher_obs_dim"] == 99
+    assert captured["collection_result"].num_samples == 27
+    assert fake_env.closed is True
 
 
 def test_persistent_connector_preserves_two_height_aware_roles_and_scenarios(

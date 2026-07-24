@@ -2009,3 +2009,76 @@ or policy-quality conclusion is authorized.
 - Decision: the v002 workflow is connector-confirmed on the optional persistent
   runtime. Fresh StandHeight SAC teacher training already uses the repository
   async/double-buffer path without an additional CLI switch.
+
+## E117: Non-Nominal Walk-To-StandHeight DAgger Distribution Repair PASS
+
+- Date: 2026-07-24.
+- Scope: identify the current round-2 student failure boundary and implement a
+  config-owned command x post-switch-height collection grid through the legacy
+  and `persistent_async` DAgger connectors. No checkpoint bytes, simulator,
+  learner, or training run were accessed locally.
+- L0 runtime source: user-provided SSH acceptance and manifest outputs in the
+  current task conversation.
+- Teacher and role-artifact facts:
+  - StandHeight Stage 2 checkpoint
+    `/ssd1/cyx/liujun/UniLab/logs/G1StandHeight/20260724-013445_g1_stand_height_stage2_065_0754/model_5000.pt`
+    has reported SHA-256
+    `3624dd0d86b98b263b667210744969864d98a9d16b8789a19b54d20103938234`;
+    the user-provided gate passed at `0.650`, `0.702`, and `0.754 m`;
+  - Walk checkpoint
+    `/ssd1/cyx/liujun/UniLab/logs/G1WalkHeight/20260724-020039_g1_walk_height_nominal_0754/model_5000.pt`
+    has reported SHA-256
+    `a5fc95cd3b9123df25a6645675e516583b3472b414499640d9332f97ff3f5731`;
+  - the parent manifest reports reusable `walk.pt` and `stand_height.pt` role
+    datasets under
+    `/ssd1/cyx/liujun/UniLab/logs/distill_role_artifacts/20260724-022552_stand_height_walk_dagger/`.
+  These identities are conversation-backed; this local task did not hash or
+  load the remote files.
+- Parent student identity:
+  `/ssd1/cyx/liujun/UniLab/logs/distill_workflow/20260724-110852_stand_height_walk_dagger_round2/checkpoints/dagger_iteration_1.pt`;
+  diagnostics reported `student_obs_dim=99`, `student_action_dim=29`, and
+  `agent_steps=4194304`.
+- Observed failure facts:
+  - the governed non-nominal recovery grid passed 5/9 cases;
+  - forward-to-`0.650/0.702/0.754 m` and lateral-to-`0.754 m` failed;
+  - command, requested height, and actor-observation index-96 synchronization
+    were exact, so evaluator input routing was not the observed defect;
+  - the parent remains unpromoted and immutable.
+- Root cause class: training-distribution gap, code-confirmed at the collector
+  owner. The previous `walk_to_stop` route used only `[0.4, 0, 0]`, collected
+  in `g1_walk_height_nominal`, and never changed the fixed `0.754 m` target at
+  the post-switch boundary. It therefore contained neither lateral/yaw cases
+  nor non-nominal recovery-height rows required by `DISTILL-METHOD-v002`.
+- Implemented facts:
+  - `g1_stand_height_walk` owns the Cartesian product of forward/lateral/yaw
+    commands and `0.650/0.702/0.754 m` post-switch targets;
+  - every active row keeps its assigned non-zero command and nominal
+    `0.754 m`; every post-switch row uses zero velocity and its assigned target;
+  - command and target are validated before one observation refresh, and the
+    refreshed info must preserve both values;
+  - dataset metadata records every case's sample count, post-switch count, and
+    maximum transition age; missing cases, short horizons, missing target
+    owners, and fewer than one env row per case fail closed;
+  - the singular `transition_walk_command` remains the legacy fallback;
+  - legacy and resident persistent connectors forward the same grid values;
+    execution-mode defaults and the async lifecycle are unchanged.
+- Source commands and results:
+  - `uv run pytest tests/algos/test_g1_distillation_contract.py tests/algos/test_distill_persistent_differential.py -k 'collect_transition_distillation_dataset or transition_collector or persistent_transition_collection' -q`:
+    `10 passed, 95 deselected in 0.71s`;
+  - `uv run pytest tests/scripts/test_stand_height_walk_distill_workflow.py tests/algos/test_distill_g1_persistent_worker.py -q`:
+    `7 passed in 4.64s`;
+  - focused `uv run ruff check` and `uv run ruff format --check` over the seven
+    modified Python owner/test files: PASS.
+- Fixture discriminator: two differential tests initially failed because their
+  fake env put `self.commands.copy()` in state info. Refresh discarded the
+  mutated copy. The fixture now exposes the actual command-owner array; the
+  production roundtrip guard was retained.
+- Limitations: fake environments prove dataflow, case coverage, connector
+  parity, and fail-closed behavior only. They do not prove MuJoCo dynamics,
+  teacher behavior on the new rows, student improvement, reset robustness, or
+  physical acceptance. The new code has not been committed, pushed, pulled on
+  SSH, or used to create a fork.
+- Decision: local implementation and deterministic verification PASS. The next
+  authorized boundary is a human-reviewed Git transfer followed by one new SSH
+  `mode=fork` outer iteration from the immutable round-2 parent. Training and
+  acceptance remain unexecuted.
