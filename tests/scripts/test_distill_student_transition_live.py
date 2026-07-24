@@ -66,6 +66,7 @@ class _FakeEnv:
         self.double_support = bool(double_support)
         self.target_obs_offset = float(target_obs_offset)
         self.init_state_calls = 0
+        self.refresh_state_calls = 0
         self.autoreset: bool | None = None
         self.closed = False
 
@@ -91,6 +92,7 @@ class _FakeEnv:
 
     def refresh_state(self) -> Any:
         assert self.state is not None
+        self.refresh_state_calls += 1
         actor_obs = self.state.obs["obs"]
         actor_obs[:, 93:96] = self.state.info["commands"][:, :3]
         actor_obs[:, 96] = self.state.info["height_commands"][:, 0] + self.target_obs_offset
@@ -129,7 +131,13 @@ class _FakeSession:
     def set_external_command(self, command: np.ndarray) -> np.ndarray:
         assert self.env.state is not None
         self.command = np.asarray(command, dtype=np.float32).copy()
-        self.env.state.info["commands"][:, :3] = self.command
+        command_rows = np.broadcast_to(
+            self.command,
+            self.env.state.info["commands"][:, :3].shape,
+        )
+        if np.array_equal(self.env.state.info["commands"][:, :3], command_rows):
+            return self.refresh_observation()
+        self.env.state.info["commands"][:, :3] = command_rows
         self.env.refresh_state()
         return self.refresh_observation()
 
@@ -221,6 +229,28 @@ def test_transition_sentinel_reinitializes_every_episode_and_applies_seed(
     assert report["summary"]["completed_phase_count"] == 51
     assert report["summary"]["gate_pass"] is True
     assert {episode["reset_step_count"] for episode in report["episodes"]} == {0}
+
+
+def test_controlled_phase_refreshes_state_only_at_the_input_boundary() -> None:
+    mod = _load_script()
+    env = _FakeEnv()
+    session = _FakeSession(env)
+    env.init_state()
+    session.refresh_observation()
+    initial_refresh_calls = env.refresh_state_calls
+
+    phase = mod._run_phase(
+        session,
+        4,
+        command=np.asarray([0.4, 0.0, 0.0], dtype=np.float32),
+        target_height=0.65,
+    )
+
+    assert env.refresh_state_calls - initial_refresh_calls == 5
+    assert phase["input_sync"]["sync_count"] == 5
+    assert phase["input_sync"]["passed"] is True
+    assert all(row["command"][0] == pytest.approx(0.4) for row in session.policy_inputs)
+    assert [row["target_height"] for row in session.policy_inputs] == pytest.approx([0.65] * 4)
 
 
 @pytest.mark.parametrize("terminal_kind", ["terminated", "truncated"])
@@ -360,7 +390,11 @@ def test_transition_sentinel_fails_closed_on_height_recovery_quality_contract(
     failed_names = {
         check["name"] for check in scenario["recovery"]["checks"] if check["level"] == "FAIL"
     }
+    transition_levels = {check["name"]: check["level"] for check in scenario["transition_checks"]}
     assert failed_check in failed_names
+    assert transition_levels["transition/recovery_completed"] == "PASS"
+    expected_sync_level = "FAIL" if failed_check == "rollout/target_obs_roundtrip" else "PASS"
+    assert transition_levels["transition/recovery_input_synchronized"] == expected_sync_level
     assert report["height_recovery"]["verdict"] == "FAIL"
     assert report["summary"]["height_recovery_gate_pass"] is False
     assert report["summary"]["gate_pass"] is False

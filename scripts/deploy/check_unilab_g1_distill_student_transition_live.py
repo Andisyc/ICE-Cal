@@ -132,6 +132,67 @@ def _action_rows(session: Any, *, rows: int) -> np.ndarray:
     return action_rows
 
 
+def _transition_input_snapshot(
+    env: Any,
+    *,
+    command: np.ndarray,
+    target_height: float,
+) -> dict[str, Any]:
+    """Read the current 99-D transition contract without refreshing env state."""
+
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    obs = getattr(state, "obs", None)
+    if state is None or not isinstance(info, dict) or not isinstance(obs, dict):
+        raise RuntimeError("transition input snapshot requires dict state.info and state.obs")
+    observed_commands = np.asarray(info.get("commands"))
+    if (
+        observed_commands.ndim != 2
+        or observed_commands.shape[0] <= 0
+        or observed_commands.shape[1] < 3
+    ):
+        raise RuntimeError(
+            "transition input snapshot requires state.info['commands'] with shape (N, >=3)"
+        )
+    command_arr = np.asarray(command, dtype=observed_commands.dtype)
+    if command_arr.shape != (3,):
+        raise ValueError(f"transition command must have shape (3,), got {command_arr.shape}")
+    expected_commands = np.broadcast_to(command_arr, (observed_commands.shape[0], 3))
+
+    observed_targets = np.asarray(info.get("height_commands"))
+    if observed_targets.shape != (observed_commands.shape[0], 1):
+        raise RuntimeError(
+            "99-D transition input snapshot requires state.info['height_commands'] "
+            f"with shape ({observed_commands.shape[0]}, 1), got {observed_targets.shape}"
+        )
+    observed_targets = observed_targets[:, 0]
+    expected_targets = np.full(
+        (observed_commands.shape[0],), float(target_height), dtype=observed_targets.dtype
+    )
+    actor_obs = np.asarray(obs.get("obs"), dtype=np.float32)
+    if actor_obs.shape != (observed_commands.shape[0], EXPECTED_OBS_DIM):
+        raise RuntimeError(
+            "99-D transition input snapshot requires actor observation shape "
+            f"({observed_commands.shape[0]}, {EXPECTED_OBS_DIM}), got {actor_obs.shape}"
+        )
+
+    command_max_error = float(np.max(np.abs(observed_commands[:, :3] - expected_commands)))
+    target_max_error = float(np.max(np.abs(observed_targets - expected_targets)))
+    target_obs_max_error = float(np.max(np.abs(actor_obs[:, TARGET_OBS_INDEX] - expected_targets)))
+    return {
+        "passed": bool(
+            command_max_error <= 1.0e-6
+            and target_max_error <= 1.0e-6
+            and target_obs_max_error <= 1.0e-6
+        ),
+        "command_max_error": command_max_error,
+        "target_max_error": target_max_error,
+        "target_obs_max_error": target_obs_max_error,
+        "target_height_min": float(np.min(observed_targets)),
+        "target_height_max": float(np.max(observed_targets)),
+    }
+
+
 def _sync_transition_inputs(
     session: Any,
     *,
@@ -148,20 +209,19 @@ def _sync_transition_inputs(
 
     commands = info.get("commands")
     commands_arr = np.asarray(commands)
-    if commands_arr.ndim != 2 or commands_arr.shape[0] <= 0 or commands_arr.shape[1] < 3:
+    if (
+        not isinstance(commands, np.ndarray)
+        or commands_arr.ndim != 2
+        or commands_arr.shape[0] <= 0
+        or commands_arr.shape[1] < 3
+    ):
         raise RuntimeError(
             "transition input synchronization requires state.info['commands'] with shape (N, >=3)"
         )
     command_arr = np.asarray(command, dtype=commands_arr.dtype)
     if command_arr.shape != (3,):
         raise ValueError(f"transition command must have shape (3,), got {command_arr.shape}")
-    expected_commands = np.broadcast_to(command_arr, (commands_arr.shape[0], 3))
-    session.set_external_command(command_arr)
-
-    state = getattr(env, "state", None)
-    info = getattr(state, "info", None)
-    if state is None or not isinstance(info, dict):
-        raise RuntimeError("command refresh did not retain env.state.info")
+    commands_arr[:, :3] = np.broadcast_to(command_arr, (commands_arr.shape[0], 3))
     height_commands = info.get("height_commands")
     if not isinstance(height_commands, np.ndarray) or height_commands.shape != (
         commands_arr.shape[0],
@@ -182,38 +242,11 @@ def _sync_transition_inputs(
         raise RuntimeError("transition input synchronization requires env.refresh_state()")
     refresh_state()
     session.refresh_observation()
-
-    state = getattr(env, "state", None)
-    info = getattr(state, "info", None)
-    obs = getattr(state, "obs", None)
-    if state is None or not isinstance(info, dict) or not isinstance(obs, dict):
-        raise RuntimeError("transition input refresh must retain dict state.info and state.obs")
-    actor_obs = np.asarray(obs.get("obs"), dtype=np.float32)
-    if actor_obs.shape != (commands_arr.shape[0], EXPECTED_OBS_DIM):
-        raise RuntimeError(
-            "99-D transition input synchronization requires actor observation shape "
-            f"({commands_arr.shape[0]}, {EXPECTED_OBS_DIM}), got {actor_obs.shape}"
-        )
-    observed_commands = np.asarray(info.get("commands"))[:, :3]
-    observed_targets = np.asarray(info.get("height_commands"))[:, 0]
-    expected_targets = np.full(
-        (commands_arr.shape[0],), float(target_height), dtype=observed_targets.dtype
+    return _transition_input_snapshot(
+        env,
+        command=command_arr,
+        target_height=target_height,
     )
-    command_max_error = float(np.max(np.abs(observed_commands - expected_commands)))
-    target_max_error = float(np.max(np.abs(observed_targets - expected_targets)))
-    target_obs_max_error = float(np.max(np.abs(actor_obs[:, TARGET_OBS_INDEX] - expected_targets)))
-    return {
-        "passed": bool(
-            command_max_error <= 1.0e-6
-            and target_max_error <= 1.0e-6
-            and target_obs_max_error <= 1.0e-6
-        ),
-        "command_max_error": command_max_error,
-        "target_max_error": target_max_error,
-        "target_obs_max_error": target_obs_max_error,
-        "target_height_min": float(np.min(observed_targets)),
-        "target_height_max": float(np.max(observed_targets)),
-    }
 
 
 def _sync_summary(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -292,16 +325,24 @@ def _run_phase(
     terminated_count = 0
     truncated_count = 0
     terminal_snapshot: dict[str, Any] | None = None
+    if command is not None and target_height is not None:
+        sync_snapshots.append(
+            _sync_transition_inputs(
+                session,
+                command=command,
+                target_height=target_height,
+            )
+        )
     for phase_step in range(int(steps)):
+        session.step_once()
         if command is not None and target_height is not None:
             sync_snapshots.append(
-                _sync_transition_inputs(
-                    session,
+                _transition_input_snapshot(
+                    session.env,
                     command=command,
                     target_height=target_height,
                 )
             )
-        session.step_once()
         env = session.env
         heights.append(_height(env))
         tilts.append(_tilt_deg(env))
@@ -433,9 +474,22 @@ def _reset_episode(session: Any) -> dict[str, float | int]:
 
 
 def _controlled_phase_pass(phase: dict[str, Any]) -> bool:
+    return bool(_phase_completed(phase) and _phase_input_sync_pass(phase))
+
+
+def _phase_input_sync_pass(phase: dict[str, Any]) -> bool:
     sync = phase.get("input_sync")
-    return bool(
-        _phase_completed(phase) and isinstance(sync, dict) and bool(sync.get("passed", False))
+    return bool(isinstance(sync, dict) and bool(sync.get("passed", False)))
+
+
+def _phase_input_sync_detail(phase: dict[str, Any]) -> str:
+    sync = phase.get("input_sync")
+    if not isinstance(sync, dict):
+        return "input_sync=missing"
+    return (
+        f"command_max_error={float(sync['command_max_error']):.9g} "
+        f"target_max_error={float(sync['target_max_error']):.9g} "
+        f"target_obs_max_error={float(sync['target_obs_max_error']):.9g}"
     )
 
 
@@ -512,12 +566,9 @@ def _run_height_recovery_grid(
                 requested_steps=recovery_steps,
                 executed_steps=int(recovery_phase["executed_steps"]),
             )
-            standing_pass = _controlled_phase_pass(standing)
-            walking_pass = _controlled_phase_pass(walking)
-            recovery_phase_pass = _controlled_phase_pass(recovery_phase)
             transition_checks = [
                 _transition_check(
-                    standing_pass,
+                    _phase_completed(standing),
                     "transition/standing_completed",
                     (
                         f"executed_steps={standing['executed_steps']} "
@@ -525,7 +576,12 @@ def _run_height_recovery_grid(
                     ),
                 ),
                 _transition_check(
-                    walking_pass,
+                    _phase_input_sync_pass(standing),
+                    "transition/standing_input_synchronized",
+                    _phase_input_sync_detail(standing),
+                ),
+                _transition_check(
+                    _phase_completed(walking),
                     "transition/walking_completed_at_nominal_height",
                     (
                         f"target_height={NOMINAL_WALK_TARGET_HEIGHT:.6f} "
@@ -534,13 +590,22 @@ def _run_height_recovery_grid(
                     ),
                 ),
                 _transition_check(
-                    recovery_phase_pass,
-                    "transition/recovery_input_synchronized",
+                    _phase_input_sync_pass(walking),
+                    "transition/walking_input_synchronized",
+                    _phase_input_sync_detail(walking),
+                ),
+                _transition_check(
+                    _phase_completed(recovery_phase),
+                    "transition/recovery_completed",
                     (
-                        f"target_height={float(target_height):.6f} "
                         f"executed_steps={recovery_phase['executed_steps']} "
                         f"requested_steps={recovery_phase['steps']}"
                     ),
+                ),
+                _transition_check(
+                    _phase_input_sync_pass(recovery_phase),
+                    "transition/recovery_input_synchronized",
+                    _phase_input_sync_detail(recovery_phase),
                 ),
             ]
             scenario_pass = bool(
@@ -759,7 +824,7 @@ def run_check(
             for phase in all_phases
         ),
         "stop_speed_decay_pass": all(bool(episode["stop_speed_le_active"]) for episode in episodes),
-        "input_sync_pass": all(_controlled_phase_pass(phase) for phase in all_phases),
+        "input_sync_pass": all(_phase_input_sync_pass(phase) for phase in all_phases),
         "task_min_base_height": float(reward_cfg.min_base_height),
         "task_max_tilt_deg": float(reward_cfg.max_tilt_deg),
     }
