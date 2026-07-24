@@ -37,19 +37,34 @@ class _FakeBackend:
         return np.asarray([[self._env.speed, 0.0, 0.0]], dtype=np.float32)
 
     def get_sensor_data(self, name: str) -> np.ndarray:
-        assert name == "upvector"
-        tilt_rad = np.deg2rad(self._env.tilt_deg)
-        return np.asarray([[np.sin(tilt_rad), 0.0, np.cos(tilt_rad)]], dtype=np.float32)
+        if name == "upvector":
+            tilt_rad = np.deg2rad(self._env.tilt_deg)
+            return np.asarray([[np.sin(tilt_rad), 0.0, np.cos(tilt_rad)]], dtype=np.float32)
+        if name.startswith("left_foot_contact_"):
+            return np.ones((1,), dtype=np.float32)
+        if name.startswith("right_foot_contact_"):
+            return np.full((1,), float(self._env.double_support), dtype=np.float32)
+        raise AssertionError(f"unexpected sensor {name!r}")
 
 
 class _FakeEnv:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        recovery_height_error: float = 0.0,
+        double_support: bool = True,
+        target_obs_offset: float = 0.0,
+    ) -> None:
         self.cfg = types.SimpleNamespace(sensor=types.SimpleNamespace(upvector="upvector"))
         self._backend = _FakeBackend(self)
+        self.num_envs = 1
         self.state: Any | None = None
         self.height = 0.75
         self.tilt_deg = 0.0
         self.speed = 0.0
+        self.recovery_height_error = float(recovery_height_error)
+        self.double_support = bool(double_support)
+        self.target_obs_offset = float(target_obs_offset)
         self.init_state_calls = 0
         self.autoreset: bool | None = None
         self.closed = False
@@ -67,10 +82,22 @@ class _FakeEnv:
             info={
                 "steps": np.zeros(1, dtype=np.uint32),
                 "commands": np.zeros((1, 3), dtype=np.float32),
+                "height_commands": np.full((1, 1), 0.754, dtype=np.float32),
             },
             final_observation=None,
         )
+        self.refresh_state()
         return self.state
+
+    def refresh_state(self) -> Any:
+        assert self.state is not None
+        actor_obs = self.state.obs["obs"]
+        actor_obs[:, 93:96] = self.state.info["commands"][:, :3]
+        actor_obs[:, 96] = self.state.info["height_commands"][:, 0] + self.target_obs_offset
+        return self.state
+
+    def _terrain_relative_base_height(self) -> np.ndarray:
+        return np.asarray([self.height], dtype=np.float32)
 
     def reset(self, _env_ids: np.ndarray) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         raise AssertionError("the sentinel must use a full state reset")
@@ -88,27 +115,43 @@ class _FakeSession:
         self.terminal_kind = terminal_kind
         self.command = np.zeros(3, dtype=np.float32)
         self.actions = np.ones((1, 29), dtype=np.float32)
+        self.obs: np.ndarray | None = None
         self.action_obs: Any | None = None
         self.step_count = 0
         self._terminal_emitted = False
+        self.policy_inputs: list[dict[str, Any]] = []
 
     def refresh_observation(self) -> np.ndarray:
         assert self.env.state is not None
-        return self.env.state.obs["obs"]
+        self.obs = self.env.state.obs["obs"]
+        return self.obs
 
     def set_external_command(self, command: np.ndarray) -> np.ndarray:
         assert self.env.state is not None
         self.command = np.asarray(command, dtype=np.float32).copy()
         self.env.state.info["commands"][:, :3] = self.command
+        self.env.refresh_state()
         return self.refresh_observation()
 
     def step_once(self) -> np.ndarray:
         assert self.env.state is not None
+        self.command = self.env.state.info["commands"][0, :3].copy()
+        target_height = float(self.env.state.info["height_commands"][0, 0])
+        self.policy_inputs.append(
+            {
+                "reset_id": self.env.init_state_calls,
+                "command": self.command.copy(),
+                "target_height": target_height,
+                "target_obs": float(self.env.state.obs["obs"][0, 96]),
+            }
+        )
         self.actions = np.ones((1, 29), dtype=np.float32)
         self.env.state.info["steps"] += 1
         self.step_count += 1
         active = bool(np.max(np.abs(self.command)) > 0.0)
         self.env.speed = 0.2 if active else 0.1
+        if not active:
+            self.env.height = target_height + self.env.recovery_height_error
         self.env.state.terminated.fill(False)
         self.env.state.truncated.fill(False)
         if active and self.terminal_kind is not None and not self._terminal_emitted:
@@ -118,6 +161,7 @@ class _FakeSession:
                 self.env.state.terminated[:] = True
             else:
                 self.env.state.truncated[:] = True
+        self.env.refresh_state()
         return self.refresh_observation()
 
 
@@ -162,10 +206,12 @@ def test_transition_sentinel_reinitializes_every_episode_and_applies_seed(
         stop_steps=1,
         device="cpu",
         seed=7,
+        height_recovery_warmup_steps=0,
+        height_recovery_evaluation_steps=1,
     )
 
     assert seed_calls == [(7, {"torch_runtime": True, "cuda": False})]
-    assert env.init_state_calls == 17
+    assert env.init_state_calls == 26
     assert env.autoreset is False
     assert env.closed is True
     assert report["seed"] == 7
@@ -194,6 +240,9 @@ def test_transition_sentinel_preserves_terminal_frame_and_skips_coupled_stop_sco
         active_steps=2,
         stop_steps=1,
         device="cpu",
+        post_walk_target_heights=(0.65,),
+        height_recovery_warmup_steps=0,
+        height_recovery_evaluation_steps=1,
     )
 
     summary = report["summary"]
@@ -211,10 +260,107 @@ def test_transition_sentinel_preserves_terminal_frame_and_skips_coupled_stop_sco
     assert terminal["terminated"] is (terminal_kind == "terminated")
     assert terminal["truncated"] is (terminal_kind == "truncated")
     assert terminal["state_step"] == 2
-    assert terminal["height"] == pytest.approx(0.2 if terminal_kind == "terminated" else 0.75)
+    assert terminal["height"] == pytest.approx(0.2 if terminal_kind == "terminated" else 0.754)
     assert report["command_summary"]["lateral"]["episodes"] == 0
     assert report["command_summary"]["lateral"]["min_base_height"] is None
     assert report["command_summary"]["lateral"]["max_tilt_deg"] is None
     assert report["failure_indices"] == [0]
     assert report["termination_indices"] == ([0] if terminal_kind == "terminated" else [])
     assert report["truncation_indices"] == ([0] if terminal_kind == "truncated" else [])
+
+
+def test_transition_sentinel_covers_non_nominal_walk_to_stand_height_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _load_script()
+    env = _FakeEnv()
+    session = _FakeSession(env)
+    _install_runtime(monkeypatch, mod, session)
+
+    targets = (0.65, 0.702, 0.754)
+    report = mod.run_check(
+        student_checkpoint=Path("student.pt"),
+        task="g1_walk_height/mujoco",
+        repeats=1,
+        active_steps=2,
+        stop_steps=1,
+        device="cpu",
+        post_walk_target_heights=targets,
+        height_recovery_warmup_steps=1,
+        height_recovery_evaluation_steps=2,
+    )
+
+    recovery = report["height_recovery"]
+    expected_grid = [
+        (command_name, target_height)
+        for command_name in ("forward", "lateral", "yaw")
+        for target_height in targets
+    ]
+    assert [
+        (scenario["command"], scenario["requested_target_height"])
+        for scenario in recovery["scenarios"]
+    ] == expected_grid
+    assert recovery["verdict"] == "PASS"
+    assert report["summary"]["height_recovery_gate_pass"] is True
+    assert report["summary"]["gate_pass"] is True
+
+    first_recovery_reset_id = 2
+    for offset, ((command_name, target_height), scenario) in enumerate(
+        zip(expected_grid, recovery["scenarios"], strict=True)
+    ):
+        rows = [
+            row
+            for row in session.policy_inputs
+            if row["reset_id"] == first_recovery_reset_id + offset
+        ]
+        assert len(rows) == 6
+        assert np.allclose(rows[0]["command"], 0.0)
+        assert rows[0]["target_height"] == pytest.approx(0.754)
+        assert all(np.max(np.abs(row["command"])) > 0.0 for row in rows[1:3])
+        assert all(row["target_height"] == pytest.approx(0.754) for row in rows[1:3])
+        assert all(np.allclose(row["command"], 0.0) for row in rows[3:])
+        assert all(row["target_height"] == pytest.approx(target_height) for row in rows[3:])
+        assert scenario["command"] == command_name
+        assert scenario["walking_target_height"] == pytest.approx(0.754)
+        assert scenario["recovery"]["verdict"] == "PASS"
+        assert scenario["recovery"]["metrics"]["target_obs_max_error"] <= 1.0e-6
+
+
+@pytest.mark.parametrize(
+    ("env_kwargs", "failed_check"),
+    [
+        ({"recovery_height_error": 0.06}, "quality/height_mae"),
+        ({"double_support": False}, "quality/double_support_fraction"),
+        ({"target_obs_offset": 0.01}, "rollout/target_obs_roundtrip"),
+    ],
+)
+def test_transition_sentinel_fails_closed_on_height_recovery_quality_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    env_kwargs: dict[str, Any],
+    failed_check: str,
+) -> None:
+    mod = _load_script()
+    env = _FakeEnv(**env_kwargs)
+    session = _FakeSession(env)
+    _install_runtime(monkeypatch, mod, session)
+
+    report = mod.run_check(
+        student_checkpoint=Path("student.pt"),
+        task="g1_walk_height/mujoco",
+        repeats=1,
+        active_steps=1,
+        stop_steps=1,
+        device="cpu",
+        post_walk_target_heights=(0.65,),
+        height_recovery_warmup_steps=0,
+        height_recovery_evaluation_steps=2,
+    )
+
+    scenario = report["height_recovery"]["scenarios"][0]
+    failed_names = {
+        check["name"] for check in scenario["recovery"]["checks"] if check["level"] == "FAIL"
+    }
+    assert failed_check in failed_names
+    assert report["height_recovery"]["verdict"] == "FAIL"
+    assert report["summary"]["height_recovery_gate_pass"] is False
+    assert report["summary"]["gate_pass"] is False

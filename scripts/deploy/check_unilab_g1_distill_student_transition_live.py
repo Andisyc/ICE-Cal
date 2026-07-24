@@ -20,6 +20,18 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+from unilab.envs.locomotion.g1.joystick import (  # noqa: E402
+    LEFT_FOOT_CONTACT_SENSORS,
+    RIGHT_FOOT_CONTACT_SENSORS,
+    compute_aggregated_foot_contact,
+)
+from unilab.training.g1_stand_height_acceptance import (  # noqa: E402
+    EXPECTED_ACTION_DIM,
+    EXPECTED_OBS_DIM,
+    TARGET_OBS_INDEX,
+    RolloutSamples,
+    evaluate_samples,
+)
 from unilab.training.seed import apply_training_seed  # noqa: E402
 from unilab.visualization.interactive_playback import (  # noqa: E402
     RslRlPlaybackConfig,
@@ -31,6 +43,13 @@ COMMANDS = (
     ("lateral", np.asarray([0.0, 0.4, 0.0], dtype=np.float32)),
     ("yaw", np.asarray([0.0, 0.0, 0.4], dtype=np.float32)),
 )
+
+NOMINAL_WALK_TARGET_HEIGHT = 0.754
+DEFAULT_POST_WALK_TARGET_HEIGHTS = (0.650, 0.702, 0.754)
+DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS = 100
+DEFAULT_HEIGHT_RECOVERY_EVALUATION_STEPS = 800
+HEIGHT_RECOVERY_MAX_HEIGHT_MAE = 0.05
+HEIGHT_RECOVERY_MIN_DOUBLE_SUPPORT_FRACTION = 0.90
 
 
 def _compose_cfg(task: str) -> Any:
@@ -98,21 +117,202 @@ def _action_abs_max(session: Any) -> float:
     return float(np.max(np.abs(np.asarray(actions, dtype=np.float64))))
 
 
-def _run_phase(session: Any, steps: int) -> dict[str, Any]:
+def _action_rows(session: Any, *, rows: int) -> np.ndarray:
+    actions = getattr(session, "actions", None)
+    if actions is None:
+        raise RuntimeError("height recovery requires policy actions for every sampled step")
+    if hasattr(actions, "detach"):
+        actions = actions.detach().cpu().numpy()
+    action_rows = np.asarray(actions, dtype=np.float32)
+    expected_shape = (int(rows), EXPECTED_ACTION_DIM)
+    if action_rows.shape != expected_shape:
+        raise RuntimeError(
+            f"height recovery actions must have shape {expected_shape}, got {action_rows.shape}"
+        )
+    return action_rows
+
+
+def _sync_transition_inputs(
+    session: Any,
+    *,
+    command: np.ndarray,
+    target_height: float,
+) -> dict[str, Any]:
+    """Synchronize velocity, target height, env state, and policy observation."""
+
+    env = session.env
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    if state is None or not isinstance(info, dict):
+        raise RuntimeError("transition input synchronization requires env.state.info")
+
+    commands = info.get("commands")
+    commands_arr = np.asarray(commands)
+    if commands_arr.ndim != 2 or commands_arr.shape[0] <= 0 or commands_arr.shape[1] < 3:
+        raise RuntimeError(
+            "transition input synchronization requires state.info['commands'] with shape (N, >=3)"
+        )
+    command_arr = np.asarray(command, dtype=commands_arr.dtype)
+    if command_arr.shape != (3,):
+        raise ValueError(f"transition command must have shape (3,), got {command_arr.shape}")
+    expected_commands = np.broadcast_to(command_arr, (commands_arr.shape[0], 3))
+    session.set_external_command(command_arr)
+
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    if state is None or not isinstance(info, dict):
+        raise RuntimeError("command refresh did not retain env.state.info")
+    height_commands = info.get("height_commands")
+    if not isinstance(height_commands, np.ndarray) or height_commands.shape != (
+        commands_arr.shape[0],
+        1,
+    ):
+        observed_shape = getattr(height_commands, "shape", None)
+        raise RuntimeError(
+            "99-D transition input synchronization requires "
+            f"state.info['height_commands'] with shape ({commands_arr.shape[0]}, 1), "
+            f"got {observed_shape}"
+        )
+    if not np.isfinite(float(target_height)):
+        raise ValueError(f"target_height must be finite, got {target_height}")
+    height_commands[:, 0] = np.asarray(target_height, dtype=height_commands.dtype)
+
+    refresh_state = getattr(env, "refresh_state", None)
+    if not callable(refresh_state):
+        raise RuntimeError("transition input synchronization requires env.refresh_state()")
+    refresh_state()
+    session.refresh_observation()
+
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    obs = getattr(state, "obs", None)
+    if state is None or not isinstance(info, dict) or not isinstance(obs, dict):
+        raise RuntimeError("transition input refresh must retain dict state.info and state.obs")
+    actor_obs = np.asarray(obs.get("obs"), dtype=np.float32)
+    if actor_obs.shape != (commands_arr.shape[0], EXPECTED_OBS_DIM):
+        raise RuntimeError(
+            "99-D transition input synchronization requires actor observation shape "
+            f"({commands_arr.shape[0]}, {EXPECTED_OBS_DIM}), got {actor_obs.shape}"
+        )
+    observed_commands = np.asarray(info.get("commands"))[:, :3]
+    observed_targets = np.asarray(info.get("height_commands"))[:, 0]
+    expected_targets = np.full(
+        (commands_arr.shape[0],), float(target_height), dtype=observed_targets.dtype
+    )
+    command_max_error = float(np.max(np.abs(observed_commands - expected_commands)))
+    target_max_error = float(np.max(np.abs(observed_targets - expected_targets)))
+    target_obs_max_error = float(np.max(np.abs(actor_obs[:, TARGET_OBS_INDEX] - expected_targets)))
+    return {
+        "passed": bool(
+            command_max_error <= 1.0e-6
+            and target_max_error <= 1.0e-6
+            and target_obs_max_error <= 1.0e-6
+        ),
+        "command_max_error": command_max_error,
+        "target_max_error": target_max_error,
+        "target_obs_max_error": target_obs_max_error,
+        "target_height_min": float(np.min(observed_targets)),
+        "target_height_max": float(np.max(observed_targets)),
+    }
+
+
+def _sync_summary(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not snapshots:
+        return None
+    return {
+        "sync_count": len(snapshots),
+        "passed": all(bool(snapshot["passed"]) for snapshot in snapshots),
+        "command_max_error": max(float(item["command_max_error"]) for item in snapshots),
+        "target_max_error": max(float(item["target_max_error"]) for item in snapshots),
+        "target_obs_max_error": max(float(item["target_obs_max_error"]) for item in snapshots),
+        "target_height_min": min(float(item["target_height_min"]) for item in snapshots),
+        "target_height_max": max(float(item["target_height_max"]) for item in snapshots),
+    }
+
+
+def _append_height_recovery_sample(
+    samples: RolloutSamples,
+    session: Any,
+    *,
+    scored: bool,
+) -> None:
+    env = session.env
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    obs = getattr(state, "obs", None)
+    if state is None or not isinstance(info, dict) or not isinstance(obs, dict):
+        raise RuntimeError("height recovery sample requires dict env state info and obs")
+    actor_obs = np.asarray(obs.get("obs"), dtype=np.float32)
+    if actor_obs.ndim != 2 or actor_obs.shape[1] != EXPECTED_OBS_DIM:
+        raise RuntimeError(
+            f"height recovery actor obs must have shape (N, {EXPECTED_OBS_DIM}), "
+            f"got {actor_obs.shape}"
+        )
+    rows = int(actor_obs.shape[0])
+    measured_height_fn = getattr(env, "_terrain_relative_base_height", None)
+    if not callable(measured_height_fn):
+        raise RuntimeError("height recovery requires env._terrain_relative_base_height()")
+    upvector = np.asarray(
+        env._backend.get_sensor_data(env.cfg.sensor.upvector), dtype=np.float32
+    ).reshape(rows, -1)
+    if upvector.shape[1] < 3:
+        raise RuntimeError(f"upvector sensor must expose at least 3 values, got {upvector.shape}")
+    left_contact = compute_aggregated_foot_contact(env._backend, LEFT_FOOT_CONTACT_SENSORS)
+    right_contact = compute_aggregated_foot_contact(env._backend, RIGHT_FOOT_CONTACT_SENSORS)
+    samples.append(
+        target_height=np.asarray(info.get("height_commands"), dtype=np.float32),
+        measured_height=np.asarray(measured_height_fn(), dtype=np.float32),
+        double_support=np.asarray(left_contact & right_contact, dtype=bool),
+        tilt_deg=np.rad2deg(np.arccos(np.clip(upvector[:, 2], -1.0, 1.0))).astype(np.float32),
+        terminated=np.asarray(state.terminated, dtype=bool),
+        truncated=np.asarray(state.truncated, dtype=bool),
+        commands=np.asarray(info.get("commands"), dtype=np.float32)[:, :3],
+        target_obs=actor_obs[:, TARGET_OBS_INDEX],
+        actions=_action_rows(session, rows=rows),
+        scored=scored,
+    )
+
+
+def _run_phase(
+    session: Any,
+    steps: int,
+    *,
+    command: np.ndarray | None = None,
+    target_height: float | None = None,
+    samples: RolloutSamples | None = None,
+    warmup_steps: int = 0,
+) -> dict[str, Any]:
+    if (command is None) != (target_height is None):
+        raise ValueError("controlled phase requires both command and target_height")
     heights: list[float] = []
     tilts: list[float] = []
     speeds: list[float] = []
     actions: list[float] = []
+    sync_snapshots: list[dict[str, Any]] = []
     terminated_count = 0
     truncated_count = 0
     terminal_snapshot: dict[str, Any] | None = None
     for phase_step in range(int(steps)):
+        if command is not None and target_height is not None:
+            sync_snapshots.append(
+                _sync_transition_inputs(
+                    session,
+                    command=command,
+                    target_height=target_height,
+                )
+            )
         session.step_once()
         env = session.env
         heights.append(_height(env))
         tilts.append(_tilt_deg(env))
         speeds.append(_speed(env))
         actions.append(_action_abs_max(session))
+        if samples is not None:
+            _append_height_recovery_sample(
+                samples,
+                session,
+                scored=phase_step >= int(warmup_steps),
+            )
         step_terminated, step_truncated = _done_counts(env)
         terminated_count += step_terminated
         truncated_count += step_truncated
@@ -141,6 +341,7 @@ def _run_phase(session: Any, steps: int) -> dict[str, Any]:
         "done_count": terminated_count + truncated_count,
         "terminal_snapshot": terminal_snapshot,
         "skip_reason": None,
+        "input_sync": _sync_summary(sync_snapshots),
     }
 
 
@@ -157,6 +358,7 @@ def _skipped_phase(*, steps: int, reason: str) -> dict[str, Any]:
         "done_count": 0,
         "terminal_snapshot": None,
         "skip_reason": reason,
+        "input_sync": None,
     }
 
 
@@ -208,13 +410,15 @@ def _reset_episode(session: Any) -> dict[str, float | int]:
     session.step_count = 0
     session.refresh_observation()
 
-    commands = state.info.get("commands")
-    commands_arr = np.asarray(commands)
-    if commands_arr.ndim != 2 or commands_arr.shape[1] < 3:
-        raise RuntimeError(
-            "transition sentinel reset requires state.info['commands'] with shape (N, >=3)"
-        )
-    session.set_external_command(np.zeros(3, dtype=commands_arr.dtype))
+    commands_arr = np.asarray(state.info.get("commands"))
+    sync = _sync_transition_inputs(
+        session,
+        command=np.zeros(3, dtype=commands_arr.dtype),
+        target_height=NOMINAL_WALK_TARGET_HEIGHT,
+    )
+    state = getattr(env, "state", None)
+    if state is None or not isinstance(getattr(state, "info", None), dict):
+        raise RuntimeError("transition sentinel reset synchronization lost env state")
     command_max_abs = float(np.max(np.abs(np.asarray(state.info["commands"])[:, :3])))
     if command_max_abs != 0.0:
         raise RuntimeError(
@@ -223,6 +427,180 @@ def _reset_episode(session: Any) -> dict[str, float | int]:
     return {
         "step_count": int(np.asarray(state.info["steps"]).reshape(-1)[0]),
         "command_max_abs": command_max_abs,
+        "target_height": float(NOMINAL_WALK_TARGET_HEIGHT),
+        "target_obs_max_error": float(sync["target_obs_max_error"]),
+    }
+
+
+def _controlled_phase_pass(phase: dict[str, Any]) -> bool:
+    sync = phase.get("input_sync")
+    return bool(
+        _phase_completed(phase) and isinstance(sync, dict) and bool(sync.get("passed", False))
+    )
+
+
+def _transition_check(passed: bool, name: str, detail: str) -> dict[str, str]:
+    return {
+        "level": "PASS" if passed else "FAIL",
+        "name": name,
+        "detail": detail,
+    }
+
+
+def _run_height_recovery_grid(
+    session: Any,
+    *,
+    target_heights: tuple[float, ...],
+    active_steps: int,
+    standing_steps: int,
+    warmup_steps: int,
+    evaluation_steps: int,
+    max_tilt_deg: float,
+) -> dict[str, Any]:
+    scenarios: list[dict[str, Any]] = []
+    terminal_events: list[dict[str, Any]] = []
+    zero_command = np.zeros(3, dtype=np.float32)
+    recovery_steps = int(warmup_steps) + int(evaluation_steps)
+
+    for command_name, command in COMMANDS:
+        for target_height in target_heights:
+            scenario_index = len(scenarios)
+            reset_snapshot = _reset_episode(session)
+            standing = _run_phase(
+                session,
+                standing_steps,
+                command=zero_command,
+                target_height=NOMINAL_WALK_TARGET_HEIGHT,
+            )
+            if standing["done_count"] > 0:
+                walking = _skipped_phase(steps=active_steps, reason="standing_done")
+            else:
+                walking = _run_phase(
+                    session,
+                    active_steps,
+                    command=command,
+                    target_height=NOMINAL_WALK_TARGET_HEIGHT,
+                )
+
+            samples = RolloutSamples()
+            if standing["done_count"] > 0:
+                recovery_phase = _skipped_phase(
+                    steps=recovery_steps,
+                    reason="standing_done",
+                )
+            elif walking["done_count"] > 0:
+                recovery_phase = _skipped_phase(
+                    steps=recovery_steps,
+                    reason="walking_done",
+                )
+            else:
+                recovery_phase = _run_phase(
+                    session,
+                    recovery_steps,
+                    command=zero_command,
+                    target_height=float(target_height),
+                    samples=samples,
+                    warmup_steps=warmup_steps,
+                )
+
+            recovery_report = evaluate_samples(
+                samples,
+                expected_target_height=float(target_height),
+                max_height_mae=HEIGHT_RECOVERY_MAX_HEIGHT_MAE,
+                min_double_support_fraction=HEIGHT_RECOVERY_MIN_DOUBLE_SUPPORT_FRACTION,
+                max_tilt_deg=float(max_tilt_deg),
+                requested_steps=recovery_steps,
+                executed_steps=int(recovery_phase["executed_steps"]),
+            )
+            standing_pass = _controlled_phase_pass(standing)
+            walking_pass = _controlled_phase_pass(walking)
+            recovery_phase_pass = _controlled_phase_pass(recovery_phase)
+            transition_checks = [
+                _transition_check(
+                    standing_pass,
+                    "transition/standing_completed",
+                    (
+                        f"executed_steps={standing['executed_steps']} "
+                        f"requested_steps={standing['steps']}"
+                    ),
+                ),
+                _transition_check(
+                    walking_pass,
+                    "transition/walking_completed_at_nominal_height",
+                    (
+                        f"target_height={NOMINAL_WALK_TARGET_HEIGHT:.6f} "
+                        f"executed_steps={walking['executed_steps']} "
+                        f"requested_steps={walking['steps']}"
+                    ),
+                ),
+                _transition_check(
+                    recovery_phase_pass,
+                    "transition/recovery_input_synchronized",
+                    (
+                        f"target_height={float(target_height):.6f} "
+                        f"executed_steps={recovery_phase['executed_steps']} "
+                        f"requested_steps={recovery_phase['steps']}"
+                    ),
+                ),
+            ]
+            scenario_pass = bool(
+                all(check["level"] == "PASS" for check in transition_checks)
+                and recovery_report["verdict"] == "PASS"
+            )
+            scenario = {
+                "index": scenario_index,
+                "command": command_name,
+                "requested_target_height": float(target_height),
+                "walking_target_height": float(NOMINAL_WALK_TARGET_HEIGHT),
+                "reset": reset_snapshot,
+                "standing": standing,
+                "walking": walking,
+                "recovery_phase": recovery_phase,
+                "transition_checks": transition_checks,
+                "recovery": recovery_report,
+                "verdict": "PASS" if scenario_pass else "FAIL",
+            }
+            scenarios.append(scenario)
+
+            for phase_name, phase in (
+                ("standing", standing),
+                ("walking", walking),
+                ("recovery", recovery_phase),
+            ):
+                terminal_snapshot = phase["terminal_snapshot"]
+                if terminal_snapshot is not None:
+                    terminal_events.append(
+                        {
+                            "scenario_index": scenario_index,
+                            "command": command_name,
+                            "requested_target_height": float(target_height),
+                            "phase": phase_name,
+                            **terminal_snapshot,
+                        }
+                    )
+
+    passed_scenarios = sum(scenario["verdict"] == "PASS" for scenario in scenarios)
+    return {
+        "verdict": "PASS" if passed_scenarios == len(scenarios) else "FAIL",
+        "nominal_walk_target_height": float(NOMINAL_WALK_TARGET_HEIGHT),
+        "target_heights": [float(value) for value in target_heights],
+        "command_grid": [name for name, _command in COMMANDS],
+        "warmup_steps": int(warmup_steps),
+        "evaluation_steps": int(evaluation_steps),
+        "thresholds": {
+            "max_height_mae": HEIGHT_RECOVERY_MAX_HEIGHT_MAE,
+            "min_double_support_fraction": HEIGHT_RECOVERY_MIN_DOUBLE_SUPPORT_FRACTION,
+            "task_max_tilt_deg": float(max_tilt_deg),
+            "termination_count": 0,
+            "truncation_count": 0,
+        },
+        "scenario_count": len(scenarios),
+        "passed_scenario_count": passed_scenarios,
+        "failure_indices": [
+            int(scenario["index"]) for scenario in scenarios if scenario["verdict"] != "PASS"
+        ],
+        "terminal_events": terminal_events,
+        "scenarios": scenarios,
     }
 
 
@@ -235,6 +613,9 @@ def run_check(
     stop_steps: int,
     device: str,
     seed: int = 1,
+    post_walk_target_heights: tuple[float, ...] = DEFAULT_POST_WALK_TARGET_HEIGHTS,
+    height_recovery_warmup_steps: int = DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS,
+    height_recovery_evaluation_steps: int = DEFAULT_HEIGHT_RECOVERY_EVALUATION_STEPS,
 ) -> dict[str, Any]:
     if int(repeats) <= 0:
         raise ValueError(f"repeats must be positive, got {repeats}")
@@ -243,6 +624,16 @@ def run_check(
             "active_steps and stop_steps must be positive, "
             f"got active_steps={active_steps} stop_steps={stop_steps}"
         )
+    target_heights = tuple(float(value) for value in post_walk_target_heights)
+    if not target_heights or not all(np.isfinite(value) for value in target_heights):
+        raise ValueError(
+            "post_walk_target_heights must contain at least one finite value, "
+            f"got {post_walk_target_heights}"
+        )
+    if int(height_recovery_warmup_steps) < 0:
+        raise ValueError("height_recovery_warmup_steps must be non-negative")
+    if int(height_recovery_evaluation_steps) <= 0:
+        raise ValueError("height_recovery_evaluation_steps must be positive")
     effective_seed = apply_training_seed(
         int(seed),
         torch_runtime=True,
@@ -272,22 +663,36 @@ def run_check(
     set_autoreset(False)
     episodes: list[dict[str, Any]] = []
     terminal_events: list[dict[str, Any]] = []
+    zero_command = np.zeros(3, dtype=np.float32)
     try:
         for index in range(int(repeats)):
             reset_snapshot = _reset_episode(session)
             command_name, command = COMMANDS[index % len(COMMANDS)]
-            standing = _run_phase(session, stop_steps)
+            standing = _run_phase(
+                session,
+                stop_steps,
+                command=zero_command,
+                target_height=NOMINAL_WALK_TARGET_HEIGHT,
+            )
             if standing["done_count"] > 0:
                 walking = _skipped_phase(steps=active_steps, reason="standing_done")
                 recovered = _skipped_phase(steps=stop_steps, reason="standing_done")
             else:
-                session.set_external_command(command)
-                walking = _run_phase(session, active_steps)
+                walking = _run_phase(
+                    session,
+                    active_steps,
+                    command=command,
+                    target_height=NOMINAL_WALK_TARGET_HEIGHT,
+                )
                 if walking["done_count"] > 0:
                     recovered = _skipped_phase(steps=stop_steps, reason="walking_done")
                 else:
-                    session.set_external_command(np.zeros(3, dtype=np.float32))
-                    recovered = _run_phase(session, stop_steps)
+                    recovered = _run_phase(
+                        session,
+                        stop_steps,
+                        command=zero_command,
+                        target_height=NOMINAL_WALK_TARGET_HEIGHT,
+                    )
 
             stop_speed_le_active = _stop_speed_decay_pass(walking, recovered)
             episode = {
@@ -316,6 +721,15 @@ def run_check(
                             **terminal_snapshot,
                         }
                     )
+        height_recovery = _run_height_recovery_grid(
+            session,
+            target_heights=target_heights,
+            active_steps=int(active_steps),
+            standing_steps=int(stop_steps),
+            warmup_steps=int(height_recovery_warmup_steps),
+            evaluation_steps=int(height_recovery_evaluation_steps),
+            max_tilt_deg=float(cfg.reward.max_tilt_deg),
+        )
     finally:
         close = getattr(session.env, "close", None)
         if callable(close):
@@ -345,16 +759,24 @@ def run_check(
             for phase in all_phases
         ),
         "stop_speed_decay_pass": all(bool(episode["stop_speed_le_active"]) for episode in episodes),
+        "input_sync_pass": all(_controlled_phase_pass(phase) for phase in all_phases),
         "task_min_base_height": float(reward_cfg.min_base_height),
         "task_max_tilt_deg": float(reward_cfg.max_tilt_deg),
     }
-    summary["gate_pass"] = bool(
+    summary["nominal_transition_gate_pass"] = bool(
         summary["total_done_count"] == 0
         and summary["min_base_height"] > summary["task_min_base_height"]
         and summary["max_tilt_deg"] < summary["task_max_tilt_deg"]
         and summary["stop_speed_decay_pass"]
+        and summary["input_sync_pass"]
         and summary["completed_phase_count"] == expected_phase_count
         and summary["nonzero_action_phases"] == expected_phase_count
+    )
+    summary["height_recovery_gate_pass"] = bool(height_recovery["verdict"] == "PASS")
+    summary["height_recovery_scenario_count"] = int(height_recovery["scenario_count"])
+    summary["height_recovery_passed_scenario_count"] = int(height_recovery["passed_scenario_count"])
+    summary["gate_pass"] = bool(
+        summary["nominal_transition_gate_pass"] and summary["height_recovery_gate_pass"]
     )
     command_summary: dict[str, dict[str, Any]] = {}
     for name, _command in COMMANDS:
@@ -391,10 +813,15 @@ def run_check(
         "terminal_events": terminal_events,
         "summary": summary,
         "command_summary": command_summary,
+        "height_recovery": height_recovery,
         "failure_indices": [
             int(episode["index"])
             for episode in episodes
             if not episode["stop_speed_le_active"]
+            or not all(
+                _controlled_phase_pass(phase)
+                for phase in (episode["standing"], episode["walking"], episode["stop"])
+            )
             or any(
                 phase["done_count"] > 0
                 for phase in (episode["standing"], episode["walking"], episode["stop"])
@@ -425,16 +852,44 @@ def run_check(
                 for phase in (episode["standing"], episode["walking"], episode["stop"])
             )
         ],
+        "input_sync_failure_indices": [
+            int(episode["index"])
+            for episode in episodes
+            if not all(
+                _controlled_phase_pass(phase)
+                for phase in (episode["standing"], episode["walking"], episode["stop"])
+            )
+            and not any(
+                phase["done_count"] > 0
+                for phase in (episode["standing"], episode["walking"], episode["stop"])
+            )
+        ],
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--student-checkpoint", required=True, type=Path)
-    parser.add_argument("--task", default="g1_walk_flat/mujoco")
+    parser.add_argument("--task", default="g1_walk_height/mujoco")
     parser.add_argument("--repeats", type=int, default=32)
     parser.add_argument("--active-steps", type=int, default=20)
     parser.add_argument("--stop-steps", type=int, default=20)
+    parser.add_argument(
+        "--post-walk-target-heights",
+        type=float,
+        nargs="+",
+        default=list(DEFAULT_POST_WALK_TARGET_HEIGHTS),
+    )
+    parser.add_argument(
+        "--height-recovery-warmup-steps",
+        type=int,
+        default=DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS,
+    )
+    parser.add_argument(
+        "--height-recovery-evaluation-steps",
+        type=int,
+        default=DEFAULT_HEIGHT_RECOVERY_EVALUATION_STEPS,
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--seed", type=int, default=1)
     args = parser.parse_args()
@@ -448,6 +903,9 @@ def main() -> int:
         stop_steps=args.stop_steps,
         device=args.device,
         seed=args.seed,
+        post_walk_target_heights=tuple(args.post_walk_target_heights),
+        height_recovery_warmup_steps=args.height_recovery_warmup_steps,
+        height_recovery_evaluation_steps=args.height_recovery_evaluation_steps,
     )
     print("UniLab G1 distill student transition live sentinel")
     print(
@@ -456,12 +914,53 @@ def main() -> int:
     print({"summary": report["summary"]})
     print({"command_summary": report["command_summary"]})
     print({"terminal_events": report["terminal_events"]})
+    height_recovery = report["height_recovery"]
+    print(
+        {
+            "height_recovery_summary": {
+                key: height_recovery[key]
+                for key in (
+                    "verdict",
+                    "nominal_walk_target_height",
+                    "target_heights",
+                    "command_grid",
+                    "warmup_steps",
+                    "evaluation_steps",
+                    "thresholds",
+                    "scenario_count",
+                    "passed_scenario_count",
+                    "failure_indices",
+                )
+            }
+        }
+    )
+    for scenario in height_recovery["scenarios"]:
+        recovery = scenario["recovery"]
+        print(
+            {
+                "height_recovery_scenario": {
+                    "index": scenario["index"],
+                    "command": scenario["command"],
+                    "requested_target_height": scenario["requested_target_height"],
+                    "walking_target_height": scenario["walking_target_height"],
+                    "verdict": scenario["verdict"],
+                    "metrics": recovery["metrics"],
+                    "failed_checks": [
+                        check
+                        for check in (*scenario["transition_checks"], *recovery["checks"])
+                        if check["level"] == "FAIL"
+                    ],
+                }
+            }
+        )
     print(
         {
             "failure_indices": report["failure_indices"],
             "termination_indices": report["termination_indices"],
             "truncation_indices": report["truncation_indices"],
             "stop_decay_failure_indices": report["stop_decay_failure_indices"],
+            "input_sync_failure_indices": report["input_sync_failure_indices"],
+            "height_recovery_failure_indices": height_recovery["failure_indices"],
         }
     )
     return 0 if report["summary"]["gate_pass"] else 1
