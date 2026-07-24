@@ -103,6 +103,8 @@ def test_g1_height_sac_config_exposes_explicit_height_fields():
     assert cfg.env.commands.default_height == 0.754
     assert cfg.env.commands.random_height_during_walking is True
     assert cfg.env.commands.observe_height_command is True
+    assert cfg.interactive.keyboard is True
+    assert cfg.interactive.keyboard_step_height == pytest.approx(0.01)
     assert cfg.reward.scales.track_base_height_exp_smooth == 4.0
     assert "stand_support_height_margin_l2" not in cfg.reward.scales
     assert "stand_support_height_margin" not in cfg.reward

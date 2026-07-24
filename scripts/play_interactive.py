@@ -63,6 +63,7 @@ from unilab.training.rsl_rl import (
 )
 from unilab.visualization.interactive_playback import (
     _HORA_DISTILL_CHECKPOINT_UNAVAILABLE,
+    HeightCommander,
     KeyboardCommander,
     PlaybackControls,
     RslRlPlaybackConfig,
@@ -146,6 +147,7 @@ class PlayInteractiveArgs:
     keyboard: bool = False
     keyboard_step_lin: float = 0.1
     keyboard_step_ang: float = 0.2
+    keyboard_step_height: float = 0.01
     require_keyboard_command_obs: bool = True
     algo: str = "ppo"
 
@@ -1091,6 +1093,28 @@ def _build_keyboard_commander(env: Any, args) -> KeyboardCommander | None:
     return commander
 
 
+def _build_height_commander(env: Any, args) -> HeightCommander | None:
+    """Set up external target-height control when the task exposes its owner array."""
+
+    if not bool(getattr(args, "keyboard", False)):
+        return None
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    height_commands = info.get("height_commands") if isinstance(info, dict) else None
+    commands_cfg = getattr(getattr(env, "cfg", None), "commands", None)
+    height_range = getattr(commands_cfg, "height_range", None)
+    if not isinstance(height_commands, np.ndarray) or height_commands.shape != (1, 1):
+        return None
+    if height_range is None:
+        raise RuntimeError("height_commands is present but commands.height_range is missing")
+    commands_cfg.resampling_time = 0.0
+    return HeightCommander.from_height_range(
+        height_range,
+        initial=float(height_commands[0, 0]),
+        step=float(getattr(args, "keyboard_step_height", 0.01)),
+    )
+
+
 def _apply_playback_command(playback_session: Any, env: Any, command: np.ndarray) -> None:
     setter = getattr(playback_session, "set_external_command", None)
     if callable(setter):
@@ -1101,6 +1125,27 @@ def _apply_playback_command(playback_session: Any, env: Any, command: np.ndarray
     commands = info.get("commands") if isinstance(info, dict) else None
     if isinstance(commands, np.ndarray) and commands.ndim == 2 and commands.shape[1] >= 3:
         commands[:, :3] = np.asarray(command, dtype=commands.dtype)
+
+
+def _apply_playback_height(playback_session: Any, target_height: float) -> None:
+    setter = getattr(playback_session, "set_external_height", None)
+    if not callable(setter):
+        raise RuntimeError("Playback session does not support external target-height input.")
+    setter(float(target_height))
+
+
+def _measured_base_height(env: Any) -> float | None:
+    resolver = getattr(env, "_terrain_relative_base_height", None)
+    if not callable(resolver):
+        return None
+    measured = np.asarray(resolver(), dtype=np.float64).reshape(-1)
+    return float(measured[0]) if measured.size else None
+
+
+def _print_height_status(env: Any, commander: HeightCommander) -> None:
+    measured = _measured_base_height(env)
+    measured_text = "unavailable" if measured is None else f"{measured:.3f} m"
+    print(f"[play_interactive] {commander.describe()} measured_height={measured_text}")
 
 
 def _state_has_velocity_commands(env: Any) -> bool:
@@ -1284,11 +1329,24 @@ def _handle_command_key(commander: KeyboardCommander, keycode: int) -> None:
     print(f"[play_interactive] {commander.describe()}")
 
 
-def _print_keyboard_legend(args) -> None:
+def _handle_height_key(commander: HeightCommander, keycode: int) -> bool:
+    if keycode == ord("["):
+        commander.nudge(-1.0)
+    elif keycode == ord("]"):
+        commander.nudge(+1.0)
+    else:
+        return False
+    return True
+
+
+def _print_keyboard_legend(args, *, height_control: bool = False) -> None:
     print("[play_interactive] Keyboard teleop ENABLED (drive style):")
     print("  Up / Down    : forward / backward (vx)")
     print("  Left / Right : turn left / right  (vyaw)")
     print("  Enter        : full stop")
+    if height_control:
+        step = float(getattr(args, "keyboard_step_height", 0.01))
+        print(f"  [ / ]        : target height -/+ {step:.3f} m")
     if str(getattr(args, "action_mode", "")) != "policy":
         print("  NOTE: action_mode is not 'policy'; commands will not drive the robot.")
 
@@ -1759,9 +1817,14 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
     )
 
     commander = _build_keyboard_commander(env, args)
+    height_commander = _build_height_commander(env, args)
     if commander is not None:
         _apply_playback_command(playback_session, env, commander.command)
         env.set_autoreset(False)
+    if height_commander is not None:
+        _apply_playback_height(playback_session, height_commander.target)
+        env.set_autoreset(False)
+        _print_height_status(env, height_commander)
     trace_distill_actions = (
         algo == "distill"
         and str(getattr(args, "action_mode", "")) == "policy"
@@ -1797,18 +1860,25 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
         elif keycode in (ord("-"), ord("_")):
             controls.set_speed(controls.speed / 1.25)
             print(f"[play_interactive] speed={controls.speed:.2f}x")
-        elif commander is not None and keycode == _KEY_BACKSPACE:
+        elif (commander is not None or height_commander is not None) and keycode == _KEY_BACKSPACE:
             playback_session.reset()
-            commander.zero()
-            _apply_playback_command(playback_session, env, commander.command)
+            if commander is not None:
+                commander.zero()
+                _apply_playback_command(playback_session, env, commander.command)
+            if height_commander is not None:
+                _apply_playback_height(playback_session, height_commander.target)
+                _print_height_status(env, height_commander)
             print("[play_interactive] reset (backspace)")
+        elif height_commander is not None and _handle_height_key(height_commander, keycode):
+            _apply_playback_height(playback_session, height_commander.target)
+            _print_height_status(env, height_commander)
         elif commander is not None:
             _handle_command_key(commander, keycode)
 
     print("[play_interactive] Opening viewer — close the window or press Esc to quit.")
     print("[play_interactive] Controls: Space=pause/resume, N=single-step, +/-=speed")
-    if commander is not None:
-        _print_keyboard_legend(args)
+    if commander is not None or height_commander is not None:
+        _print_keyboard_legend(args, height_control=height_commander is not None)
 
     with mujoco.viewer.launch_passive(mj_model, viz_data, key_callback=_on_key) as viewer:
         focus_body_id = _resolve_focus_body_id(
@@ -1982,6 +2052,9 @@ def _build_play_args(cfg: DictConfig, *, algo: str = "ppo") -> PlayInteractiveAr
         ),
         keyboard_step_ang=float(
             OmegaConf.select(cfg, "interactive.keyboard_step_ang", default=0.2)
+        ),
+        keyboard_step_height=float(
+            OmegaConf.select(cfg, "interactive.keyboard_step_height", default=0.01)
         ),
         require_keyboard_command_obs=bool(
             OmegaConf.select(cfg, "interactive.require_keyboard_command_obs", default=True)

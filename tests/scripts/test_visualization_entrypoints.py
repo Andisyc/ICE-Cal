@@ -124,6 +124,7 @@ def test_mujoco_visual_xml_paths_prefer_backend_visual_scene(tmp_path: Path):
 def _keyboard_env(
     with_commands: bool = True,
     *,
+    with_height_command: bool = False,
     env_cls_name: str = "Env",
     cfg_cls_name: str = "Cfg",
     module: str = "tests.fake_env",
@@ -136,6 +137,8 @@ def _keyboard_env(
     )
     if obs_contains_command:
         info["commands"] = np.asarray([[0.37, -0.23, 0.19]], dtype=np.float32)
+    if with_height_command:
+        info["height_commands"] = np.asarray([[0.702]], dtype=np.float32)
     commands_cfg = (
         type(
             "Cmds",
@@ -144,6 +147,7 @@ def _keyboard_env(
                 "vel_limit": [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]],
                 "heading_command": True,
                 "resampling_time": 10.0,
+                "height_range": [0.65, 0.754],
             },
         )()
         if with_commands
@@ -240,6 +244,23 @@ def test_handle_command_key_maps_drive_style_keys():
 
     mod._handle_command_key(commander, mod._KEY_ENTER)  # full stop
     assert commander.command.tolist() == [0.0, 0.0, 0.0]
+
+
+def test_height_keyboard_updates_external_target_with_configured_step():
+    mod = _load_script("play_interactive")
+    env = _keyboard_env(with_height_command=True)
+    args = type("Args", (), {"keyboard": True, "keyboard_step_height": 0.01})()
+
+    commander = mod._build_height_commander(env, args)
+
+    assert commander is not None
+    assert commander.target == pytest.approx(0.702)
+    assert mod._handle_height_key(commander, ord("]")) is True
+    assert commander.target == pytest.approx(0.712)
+    assert mod._handle_height_key(commander, ord("[")) is True
+    assert commander.target == pytest.approx(0.702)
+    assert mod._handle_height_key(commander, ord("q")) is False
+    assert env.cfg.commands.resampling_time == 0.0
 
 
 def test_g1_standing_contract_flags_old_walking_only_run_config():

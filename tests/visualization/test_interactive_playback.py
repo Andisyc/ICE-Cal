@@ -17,7 +17,9 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from unilab.visualization.interactive_playback import (
+    HeightCommander,
     KeyboardCommander,
+    OffPolicyPlaybackSession,
     PlaybackControls,
     RslRlPlaybackConfig,
     RslRlPlaybackSession,
@@ -151,6 +153,78 @@ def test_rt2_playback_session_set_external_command_refreshes_observation() -> No
 
     assert env.refresh_calls == 1
     torch.testing.assert_close(session.obs[0, :3], torch.tensor([0.2, 0.0, 0.0]))
+
+
+def test_playback_session_set_external_height_refreshes_policy_observation() -> None:
+    class FakeEnv:
+        def __init__(self) -> None:
+            self.refresh_calls = 0
+            self.state = SimpleNamespace(
+                info={"height_commands": np.asarray([[0.70]], dtype=np.float32)},
+                obs={"obs": np.zeros((1, 99), dtype=np.float32)},
+            )
+
+        def refresh_state(self) -> None:
+            self.refresh_calls += 1
+            self.state.obs["obs"][:, 96:97] = self.state.info["height_commands"]
+
+    class FakeWrapper:
+        def __init__(self, env: FakeEnv) -> None:
+            self.env = env
+
+        def reset(self):
+            return torch.zeros((1, 99), dtype=torch.float32), {}
+
+        def get_observations(self):
+            return torch.as_tensor(self.env.state.obs["obs"])
+
+    env = FakeEnv()
+    session = RslRlPlaybackSession(
+        env=env,
+        wrapped_env=FakeWrapper(env),
+        device="cpu",
+        action_mode="zero",
+        policy=None,
+        num_envs=1,
+    )
+    session.reset()
+    session.set_external_height(0.72)
+
+    assert env.refresh_calls == 1
+    assert env.state.info["height_commands"][0, 0] == pytest.approx(0.72)
+    assert session.obs[0, 96].item() == pytest.approx(0.72)
+
+
+def test_offpolicy_playback_external_height_refreshes_sac_observation() -> None:
+    class FakeEnv:
+        def __init__(self) -> None:
+            self.state = SimpleNamespace(
+                info={"height_commands": np.asarray([[0.70]], dtype=np.float32)},
+                obs={"obs": np.zeros((1, 99), dtype=np.float32)},
+            )
+
+        def refresh_state(self):
+            self.state.obs["obs"][:, 96:97] = self.state.info["height_commands"]
+            return self.state
+
+    env = FakeEnv()
+    session = OffPolicyPlaybackSession(
+        env=env,
+        device="cpu",
+        action_mode="zero",
+        actor=None,
+        actor_algo_type="sac",
+        normalizer=None,
+        num_envs=1,
+        obs_extractor=lambda obs: obs["obs"],
+        priv_info_resolver=lambda **_kwargs: None,
+    )
+    session.obs = np.zeros((1, 99), dtype=np.float32)
+
+    session.set_external_height(0.73)
+
+    assert env.state.info["height_commands"][0, 0] == pytest.approx(0.73)
+    assert session.obs[0, 96] == pytest.approx(0.73)
 
 
 def test_create_rsl_rl_playback_session_loads_checkpoint_and_runner_log_dir() -> None:
@@ -926,6 +1000,19 @@ def test_keyboard_commander_nudges_stack_and_clamp_to_vel_limit() -> None:
 def test_keyboard_commander_rejects_bad_vel_limit_shape() -> None:
     with pytest.raises(ValueError, match=r"shape \(2, 3\)"):
         KeyboardCommander.from_vel_limit([[0.0, 0.0], [1.0, 1.0]])
+
+
+def test_height_commander_nudges_and_clamps_to_training_range() -> None:
+    commander = HeightCommander.from_height_range([0.65, 0.754], initial=0.70, step=0.01)
+
+    commander.nudge(+1.0)
+    assert commander.target == pytest.approx(0.71)
+    for _ in range(20):
+        commander.nudge(+1.0)
+    assert commander.target == pytest.approx(0.754)
+    for _ in range(20):
+        commander.nudge(-1.0)
+    assert commander.target == pytest.approx(0.65)
 
 
 def test_prepare_motion_overlay_selection_filters_body_names() -> None:

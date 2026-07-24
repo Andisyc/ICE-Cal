@@ -5,6 +5,8 @@ defaults:
 training:
   task_name: G1StandHeight
   sim_backend: mujoco
+interactive:
+  keyboard: true
 algo:
   actor_warm_start_adapter: g1_height_actor_obs_98_to_99_v1
 env:

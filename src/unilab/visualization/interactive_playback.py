@@ -159,6 +159,52 @@ class KeyboardCommander:
         )
 
 
+@dataclass
+class HeightCommander:
+    """Mutable target-height command driven by keyboard nudges."""
+
+    low: float
+    high: float
+    step: float = 0.01
+    target: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.low = float(self.low)
+        self.high = float(self.high)
+        self.step = float(self.step)
+        if not np.isfinite([self.low, self.high, self.step]).all():
+            raise ValueError("height command bounds and step must be finite")
+        if self.low > self.high:
+            raise ValueError(f"height command range must be ordered, got [{self.low}, {self.high}]")
+        if self.step <= 0.0:
+            raise ValueError(f"height command step must be positive, got {self.step}")
+        self.target = self.high
+
+    @classmethod
+    def from_height_range(
+        cls,
+        height_range: Any,
+        *,
+        initial: float,
+        step: float = 0.01,
+    ) -> "HeightCommander":
+        limits = np.asarray(height_range, dtype=np.float64)
+        if limits.shape != (2,):
+            raise ValueError(f"commands.height_range must have shape (2,), got {limits.shape}")
+        commander = cls(low=float(limits[0]), high=float(limits[1]), step=float(step))
+        commander.set(initial)
+        return commander
+
+    def set(self, value: float) -> None:
+        self.target = float(np.clip(float(value), self.low, self.high))
+
+    def nudge(self, sign: float) -> None:
+        self.set(self.target + self.step * (1.0 if sign >= 0.0 else -1.0))
+
+    def describe(self) -> str:
+        return f"target_height={self.target:.3f} m range=[{self.low:.3f}, {self.high:.3f}]"
+
+
 @dataclass(frozen=True)
 class MotionOverlaySelection:
     """Cold-path selection of task bodies used by playback overlays."""
@@ -253,6 +299,29 @@ class RslRlPlaybackSession:
         refresh_state()
         return self.refresh_observation()
 
+    def set_external_height(self, target_height: float) -> Any:
+        """Apply an external height target and refresh every policy-facing observation."""
+
+        state = getattr(self.env, "state", None)
+        info = getattr(state, "info", None)
+        heights = info.get("height_commands") if isinstance(info, dict) else None
+        if not isinstance(heights, np.ndarray) or heights.shape != (self.num_envs, 1):
+            raise RuntimeError(
+                "Playback height synchronization requires env.state.info['height_commands'] "
+                f"with shape ({self.num_envs}, 1)."
+            )
+        target = float(target_height)
+        if not np.isfinite(target):
+            raise ValueError(f"Playback target height must be finite, got {target_height}")
+        if np.all(heights[:, 0] == target):
+            return self.obs
+        heights[:, 0] = np.asarray(target, dtype=heights.dtype)
+        refresh_state = getattr(self.env, "refresh_state", None)
+        if not callable(refresh_state):
+            raise RuntimeError("Playback height synchronization requires env.refresh_state().")
+        refresh_state()
+        return self.refresh_observation()
+
     def step_once(self) -> Any:
         actions = self._build_actions()
         self.actions = actions
@@ -342,6 +411,60 @@ class OffPolicyPlaybackSession:
         self.current_priv_info = self._resolve_priv_info(state.obs, state.info)
         self.step_count += 1
         return self.obs
+
+    def refresh_observation(self) -> np.ndarray:
+        """Refresh direct off-policy observations without advancing physics."""
+
+        refresh_state = getattr(self.env, "refresh_state", None)
+        if not callable(refresh_state):
+            raise RuntimeError("Playback observation refresh requires env.refresh_state().")
+        state = refresh_state()
+        self.obs = np.asarray(self.obs_extractor(state.obs), dtype=np.float32)
+        self.current_priv_info = self._resolve_priv_info(state.obs, state.info)
+        return self.obs
+
+    def set_external_command(self, command: np.ndarray) -> np.ndarray:
+        """Apply an external velocity command before the next policy action."""
+
+        commands = self.info.get("commands")
+        if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
+            raise RuntimeError(
+                "Playback command synchronization requires env.state.info['commands'] "
+                "with shape (num_envs, >=3)."
+            )
+        command_arr = np.asarray(command, dtype=commands.dtype)
+        if command_arr.shape == (3,):
+            command_arr = np.broadcast_to(command_arr, (commands.shape[0], 3))
+        if command_arr.shape != (commands.shape[0], 3):
+            raise ValueError(
+                "Playback command synchronization expects command shape "
+                f"(3,) or ({commands.shape[0]}, 3), got {command_arr.shape}."
+            )
+        if np.array_equal(commands[:, :3], command_arr):
+            if self.obs is None:
+                return self.refresh_observation()
+            return self.obs
+        commands[:, :3] = command_arr
+        return self.refresh_observation()
+
+    def set_external_height(self, target_height: float) -> np.ndarray:
+        """Apply an external height target before the next policy action."""
+
+        heights = self.info.get("height_commands")
+        if not isinstance(heights, np.ndarray) or heights.shape != (self.num_envs, 1):
+            raise RuntimeError(
+                "Playback height synchronization requires env.state.info['height_commands'] "
+                f"with shape ({self.num_envs}, 1)."
+            )
+        target = float(target_height)
+        if not np.isfinite(target):
+            raise ValueError(f"Playback target height must be finite, got {target_height}")
+        if np.all(heights[:, 0] == target):
+            if self.obs is None:
+                return self.refresh_observation()
+            return self.obs
+        heights[:, 0] = np.asarray(target, dtype=heights.dtype)
+        return self.refresh_observation()
 
     def advance(self, controls: PlaybackControls) -> bool:
         if not controls.consume_step_permission():
@@ -1489,6 +1612,7 @@ def prepare_motion_overlay_selection(
 
 
 __all__ = [
+    "HeightCommander",
     "KeyboardCommander",
     "MotionOverlaySelection",
     "OffPolicyPlaybackSession",
