@@ -138,7 +138,6 @@ uv run --no-sync train \
   --render-mode none \
   workflow=g1_stand_height_walk \
   training.device=cuda:0 \
-  training.workflow.enabled=true \
   training.workflow.mode=fork \
   training.workflow.parent_run_dir="$PARENT_RUN_DIR" \
   training.workflow.run_dir="$RUN_DIR" \
@@ -164,3 +163,34 @@ $RUN_DIR/checkpoints/dagger_iteration_1.pt
 After training, preserve `RUN_DIR`, checkpoint path, SHA-256, manifest path,
 and the complete command output before running the unchanged nominal and
 non-nominal physical acceptance gates.
+
+## SSH Execution Result
+
+- Date: 2026-07-27.
+- Server checkout: `bef2a91b44854a61b8f86be2d6ba4d632ee77e5b` on
+  `codex/stand-height-walk-async`, clean and synchronized.
+- The package CLI already injects `training.workflow.enabled=true` for
+  `--algo distill`; passing it again is rejected as a duplicate route override.
+- The non-interactive SSH launcher used
+  `/home/chengyuxuan/.local/bin/uv` because the server's default non-login
+  `PATH` does not contain `~/.local/bin`.
+- Immutable r1 run:
+  `/ssd1/cyx/liujun/UniLab/logs/distill_workflow/20260727-104620_stand_height_walk_non_nominal_grid_r1`.
+  It completed one persistent-async iteration with 1,114,112 cumulative rows,
+  12,288 updates, and checkpoint SHA-256
+  `13378dd0c7c7478307692b775bd72305fb1a4bfd2d2fffe7e1a96d1ca84844f9`.
+- Collection evidence: nine command-height cases, 7,168-8,192 rows per case,
+  7,024-8,000 post-switch rows per case, and maximum post-switch age 968.
+- Unchanged seed-1 gate: FAIL. Nominal lateral stop-speed decay failed;
+  non-nominal recovery passed 4/9 and failed forward at all three heights plus
+  lateral at 0.650 and 0.754 m. All command/height/observation synchronization
+  errors remained zero.
+- A child-state r2 immutable fork collected successfully but exited before
+  aggregate completion. Its exact 14-source aggregate passes in-memory at
+  1,310,720 rows. A save/reload replay produced exit 139; the same replay
+  passed under GDB, so the fault is native-symptom-confirmed and timing/layout
+  sensitive, not owner-confirmed.
+
+Stop before another training retry. The next step is a scoped repair or
+first-invalid-operation capture at the CPU aggregate save/reload boundary,
+followed by a new immutable fork and the same acceptance command.

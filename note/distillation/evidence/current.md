@@ -2082,3 +2082,59 @@ or policy-quality conclusion is authorized.
   authorized boundary is a human-reviewed Git transfer followed by one new SSH
   `mode=fork` outer iteration from the immutable round-2 parent. Training and
   acceptance remain unexecuted.
+
+## E118: Repaired SSH Fork Trained; Physical Gate FAIL; R2 Native Boundary
+
+- Date: 2026-07-27.
+- Code identity: clean SSH checkout at
+  `bef2a91b44854a61b8f86be2d6ba4d632ee77e5b` on
+  `codex/stand-height-walk-async`.
+- Input identities were reread on SSH. StandHeight and Walk teacher SHA-256
+  values exactly match E117. The round-2 parent checkpoint SHA-256 is
+  `468941c8cf1fb6f27cbc4c06fc7668abc2c30d54048fde5cbf793b9e90d531ec`.
+- Immutable r1 run:
+  `/ssd1/cyx/liujun/UniLab/logs/distill_workflow/20260727-104620_stand_height_walk_non_nominal_grid_r1`.
+  The manifest records `mode=fork`, `stage=DAGGER_ITERATION_1_COMPLETE`, one
+  completed iteration, 1,114,112 cumulative samples, and 12,288 updates. The
+  checkpoint SHA-256 is
+  `13378dd0c7c7478307692b775bd72305fb1a4bfd2d2fffe7e1a96d1ca84844f9`;
+  the aggregate SHA-256 is
+  `6c9afe72bb294259b99c83737f033f8f962f3ba5c53142d232f0bc46c9f5d612`.
+- Live collection metadata records the exact nine-case Cartesian grid. Each
+  case has 7,168-8,192 samples, 7,024-8,000 post-switch samples, and maximum
+  post-switch age 968. Active walk target is 0.754 m and recovery targets are
+  0.650/0.702/0.754 m.
+- The unchanged fixed-seed MuJoCo sentinel loaded a 99-D/29-D student at
+  `agent_steps=6291456`, with hard routing `active->0`, `inactive->1`, and no
+  observation normalizer. It returned exit 1:
+  - nominal: 0 terminations/truncations and 96/96 phase blocks completed, but
+    lateral stop-speed decay failed;
+  - non-nominal: 4/9 cases passed; forward at all heights and lateral at
+    0.650/0.754 m failed;
+  - command, target-height, and observation-index-96 synchronization remained
+    exact.
+- Offline differential on the new transition dataset improved forced-expert
+  MSE from parent 0.002615 to child 0.000651 overall and from 0.006186 to
+  0.002284 at post-switch age 20. This proves fitting improvement only; the
+  failed closed-loop gate remains authoritative.
+- A second immutable child-state fork at
+  `/ssd1/cyx/liujun/UniLab/logs/distill_workflow/20260727-105657_stand_height_walk_non_nominal_grid_r2`
+  collected all scenarios but the main process disappeared after
+  `workflow/iteration_1/before_aggregate`; no checkpoint was created. The
+  orphan persistent collector was terminated and GPU resources were released.
+- Native boundary evidence:
+  - exact source inspection and in-memory aggregate replay PASS with 14
+    sources, 1,310,720 rows, and peak RSS about 3.77 GiB;
+  - the same replay with output save/reload exited 139 (SIGSEGV);
+  - GDB with correct parent-process following changed timing and the same
+    save/reload replay PASSed, producing a valid aggregate/report;
+  - no OOM, kernel Xid, Python traceback, or first-invalid-operation stack was
+    observed.
+- Evidence level: `native-symptom-confirmed`; victim/detection boundary is the
+  CPU aggregate save/reload lifecycle; native owner and first invalid operation
+  remain unconfirmed. A GDB-induced pass is timing/layout sensitivity, not a
+  fix.
+- Decision: do not promote r1 and do not blindly retry r2. Preserve both runs.
+  The next admitted step is a scoped aggregate serialization/ownership repair
+  or first-invalid-operation capture, followed by a fresh immutable fork and
+  the unchanged seed-1 physical gate.

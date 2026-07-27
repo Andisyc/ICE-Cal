@@ -22,14 +22,15 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | 99-D workflow persistent runtime opt-in | distill runtime/workflow | S2 / T-connect+lifecycle | PASS | E116: two roles, three scenarios, target-height keys, and one service close; `3 passed in 3.83s` |
 | Non-nominal command x height transition collection | collector/workflow | S0/S1/S2 / T-value+roundtrip+connect | PASS | E117: exact 3x3 grid, active 0.754 m, post-switch targets, index-96/teacher roundtrip, legacy and persistent connectors; `10 + 7 passed` |
 | StandHeight teacher physical quality | training/acceptance owner | S4 / T-live+differential | PASS | E117: user-provided Stage-2 gate passed at 0.650/0.702/0.754 m; exact checkpoint identity retained |
-| Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live | PARTIAL | E117: round-2 parent failed 4/9 recovery cases; repaired fork not trained or evaluated |
+| Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live | PARTIAL | E118: repaired r1 trained and passed 4/9 recovery cases; nominal lateral stop decay failed. Child-state r2 stopped at a native aggregate save/reload SIGSEGV before checkpoint creation |
 
 ## Stop Condition
 
 Steps 2-4 deterministic implementation are closed by E114 and E113. Step 5's
 bounded live route is closed by E115, and E116 closes the optional async
 connector boundary without changing the `legacy` distillation default. E117
-closes the local non-nominal collection-distribution repair. A new immutable
-SSH fork and its physical acceptance remain open and require exact
-checkpoint/run identity. No shape, load, or deterministic fixture result is
-policy-quality evidence.
+closes the local non-nominal collection-distribution repair. E118 live-confirms
+the collection and training route but not policy quality: r1 failed the
+unchanged physical gate, and r2 exposed a native aggregate boundary before a
+checkpoint existed. No shape, load, offline MSE, or deterministic fixture
+result is policy-quality evidence.
