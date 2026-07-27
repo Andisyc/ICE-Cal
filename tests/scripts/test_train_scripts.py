@@ -1076,6 +1076,7 @@ def test_distill_walk_stand_workflow_profile_composes_teacher_roles(monkeypatch)
     assert cfg.student.obs_dim == 98
     assert cfg.algo.expert_behavior_loss_source == "auto"
     assert cfg.training.workflow.transition_min_post_switch_steps == 20
+    assert cfg.training.workflow.transition_nominal_settle_steps == 0
     assert cfg.training.workflow.dagger_min_transition_replay_passes == 8
     assert cfg.training.workflow.dagger_min_transition_replay_labels == ["walk_to_stop"]
     assert roles == [

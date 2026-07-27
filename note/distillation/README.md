@@ -8,7 +8,7 @@ not the current design authority.
 
 1. [Concept Figure](../architecture/concept/03_g1_multiteacher_distillation_method.data.json)
    - Human-controlled method intent.
-2. [Active Method Contract](contracts/active/method/DISTILL-METHOD-v002.md)
+2. [Active Method Contract](contracts/active/method/DISTILL-METHOD-v003.md)
    - Accepted semantics and design-point details.
 3. [Current Task Canvas](task_canvas.md)
    - Current problem, verified facts, active proposal, and next decision.

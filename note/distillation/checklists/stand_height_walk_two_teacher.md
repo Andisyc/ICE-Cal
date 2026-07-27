@@ -23,6 +23,7 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | Non-nominal command x height transition collection | collector/workflow | S0/S1/S2 / T-value+roundtrip+connect | PASS | E117: exact 3x3 grid, active 0.754 m, post-switch targets, index-96/teacher roundtrip, legacy and persistent connectors; `10 + 7 passed` |
 | StandHeight teacher physical quality | training/acceptance owner | S4 / T-live+differential | PASS | E117: user-provided Stage-2 gate passed at 0.650/0.702/0.754 m; exact checkpoint identity retained |
 | Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live+differential | PARTIAL | E120: exact-switch-state teacher substitution assigns 3 failures to student fidelity; teacher also fails lateral@0.702 and nominal lateral 20-step decay |
+| B-ordered walk -> nominal settle -> height data | collector/workflow/acceptance owners | S0/S1/S2/S4 / T-contract+value+connect+live | PARTIAL | E121: v003, collector/config/connectors/sentinel deterministic checks PASS; new-fork live collection and physical gate pending |
 
 ## Stop Condition
 

@@ -2099,6 +2099,13 @@ def run_single_entry_workflow(
                         default=8,
                     )
                 ),
+                nominal_settle_steps=int(
+                    OmegaConf.select(
+                        cfg,
+                        "training.workflow.transition_nominal_settle_steps",
+                        default=0,
+                    )
+                ),
                 min_post_switch_steps=int(
                     OmegaConf.select(
                         cfg,

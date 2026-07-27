@@ -3054,6 +3054,100 @@ def test_collect_transition_distillation_dataset_preserves_legacy_height() -> No
     assert dataset.metadata["post_switch_target_heights"] is None
 
 
+def test_collect_transition_distillation_dataset_settles_before_height_switch() -> None:
+    from unilab.algos.torch.distill import (
+        collect_transition_distillation_dataset_from_env,
+    )
+
+    class ConstantPolicy(torch.nn.Module):
+        def __init__(self, value: float) -> None:
+            super().__init__()
+            self.value = float(value)
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.full(
+                (obs.shape[0], 29),
+                self.value,
+                dtype=obs.dtype,
+                device=obs.device,
+            )
+
+    class HeightEchoPolicy(torch.nn.Module):
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return obs[:, 96:97].expand(-1, 29)
+
+    walk_commands = np.asarray(
+        [[0.4, 0.0, 0.0], [0.0, 0.4, 0.0], [0.0, 0.0, 0.4]],
+        dtype=np.float32,
+    )
+    post_switch_heights = np.asarray([0.650, 0.702, 0.754], dtype=np.float32)
+    expected_case_commands = np.repeat(walk_commands, 3, axis=0)
+    expected_case_heights = np.tile(post_switch_heights, 3).reshape(-1, 1)
+    env = _HeightTransitionDistillEnv()
+
+    dataset = collect_transition_distillation_dataset_from_env(
+        env,
+        num_samples=45,
+        expected_student_obs_dim=99,
+        expected_teacher_obs_dim=99,
+        walking_teacher_policy=ConstantPolicy(-0.5),
+        standing_teacher_policy=HeightEchoPolicy(),
+        rollout_policy=ConstantPolicy(0.0),
+        pre_switch_steps=1,
+        nominal_settle_steps=2,
+        min_post_switch_steps=2,
+        walk_commands=walk_commands,
+        nominal_walk_target_height=0.754,
+        post_switch_target_heights=post_switch_heights,
+        target_height_info_key="height_commands",
+        walking_role_label="walk",
+        standing_role_label="stand_height",
+    )
+
+    assert dataset.transition_ages is not None
+    assert dataset.target_height is not None
+    assert dataset.commands is not None
+    active = dataset.transition_ages < 0
+    settling = (dataset.transition_ages >= 0) & (dataset.transition_ages < 2)
+    tracking = dataset.transition_ages >= 2
+    assert int(active.sum()) == 9
+    assert int(settling.sum()) == 18
+    assert int(tracking.sum()) == 18
+    assert torch.allclose(dataset.commands[active], torch.as_tensor(expected_case_commands))
+    assert torch.equal(dataset.commands[~active], torch.zeros((36, 3)))
+    assert torch.allclose(dataset.target_height[active | settling], torch.full((27, 1), 0.754))
+    assert torch.allclose(
+        dataset.target_height[tracking],
+        torch.as_tensor(expected_case_heights).repeat((2, 1)),
+    )
+    assert dataset.teacher_actions is not None
+    assert torch.allclose(
+        dataset.teacher_actions[settling, :1],
+        torch.full((18, 1), 0.754),
+    )
+    assert torch.allclose(
+        dataset.teacher_actions[tracking, :1],
+        dataset.target_height[tracking],
+    )
+    assert dataset.metadata["nominal_settle_steps"] == 2
+    assert dataset.metadata["height_switch_age"] == 2
+    assert dataset.metadata["nominal_settle_rows"] == 18
+    assert dataset.metadata["height_tracking_rows"] == 18
+    assert dataset.metadata["max_height_tracking_age"] == 1
+    transition_cases = dataset.metadata["transition_cases"]
+    assert [case["sample_count"] for case in transition_cases] == [5] * 9
+    assert [case["nominal_settle_sample_count"] for case in transition_cases] == [2] * 9
+    assert [case["height_tracking_sample_count"] for case in transition_cases] == [2] * 9
+    assert [case["max_height_tracking_age"] for case in transition_cases] == [1] * 9
+    assert len(env.input_history) == 3
+    np.testing.assert_allclose(env.input_history[0][0], expected_case_commands)
+    np.testing.assert_allclose(env.input_history[0][1], 0.754)
+    np.testing.assert_allclose(env.input_history[1][0], 0.0)
+    np.testing.assert_allclose(env.input_history[1][1], 0.754)
+    np.testing.assert_allclose(env.input_history[2][0], 0.0)
+    np.testing.assert_allclose(env.input_history[2][1], expected_case_heights)
+
+
 def test_collect_transition_distillation_dataset_grid_fails_closed() -> None:
     from unilab.algos.torch.distill import (
         collect_transition_distillation_dataset_from_env,

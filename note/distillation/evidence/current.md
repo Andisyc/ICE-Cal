@@ -2237,3 +2237,42 @@ or policy-quality conclusion is authorized.
   training is authorized. The next step is a human method decision covering
   both owner boundaries; a student-only retrain cannot by itself close the
   teacher-insufficient cases.
+
+## E121: B-Ordered Walk, Settle, Then Height Collector
+
+- Date: 2026-07-27.
+- Human-confirmed method order is now
+  `walk@0.754 -> zero-command settle@0.754 -> requested-height tracking`.
+  `DISTILL-METHOD-v003` supersedes v002; all six Concept Figure nodes and the
+  active training contract reference v003.
+- Pre-change runtime audit of immutable r3 `walk_to_stop.pt` found 65,536 rows,
+  but non-nominal targets already appeared at `transition_age=0`. It proves the
+  old atomic stop/height switch and does not satisfy the ordered B contract.
+- Collector owner now accepts backward-compatible
+  `nominal_settle_steps=0`. The governed `g1_stand_height_walk` workflow sets
+  `transition_nominal_settle_steps=100`; active rows remain at `0.754 m`, then
+  zero-command inactive rows remain at `0.754 m` for ages 0-99, and requested
+  height begins at age 100.
+- `transition_min_post_switch_steps` is enforced after the height-switch age.
+  Dataset metadata records global and per-case nominal-settle row counts,
+  requested-height row counts, and maximum requested-height age. Missing
+  requested-height coverage for any command-height case fails closed.
+- Legacy and persistent connectors forward the same field. The governed live
+  sentinel independently executes a 100-step zero-command nominal-height phase
+  before changing target height; its output exposes the settle duration.
+- Near-risk evidence:
+  - collector semantics/negative/legacy slice: `9 passed, 92 deselected`;
+  - exact config plus workflow, persistent worker/differential, and live
+    sentinel suite: `21 passed`;
+  - focused Ruff lint and format: PASS;
+  - Atlas viewer import and contract check: PASS,
+    `runtime_modules=9 method_modules=11 concept_nodes=6`.
+- Expanded touched-area observation was `320 passed, 10 failed`. Nine failures
+  are pre-existing opt-in runtime-trace expectations that conflict with E119's
+  default-cold diagnostic owner, and one is an unrelated legacy error-message
+  regex. The exact B-owner suites above pass; these unrelated failures were not
+  modified or hidden.
+- Scope boundary: no teacher, reward, threshold, expert, checkpoint, immutable
+  r1/r2/r3 artifact, MuJoCo policy run, or training run changed. Implementation
+  and deterministic integration are PASS; new-fork training and unchanged
+  physical acceptance remain unexecuted.

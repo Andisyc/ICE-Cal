@@ -103,6 +103,7 @@ training:
     dagger_balance_key: role
     dagger_balanced_labels: []
     transition_pre_switch_steps: 8
+    transition_nominal_settle_steps: 0
     transition_min_post_switch_steps: 20
     dagger_min_transition_replay_passes: 8
     dagger_min_transition_replay_labels: [walk_to_stop]

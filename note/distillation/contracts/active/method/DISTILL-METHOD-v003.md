@@ -1,9 +1,9 @@
 ---
-contract_id: DISTILL-METHOD-v002
+contract_id: DISTILL-METHOD-v003
 status: active
-effective_date: 2026-07-23
-updated_date: 2026-07-24
-supersedes: DISTILL-METHOD-v001
+effective_date: 2026-07-27
+updated_date: 2026-07-27
+supersedes: DISTILL-METHOD-v002
 scope: G1 StandHeight and Walk two-teacher command-intent MoE distillation
 concept_figure: note/architecture/concept/03_g1_multiteacher_distillation_method.data.json
 ---
@@ -18,13 +18,19 @@ Walking is a second behavior family with non-zero velocity intent and a fixed
 nominal base height. The method must preserve both roles without averaging
 their action targets into one undifferentiated policy.
 
+The deployment transition is ordered. After walking reaches its destination,
+velocity intent first becomes zero while target height remains at the nominal
+`0.754 m`. Only after an explicit nominal-height settling window may an
+external non-nominal target be applied. Switching height before this settling
+window, or walking after a non-nominal height switch, is forbidden.
+
 ## Design Point Register
 
 | design_id | Canonical name | block_id | Contract section | Current code/evidence gap |
 | --- | --- | --- | --- | --- |
 | DISTILL-DP-01 | Teacher Policies | DT-M-01 | [Teacher Policies](#teacher-policies) | Remote teacher identities and role artifacts are recorded; bytes were not reread in the local repair task |
-| DISTILL-DP-02 | Command Intent | DT-M-02 | [Command Intent](#command-intent) | Deterministic 3x3 transition routing passed; retrained live transitions are unproven |
-| DISTILL-DP-03 | Role Data | DT-M-03 | [Role Data](#role-data) | 99-D schema, roundtrip, legacy isolation, and per-case transition metadata passed locally |
+| DISTILL-DP-02 | Command Intent | DT-M-02 | [Command Intent](#command-intent) | B-ordered walk/settle/height routing requires implementation and evidence |
+| DISTILL-DP-03 | Role Data | DT-M-03 | [Role Data](#role-data) | Existing transition rows switch height at stop age 0; staged B rows are absent |
 | DISTILL-DP-04 | MoE Student | DT-M-04 | [MoE Student](#moe-student) | Round-2 student exists but failed the governed non-nominal transition gate |
 | DISTILL-DP-05 | Student-State DAgger | DT-M-05 | [Student-State DAgger](#student-state-dagger) | Repaired collection distribution has not run on SSH |
 
@@ -61,13 +67,17 @@ their action targets into one undifferentiated policy.
 - `inactive`: route to `StandHeight` / expert 1, force velocity command to zero,
   and preserve the requested target height.
 - `active`: route to `Walk` / expert 0 and force target height to `0.754 m`.
+- Ordered transition: `active` first becomes `inactive` at nominal height;
+  `inactive` remains at `0.754 m` for the config-owned settling window; only
+  then is the external requested height exposed to the same inactive expert.
 - Ownership: task and collection config own thresholds and height semantics;
   checkpoint filenames and a free learned router do not.
 - Interaction: the same intent mapping labels Role Data and selects collection,
   behavior-loss, DAgger rollout, and deployment experts.
 - Forbidden: creating a third height intent, changing thresholds between
   collection and deployment, or allowing active walking rows to retain an
-  arbitrary target height.
+  arbitrary target height. A zero-command event must not atomically apply a
+  non-nominal height in the governed B transition.
 
 ## Role Data
 
@@ -78,6 +88,10 @@ their action targets into one undifferentiated policy.
 - Required row contract: 99-D `student_obs`, 99-D `teacher_obs`, detached 29-D
   `teacher_action`, `[vx, vy, vyaw]` command, scalar `target_height`,
   `active|inactive` intent, `walk|stand_height` role, and source identity.
+- Transition evidence must distinguish active-walk rows, nominal-height
+  inactive settling rows, and requested-height inactive tracking rows. The
+  dataset metadata records the settling duration and height-switch age; height
+  tracking coverage is counted only after that age.
 - Output: a `DistillationTensorDataset` whose role, intent, scenario, and source
   metadata survive save, load, aggregation, resume, and fork.
 - Legacy isolation: existing 98-D stand/walk datasets and checkpoints remain
@@ -98,9 +112,9 @@ their action targets into one undifferentiated policy.
 - Mapping: `walk/active -> expert 0`; `stand_height/inactive -> expert 1`.
 - Training rule: behavior cloning updates only the selected expert; inactive
   expert parameters and optimizer state must not move.
-- Required behavior: zero velocity tracks the requested height; any active
-  velocity command walks at nominal height; returning to zero velocity recovers
-  `StandHeight` and preserves the requested post-transition height.
+- Required behavior: any active velocity command walks at nominal height;
+  returning to zero velocity first recovers `StandHeight` at nominal height;
+  after the settling window, zero velocity tracks the requested height.
 - Forbidden: a third expert without a new contract version, soft-mixture
   collection presented as pure-expert evidence, dimension-tolerant checkpoint
   loading, or finite action used as physical acceptance.
@@ -116,8 +130,8 @@ their action targets into one undifferentiated policy.
 - Formal workflow, artifact reuse, resume, fork, and persistent-runtime behavior
   remain owned by `DISTILL-TRAIN-v003`; its default remains `legacy`.
 - Required scenarios: low/mid/high static heights, StandHeight-to-Walk,
-  Walk-to-StandHeight at nominal height, Walk-to-StandHeight at a non-nominal
-  height, repeated reset, and bounded long-horizon support/tilt/termination.
+  ordered Walk-to-StandHeight-at-nominal then StandHeight-to-requested-height,
+  repeated reset, and bounded long-horizon support/tilt/termination.
 - Forbidden: using one fixed dataset as multiple DAgger iterations, relabeling
   with a non-matching role teacher, or promoting a connector-valid checkpoint
   without physical acceptance.
@@ -131,6 +145,7 @@ their action targets into one undifferentiated policy.
 | 98-D to 99-D actor migration | off-policy checkpoint adapter | StandHeight warm start and converted Walk teacher | source checkpoints are immutable |
 | Two teacher roles | new distill workflow owner YAML | collector, manifest, DAgger, trainer | old `stand`/`walk_flat` profile is unchanged |
 | Two expert mapping | new distill workflow owner YAML | trainer and playback | old three-expert checkpoint/config is unchanged |
+| Ordered walk/settle/height phase | distill workflow owner YAML + transition collector | legacy/persistent collection and physical acceptance | workflows with zero settle steps retain legacy atomic switching |
 
 ## Required Evidence
 
@@ -143,12 +158,18 @@ their action targets into one undifferentiated policy.
 4. S4 teacher gate: low/mid/high target ordering, per-bin mean absolute height
    error at most `0.05 m`, no bounded-window termination, double-foot support
    fraction at least `0.90`, and tilt below the task limit.
-5. S4 student gate: repeated reset and both transition directions, including a
-   non-nominal post-walk height target, with exact checkpoint and config identity.
+5. S4 student gate: repeated reset and both transition directions, including
+   an observable nominal-height settling phase before a non-nominal post-walk
+   target, with exact checkpoint and config identity.
 
 ## Current Acceptance Status
 
-The method semantics are active, and Steps 2-4 remain complete at their
+The v003 ordered-transition semantics are active. Existing v002 evidence still
+supports the two teachers, 99-D schema, and two-expert mapping, but it does not
+prove physical quality for the new B-ordered transition. E121 implements the
+config-owned nominal settling window across collector, legacy/persistent
+connectors, and the governed sentinel, with focused deterministic tests, Ruff,
+and Atlas checks passing. Steps 2-4 remain complete at their
 deterministic boundaries. E114 preserves the retained Step 2 result (`108
 passed, 24 warnings in 19.46s`) and Step 3 result (`8 passed in 6.77s`); E113
 records Step 4 Ruff PASS and `27 passed in 20.56s`. E115 confirms the bounded

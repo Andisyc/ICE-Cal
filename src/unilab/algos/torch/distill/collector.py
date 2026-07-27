@@ -588,6 +588,7 @@ def collect_transition_distillation_dataset_from_env(
     rollout_policy: torch.nn.Module | None = None,
     rollout_policies_by_intent: Mapping[str, torch.nn.Module] | None = None,
     pre_switch_steps: int = 8,
+    nominal_settle_steps: int = 0,
     min_post_switch_steps: int = 0,
     walk_command: np.ndarray | tuple[float, float, float] = (0.4, 0.0, 0.0),
     walk_commands: Sequence[Sequence[float]] | np.ndarray | None = None,
@@ -610,10 +611,12 @@ def collect_transition_distillation_dataset_from_env(
     """Collect one opt-in walk-to-stop student-state DAgger scenario.
 
     Each vectorized row starts with an active walking command, switches once to
-    the zero command after ``pre_switch_steps``, and resets its own scenario to
-    walking if the environment terminates that row. When
-    ``min_post_switch_steps`` is positive, the collector requires enough rows
-    to expose that many post-switch ages and fails closed otherwise. The
+    the zero command after ``pre_switch_steps``, retains the nominal walking
+    height for ``nominal_settle_steps``, and only then applies the requested
+    post-switch height. It resets its own scenario to walking if the environment
+    terminates that row. When ``min_post_switch_steps`` is positive, the
+    collector requires that many requested-height rows after the settling
+    window and fails closed otherwise. The
     rollout is driven by either ``rollout_policy`` or the explicit
     ``rollout_policies_by_intent`` map. The latter uses the walking expert
     before the switch and the standing expert after it; teachers only label
@@ -624,6 +627,8 @@ def collect_transition_distillation_dataset_from_env(
         raise ValueError(f"num_samples must be positive, got {num_samples}")
     if int(pre_switch_steps) <= 0:
         raise ValueError(f"pre_switch_steps must be positive, got {pre_switch_steps}")
+    if int(nominal_settle_steps) < 0:
+        raise ValueError(f"nominal_settle_steps must be non-negative, got {nominal_settle_steps}")
     if int(min_post_switch_steps) < 0:
         raise ValueError(f"min_post_switch_steps must be non-negative, got {min_post_switch_steps}")
     if not str(walking_role_label) or not str(standing_role_label):
@@ -634,13 +639,16 @@ def collect_transition_distillation_dataset_from_env(
     if action_shape is None:
         raise ValueError("env.action_space.shape must be defined for transition collection")
     num_envs = int(getattr(env, "num_envs"))
-    minimum_samples = int(num_envs) * (int(pre_switch_steps) + int(min_post_switch_steps))
+    minimum_samples = int(num_envs) * (
+        int(pre_switch_steps) + int(nominal_settle_steps) + int(min_post_switch_steps)
+    )
     if int(min_post_switch_steps) > 0 and int(num_samples) < minimum_samples:
         raise ValueError(
             "transition collection requires enough samples to cover the configured "
             f"post-switch horizon: num_samples={int(num_samples)} "
             f"minimum={minimum_samples} num_envs={int(num_envs)} "
             f"pre_switch_steps={int(pre_switch_steps)} "
+            f"nominal_settle_steps={int(nominal_settle_steps)} "
             f"min_post_switch_steps={int(min_post_switch_steps)}"
         )
     if rollout_policy is None and rollout_policies_by_intent is None:
@@ -664,11 +672,17 @@ def collect_transition_distillation_dataset_from_env(
         nominal_walk_target_height=nominal_walk_target_height,
         post_switch_target_heights=post_switch_target_heights,
     )
+    if int(nominal_settle_steps) > 0 and transition_cases.nominal_target_rows is None:
+        raise ValueError(
+            "nominal_settle_steps requires nominal_walk_target_height and "
+            "post_switch_target_heights"
+        )
     effective_max_env_steps = (
         int(max_env_steps)
         if max_env_steps is not None
         else max(
-            int(np.ceil(int(num_samples) / max(num_envs, 1))) * (int(pre_switch_steps) + 16),
+            int(np.ceil(int(num_samples) / max(num_envs, 1)))
+            * (int(pre_switch_steps) + int(nominal_settle_steps) + 16),
             1,
         )
     )
@@ -716,6 +730,11 @@ def collect_transition_distillation_dataset_from_env(
     case_sample_counts = np.zeros((transition_cases.case_commands.shape[0],), dtype=np.int64)
     case_post_switch_counts = np.zeros_like(case_sample_counts)
     case_max_post_switch_ages = np.full_like(case_sample_counts, -1)
+    case_nominal_settle_counts = np.zeros_like(case_sample_counts)
+    case_height_tracking_counts = np.zeros_like(case_sample_counts)
+    case_max_height_tracking_ages = np.full_like(case_sample_counts, -1)
+    nominal_settle_rows = 0
+    height_tracking_rows = 0
     performance = (
         None
         if performance_clock is None
@@ -752,6 +771,8 @@ def collect_transition_distillation_dataset_from_env(
                 expected_rows=num_envs,
             )
         )
+        height_tracking = post_switch & (transition_ages >= int(nominal_settle_steps))
+        nominal_settling = post_switch & ~height_tracking
         with _performance_span(performance, "teacher_inference"):
             walking_actions = _policy_actions(
                 walking_teacher_policy,
@@ -828,6 +849,25 @@ def collect_transition_distillation_dataset_from_env(
                 post_ages = transition_ages[:take][taken_post_switch]
                 np.add.at(case_post_switch_counts, post_case_indices, 1)
                 np.maximum.at(case_max_post_switch_ages, post_case_indices, post_ages)
+            taken_nominal_settling = nominal_settling[:take]
+            if bool(np.any(taken_nominal_settling)):
+                np.add.at(
+                    case_nominal_settle_counts,
+                    taken_case_indices[taken_nominal_settling],
+                    1,
+                )
+            taken_height_tracking = height_tracking[:take]
+            if bool(np.any(taken_height_tracking)):
+                tracking_case_indices = taken_case_indices[taken_height_tracking]
+                tracking_ages = transition_ages[:take][taken_height_tracking] - int(
+                    nominal_settle_steps
+                )
+                np.add.at(case_height_tracking_counts, tracking_case_indices, 1)
+                np.maximum.at(
+                    case_max_height_tracking_ages,
+                    tracking_case_indices,
+                    tracking_ages,
+                )
             role_labels.extend(
                 str(standing_role_label) if value else str(walking_role_label)
                 for value in post_switch[:take]
@@ -837,6 +877,8 @@ def collect_transition_distillation_dataset_from_env(
             )
             scenario_labels.extend(str(scenario_label) for _ in range(take))
             post_switch_rows += int(np.count_nonzero(post_switch[:take]))
+            nominal_settle_rows += int(np.count_nonzero(taken_nominal_settling))
+            height_tracking_rows += int(np.count_nonzero(taken_height_tracking))
             collected_count += take
             action_abs_max = max(action_abs_max, float(np.max(np.abs(rollout_actions))))
         if collected_count >= int(num_samples):
@@ -866,6 +908,12 @@ def collect_transition_distillation_dataset_from_env(
         post_switch[switch_mask] = True
         transition_ages[switch_mask] = 0
         switch_count += int(np.count_nonzero(switch_mask))
+        height_switch_mask = (
+            post_switch
+            & ~done_mask
+            & (transition_ages == int(nominal_settle_steps))
+            & (int(nominal_settle_steps) > 0)
+        )
 
         command_rows = active_command_rows.copy()
         command_rows[post_switch] = zero_command_rows[post_switch]
@@ -874,8 +922,11 @@ def collect_transition_distillation_dataset_from_env(
             if transition_cases.post_switch_target_rows is None:
                 raise RuntimeError("transition post-switch target rows unexpectedly missing")
             target_height_rows = transition_cases.nominal_target_rows.copy()
-            target_height_rows[post_switch] = transition_cases.post_switch_target_rows[post_switch]
-        if done_count > 0 or bool(np.any(switch_mask)):
+            requested_height_rows = post_switch & (transition_ages >= int(nominal_settle_steps))
+            target_height_rows[requested_height_rows] = transition_cases.post_switch_target_rows[
+                requested_height_rows
+            ]
+        if done_count > 0 or bool(np.any(switch_mask)) or bool(np.any(height_switch_mask)):
             obs, current_info = _set_transition_input_rows(
                 env,
                 command_info_key=str(command_info_key),
@@ -888,27 +939,30 @@ def collect_transition_distillation_dataset_from_env(
         raise RuntimeError(
             "transition collection did not produce both pre-switch and post-switch rows"
         )
-    missing_case_indices = np.flatnonzero(case_post_switch_counts == 0).tolist()
+    missing_case_indices = np.flatnonzero(case_height_tracking_counts == 0).tolist()
     if missing_case_indices:
         raise RuntimeError(
-            "transition collection did not produce post-switch rows for every case: "
+            "transition collection did not produce requested-height rows for every case: "
             f"missing_case_indices={missing_case_indices}"
         )
     transition_ages_tensor = torch.cat(transition_age_chunks, dim=0)[: int(num_samples)]
     post_switch_ages = transition_ages_tensor[transition_ages_tensor >= 0]
     max_post_switch_age = int(post_switch_ages.max().item()) if post_switch_ages.numel() else -1
-    if int(min_post_switch_steps) > 0 and max_post_switch_age < int(min_post_switch_steps) - 1:
+    max_height_tracking_age = max_post_switch_age - int(nominal_settle_steps)
+    if int(min_post_switch_steps) > 0 and max_height_tracking_age < int(min_post_switch_steps) - 1:
         raise RuntimeError(
-            "transition collection did not reach the configured post-switch horizon: "
-            f"max_post_switch_age={max_post_switch_age} "
+            "transition collection did not reach the configured requested-height horizon: "
+            f"max_height_tracking_age={max_height_tracking_age} "
             f"required={int(min_post_switch_steps) - 1}"
         )
     if int(min_post_switch_steps) > 0:
         required_case_age = int(min_post_switch_steps) - 1
-        short_case_indices = np.flatnonzero(case_max_post_switch_ages < required_case_age).tolist()
+        short_case_indices = np.flatnonzero(
+            case_max_height_tracking_ages < required_case_age
+        ).tolist()
         if short_case_indices:
             raise RuntimeError(
-                "transition collection did not reach the configured post-switch horizon "
+                "transition collection did not reach the configured requested-height horizon "
                 "for every case: "
                 f"short_case_indices={short_case_indices} required={required_case_age}"
             )
@@ -927,6 +981,9 @@ def collect_transition_distillation_dataset_from_env(
                 "sample_count": int(case_sample_counts[case_index]),
                 "post_switch_sample_count": int(case_post_switch_counts[case_index]),
                 "max_post_switch_age": int(case_max_post_switch_ages[case_index]),
+                "nominal_settle_sample_count": int(case_nominal_settle_counts[case_index]),
+                "height_tracking_sample_count": int(case_height_tracking_counts[case_index]),
+                "max_height_tracking_age": int(case_max_height_tracking_ages[case_index]),
             }
         )
     payload = dict(metadata or {})
@@ -944,8 +1001,11 @@ def collect_transition_distillation_dataset_from_env(
                 else "distillation_student"
             ),
             "pre_switch_steps": int(pre_switch_steps),
+            "nominal_settle_steps": int(nominal_settle_steps),
+            "height_switch_age": int(nominal_settle_steps),
             "min_post_switch_steps": int(min_post_switch_steps),
             "max_post_switch_age": int(max_post_switch_age),
+            "max_height_tracking_age": int(max_height_tracking_age),
             "walk_command": transition_cases.walk_commands[0].tolist(),
             "walk_commands": transition_cases.walk_commands.tolist(),
             "nominal_walk_target_height": (
@@ -968,6 +1028,8 @@ def collect_transition_distillation_dataset_from_env(
             "env_steps": int(env_steps),
             "switch_count": int(switch_count),
             "post_switch_rows": int(post_switch_rows),
+            "nominal_settle_rows": int(nominal_settle_rows),
+            "height_tracking_rows": int(height_tracking_rows),
             "done_seen_samples": int(done_seen_samples),
             "action_abs_max": float(action_abs_max),
             "synthetic_teacher_tail": bool(synthetic_teacher_tail),

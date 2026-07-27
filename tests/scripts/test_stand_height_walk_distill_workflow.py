@@ -68,6 +68,7 @@ def test_new_two_expert_workflow_composes_without_changing_legacy(
         [0.0, 0.0, 0.4],
     ]
     assert new_cfg.training.workflow.transition_walk_target_height == pytest.approx(0.754)
+    assert new_cfg.training.workflow.transition_nominal_settle_steps == 100
     assert list(new_cfg.training.workflow.transition_post_switch_target_heights) == pytest.approx(
         [0.650, 0.702, 0.754]
     )
@@ -82,6 +83,7 @@ def test_new_two_expert_workflow_composes_without_changing_legacy(
     ]
     assert list(legacy_cfg.training.workflow.transition_walk_commands) == []
     assert legacy_cfg.training.workflow.transition_walk_target_height is None
+    assert legacy_cfg.training.workflow.transition_nominal_settle_steps == 0
     assert list(legacy_cfg.training.workflow.transition_post_switch_target_heights) == []
 
 
@@ -295,6 +297,7 @@ def test_legacy_transition_connector_forwards_non_nominal_grid(
         [0.0, 0.0, 0.4],
     ]
     assert transition["nominal_walk_target_height"] == pytest.approx(0.754)
+    assert transition["nominal_settle_steps"] == 100
     assert transition["post_switch_target_heights"] == pytest.approx([0.650, 0.702, 0.754])
     assert transition["target_height_info_key"] == "height_commands"
     assert transition["expected_student_obs_dim"] == 99

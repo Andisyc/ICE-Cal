@@ -214,6 +214,7 @@ def test_transition_sentinel_reinitializes_every_episode_and_applies_seed(
         stop_steps=1,
         device="cpu",
         seed=7,
+        height_recovery_nominal_settle_steps=1,
         height_recovery_warmup_steps=0,
         height_recovery_evaluation_steps=1,
     )
@@ -271,6 +272,7 @@ def test_transition_sentinel_preserves_terminal_frame_and_skips_coupled_stop_sco
         stop_steps=1,
         device="cpu",
         post_walk_target_heights=(0.65,),
+        height_recovery_nominal_settle_steps=1,
         height_recovery_warmup_steps=0,
         height_recovery_evaluation_steps=1,
     )
@@ -316,6 +318,7 @@ def test_transition_sentinel_covers_non_nominal_walk_to_stand_height_grid(
         stop_steps=1,
         device="cpu",
         post_walk_target_heights=targets,
+        height_recovery_nominal_settle_steps=2,
         height_recovery_warmup_steps=1,
         height_recovery_evaluation_steps=2,
     )
@@ -343,15 +346,17 @@ def test_transition_sentinel_covers_non_nominal_walk_to_stand_height_grid(
             for row in session.policy_inputs
             if row["reset_id"] == first_recovery_reset_id + offset
         ]
-        assert len(rows) == 6
+        assert len(rows) == 8
         assert np.allclose(rows[0]["command"], 0.0)
         assert rows[0]["target_height"] == pytest.approx(0.754)
         assert all(np.max(np.abs(row["command"])) > 0.0 for row in rows[1:3])
         assert all(row["target_height"] == pytest.approx(0.754) for row in rows[1:3])
         assert all(np.allclose(row["command"], 0.0) for row in rows[3:])
-        assert all(row["target_height"] == pytest.approx(target_height) for row in rows[3:])
+        assert all(row["target_height"] == pytest.approx(0.754) for row in rows[3:5])
+        assert all(row["target_height"] == pytest.approx(target_height) for row in rows[5:])
         assert scenario["command"] == command_name
         assert scenario["walking_target_height"] == pytest.approx(0.754)
+        assert scenario["nominal_settle"]["executed_steps"] == 2
         assert scenario["recovery"]["verdict"] == "PASS"
         assert scenario["recovery"]["metrics"]["target_obs_max_error"] <= 1.0e-6
 
@@ -382,6 +387,7 @@ def test_transition_sentinel_fails_closed_on_height_recovery_quality_contract(
         stop_steps=1,
         device="cpu",
         post_walk_target_heights=(0.65,),
+        height_recovery_nominal_settle_steps=1,
         height_recovery_warmup_steps=0,
         height_recovery_evaluation_steps=2,
     )

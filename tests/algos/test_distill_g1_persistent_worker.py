@@ -171,6 +171,7 @@ def test_persistent_runtime_builder_forwards_transition_grid(monkeypatch) -> Non
                     "collect_num_envs": 64,
                     "dagger_samples_per_role": 65536,
                     "transition_pre_switch_steps": 8,
+                    "transition_nominal_settle_steps": 100,
                     "transition_min_post_switch_steps": 20,
                     "transition_walk_command": [0.4, 0.0, 0.0],
                     "transition_walk_commands": [
@@ -362,6 +363,7 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
             "collect_num_envs": 2,
             "dagger_samples_per_role": 4,
             "transition_pre_switch_steps": 2,
+            "transition_nominal_settle_steps": 0,
             "transition_min_post_switch_steps": 0,
             "transition_walk_command": [0.4, 0.0, 0.0],
             "transition_walk_commands": [

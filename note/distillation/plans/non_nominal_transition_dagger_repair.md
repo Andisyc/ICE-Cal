@@ -2,7 +2,7 @@
 
 Date: 2026-07-24
 
-Active contracts: `DISTILL-METHOD-v002` and `DISTILL-TRAIN-v003`.
+Active contracts: `DISTILL-METHOD-v003` and `DISTILL-TRAIN-v003`.
 
 ## Problem
 
@@ -223,3 +223,32 @@ followed by a new immutable fork and the same acceptance command.
 - Diagnosis is complete. This plan admits no repair, retraining, threshold
   change, or new immutable fork; those require a new human-approved method
   decision that addresses both owners.
+
+## Authorized B-Ordered Transition Repair
+
+- Human-confirmed runtime order:
+  `walk@0.754 -> zero-command settle@0.754 -> requested-height tracking`.
+- Reuse the existing `walk_to_stop` scenario and two experts. Add no teacher,
+  role, scenario label, reward, threshold, or checkpoint schema.
+- Add a backward-compatible config-owned nominal settling duration. Legacy
+  workflows default to zero; `g1_stand_height_walk` explicitly enables the
+  governed settling window.
+- `transition_min_post_switch_steps` proves requested-height coverage only
+  after the height-switch age; nominal settling rows cannot satisfy it.
+- Legacy and persistent connectors must forward identical semantics. Dataset
+  metadata must expose settle rows, height-tracking rows, and per-case maximum
+  height-tracking age.
+- Physical acceptance must use the same ordered input sequence.
+- Stop before training. A training command is delivered only after focused
+  config, collector, connector, acceptance, Ruff, and Atlas checks pass.
+
+### E121 Local Closure
+
+- Active contract and Concept Figure: `DISTILL-METHOD-v003`, aligned and Atlas
+  PASS.
+- Production settle duration: 100 zero-command steps at `0.754 m`; requested
+  height begins at transition age 100.
+- Collector, config, legacy/persistent connectors, and ordered sentinel:
+  `9 + 21` focused tests PASS; Ruff lint/format PASS.
+- Local stop condition is satisfied. Deliver a new immutable fork command from
+  r3; training and physical acceptance remain separate runtime evidence.

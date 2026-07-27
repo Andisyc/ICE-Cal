@@ -18,7 +18,7 @@
     {
       "id": "DT-M-01",
       "design_id": "DISTILL-DP-01",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "teacher-policies",
       "title": "Teacher Policies",
       "summary": "静止高度跟踪与行走两个教师提供动作监督",
@@ -28,27 +28,27 @@
     {
       "id": "DT-M-02",
       "design_id": "DISTILL-DP-02",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "command-intent",
       "title": "Command Intent",
-      "summary": "零速度保持目标高度，非零速度按标称高度行走",
+      "summary": "标称高度行走，归零后先停稳，再接收目标高度",
       "concept": "C-INTENT",
       "x": 30, "y": 210, "w": 220, "h": 116
     },
     {
       "id": "DT-M-03",
       "design_id": "DISTILL-DP-03",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "role-data",
       "title": "Role Data",
-      "summary": "保存统一 99-D 观测、角色、intent、高度与教师动作",
+      "summary": "保存行走、标称停稳、目标高度跟踪三阶段证据",
       "concept": "C-DATA",
       "x": 570, "y": 210, "w": 220, "h": 116
     },
     {
       "id": "DT-M-04",
       "design_id": "DISTILL-DP-04",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "moe-student",
       "title": "MoE Student",
       "summary": "两个专家按速度 intent 输出一个部署动作",
@@ -58,10 +58,10 @@
     {
       "id": "DT-X-01",
       "design_id": "DISTILL-DP-04",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "moe-student",
       "title": "Robot Execution",
-      "summary": "闭环执行高度站立、行走与双向转换",
+      "summary": "闭环执行行走、停稳、再高度跟踪的有序转换",
       "concept": "C-EXTERNAL",
       "kind": "external",
       "x": 1110, "y": 220, "w": 220, "h": 96
@@ -69,7 +69,7 @@
     {
       "id": "DT-M-05",
       "design_id": "DISTILL-DP-05",
-      "contract_id": "DISTILL-METHOD-v002",
+      "contract_id": "DISTILL-METHOD-v003",
       "contract_anchor": "student-state-dagger",
       "title": "Student-State DAgger",
       "summary": "多轮采样、教师重标、累计聚合并更新",

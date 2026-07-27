@@ -2,7 +2,7 @@
 
 ## Objective
 
-Implement the active `DISTILL-METHOD-v002`: train one `StandHeight` behavior
+Implement the active `DISTILL-METHOD-v003`: train one `StandHeight` behavior
 teacher for zero-velocity target-height tracking, combine it with one `Walk`
 teacher, and distill both into a unified 99-D, two-expert MoE student.
 
@@ -11,7 +11,7 @@ teacher, and distill both into a unified 99-D, two-expert MoE student.
 - Path: `note/architecture/concept/03_g1_multiteacher_distillation_method.data.json`.
 - Update owner: current Codex task under human-confirmed v002 semantics.
 - Active method contract:
-  `note/distillation/contracts/active/method/DISTILL-METHOD-v002.md`.
+  `note/distillation/contracts/active/method/DISTILL-METHOD-v003.md`.
 - Inherited training lifecycle:
   `note/distillation/contracts/active/training/DISTILL-TRAIN-v003.md`.
 
@@ -20,18 +20,17 @@ teacher, and distill both into a unified 99-D, two-expert MoE student.
 | Design ID | Canonical name | Active meaning | Current gap |
 | --- | --- | --- | --- |
 | DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | E120: StandHeight teacher cannot recover lateral@0.702 or satisfy nominal lateral 20-step decay from the exact student-walk switch states |
-| DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | live 3x3 collection passed; r3 passed 5/9 physical recovery cases |
-| DISTILL-DP-03 | Role Data | explicit 99-D role/intent/height/teacher rows | schema, roundtrip, legacy isolation, and per-case metadata passed locally |
+| DISTILL-DP-02 | Command Intent | active walks at 0.754; inactive first settles at 0.754, then tracks requested height | E121 deterministic B routing passed; new physical run pending |
+| DISTILL-DP-03 | Role Data | explicit 99-D walk/settle/height rows with teacher targets | E121 records settle and requested-height coverage per case; live collection pending |
 | DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | E120: inactive expert fails three same-state cases that the frozen teacher passes |
 | DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | r2 first-invalid-operation is owner-confirmed and repaired; immutable r3 completed |
 
 ## Current Step
 
-E120 closes the diagnosis of r3's remaining physical failures without changing
-the gate. Exact-switch-state controller substitution separates two owners:
-three recovery failures belong to student closed-loop fidelity, while lateral
-0.702 and nominal lateral 20-step decay remain unavailable even to the frozen
-StandHeight teacher. r3 remains unpromoted and no repair/training is authorized.
+E121 implements the human-confirmed B order under `DISTILL-METHOD-v003`:
+walk at nominal height, zero-command nominal-height settling, then requested
+height tracking. Collector/config/legacy+persistent connectors and the governed
+sentinel pass deterministic checks. No training or physical acceptance has run.
 
 Current repair plan:
 `note/distillation/plans/non_nominal_transition_dagger_repair.md`.
@@ -44,7 +43,7 @@ Acceptance checklist:
 
 ## Verified Evidence
 
-- Step 1 governance: `DISTILL-METHOD-v002` and all six Concept Figure nodes map
+- Step 1 governance: `DISTILL-METHOD-v003` and all six Concept Figure nodes map
   to the active two-role method; the Atlas contract check passes.
 - E114: the retained Step 2 record reports `108 passed, 24 warnings in 19.46s`;
   the Step 3 adapter/connector record reports `8 passed in 6.77s`. E114 also
@@ -79,6 +78,10 @@ Acceptance checklist:
   state difference. The teacher passed forward 0.650/0.702 and lateral 0.754
   where the student terminated, but both controllers failed lateral 0.702 and
   nominal lateral 20-step decay. Artifact SHA-256 is `b09918b2...f71`.
+- E121: r3 audit proved old targets switched at age 0. The repaired production
+  workflow holds `0.754 m` for 100 inactive steps, starts requested-height age
+  at zero afterward, fails closed on per-case coverage loss, and passed `9 +
+  21` focused tests, Ruff, and Atlas checks.
 
 ## Active Files And Commands
 
@@ -104,15 +107,13 @@ Acceptance checklist:
 
 - r1 and failed r2 remain immutable evidence; the r2 native defect is closed by
   first-invalid-operation evidence and exact-source regression.
-- r3 is unpromoted. E120 separates the red gate into a DP-04 student-fidelity
-  boundary and a DP-01 teacher recoverable-domain/transition compatibility
-  boundary; neither has an authorized repair.
+- r3 remains immutable and unpromoted. E121 changes future collection and
+  acceptance semantics only; no new checkpoint exists yet.
 - `.codex-tmp/` and `.local-build/` remain excluded from source changes.
 
 ## Next Step
 
-Stop before another material training run. Preserve r1, failed r2, and completed
-r3 as immutable evidence. The policy-quality diagnosis is closed by E120. The
-next step is a human method decision: address both student closed-loop fidelity
-and the teacher-insufficient lateral recovery boundary before defining a new
-immutable training fork.
+Preserve r1, failed r2, and completed r3 as immutable evidence. The next
+authorized action is a new fork from r3 using the E121 B-ordered collector.
+After completion, run the unchanged seed-1 physical limits with the new ordered
+settle phase; do not promote from training completion alone.

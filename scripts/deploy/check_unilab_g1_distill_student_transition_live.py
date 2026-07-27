@@ -46,6 +46,7 @@ COMMANDS = (
 
 NOMINAL_WALK_TARGET_HEIGHT = 0.754
 DEFAULT_POST_WALK_TARGET_HEIGHTS = (0.650, 0.702, 0.754)
+DEFAULT_HEIGHT_RECOVERY_NOMINAL_SETTLE_STEPS = 100
 DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS = 100
 DEFAULT_HEIGHT_RECOVERY_EVALUATION_STEPS = 800
 HEIGHT_RECOVERY_MAX_HEIGHT_MAE = 0.05
@@ -507,6 +508,7 @@ def _run_height_recovery_grid(
     target_heights: tuple[float, ...],
     active_steps: int,
     standing_steps: int,
+    nominal_settle_steps: int,
     warmup_steps: int,
     evaluation_steps: int,
     max_tilt_deg: float,
@@ -536,6 +538,24 @@ def _run_height_recovery_grid(
                     target_height=NOMINAL_WALK_TARGET_HEIGHT,
                 )
 
+            if standing["done_count"] > 0:
+                settling = _skipped_phase(
+                    steps=nominal_settle_steps,
+                    reason="standing_done",
+                )
+            elif walking["done_count"] > 0:
+                settling = _skipped_phase(
+                    steps=nominal_settle_steps,
+                    reason="walking_done",
+                )
+            else:
+                settling = _run_phase(
+                    session,
+                    nominal_settle_steps,
+                    command=zero_command,
+                    target_height=NOMINAL_WALK_TARGET_HEIGHT,
+                )
+
             samples = RolloutSamples()
             if standing["done_count"] > 0:
                 recovery_phase = _skipped_phase(
@@ -546,6 +566,11 @@ def _run_height_recovery_grid(
                 recovery_phase = _skipped_phase(
                     steps=recovery_steps,
                     reason="walking_done",
+                )
+            elif settling["done_count"] > 0:
+                recovery_phase = _skipped_phase(
+                    steps=recovery_steps,
+                    reason="settling_done",
                 )
             else:
                 recovery_phase = _run_phase(
@@ -595,6 +620,20 @@ def _run_height_recovery_grid(
                     _phase_input_sync_detail(walking),
                 ),
                 _transition_check(
+                    _phase_completed(settling),
+                    "transition/nominal_settle_completed",
+                    (
+                        f"target_height={NOMINAL_WALK_TARGET_HEIGHT:.6f} "
+                        f"executed_steps={settling['executed_steps']} "
+                        f"requested_steps={settling['steps']}"
+                    ),
+                ),
+                _transition_check(
+                    _phase_input_sync_pass(settling),
+                    "transition/nominal_settle_input_synchronized",
+                    _phase_input_sync_detail(settling),
+                ),
+                _transition_check(
                     _phase_completed(recovery_phase),
                     "transition/recovery_completed",
                     (
@@ -620,6 +659,7 @@ def _run_height_recovery_grid(
                 "reset": reset_snapshot,
                 "standing": standing,
                 "walking": walking,
+                "nominal_settle": settling,
                 "recovery_phase": recovery_phase,
                 "transition_checks": transition_checks,
                 "recovery": recovery_report,
@@ -630,6 +670,7 @@ def _run_height_recovery_grid(
             for phase_name, phase in (
                 ("standing", standing),
                 ("walking", walking),
+                ("nominal_settle", settling),
                 ("recovery", recovery_phase),
             ):
                 terminal_snapshot = phase["terminal_snapshot"]
@@ -649,6 +690,7 @@ def _run_height_recovery_grid(
         "verdict": "PASS" if passed_scenarios == len(scenarios) else "FAIL",
         "nominal_walk_target_height": float(NOMINAL_WALK_TARGET_HEIGHT),
         "target_heights": [float(value) for value in target_heights],
+        "nominal_settle_steps": int(nominal_settle_steps),
         "command_grid": [name for name, _command in COMMANDS],
         "warmup_steps": int(warmup_steps),
         "evaluation_steps": int(evaluation_steps),
@@ -679,6 +721,7 @@ def run_check(
     device: str,
     seed: int = 1,
     post_walk_target_heights: tuple[float, ...] = DEFAULT_POST_WALK_TARGET_HEIGHTS,
+    height_recovery_nominal_settle_steps: int = (DEFAULT_HEIGHT_RECOVERY_NOMINAL_SETTLE_STEPS),
     height_recovery_warmup_steps: int = DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS,
     height_recovery_evaluation_steps: int = DEFAULT_HEIGHT_RECOVERY_EVALUATION_STEPS,
 ) -> dict[str, Any]:
@@ -697,6 +740,8 @@ def run_check(
         )
     if int(height_recovery_warmup_steps) < 0:
         raise ValueError("height_recovery_warmup_steps must be non-negative")
+    if int(height_recovery_nominal_settle_steps) <= 0:
+        raise ValueError("height_recovery_nominal_settle_steps must be positive")
     if int(height_recovery_evaluation_steps) <= 0:
         raise ValueError("height_recovery_evaluation_steps must be positive")
     effective_seed = apply_training_seed(
@@ -791,6 +836,7 @@ def run_check(
             target_heights=target_heights,
             active_steps=int(active_steps),
             standing_steps=int(stop_steps),
+            nominal_settle_steps=int(height_recovery_nominal_settle_steps),
             warmup_steps=int(height_recovery_warmup_steps),
             evaluation_steps=int(height_recovery_evaluation_steps),
             max_tilt_deg=float(cfg.reward.max_tilt_deg),
@@ -946,6 +992,11 @@ def main() -> int:
         default=list(DEFAULT_POST_WALK_TARGET_HEIGHTS),
     )
     parser.add_argument(
+        "--height-recovery-nominal-settle-steps",
+        type=int,
+        default=DEFAULT_HEIGHT_RECOVERY_NOMINAL_SETTLE_STEPS,
+    )
+    parser.add_argument(
         "--height-recovery-warmup-steps",
         type=int,
         default=DEFAULT_HEIGHT_RECOVERY_WARMUP_STEPS,
@@ -969,6 +1020,7 @@ def main() -> int:
         device=args.device,
         seed=args.seed,
         post_walk_target_heights=tuple(args.post_walk_target_heights),
+        height_recovery_nominal_settle_steps=args.height_recovery_nominal_settle_steps,
         height_recovery_warmup_steps=args.height_recovery_warmup_steps,
         height_recovery_evaluation_steps=args.height_recovery_evaluation_steps,
     )
@@ -989,6 +1041,7 @@ def main() -> int:
                     "nominal_walk_target_height",
                     "target_heights",
                     "command_grid",
+                    "nominal_settle_steps",
                     "warmup_steps",
                     "evaluation_steps",
                     "thresholds",
@@ -1008,6 +1061,7 @@ def main() -> int:
                     "command": scenario["command"],
                     "requested_target_height": scenario["requested_target_height"],
                     "walking_target_height": scenario["walking_target_height"],
+                    "nominal_settle_steps": scenario["nominal_settle"]["steps"],
                     "verdict": scenario["verdict"],
                     "metrics": recovery["metrics"],
                     "failed_checks": [

@@ -51,6 +51,7 @@ training:
     dagger_balance_key: scenario
     dagger_balanced_labels: [walk_flat, static_stand, walk_to_stop]
     transition_min_post_switch_steps: 20
+    transition_nominal_settle_steps: 100
     transition_walk_commands:
       - [0.4, 0.0, 0.0]
       - [0.0, 0.4, 0.0]
