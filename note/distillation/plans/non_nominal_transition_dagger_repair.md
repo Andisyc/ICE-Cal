@@ -194,3 +194,18 @@ non-nominal physical acceptance gates.
 Stop before another training retry. The next step is a scoped repair or
 first-invalid-operation capture at the CPU aggregate save/reload boundary,
 followed by a new immutable fork and the same acceptance command.
+
+## Native Repair And R3 Closure
+
+- Exact unperturbed Apport core located the first invalid operation in the
+  opt-in scenario-label diagnostic snapshot: CPython `FOR_ITER` attempted to
+  call the null `tp_iternext` slot of the captured `index` cell.
+- Repair commit `f9062077` makes the probe cold by default and removes the
+  closure cell while retaining explicit debug and failure-sentinel evidence.
+- Local and remote near-risk tests and three exact-r2 save/reload repetitions
+  passed. r1/r2 identities remained unchanged.
+- Immutable r3 completed one fork iteration with 1,310,720 rows and 16,384
+  updates. The unchanged seed-1 gate returned exit 1: nominal lateral stop
+  decay failed and non-nominal recovery passed 5/9.
+- Stop condition reached for this plan. Native closure is PASS; physical policy
+  quality remains PARTIAL and requires a separate authorized diagnosis.

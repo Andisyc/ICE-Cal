@@ -20,20 +20,19 @@ teacher, and distill both into a unified 99-D, two-expert MoE student.
 | Design ID | Canonical name | Active meaning | Current gap |
 | --- | --- | --- | --- |
 | DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | teacher and role-artifact identities were reread and hashed on SSH; no teacher-quality gap is currently observed |
-| DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | live 3x3 collection passed; the first retrained child passed 4/9 physical recovery cases |
+| DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | live 3x3 collection passed; r3 passed 5/9 physical recovery cases |
 | DISTILL-DP-03 | Role Data | explicit 99-D role/intent/height/teacher rows | schema, roundtrip, legacy isolation, and per-case metadata passed locally |
-| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | repaired r1 child exists but failed nominal lateral stop decay and 5/9 non-nominal recovery cases |
-| DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | r1 completed; r2 stopped before aggregate completion on a native SIGSEGV boundary |
+| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | r3 still fails nominal lateral stop decay and 4/9 non-nominal recovery cases |
+| DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | r2 first-invalid-operation is owner-confirmed and repaired; immutable r3 completed |
 
 ## Current Step
 
-The repaired grid is now live-confirmed through one immutable SSH fork. E118
-records the completed r1 child, exact hashes, nine-case collection metadata,
-and unchanged MuJoCo acceptance. The child improved offline expert imitation
-but passed only 4/9 non-nominal cases and failed nominal lateral stop decay.
-A second immutable fork collected the child's states but exited at
-`before_aggregate`; an offline aggregate replay passed in memory, while the
-save/reload replay produced exit 139 and became timing-sensitive under GDB.
+E119 closes the r2 native defect at the diagnostics owner. An unperturbed core
+identified a null `tp_iternext` call on the scenario snapshot's `index` closure
+cell; the opt-in probe is now cold by default and closure-free. Three exact-r2
+save/reload replays passed. A new immutable r3 fork completed, but its unchanged
+seed-1 physical gate remains red: nominal lateral stop decay failed and
+non-nominal recovery passed 5/9.
 
 Current repair plan:
 `note/distillation/plans/non_nominal_transition_dagger_repair.md`.
@@ -72,6 +71,11 @@ Acceptance checklist:
   recovery passed 4/9. The r2 aggregate identity is source-valid at 1,310,720
   rows, but formal aggregation and one save/reload replay exposed a native
   SIGSEGV; GDB changed timing and the same replay passed.
+- E119: unperturbed core captured the first invalid operation, repair commit
+  `f9062077` passed local/remote near-risk tests and three exact-r2 save/reload
+  repetitions. Immutable r3 completed with 1,310,720 samples and 16,384 updates;
+  checkpoint SHA-256 is `f1cbc7d7...909d`. Its unchanged seed-1 gate passed 5/9
+  recovery cases but still failed nominal lateral stop decay.
 
 ## Active Files And Commands
 
@@ -95,20 +99,15 @@ Acceptance checklist:
 
 ## Unresolved Risks
 
-- The r1 repaired checkpoint is unpromoted because its governed physical gate
-  failed; offline MSE improvement is not policy-quality evidence.
-- The r2 child-state fork has no checkpoint. Its source list and in-memory
-  aggregate pass, but the save/reload boundary is native-symptom-confirmed and
-  not owner-confirmed.
-- GDB made the same replay pass, which proves timing/layout sensitivity only.
-  Do not retry until the native serialization/ownership boundary has a scoped
-  repair or a first-invalid-operation capture.
+- r1 and failed r2 remain immutable evidence; the r2 native defect is closed by
+  first-invalid-operation evidence and exact-source regression.
+- r3 is unpromoted because the unchanged physical gate still fails nominal
+  lateral stop decay and four non-nominal recovery cases.
 - `.codex-tmp/` and `.local-build/` remain excluded from source changes.
 
 ## Next Step
 
-Stop before another material training run. Preserve r1 and failed r2 as
-immutable evidence. The next engineering step is the CPU aggregate
-save/reload native boundary: reproduce with the exact r2 identity, obtain an
-owner-level repair or first-invalid-operation evidence, then resume through a
-new immutable fork and rerun the unchanged fixed-seed physical gate.
+Stop before another material training run. Preserve r1, failed r2, and completed
+r3 as immutable evidence. The native-debug branch is closed; the next step, if
+authorized, is a new policy-quality diagnosis of the four remaining recovery
+failures and nominal lateral stop decay without changing the accepted gate.

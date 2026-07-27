@@ -2138,3 +2138,53 @@ or policy-quality conclusion is authorized.
   The next admitted step is a scoped aggregate serialization/ownership repair
   or first-invalid-operation capture, followed by a fresh immutable fork and
   the unchanged seed-1 physical gate.
+
+## E119: R2 First Invalid Operation, Owner Repair, R3 Fork And Seed-1 Gate
+
+- Date: 2026-07-27.
+- Repair identity: `f90620774532309576e48f43c2f44c19e22d5ba1` on
+  `codex/stand-height-walk-async`; remote checkout was clean after fast-forward.
+- Unperturbed native evidence was recovered from Apport core
+  `/ssd1/cyx/liujun/UniLab/logs/distill_debug/20260727-r2-aggregate-core-e118/`.
+  Its command line is the exact r2 iteration-1 replay with output save/reload.
+  The faulting thread entered `_scenario_label_debug_snapshot()` from
+  `_validate_scenario_labels()` while annotating the 262,144-row static-stand
+  source. At row 234,591, CPython `FOR_ITER` read the loop-index closure cell as
+  the iterator; `PyCell_Type.tp_iternext` is null, so the first invalid call
+  jumped to address zero and raised SIGSEGV. The label tuple, current label,
+  and row count in the core were valid. No `UNILAB_*` debug environment flag
+  was set.
+- Owner repair: the opt-in scenario diagnostic snapshot is now a default cold
+  path, and its source-provenance lookup no longer captures `index` in a
+  generator closure. Explicit debug mode and forced corruption sentinels still
+  produce full provenance. No task, dataset schema, learner, reward, threshold,
+  or simulator semantics changed.
+- Near-risk evidence:
+  - local focused suite: `4 passed, 99 deselected`; expanded scenario/multitask
+    slice: `12 passed, 91 deselected`; focused Ruff lint and format PASS;
+  - remote Python 3.10 suite: `4 passed, 99 deselected`; Ruff PASS; the repaired
+    function reports `co_cellvars=()`;
+  - three independent exact-r2 save/reload replays under
+    `/ssd1/cyx/liujun/UniLab/logs/distill_debug/20260727-r2-aggregate-ownerfix-f9062077/`
+    all returned exit 0 with 14 sources, 1,310,720 rows, active/inactive counts
+    543,418/767,302, and scenario counts 524,288/524,288/262,144.
+- Immutability check: r1 checkpoint/aggregate hashes remain `13378dd0...44f9`
+  and `6c9afe72...d612`; all three r2 pending-source hashes remain exactly the
+  E118 values. No r1/r2 artifact was overwritten by the repair verification.
+- New immutable fork:
+  `/ssd1/cyx/liujun/UniLab/logs/distill_workflow/20260727-112317_stand_height_walk_non_nominal_grid_r3_ownerfix_f9062077`.
+  It forked from r1, crossed `workflow/iteration_1/after_aggregate`, and closed
+  as `DAGGER_ITERATION_1_COMPLETE` with 1,310,720 cumulative samples and 16,384
+  updates. Checkpoint SHA-256 is
+  `f1cbc7d76cd7b3594aa119a9cef5523aeeae136b81bd61141a2034776bea909d`;
+  aggregate SHA-256 is
+  `cacdc4c006e914636282c211981567a79cafd0482fc10272dd266a06b5f67cc6`.
+- The unchanged seed-1 CPU MuJoCo gate returned exit 1. The 99-D/29-D student
+  loaded at `agent_steps=8388608`, hard routing remained
+  `active->0, inactive->1`, and input synchronization passed. Nominal behavior
+  completed 96/96 phases with no termination/truncation but still failed
+  lateral stop-speed decay. Non-nominal recovery improved from r1's 4/9 to 5/9;
+  failures are forward at 0.650/0.702 m and lateral at 0.702/0.754 m.
+- Decision: the native r2 owner defect is closed, but r3 is not promoted because
+  the unchanged physical acceptance gate remains red. Do not change thresholds
+  or start another outer iteration without a new policy-quality decision.
