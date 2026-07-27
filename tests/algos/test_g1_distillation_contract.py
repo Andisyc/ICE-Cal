@@ -2076,12 +2076,18 @@ def test_multitask_distillation_dataset_adapter_fails_closed(tmp_path) -> None:
         )
 
 
-def test_multitask_distillation_dataset_merges_transition_fields(tmp_path, capsys) -> None:
+def test_multitask_distillation_dataset_merges_transition_fields(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         build_multitask_distillation_dataset,
         save_distillation_dataset,
     )
+
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
 
     stand_path = tmp_path / "stand_transition.pt"
     transition_path = tmp_path / "transition.pt"

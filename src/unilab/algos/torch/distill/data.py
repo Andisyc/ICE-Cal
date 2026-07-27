@@ -333,7 +333,11 @@ def _scenario_label_debug_snapshot(
     scenario_labels: Sequence[Any],
     *,
     source_ranges: Sequence[Mapping[str, Any]] = (),
+    force: bool = False,
 ) -> dict[str, Any]:
+    if not force and not _distill_runtime_debug_enabled():
+        return {"runtime_debug_enabled": False}
+
     label_counts: dict[str, int] = {}
     invalid_head: list[dict[str, Any]] = []
     boundary_entries: list[dict[str, Any]] = []
@@ -363,14 +367,11 @@ def _scenario_label_debug_snapshot(
             or normalized_label not in _TRANSITION_SCENARIOS
         ) and len(invalid_head) < 10:
             if source_ranges:
-                provenance = next(
-                    (
-                        source_range
-                        for source_range in source_ranges
-                        if source_range["global_start"] <= index < source_range["global_stop"]
-                    ),
-                    None,
-                )
+                provenance = None
+                for source_range in source_ranges:
+                    if source_range["global_start"] <= index < source_range["global_stop"]:
+                        provenance = source_range
+                        break
                 enriched = {
                     "global_index": index,
                     "raw_type": entry["raw_type"],
@@ -1358,6 +1359,7 @@ def build_multitask_distillation_dataset(
             after_failure = _scenario_label_debug_snapshot(
                 scenario_labels,
                 source_ranges=scenario_source_ranges,
+                force=True,
             )
             _emit_data_runtime(
                 "multitask/final_validation_failure",
@@ -1378,7 +1380,10 @@ def build_multitask_distillation_dataset(
                     {
                         **source_range,
                         "num_samples": dataset.num_samples,
-                        "scenario_labels": _scenario_label_debug_snapshot(dataset.scenario_labels),
+                        "scenario_labels": _scenario_label_debug_snapshot(
+                            dataset.scenario_labels,
+                            force=True,
+                        ),
                     }
                 )
             scenario_snapshot = {
