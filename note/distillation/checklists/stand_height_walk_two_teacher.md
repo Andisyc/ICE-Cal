@@ -22,7 +22,7 @@ Status values: `PASS`, `PARTIAL`, `PENDING`, `BLOCKED`.
 | 99-D workflow persistent runtime opt-in | distill runtime/workflow | S2 / T-connect+lifecycle | PASS | E116: two roles, three scenarios, target-height keys, and one service close; `3 passed in 3.83s` |
 | Non-nominal command x height transition collection | collector/workflow | S0/S1/S2 / T-value+roundtrip+connect | PASS | E117: exact 3x3 grid, active 0.754 m, post-switch targets, index-96/teacher roundtrip, legacy and persistent connectors; `10 + 7 passed` |
 | StandHeight teacher physical quality | training/acceptance owner | S4 / T-live+differential | PASS | E117: user-provided Stage-2 gate passed at 0.650/0.702/0.754 m; exact checkpoint identity retained |
-| Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live | PARTIAL | E119: r2 native owner repaired; immutable r3 completed and passed 5/9 recovery cases, but nominal lateral stop decay and 4 recovery cases still failed |
+| Retrained two-teacher non-nominal transitions | workflow/acceptance owner | S4 / T-live+differential | PARTIAL | E120: exact-switch-state teacher substitution assigns 3 failures to student fidelity; teacher also fails lateral@0.702 and nominal lateral 20-step decay |
 
 ## Stop Condition
 
@@ -37,3 +37,8 @@ result is policy-quality evidence. E119 closes the r2 native aggregate defect
 with an unperturbed core, focused regression tests, three exact-r2 save/reload
 passes, and a completed r3 fork. The policy-quality row remains `PARTIAL`
 because the unchanged seed-1 gate still returned exit 1.
+E120 completes diagnosis without changing that status: forward 0.650/0.702 and
+lateral 0.754 are DP-04 student-fidelity failures, whereas lateral 0.702 and
+nominal lateral decay remain DP-01 teacher/transition compatibility failures.
+No new training or repair is admitted until the human method decision covers
+both owner boundaries.

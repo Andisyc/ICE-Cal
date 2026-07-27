@@ -19,20 +19,19 @@ teacher, and distill both into a unified 99-D, two-expert MoE student.
 
 | Design ID | Canonical name | Active meaning | Current gap |
 | --- | --- | --- | --- |
-| DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | teacher and role-artifact identities were reread and hashed on SSH; no teacher-quality gap is currently observed |
+| DISTILL-DP-01 | Teacher Policies | StandHeight + Walk, common 99-D input | E120: StandHeight teacher cannot recover lateral@0.702 or satisfy nominal lateral 20-step decay from the exact student-walk switch states |
 | DISTILL-DP-02 | Command Intent | inactive preserves target height; active walks at 0.754 m | live 3x3 collection passed; r3 passed 5/9 physical recovery cases |
 | DISTILL-DP-03 | Role Data | explicit 99-D role/intent/height/teacher rows | schema, roundtrip, legacy isolation, and per-case metadata passed locally |
-| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | r3 still fails nominal lateral stop decay and 4/9 non-nominal recovery cases |
+| DISTILL-DP-04 | MoE Student | two experts, active->0 and inactive->1 | E120: inactive expert fails three same-state cases that the frozen teacher passes |
 | DISTILL-DP-05 | Student-State DAgger | inherited cumulative outer loop | r2 first-invalid-operation is owner-confirmed and repaired; immutable r3 completed |
 
 ## Current Step
 
-E119 closes the r2 native defect at the diagnostics owner. An unperturbed core
-identified a null `tp_iternext` call on the scenario snapshot's `index` closure
-cell; the opt-in probe is now cold by default and closure-free. Three exact-r2
-save/reload replays passed. A new immutable r3 fork completed, but its unchanged
-seed-1 physical gate remains red: nominal lateral stop decay failed and
-non-nominal recovery passed 5/9.
+E120 closes the diagnosis of r3's remaining physical failures without changing
+the gate. Exact-switch-state controller substitution separates two owners:
+three recovery failures belong to student closed-loop fidelity, while lateral
+0.702 and nominal lateral 20-step decay remain unavailable even to the frozen
+StandHeight teacher. r3 remains unpromoted and no repair/training is authorized.
 
 Current repair plan:
 `note/distillation/plans/non_nominal_transition_dagger_repair.md`.
@@ -76,6 +75,10 @@ Acceptance checklist:
   repetitions. Immutable r3 completed with 1,310,720 samples and 16,384 updates;
   checkpoint SHA-256 is `f1cbc7d7...909d`. Its unchanged seed-1 gate passed 5/9
   recovery cases but still failed nominal lateral stop decay.
+- E120: fixed-seed exact-switch-state substitution produced zero pre-branch
+  state difference. The teacher passed forward 0.650/0.702 and lateral 0.754
+  where the student terminated, but both controllers failed lateral 0.702 and
+  nominal lateral 20-step decay. Artifact SHA-256 is `b09918b2...f71`.
 
 ## Active Files And Commands
 
@@ -101,13 +104,15 @@ Acceptance checklist:
 
 - r1 and failed r2 remain immutable evidence; the r2 native defect is closed by
   first-invalid-operation evidence and exact-source regression.
-- r3 is unpromoted because the unchanged physical gate still fails nominal
-  lateral stop decay and four non-nominal recovery cases.
+- r3 is unpromoted. E120 separates the red gate into a DP-04 student-fidelity
+  boundary and a DP-01 teacher recoverable-domain/transition compatibility
+  boundary; neither has an authorized repair.
 - `.codex-tmp/` and `.local-build/` remain excluded from source changes.
 
 ## Next Step
 
 Stop before another material training run. Preserve r1, failed r2, and completed
-r3 as immutable evidence. The native-debug branch is closed; the next step, if
-authorized, is a new policy-quality diagnosis of the four remaining recovery
-failures and nominal lateral stop decay without changing the accepted gate.
+r3 as immutable evidence. The policy-quality diagnosis is closed by E120. The
+next step is a human method decision: address both student closed-loop fidelity
+and the teacher-insufficient lateral recovery boundary before defining a new
+immutable training fork.

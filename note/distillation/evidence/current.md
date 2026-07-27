@@ -2188,3 +2188,52 @@ or policy-quality conclusion is authorized.
 - Decision: the native r2 owner defect is closed, but r3 is not promoted because
   the unchanged physical acceptance gate remains red. Do not change thresholds
   or start another outer iteration without a new policy-quality decision.
+
+## E120: R3 Fixed-Seed Closed-Loop Policy-Quality Differential
+
+- Date: 2026-07-27.
+- Scope was diagnostic only: no training, threshold/reward/config change, or
+  r1/r2/r3 mutation. The exact r3 checkpoint, seed 1, 32 nominal pre-roll
+  episodes, 20-step stand/walk phases, 100+800 recovery window, hard routing,
+  and original physical limits were retained.
+- Artifact:
+  `/ssd1/cyx/liujun/UniLab/logs/distill_debug/20260727-r3-policy-quality-diagnosis/r3_closed_loop_all_failures_and_nominal_lateral.json`,
+  SHA-256
+  `b09918b2606421e23da81dd4fe214049df4dc7a9a3520a1558ebaadc3b28ef71`.
+  It is outside all immutable workflow runs.
+- Every student/teacher pair reached an exactly equal switch state
+  (`max_abs_diff=0`). The only post-switch variable was the controller: r3's
+  hard-routed inactive expert or the frozen 99-D StandHeight SAC teacher.
+- Non-nominal results:
+  - forward at 0.650 m: student terminated at recovery step 90; teacher
+    completed 900 steps and passed;
+  - forward at 0.702 m: student terminated at step 71; teacher completed 900
+    steps and passed;
+  - lateral at 0.702 m: student terminated at step 67 and teacher also
+    terminated at step 72;
+  - lateral at 0.754 m: student terminated at step 66; teacher completed 900
+    steps and passed;
+  - forward at 0.754 m was the paired passing control; both completed 900 steps
+    and passed.
+- The first student-versus-teacher action MSE at the identical switch state was
+  finite and nonzero in all cases (`0.000492`-`0.002941`). On failed student
+  branches it accumulated under the student's own state distribution; offline
+  forced-expert MSE and row coverage therefore were not sufficient physical
+  quality evidence.
+- Nominal lateral episode 16 also reached an exactly equal switch state. With
+  walking terminal speed `0.248599`, the unchanged decay limit is `0.298599`.
+  The student stopped at `0.438513`; the teacher improved this to `0.400144`
+  but also failed the original 20-step decay check. Neither branch terminated.
+- Owner diagnosis:
+  - DP-04 student closed-loop fidelity owns forward 0.650/0.702 and lateral
+    0.754 failures: the qualified teacher succeeds from the same state while
+    the student expert does not;
+  - DP-01 teacher recoverable-domain / transition-state compatibility owns
+    lateral 0.702 and the nominal 20-step lateral-decay boundary: substituting
+    the teacher is insufficient;
+  - data presence, deployment routing, input synchronization, evaluator
+    thresholds, and the r2 native serialization repair are ruled out as owners.
+- Decision: r3 remains unpromoted. Diagnosis is complete, but no repair or new
+  training is authorized. The next step is a human method decision covering
+  both owner boundaries; a student-only retrain cannot by itself close the
+  teacher-insufficient cases.

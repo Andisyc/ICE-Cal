@@ -209,3 +209,17 @@ followed by a new immutable fork and the same acceptance command.
   decay failed and non-nominal recovery passed 5/9.
 - Stop condition reached for this plan. Native closure is PASS; physical policy
   quality remains PARTIAL and requires a separate authorized diagnosis.
+
+## Policy-Quality Diagnosis Closure
+
+- E120 retained the exact r3 checkpoint, seed sequence, 32 nominal pre-roll
+  episodes, phase lengths, hard routing, and unchanged physical thresholds.
+- Exact-switch-state teacher substitution passed forward 0.650/0.702 and
+  lateral 0.754 after the r3 student failed, assigning those failures to DP-04
+  student closed-loop fidelity.
+- The same frozen teacher also failed lateral 0.702 and the nominal lateral
+  20-step speed-decay check, assigning those boundaries to DP-01 teacher
+  recoverable-domain / transition compatibility.
+- Diagnosis is complete. This plan admits no repair, retraining, threshold
+  change, or new immutable fork; those require a new human-approved method
+  decision that addresses both owners.
