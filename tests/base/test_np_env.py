@@ -233,6 +233,61 @@ class TestNpEnvObsSpec:
 
 
 class TestNpEnvInitState:
+    def test_reset_all_updates_the_authoritative_state_carrier(self):
+        env = _StubNpEnv(num_envs=2)
+        state = env.init_state()
+        state.obs["obs"].fill(7.0)
+        reset_count = env._reset_count
+
+        observed = env.reset_all()
+
+        assert observed is env.state
+        assert env._reset_count == reset_count + 1
+        np.testing.assert_array_equal(observed.obs["obs"], 0.0)
+        np.testing.assert_array_equal(observed.terminated, False)
+
+    def test_preserve_rollout_state_restores_env_rng_and_backend_on_exception(self):
+        env = _StubNpEnv(num_envs=1)
+        env.init_state()
+        env._backend.capture_rollout_state.return_value = {"physics": np.array([3.0])}
+        before_obs = _require_state(env).obs["obs"].copy()
+        before_rng = np.random.get_state()
+
+        with pytest.raises(RuntimeError, match="shadow failed"):
+            with env.preserve_rollout_state():
+                assert env._autoreset is False
+                _require_state(env).obs["obs"].fill(99.0)
+                env.step_counter = 123
+                np.random.random()
+                raise RuntimeError("shadow failed")
+
+        np.testing.assert_array_equal(_require_state(env).obs["obs"], before_obs)
+        assert env.step_counter == 0
+        assert env._autoreset is True
+        assert np.random.get_state()[1].tolist() == before_rng[1].tolist()
+        env._backend.restore_rollout_state.assert_called_once()
+
+    def test_preserve_rollout_state_restores_task_extension_state(self):
+        class _TaskStateEnv(_StubNpEnv):
+            def __init__(self) -> None:
+                super().__init__(num_envs=1)
+                self.task_counter = 7
+
+            def _capture_task_rollout_state(self) -> int:
+                return self.task_counter
+
+            def _restore_task_rollout_state(self, snapshot: object) -> None:
+                self.task_counter = int(cast(int, snapshot))
+
+        env = _TaskStateEnv()
+        env.init_state()
+        env._backend.capture_rollout_state.return_value = {}
+
+        with env.preserve_rollout_state():
+            env.task_counter = 99
+
+        assert env.task_counter == 7
+
     def test_refresh_state_recomputes_without_stepping(self):
         env = _StubNpEnv(num_envs=2)
         env.init_state()

@@ -470,7 +470,7 @@ def _build_transition_case_assignment(
     )
 
 
-def _set_transition_input_rows(
+def set_transition_input_rows(
     env: Any,
     *,
     command_info_key: str,
@@ -478,7 +478,7 @@ def _set_transition_input_rows(
     target_height_info_key: str | None = None,
     target_height_rows: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Atomically update transition inputs before one observation refresh."""
+    """Atomically update command-owned transition inputs and refresh observations."""
 
     state = getattr(env, "state", None)
     info = getattr(state, "info", None)
@@ -698,7 +698,7 @@ def collect_transition_distillation_dataset_from_env(
     )
     active_command_rows = transition_cases.active_command_rows
     zero_command_rows = np.zeros((num_envs, 3), dtype=np.float32)
-    obs, current_info = _set_transition_input_rows(
+    obs, current_info = set_transition_input_rows(
         env,
         command_info_key=str(command_info_key),
         command_rows=active_command_rows,
@@ -927,7 +927,7 @@ def collect_transition_distillation_dataset_from_env(
                 requested_height_rows
             ]
         if done_count > 0 or bool(np.any(switch_mask)) or bool(np.any(height_switch_mask)):
-            obs, current_info = _set_transition_input_rows(
+            obs, current_info = set_transition_input_rows(
                 env,
                 command_info_key=str(command_info_key),
                 command_rows=command_rows,

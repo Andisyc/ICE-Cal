@@ -476,7 +476,8 @@ def test_moe_distillation_trainer_applies_command_intent_router_loss() -> None:
     assert router_grad_norm > 0.0
 
 
-def test_distillation_runtime_trace_covers_command_target_chain(capsys) -> None:
+def test_distillation_runtime_trace_covers_command_target_chain(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,
         DistillationBatch,
@@ -548,7 +549,8 @@ def test_distillation_runtime_trace_covers_command_target_chain(capsys) -> None:
     assert all(snapshot["append_callable"] is True for snapshot in target_snapshots)
 
 
-def test_distillation_runtime_trace_identifies_int_callable_corruption(capsys) -> None:
+def test_distillation_runtime_trace_identifies_int_callable_corruption(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import BehaviorDistillationTrainer, MoEStudentPolicy
 
     student = MoEStudentPolicy(
@@ -610,6 +612,7 @@ def test_distillation_runtime_trace_identifies_target_tensor_list_corruption(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import BehaviorDistillationTrainer, MoEStudentPolicy
 
     student = MoEStudentPolicy(
@@ -1590,8 +1593,10 @@ def test_distillation_dataset_rejects_bad_cached_teacher_actions_contract() -> N
 
 def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
     tmp_path,
+    monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         build_multitask_distillation_dataset,
@@ -1708,8 +1713,10 @@ def test_multitask_distillation_dataset_adapter_merges_roles_and_cached_targets(
 
 def test_distillation_data_runtime_trace_wraps_torch_save_and_load(
     tmp_path,
+    monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         load_distillation_dataset,
@@ -1756,6 +1763,7 @@ def test_distillation_data_runtime_trace_wraps_torch_save_and_load(
             "scenario_labels",
             "student_obs",
             "student_obs_dim",
+            "target_height",
             "teacher_action_dim",
             "teacher_actions",
             "teacher_obs",
@@ -1769,6 +1777,7 @@ def test_command_intent_corruption_requests_native_abort_with_snapshot(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     import unilab.algos.torch.distill.data as data_module
 
     class ImpossibleIntent:
@@ -1818,6 +1827,7 @@ def test_serialization_callable_corruption_requests_native_abort(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     import unilab.algos.torch.distill.data as data_module
     from unilab.algos.torch.distill import build_distillation_dataset
 
@@ -1864,6 +1874,7 @@ def test_serialization_io_failure_does_not_request_native_abort(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     import unilab.algos.torch.distill.data as data_module
     from unilab.algos.torch.distill import build_distillation_dataset
 
@@ -3778,7 +3789,8 @@ def test_offline_distillation_run_updates_and_saves_checkpoint(tmp_path) -> None
         assert torch.allclose(trained_param, restored_param)
 
 
-def test_offline_runtime_trace_emits_exact_failed_update_context(capsys) -> None:
+def test_offline_runtime_trace_emits_exact_failed_update_context(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
     from unilab.algos.torch.distill import (
         BehaviorDistillationTrainer,
         MoEStudentPolicy,

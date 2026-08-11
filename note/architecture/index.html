@@ -4,11 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>UniLab Human Control Atlas</title>
-  <script>
-    if (window.location.origin !== "http://127.0.0.1:8766") {
-      window.location.replace("http://127.0.0.1:8766/");
-    }
-  </script>
   <style>
     body {
       margin: 0;
@@ -65,7 +60,7 @@
 <body>
   <h1>UniLab Human Control Atlas</h1>
   <p>
-    只保留三张活动地图：先按正式顺序阅读 UniLab runtime，再进入蒸馏 Method-to-Code，最后由 Concept Figure 控制方法语义。
+    三张活动地图保持原有顺序；FADA 地图位于下方讨论区，在方法与模块边界确认前不进入 active map。
   </p>
   <section class="grid">
     <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json">
@@ -79,6 +74,30 @@
     <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json">
       <strong>03 Concept Figure</strong>
       <span>站立、行走和未来高度教师如何通过 command intent、role data、MoE 与 DAgger 汇入一个部署策略。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/04_fada_method_discussion.data.json">
+      <strong>04 Oracle → IDM → Planner Distillation</strong>
+      <span>已训练 Oracle 接收 command 产生 trajectory；state/action 先蒸馏 IDM，再冻结 IDM 用同一 oracle action 蒸馏 Planner。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/05_fada_planner_tracker_modules.data.json">
+      <strong>05 Planner–IDM Construction</strong>
+      <span>只展示 Planner 与 IDM 的 token、Transformer、future/action heads，以及 source-training loss 和梯度边界。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/06_fada_design_detail_discussion.data.json">
+      <strong>06 Planner–IDM Design Discussion</strong>
+      <span>展示完整 command、Oracle bootstrap、realized causal windows、same-state Oracle relabel，以及 UniLab 的 IDM/Planner 两阶段更新。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/07_fada_planner_idm_distillation.data.json">
+      <strong>07 规划器–IDM 蒸馏架构</strong>
+      <span>按 03 的主链与反馈环，展示当前 v005 指令、Oracle 监督、训练窗口、规划器、逆动力学模型、机器人执行与分场景 DAgger。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/08_trajectory_conditioned_execution_alignment.data.json">
+      <strong>08 上下文执行校准</strong>
+      <span>收集真机 rollout，编码临时执行 Context，并由冻结 IDM 在不微调权重的情况下产生精确动作。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/09_trajectory_conditioned_execution_alignment.data.json">
+      <strong>09 上下文条件 Tracker 校准</strong>
+      <span>展示特权教师训练、Context-Conditioned Tracker 训练，以及受控真机 Action Shift 的两次执行验证。</span>
     </a>
   </section>
 </body>

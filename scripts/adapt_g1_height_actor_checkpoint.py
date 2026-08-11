@@ -15,7 +15,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="Legacy 98-D SAC checkpoint")
     parser.add_argument("--output", type=Path, required=True, help="New actor-only 99-D checkpoint")
-    parser.add_argument("--overwrite", action="store_true", help="Replace an existing adapter output")
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Replace an existing adapter output"
+    )
     return parser.parse_args()
 
 

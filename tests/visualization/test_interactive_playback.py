@@ -17,6 +17,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from unilab.visualization.interactive_playback import (
+    FADAPlaybackSession,
     HeightCommander,
     KeyboardCommander,
     OffPolicyPlaybackSession,
@@ -25,6 +26,7 @@ from unilab.visualization.interactive_playback import (
     RslRlPlaybackSession,
     create_appo_playback_session,
     create_distill_playback_session,
+    create_fada_playback_session,
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
     create_sac_playback_session,
@@ -33,6 +35,234 @@ from unilab.visualization.interactive_playback import (
 )
 
 _VEL_LIMIT = [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
+
+
+def test_external_velocity_command_rows_broadcasts_and_rejects_nonfinite() -> None:
+    owner = np.zeros((2, 3), dtype=np.float32)
+    rows = interactive_playback._external_velocity_command_rows(
+        np.asarray([0.2, -0.1, 0.3], dtype=np.float64),
+        owner,
+    )
+
+    np.testing.assert_allclose(rows, np.asarray([[0.2, -0.1, 0.3]] * 2, dtype=np.float32))
+    with pytest.raises(ValueError, match="finite"):
+        interactive_playback._external_velocity_command_rows(
+            np.asarray([np.nan, 0.0, 0.0]),
+            owner,
+        )
+
+
+def test_fada_history_ignores_timeout_done_when_interactive_autoreset_is_disabled() -> None:
+    class FakeEnv:
+        action_space = SimpleNamespace(shape=(2,))
+        state = SimpleNamespace(info={"commands": np.zeros((1, 3), dtype=np.float32)})
+
+        def __init__(self) -> None:
+            self.autoreset_calls: list[bool] = []
+
+        def set_autoreset(self, enabled: bool) -> None:
+            self.autoreset_calls.append(enabled)
+
+    class FakeWrapper:
+        def reset(self):
+            return torch.zeros((1, 4)), {}
+
+        def step(self, _actions):
+            return torch.ones((1, 4)), torch.zeros(1), torch.ones(1, dtype=torch.bool), {}
+
+    class FakeController:
+        def __init__(self) -> None:
+            self.reset_calls: list[Any] = []
+
+        def reset(self, done=None) -> None:
+            self.reset_calls.append(done)
+
+        def act(self, _observation, _commands):
+            return torch.zeros((1, 2))
+
+    env = FakeEnv()
+    controller = FakeController()
+    session = FADAPlaybackSession(
+        controller=controller,
+        env=env,
+        wrapped_env=FakeWrapper(),
+        device="cpu",
+        action_mode="policy",
+        num_envs=1,
+    )
+
+    session.reset()
+    session.set_autoreset(False)
+    session.step_once()
+    assert env.autoreset_calls == [False]
+    assert controller.reset_calls == [None]
+
+    session.set_autoreset(True)
+    session.step_once()
+    assert len(controller.reset_calls) == 2
+    assert bool(torch.as_tensor(controller.reset_calls[-1]).all())
+
+
+def test_keyboard_playback_reset_contract_off_preserves_overrides() -> None:
+    original = {
+        "commands": {"rel_standing_envs": 0.25, "rel_transition_envs": 0.2},
+        "reset_base_qvel_limit": 0.5,
+    }
+
+    resolved = interactive_playback._apply_keyboard_playback_reset_contract(
+        original,
+        "G1WalkFlat",
+        enabled=False,
+    )
+
+    assert resolved == original
+    assert resolved is not original
+
+
+def test_keyboard_playback_reset_contract_forces_standing_zero_velocity() -> None:
+    resolved = interactive_playback._apply_keyboard_playback_reset_contract(
+        {
+            "commands": {"rel_standing_envs": 0.25, "rel_transition_envs": 0.2},
+            "reset_base_qvel_limit": 0.5,
+            "standing_reset_base_qvel_limit": 0.2,
+        },
+        "G1WalkFlat",
+        enabled=True,
+    )
+
+    assert resolved["commands"]["rel_standing_envs"] == pytest.approx(1.0)
+    assert resolved["commands"]["rel_transition_envs"] == pytest.approx(0.0)
+    assert resolved["reset_base_qvel_limit"] == pytest.approx(0.0)
+    assert resolved["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
+
+
+def test_fada_keyboard_playback_connects_reset_contract_to_env(tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeEnv:
+        action_space = SimpleNamespace(shape=(2,))
+
+    class FakeWrapper:
+        num_obs = 4
+
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str) -> None:
+            self.env = env
+
+    def create_env(_cfg, **kwargs):
+        captured.update(kwargs)
+        return FakeEnv()
+
+    deps = {
+        "resolve_checkpoint": lambda *_args: None,
+        "build_env_cfg_override": lambda _cfg: {
+            "commands": {"rel_standing_envs": 0.3, "rel_transition_envs": 0.2},
+            "reset_base_qvel_limit": 0.5,
+            "standing_reset_base_qvel_limit": 0.2,
+        },
+        "create_env": create_env,
+        "wrapper_cls": FakeWrapper,
+        "load_fada_policy": lambda *_args, **_kwargs: None,
+    }
+
+    create_fada_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run="unused",
+            checkpoint=None,
+            action_mode="zero",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+            keyboard=True,
+        ),
+        cfg=SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat")),
+        root_dir=tmp_path,
+        device="cpu",
+        deps=deps,
+        log=lambda _message: None,
+    )
+
+    override = captured["env_cfg_override"]
+    assert override["commands"] == {
+        "rel_standing_envs": 1.0,
+        "rel_transition_envs": 0.0,
+    }
+    assert override["reset_base_qvel_limit"] == pytest.approx(0.0)
+    assert override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
+
+
+def test_fada_playback_missing_checkpoint_fails_before_env_creation(tmp_path: Path) -> None:
+    create_calls = 0
+
+    def create_env(*_args, **_kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        raise AssertionError("environment must not be created before checkpoint validation")
+
+    deps = {
+        "resolve_checkpoint": lambda *_args: None,
+        "create_env": create_env,
+        "wrapper_cls": object,
+        "load_fada_policy": lambda *_args, **_kwargs: None,
+    }
+    cfg = SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat"))
+
+    with pytest.raises(FileNotFoundError, match="FADA policy playback requires"):
+        create_fada_playback_session(
+            playback_cfg=RslRlPlaybackConfig(
+                task="G1WalkFlat",
+                load_run="missing",
+                checkpoint=None,
+                action_mode="policy",
+                policy_obs_mode="actor",
+                algo_log_name="distill",
+                log_root=None,
+            ),
+            cfg=cfg,
+            root_dir=tmp_path,
+            device="cpu",
+            deps=deps,
+        )
+
+    assert create_calls == 0
+
+
+def test_fada_playback_does_not_treat_factory_type_error_as_signature_probe(
+    tmp_path: Path,
+) -> None:
+    create_calls = 0
+
+    def create_env(_cfg, **_kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        raise TypeError("factory body failed")
+
+    deps = {
+        "resolve_checkpoint": lambda *_args: None,
+        "create_env": create_env,
+        "wrapper_cls": object,
+        "load_fada_policy": lambda *_args, **_kwargs: None,
+    }
+
+    with pytest.raises(TypeError, match="factory body failed"):
+        create_fada_playback_session(
+            playback_cfg=RslRlPlaybackConfig(
+                task="G1WalkFlat",
+                load_run="unused",
+                checkpoint=None,
+                action_mode="zero",
+                policy_obs_mode="actor",
+                algo_log_name="distill",
+                log_root=None,
+            ),
+            cfg=SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat")),
+            root_dir=tmp_path,
+            device="cpu",
+            deps=deps,
+            log=lambda _message: None,
+        )
+
+    assert create_calls == 1
 
 
 class _FakeWrappedEnv:
@@ -1354,6 +1584,107 @@ def test_sac_playback_rejects_checkpoint_obs_dim_mismatch(
             device="cpu",
             log=lambda message: None,
         )
+
+
+@pytest.mark.parametrize("metadata_obs_dim", [98, 99])
+def test_sac_playback_uses_privileged_checkpoint_metadata_for_obs_dim(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    metadata_obs_dim: int,
+) -> None:
+    import train_offpolicy
+    from omegaconf import OmegaConf
+
+    import unilab.algos.torch.common.actor_factory as actor_factory
+
+    checkpoint = tmp_path / "model_10.pt"
+    actor_state = {
+        "priv_encoder.0.weight": torch.zeros((128, 29)),
+        "actor_trunk.0.weight": torch.zeros((512, 114)),
+    }
+    torch.save(
+        {
+            "actor": actor_state,
+            "privileged_full_action_teacher": {
+                "schema": "unilab_privileged_full_action_teacher_v1",
+                "obs_dim": metadata_obs_dim,
+            },
+        },
+        checkpoint,
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeEnv:
+        num_envs = 1
+        obs_groups_spec = {"obs": 98}
+        action_space = SimpleNamespace(shape=(29,))
+        state = SimpleNamespace(info={})
+
+    class FakeActor:
+        def eval(self):
+            return self
+
+        def load_state_dict(self, state_dict):
+            captured["loaded_actor"] = state_dict
+
+    cfg = OmegaConf.create(
+        {
+            "training": {"task_name": "G1WalkFlat", "device": None},
+            "algo": {
+                "algo_log_name": "fast_sac",
+                "load_run": "run",
+                "actor_hidden_dim": 16,
+                "use_layer_norm": False,
+                "runtime_impl": "privileged_full_action_sac",
+                "obs_normalization": False,
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu"
+    )
+    monkeypatch.setattr(train_offpolicy, "resolve_play_obs_dims", lambda spec: (98, 127))
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_play_actor_spec",
+        lambda algo_name, cfg, *, obs_dim, critic_obs_dim: (
+            "privileged_full_action_sac",
+            {"priv_info_dim": 29},
+        ),
+    )
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_checkpoint_path",
+        lambda *args, **kwargs: (str(checkpoint), str(tmp_path)),
+    )
+    monkeypatch.setattr(actor_factory, "build_actor", lambda *args, **kwargs: FakeActor())
+
+    kwargs = {
+        "playback_cfg": RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run="run",
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="fast_sac",
+            log_root=None,
+        ),
+        "cfg": cfg,
+        "env_factory": lambda num_envs: FakeEnv(),
+        "root_dir": tmp_path,
+        "device": "cpu",
+        "log": lambda message: None,
+    }
+    if metadata_obs_dim == 99:
+        with pytest.raises(RuntimeError, match="checkpoint=99, playback_env_obs=98"):
+            create_sac_playback_session(**kwargs)
+    else:
+        session, _, _ = create_sac_playback_session(**kwargs)
+        assert session.actor is not None
+        assert captured["loaded_actor"].keys() == actor_state.keys()
+        for key, expected in actor_state.items():
+            torch.testing.assert_close(captured["loaded_actor"][key], expected)
 
 
 def test_sac_playback_loads_legacy_tar_checkpoint_with_warning(

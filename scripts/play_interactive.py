@@ -72,6 +72,7 @@ from unilab.visualization.interactive_playback import (
     _load_playback_checkpoint,
     create_appo_playback_session,
     create_distill_playback_session,
+    create_fada_playback_session,
     create_hora_distill_playback_session,
     create_rsl_rl_playback_session,
     create_sac_playback_session,
@@ -394,7 +395,15 @@ def _warn_if_g1_sac_checkpoint_lacks_standing_contract(
     return issues
 
 
-SUPPORTED_INTERACTIVE_ALGOS = ("ppo", "appo", "sac", "flashsac", "hora_distill", "distill")
+SUPPORTED_INTERACTIVE_ALGOS = (
+    "ppo",
+    "appo",
+    "sac",
+    "flashsac",
+    "hora_distill",
+    "distill",
+    "fada",
+)
 _CONFIG_ROOT_BY_ALGO = {
     "ppo": "ppo",
     "appo": "appo",
@@ -402,6 +411,7 @@ _CONFIG_ROOT_BY_ALGO = {
     "flashsac": "offpolicy",
     "hora_distill": "hora_distill",
     "distill": "distill",
+    "fada": "distill",
 }
 _OFFPOLICY_INTERACTIVE_ALGOS = {"sac", "flashsac"}
 _G1_STANDING_CONTRACT_STAND_TERMS = {
@@ -473,9 +483,11 @@ def _interactive_overrides_from_cli(
 def _normalize_interactive_overrides(algo: str, overrides: list[str]) -> list[str]:
     normalized: list[str] = []
     has_algo_group = False
+    has_action_mode = False
 
     for override in overrides:
         key = _override_key(override)
+        has_action_mode = has_action_mode or key == "interactive.action_mode"
         if algo in _OFFPOLICY_INTERACTIVE_ALGOS and key == "algo":
             value = override.split("=", 1)[1] if "=" in override else ""
             if value != algo:
@@ -491,6 +503,8 @@ def _normalize_interactive_overrides(algo: str, overrides: list[str]) -> list[st
 
     if algo in _OFFPOLICY_INTERACTIVE_ALGOS and not has_algo_group:
         normalized.insert(0, f"algo={algo}")
+    if algo == "fada" and not has_action_mode:
+        normalized.append("interactive.action_mode=policy")
     return normalized
 
 
@@ -1066,6 +1080,7 @@ def _build_playback_config(args, *, num_envs: int = 1) -> RslRlPlaybackConfig:
         num_envs=num_envs,
         speed=float(getattr(args, "speed", 1.0)),
         start_paused=bool(getattr(args, "start_paused", False)),
+        keyboard=bool(getattr(args, "keyboard", False)),
     )
 
 
@@ -1115,16 +1130,11 @@ def _build_height_commander(env: Any, args) -> HeightCommander | None:
     )
 
 
-def _apply_playback_command(playback_session: Any, env: Any, command: np.ndarray) -> None:
+def _apply_playback_command(playback_session: Any, command: np.ndarray) -> None:
     setter = getattr(playback_session, "set_external_command", None)
-    if callable(setter):
-        setter(np.asarray(command, dtype=np.float32))
-        return
-    state = getattr(env, "state", None)
-    info = getattr(state, "info", None)
-    commands = info.get("commands") if isinstance(info, dict) else None
-    if isinstance(commands, np.ndarray) and commands.ndim == 2 and commands.shape[1] >= 3:
-        commands[:, :3] = np.asarray(command, dtype=commands.dtype)
+    if not callable(setter):
+        raise RuntimeError("Keyboard playback requires playback_session.set_external_command().")
+    setter(np.asarray(command, dtype=np.float32))
 
 
 def _apply_playback_height(playback_session: Any, target_height: float) -> None:
@@ -1642,7 +1652,10 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
             env_cfg_override = build_offpolicy_env_cfg_override(algo, cfg)
             env_cfg_override = _apply_checkpoint_env_contract(env_cfg_override, args)
         else:
-            env_cfg_override = _backend_adapter(cfg, algo_name=algo).build_task_env_cfg_override()
+            adapter_algo = "distill" if algo == "fada" else algo
+            env_cfg_override = _backend_adapter(
+                cfg, algo_name=adapter_algo
+            ).build_task_env_cfg_override()
             if algo == "distill":
                 env_cfg_override = _apply_distill_playback_reset_contract(
                     env_cfg_override, args.task
@@ -1746,6 +1759,16 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
                 device=device,
                 log=lambda message: print(f"[play_interactive] {message}"),
             )
+        elif algo == "fada":
+            if cfg is None:
+                raise ValueError("FADA interactive playback requires a composed Hydra config.")
+            session = create_fada_playback_session(
+                playback_cfg=playback_cfg,
+                cfg=cfg,
+                root_dir=ROOT_DIR,
+                device=device,
+                log=lambda message: print(f"[play_interactive] {message}"),
+            )
         else:
             raise ValueError(f"Unsupported interactive playback algo: {algo}")
     except RuntimeError as exc:
@@ -1819,11 +1842,11 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
     commander = _build_keyboard_commander(env, args)
     height_commander = _build_height_commander(env, args)
     if commander is not None:
-        _apply_playback_command(playback_session, env, commander.command)
-        env.set_autoreset(False)
+        _apply_playback_command(playback_session, commander.command)
+        playback_session.set_autoreset(False)
     if height_commander is not None:
         _apply_playback_height(playback_session, height_commander.target)
-        env.set_autoreset(False)
+        playback_session.set_autoreset(False)
         _print_height_status(env, height_commander)
     trace_distill_actions = (
         algo == "distill"
@@ -1864,7 +1887,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
             playback_session.reset()
             if commander is not None:
                 commander.zero()
-                _apply_playback_command(playback_session, env, commander.command)
+                _apply_playback_command(playback_session, commander.command)
             if height_commander is not None:
                 _apply_playback_height(playback_session, height_commander.target)
                 _print_height_status(env, height_commander)
@@ -1907,7 +1930,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
 
                 # Write the command before stepping so this step's obs follow it.
                 if commander is not None and env.state is not None:
-                    _apply_playback_command(playback_session, env, commander.command)
+                    _apply_playback_command(playback_session, commander.command)
 
                 advanced = playback_session.advance(controls)
 

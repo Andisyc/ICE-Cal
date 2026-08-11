@@ -98,9 +98,7 @@ def _stand_runtime_snapshot(env: Any, state: Any) -> dict[str, Any]:
     upvector = np.asarray(
         env._backend.get_sensor_data(env.cfg.sensor.upvector), dtype=np.float32
     ).reshape(num_envs, -1)
-    tilt_deg = np.rad2deg(
-        np.arccos(np.clip(upvector[:, 2], -1.0, 1.0))
-    ).astype(np.float32)
+    tilt_deg = np.rad2deg(np.arccos(np.clip(upvector[:, 2], -1.0, 1.0))).astype(np.float32)
 
     def _contact_count(prefix: str) -> np.ndarray:
         active = []
@@ -294,8 +292,7 @@ def run_check(
             )
 
         target_in_range = bool(
-            np.all(target_height >= height_range[0])
-            and np.all(target_height <= height_range[1])
+            np.all(target_height >= height_range[0]) and np.all(target_height <= height_range[1])
         )
         _add(
             checks,

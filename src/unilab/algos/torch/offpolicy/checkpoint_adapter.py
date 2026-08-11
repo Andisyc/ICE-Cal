@@ -313,6 +313,7 @@ def load_g1_height_actor_warm_start(
 
     actor.load_state_dict(adapted_actor_state, strict=True)
     if adapted_normalizer_state is not None:
+        assert isinstance(target_normalizer, nn.Module)
         target_normalizer.load_state_dict(adapted_normalizer_state, strict=True)
     metadata = dict(payload["actor_obs_adapter"])
     learner.actor_warm_start_metadata = metadata
@@ -361,6 +362,7 @@ def load_g1_height_actor_continuation_warm_start(
 
     source_normalizer = checkpoint.get("obs_normalizer")
     target_normalizer = getattr(learner, "obs_normalizer", None)
+    source_normalizer_state: dict[str, torch.Tensor] | None = None
     if source_normalizer is not None:
         if not isinstance(source_normalizer, Mapping):
             raise ValueError("source obs_normalizer state must be a mapping")
@@ -382,7 +384,8 @@ def load_g1_height_actor_continuation_warm_start(
         )
 
     actor.load_state_dict(source_actor_state, strict=True)
-    if source_normalizer is not None:
+    if source_normalizer_state is not None:
+        assert isinstance(target_normalizer, nn.Module)
         target_normalizer.load_state_dict(source_normalizer_state, strict=True)
     metadata = {
         "adapter_id": G1_HEIGHT_ACTOR_CONTINUATION_ADAPTER_ID,

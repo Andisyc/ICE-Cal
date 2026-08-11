@@ -115,6 +115,24 @@ def _fake_env(reward_cfg: G1WalkRewardConfig, *, num_envs: int = 1) -> G1WalkEnv
     return env
 
 
+def test_g1_rollout_snapshot_extension_restores_curriculum_and_reward_scales() -> None:
+    reward_cfg = _reward_config()
+    reward_cfg.scales.update({"alive": 10.0, "penalty_orientation": -5.0})
+    env = _fake_env(reward_cfg)
+    env._episode_tracker = SimpleNamespace(average_length=42.0)
+    env._penalty_curriculum = SimpleNamespace(current_scale=0.75)
+    snapshot = env._capture_task_rollout_state()
+
+    env._episode_tracker.average_length = 3.0
+    env._penalty_curriculum.current_scale = 0.5
+    reward_cfg.scales["penalty_orientation"] = -2.5
+    env._restore_task_rollout_state(snapshot)
+
+    assert env._episode_tracker.average_length == 42.0
+    assert env._penalty_curriculum.current_scale == 0.75
+    assert reward_cfg.scales == {"alive": 10.0, "penalty_orientation": -5.0}
+
+
 def _ctx(commands: np.ndarray, *, linvel_x: float) -> RewardContext:
     return RewardContext(
         info={

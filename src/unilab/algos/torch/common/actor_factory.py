@@ -17,6 +17,8 @@ def build_actor(
     priv_info_dim: int | None = None,
     priv_info_embed_dim: int = 9,
     priv_mlp_hidden_dims: tuple[int, ...] | list[int] = (256, 128, 9),
+    nominal_checkpoint_path: str | None = None,
+    residual_scale: float = 0.2,
     **kwargs,
 ):
     """Build the correct actor model based on algorithm type."""
@@ -44,6 +46,47 @@ def build_actor(
             priv_mlp_hidden_dims=tuple(priv_mlp_hidden_dims),
             use_layer_norm=use_layer_norm,
             device=device,
+        )
+    if algo_type == "privileged_residual_sac":
+        if priv_info_dim is None:
+            raise ValueError(
+                "build_actor(algo_type='privileged_residual_sac') requires priv_info_dim."
+            )
+        from unilab.algos.torch.fada_context.privileged_residual_sac import (
+            PrivilegedResidualSACActor,
+        )
+
+        return PrivilegedResidualSACActor(
+            obs_dim=obs_dim,
+            priv_info_dim=int(priv_info_dim),
+            action_dim=action_dim,
+            hidden_dim=actor_hidden_dim,
+            priv_info_embed_dim=priv_info_embed_dim,
+            priv_mlp_hidden_dims=tuple(priv_mlp_hidden_dims),
+            use_layer_norm=use_layer_norm,
+            device=device,
+            nominal_checkpoint_path=nominal_checkpoint_path,
+            residual_scale=residual_scale,
+        )
+    if algo_type == "privileged_full_action_sac":
+        if priv_info_dim is None:
+            raise ValueError(
+                "build_actor(algo_type='privileged_full_action_sac') requires priv_info_dim."
+            )
+        from unilab.algos.torch.fada_context.privileged_full_action_sac import (
+            PrivilegedFullActionSACActor,
+        )
+
+        return PrivilegedFullActionSACActor(
+            obs_dim=obs_dim,
+            priv_info_dim=int(priv_info_dim),
+            action_dim=action_dim,
+            hidden_dim=actor_hidden_dim,
+            priv_info_embed_dim=priv_info_embed_dim,
+            priv_mlp_hidden_dims=tuple(priv_mlp_hidden_dims),
+            use_layer_norm=use_layer_norm,
+            device=device,
+            nominal_initialization_checkpoint=kwargs.get("nominal_initialization_checkpoint"),
         )
     if algo_type == "td3":
         from unilab.algos.torch.fast_td3.learner import TD3Actor

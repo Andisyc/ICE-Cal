@@ -57,6 +57,7 @@ from unilab.training.rsl_rl import (
 )
 from unilab.visualization.interactive_playback import (
     PlaybackControls,
+    create_fada_playback_session,
     create_rsl_rl_playback_session,
     select_torch_device,
 )
@@ -89,6 +90,7 @@ from play_interactive import (  # noqa: E402
     _backend_adapter,
     _build_playback_config,
     _infer_checkpoint_actor_input_dim,
+    _resolve_focus_body_id,
     resolve_checkpoint,
 )
 
@@ -213,7 +215,39 @@ def _close_scene_entries(entries: list[dict[str, Any]]) -> None:
         entry["scene"].close()
 
 
-def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
+def _configure_scene_focus(entries: list[dict[str, Any]], env: Any, body_name: str) -> None:
+    """Resolve the camera focus body once for each active MuJoCo model."""
+
+    for entry in entries:
+        entry["focus_body_id"] = _resolve_focus_body_id(entry["model"], env, body_name)
+
+
+def _follow_viser_clients(
+    server: Any,
+    target: np.ndarray,
+    previous_target: dict[int, np.ndarray],
+) -> None:
+    """Translate each connected camera with the selected robot while preserving user orbit."""
+
+    for client_id, client in server.get_clients().items():
+        prior = previous_target.get(client_id)
+        if prior is None:
+            client.camera.look_at = tuple(float(value) for value in target)
+            client.camera.position = tuple(
+                float(value) for value in target + np.asarray([2.5, -2.5, 1.5])
+            )
+        else:
+            delta = target - prior
+            client.camera.look_at = tuple(
+                float(value) for value in np.asarray(client.camera.look_at) + delta
+            )
+            client.camera.position = tuple(
+                float(value) for value in np.asarray(client.camera.position) + delta
+            )
+        previous_target[client_id] = target.copy()
+
+
+def play_viser(args: PlayInteractiveArgs, cfg: DictConfig, *, algo: str = "ppo") -> None:
     device = select_torch_device()
     print(f"[play_viser] Device: {device}")
 
@@ -234,7 +268,10 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
             return registry.make(args.task, num_envs=env_count, sim_backend="mujoco")
         from unilab.training import create_env
 
-        env_cfg_override = _backend_adapter(cfg).build_task_env_cfg_override()
+        adapter_algo = "distill" if algo == "fada" else algo
+        env_cfg_override = _backend_adapter(
+            cfg, algo_name=adapter_algo
+        ).build_task_env_cfg_override()
         return create_env(
             cfg,
             num_envs=env_count,
@@ -243,21 +280,30 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
             task_name=args.task,
         )
 
-    playback_session, _policy_obs_mode, _checkpoint_path = create_rsl_rl_playback_session(
-        playback_cfg=_build_playback_config(args, num_envs=num_envs),
-        env_factory=_create_env,
-        algo_config=_algo_config_dict(cfg),
-        root_dir=ROOT_DIR,
-        device=device,
-        checkpoint_resolver=resolve_checkpoint,
-        checkpoint_input_dim_reader=_infer_checkpoint_actor_input_dim,
-        entrypoint_log_root=get_entrypoint_log_root,
-        wrapper_cls=RslRlVecEnvWrapper,
-        runner_cls=OnPolicyRunner,
-        policy_obs_dims_getter=get_policy_obs_dims,
-        train_cfg_normalizer=normalize_ppo_train_cfg,
-        log=lambda message: print(f"[play_viser] {message}"),
-    )
+    if algo == "fada":
+        playback_session, _policy_obs_mode, _checkpoint_path = create_fada_playback_session(
+            playback_cfg=_build_playback_config(args, num_envs=num_envs),
+            cfg=cfg,
+            root_dir=ROOT_DIR,
+            device=device,
+            log=lambda message: print(f"[play_viser] {message}"),
+        )
+    else:
+        playback_session, _policy_obs_mode, _checkpoint_path = create_rsl_rl_playback_session(
+            playback_cfg=_build_playback_config(args, num_envs=num_envs),
+            env_factory=_create_env,
+            algo_config=_algo_config_dict(cfg),
+            root_dir=ROOT_DIR,
+            device=device,
+            checkpoint_resolver=resolve_checkpoint,
+            checkpoint_input_dim_reader=_infer_checkpoint_actor_input_dim,
+            entrypoint_log_root=get_entrypoint_log_root,
+            wrapper_cls=RslRlVecEnvWrapper,
+            runner_cls=OnPolicyRunner,
+            policy_obs_dims_getter=get_policy_obs_dims,
+            train_cfg_normalizer=normalize_ppo_train_cfg,
+            log=lambda message: print(f"[play_viser] {message}"),
+        )
     env = playback_session.env
 
     # --- GUI controls --------------------------------------------------------
@@ -325,6 +371,9 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
             spacing=render_spacing,
         )
     }
+    focus_body_name = str(getattr(args, "camera_focus_body_name", ""))
+    _configure_scene_focus(scene_entries["value"], env, focus_body_name)
+    previous_camera_target: dict[int, np.ndarray] = {}
 
     def _rebuild_scenes() -> None:
         _close_scene_entries(scene_entries["value"])
@@ -336,6 +385,8 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
             visible_env_indices=visible_env_indices,
             spacing=render_spacing,
         )
+        _configure_scene_focus(scene_entries["value"], env, focus_body_name)
+        previous_camera_target.clear()
         if display_mode["value"] == "single":
             runtime_idx = int(visible_env_indices[env_idx["value"]])
             print(f"[play_viser] Showing env_{env_idx['value']} (runtime env {runtime_idx})")
@@ -404,11 +455,21 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig) -> None:
                 playback_session.advance(controls)
 
                 physics_batch = playback_session.physics_state()
+                follow_target = None
                 for entry in scene_entries["value"]:
                     phys = physics_batch[int(entry["runtime_env_idx"])].astype(np.float64)
                     mujoco.mj_setState(entry["model"], entry["data"], phys, state_spec)
                     mujoco.mj_forward(entry["model"], entry["data"])
                     entry["scene"].update(entry["data"])
+                    if display_mode["value"] == "single" and bool(
+                        getattr(args, "camera_follow_body", True)
+                    ):
+                        follow_target = np.asarray(
+                            entry["data"].xpos[int(entry["focus_body_id"])], dtype=np.float64
+                        ).copy()
+                        follow_target[2] += float(getattr(args, "camera_height_offset", 0.15))
+                if follow_target is not None:
+                    _follow_viser_clients(server, follow_target, previous_camera_target)
 
                 # Real-time pacing
                 target_dt = controls.target_dt(ctrl_dt)
@@ -434,6 +495,11 @@ def _build_play_args(cfg: DictConfig) -> PlayInteractiveArgs:
         checkpoint=(
             str(OmegaConf.select(cfg, "algo.checkpoint"))
             if OmegaConf.select(cfg, "algo.checkpoint") not in (None, -1, "-1")
+            else None
+        ),
+        checkpoint_path=(
+            str(OmegaConf.select(cfg, "training.play_checkpoint_path"))
+            if OmegaConf.select(cfg, "training.play_checkpoint_path") not in (None, "")
             else None
         ),
         action_mode=str(cfg.interactive.action_mode),

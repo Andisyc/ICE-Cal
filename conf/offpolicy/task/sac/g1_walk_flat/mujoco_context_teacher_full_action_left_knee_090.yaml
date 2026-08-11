@@ -1,0 +1,61 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco
+  - _self_
+
+training:
+  task_name: G1WalkFlat
+  sim_backend: mujoco
+  no_play: true
+  no_sync_collection: false
+  env_steps_per_sync: 1
+
+interactive:
+  action_mode: policy
+  keyboard: false
+
+algo:
+  runtime_impl: privileged_full_action_sac
+  runtime_resolver: unilab.algos.torch.fada_context.privileged_full_action_sac:resolve_privileged_full_action_sac_runtime
+  load_run: "-1"
+  actor_warm_start_checkpoint: null
+  num_envs: 2048
+  batch_size: 8192
+  replay_buffer_n: 512
+  updates_per_step: 8
+  learning_starts: 10
+  policy_frequency: 4
+  max_iterations: 5000
+  save_interval: 1000
+  use_symmetry: false
+  actor:
+    nominal_initialization_checkpoint: checkpoints/oracles/G1WalkFlat/model_5000.pt
+    priv_info_dim: 29
+    priv_info_embed_dim: 16
+    priv_mlp_hidden_dims: [128, 64, 16]
+
+env:
+  commands:
+    vel_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+    rel_standing_envs: 0.0
+    rel_transition_envs: 0.0
+  reset_base_qvel_limit: 0.0
+  curriculum:
+    enabled: false
+  domain_rand:
+    randomize_kp: false
+    randomize_kd: false
+    actuator_strength:
+      enabled: true
+      include_in_critic_obs: true
+      multipliers:
+        [1.0, 1.0, 1.0, 0.9, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+reward:
+  scales:
+    penalty_lateral_displacement: -20.0
+    penalty_yaw_drift: -10.0

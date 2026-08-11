@@ -4,11 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>UniLab Architecture Atlas</title>
-  <script>
-    if (window.location.origin !== "http://127.0.0.1:8766") {
-      window.location.replace(`http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html${window.location.search}`);
-    }
-  </script>
   <style>
     :root {
       --ink: #1f2933;
@@ -216,6 +211,7 @@
     let canvasHeight = 980;
     let zoom = 1;
     let autoFitWidth = true;
+    let activeInspectorCardId = null;
     let isPanning = false;
     let panStartX = 0;
     let panStartY = 0;
@@ -467,7 +463,7 @@
       const width = 1480;
       const height = 1080;
       setCanvas(width, height);
-      const rc = drawHeader(data, "按列阅读：真实问题 -> 概念变量 -> 工程承载。颜色和 ID 与其他图保持一致。", width);
+      const rc = drawHeader(data, data.subtitle || "按列阅读：真实问题 -> 概念变量 -> 工程承载。颜色和 ID 与其他图保持一致。", width);
       const cols = [
         { x: 70, y: 150, w: 380 },
         { x: 550, y: 150, w: 380 },
@@ -559,6 +555,208 @@
         size: 14,
         fill: "#6f7b86",
         weight: 700,
+      });
+    }
+
+    function renderInspector(data) {
+      const cards = Array.isArray(data.cards) ? data.cards : [];
+      const steps = Array.isArray(data.transaction?.steps) ? data.transaction.steps : [];
+      const width = 1680;
+      const left = 44;
+      const contentWidth = width - left * 2;
+      const rc = rough.svg(svg);
+      if (!cards.length || !steps.length) {
+        setCanvas(width, 1040);
+        drawHeader(data, data.subtitle, width);
+        addText("Design Inspector 数据为空", left, 188, { size: 20, weight: 720, fill: "#9b3f32" });
+        return;
+      }
+
+      if (!activeInspectorCardId || !cards.some((card) => card.designId === activeInspectorCardId)) {
+        activeInspectorCardId = cards[0].designId;
+      }
+      const activeCard = cards.find((card) => card.designId === activeInspectorCardId) || cards[0];
+      const highlightSteps = new Set(activeCard.highlightSteps || []);
+      const activeColor = activeCard.color || "#64748b";
+
+      const selectorTop = 130;
+      const selectorColumns = 5;
+      const selectorRows = Math.ceil(cards.length / selectorColumns);
+      const selectorGap = 14;
+      const selectorWidth = (contentWidth - selectorGap * (selectorColumns - 1)) / selectorColumns;
+      const selectorHeight = 68;
+      const transactionTop = selectorTop + selectorRows * (selectorHeight + 12) + 24;
+      const detailTop = transactionTop + 360;
+      const detailRows = Array.isArray(activeCard.details) ? activeCard.details : [];
+      const detailTextWidth = Math.min(contentWidth - 88, 1160);
+      const detailHeaderHeight = activeCard.responsibility ? 104 : 64;
+      const detailRowHeightFor = (detail) => {
+        const row = typeof detail === "string" ? { text: detail } : detail;
+        const headingHeight = row?.heading ? 27 : 0;
+        const textLines = measuredLineCount(row?.text || "", detailTextWidth, { charWidth: 7.4 });
+        return 34 + headingHeight + Math.max(1, textLines) * 20;
+      };
+      const detailHeight = detailHeaderHeight + detailRows.reduce(
+        (sum, detail) => sum + detailRowHeightFor(detail),
+        0,
+      );
+      const height = Math.max(1040, detailTop + detailHeight + 54);
+
+      setCanvas(width, height);
+      drawHeader(data, data.subtitle, width);
+
+      cards.forEach((card, index) => {
+        const column = index % selectorColumns;
+        const row = Math.floor(index / selectorColumns);
+        const x = left + column * (selectorWidth + selectorGap);
+        const y = selectorTop + row * (selectorHeight + 12);
+        const selected = card.designId === activeCard.designId;
+        const color = card.color || "#64748b";
+        drawCard(rc, x, y, selectorWidth, selectorHeight, color, {
+          stroke: selected ? color : colorWithAlpha(color, 0.5),
+          strokeWidth: selected ? 2.3 : 0.9,
+          roughness: selected ? 1.0 : 0.45,
+          bowing: 0.3,
+          fill: selected ? colorWithAlpha(color, 0.18) : "rgba(255,255,255,0.68)",
+        });
+        addText(`${card.designId} / ${card.blockId}`, x + 13, y + 20, {
+          size: 10.8, weight: 700, code: true, fill: color,
+        });
+        wrapText(card.title, x + 13, y + 44, selectorWidth - 26, {
+          size: 16.5, lineHeight: 19, charWidth: 8.0, maxLines: 1, weight: 760, fill: "#26313d",
+        });
+
+        const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        hit.setAttribute("x", x);
+        hit.setAttribute("y", y);
+        hit.setAttribute("width", selectorWidth);
+        hit.setAttribute("height", selectorHeight);
+        hit.setAttribute("fill", "transparent");
+        hit.setAttribute("pointer-events", "all");
+        hit.setAttribute("role", "button");
+        hit.setAttribute("tabindex", "0");
+        hit.setAttribute("aria-label", `查看 ${card.title} 的设计细节`);
+        hit.style.cursor = "pointer";
+        const selectCard = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          activeInspectorCardId = card.designId;
+          render(data);
+        };
+        hit.addEventListener("mousedown", (event) => event.stopPropagation());
+        hit.addEventListener("click", selectCard);
+        hit.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") selectCard(event);
+        });
+        svg.appendChild(hit);
+      });
+
+      const phaseTitles = data.transaction?.phaseTitles || {};
+      const phaseDefinitions = [
+        { id: "pre", title: phaseTitles.pre || "进入训练", y: transactionTop },
+        { id: "collection", title: phaseTitles.collection || "收集 Oracle 证据", y: transactionTop + 144 },
+        { id: "update", title: phaseTitles.update || "蒸馏更新", y: transactionTop + 258 },
+      ];
+      const phaseLabelWidth = 126;
+      const stepGap = 13;
+      const stepHeight = 76;
+      const drawPhase = (phase) => {
+        const phaseSteps = steps.filter((step) => step.phase === phase.id);
+        const startX = left + phaseLabelWidth;
+        const availableWidth = contentWidth - phaseLabelWidth;
+        const stepWidth = Math.min(248, (availableWidth - stepGap * Math.max(0, phaseSteps.length - 1)) / Math.max(1, phaseSteps.length));
+        addText(phase.title, left, phase.y + 36, {
+          size: 15, weight: 760, display: true, fill: "#485563",
+        });
+        phaseSteps.forEach((step, index) => {
+          const globalIndex = steps.findIndex((item) => item.id === step.id) + 1;
+          const x = startX + index * (stepWidth + stepGap);
+          const selected = highlightSteps.has(step.id);
+          const stroke = selected ? activeColor : "#aeb7c1";
+          drawCard(rc, x, phase.y, stepWidth, stepHeight, stroke, {
+            stroke,
+            strokeWidth: selected ? 2.2 : 0.85,
+            roughness: selected ? 0.95 : 0.35,
+            bowing: 0.28,
+            fill: selected ? colorWithAlpha(activeColor, 0.18) : "rgba(247,248,249,0.82)",
+          });
+          addText(String(globalIndex).padStart(2, "0"), x + 12, phase.y + 18, {
+            size: 10.5, weight: 760, code: true, fill: selected ? activeColor : "#8d98a4",
+          });
+          wrapText(step.label, x + 12, phase.y + 41, stepWidth - 24, {
+            size: 14, lineHeight: 16, charWidth: 7.0, maxLines: 2,
+            weight: selected ? 760 : 600, fill: selected ? "#26313d" : "#626e7a",
+          });
+          const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hit.setAttribute("x", x);
+          hit.setAttribute("y", phase.y);
+          hit.setAttribute("width", stepWidth);
+          hit.setAttribute("height", stepHeight);
+          hit.setAttribute("fill", "transparent");
+          hit.setAttribute("pointer-events", "all");
+          const tooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          tooltip.textContent = step.detail || step.label;
+          hit.appendChild(tooltip);
+          svg.appendChild(hit);
+          if (index < phaseSteps.length - 1) {
+            addText("→", x + stepWidth + 1, phase.y + 44, { size: 15, weight: 700, fill: "#89939e" });
+          }
+        });
+      };
+      phaseDefinitions.forEach(drawPhase);
+      addText("↓", width - 72, phaseDefinitions[0].y + 99, { size: 18, weight: 760, fill: "#89939e" });
+      addText("↓", width - 72, phaseDefinitions[1].y + 99, { size: 18, weight: 760, fill: "#89939e" });
+
+      svg.appendChild(rc.rectangle(left, detailTop, contentWidth, detailHeight, {
+        stroke: activeColor,
+        strokeWidth: 1.2,
+        roughness: 0.5,
+        bowing: 0.25,
+        fill: colorWithAlpha(activeColor, 0.075),
+        fillStyle: "solid",
+      }));
+      addText(activeCard.title, left + 22, detailTop + 34, {
+        size: 20, weight: 780, display: true, fill: activeColor,
+      });
+      if (activeCard.responsibility) {
+        wrapText(activeCard.responsibility, left + 22, detailTop + 64, contentWidth - 44, {
+          size: 14.5, lineHeight: 19, charWidth: 7.1, maxLines: 2, weight: 570, fill: "#4f5b67",
+        });
+      }
+      let detailOffset = 0;
+      detailRows.forEach((detail, index) => {
+        const row = typeof detail === "string" ? { text: detail } : detail;
+        const rowTop = detailTop + detailHeaderHeight + detailOffset;
+        const rowHeight = detailRowHeightFor(detail);
+        const rowY = rowTop + 20;
+        addText(String(index + 1), left + 22, rowY, {
+          size: 11.5, weight: 760, code: true, fill: activeColor,
+        });
+        let bodyY = rowY;
+        if (row.heading) {
+          addText(row.heading, left + 64, rowY, {
+            size: 17, weight: 760, display: true, fill: "#26313d",
+          });
+          bodyY += 27;
+        }
+        wrapText(row.text || "", left + 64, bodyY, detailTextWidth, {
+          size: 15.5, lineHeight: 20, charWidth: 7.4, weight: 570, fill: "#34414e",
+        });
+        if (index < detailRows.length - 1) {
+          const separator = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          separator.setAttribute("x1", left + 20);
+          separator.setAttribute("x2", left + contentWidth - 20);
+          separator.setAttribute("y1", rowTop + rowHeight);
+          separator.setAttribute("y2", rowTop + rowHeight);
+          separator.setAttribute("stroke", colorWithAlpha(activeColor, 0.22));
+          separator.setAttribute("stroke-width", "1");
+          svg.appendChild(separator);
+        }
+        detailOffset += rowHeight;
+      });
+
+      addText(data.footerText || "选择上方设计点；中间主链保持不变；下方只展示该设计点的原子决定。", left, height - 24, {
+        size: 13, weight: 620, fill: "#687481",
       });
     }
 
@@ -1399,6 +1597,8 @@
       const layout = data.layout || "tabs";
       if (layout === "repo_tree") {
         renderRepoTree(data);
+      } else if (layout === "design_transaction_inspector") {
+        renderInspector(data);
       } else if (layout === "repository_reading_atlas") {
         renderRepositoryReadingAtlas(data);
       } else if (layout === "flow_tree") {
@@ -1408,9 +1608,9 @@
       } else {
         renderTabs(data);
       }
-      if (layout === "repository_reading_atlas" && autoFitWidth) {
+      if ((layout === "repository_reading_atlas" || layout === "design_transaction_inspector") && autoFitWidth) {
         autoFitWidth = false;
-        zoom = clampZoom(data.defaultZoom || 0.65);
+        zoom = clampZoom(data.defaultZoom || (layout === "design_transaction_inspector" ? 0.8 : 0.65));
         requestAnimationFrame(() => {
           applyZoom();
           stage.scrollLeft = 0;

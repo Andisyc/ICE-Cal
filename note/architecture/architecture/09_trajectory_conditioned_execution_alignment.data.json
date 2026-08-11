@@ -1,0 +1,489 @@
+{
+  "title": "09 In-Context Execution Calibration",
+  "layout": "method_figure",
+  "figureWidth": 2050,
+  "figureHeight": 1540,
+  "connectorClearance": 18,
+  "showLegend": false,
+  "layerDividers": [
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 460,
+      "topLabel": "Privileged Teacher Training",
+      "bottomLabel": "Context-Conditioned Tracker Training"
+    },
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 1190,
+      "topLabel": "Context-Conditioned Tracker Training",
+      "bottomLabel": "Controlled Real-World Proof of Concept"
+    }
+  ],
+  "concepts": {
+    "C-ICA3-PLANNER": {
+      "name": "Planner Intent",
+      "color": "#0891b2"
+    },
+    "C-ICA3-TRACKER": {
+      "name": "Encoder-Decoder Tracker",
+      "color": "#0f766e"
+    },
+    "C-ICA3-SHIFT": {
+      "name": "Execution Shift",
+      "color": "#7c3aed"
+    },
+    "C-ICA3-SUPPORT": {
+      "name": "Rollout Evidence",
+      "color": "#2563eb"
+    },
+    "C-ICA3-CONTEXT": {
+      "name": "Execution Context",
+      "color": "#d97706"
+    },
+    "C-ICA3-TEACHER": {
+      "name": "Privileged Supervision",
+      "color": "#65a30d"
+    },
+    "C-ICA3-LEARNING": {
+      "name": "Response-Calibration Learning",
+      "color": "#db2777"
+    },
+    "C-ICA3-OBJECTIVE": {
+      "name": "Teacher Objective",
+      "color": "#b45309"
+    }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "ICA3-P-01",
+      "title": "Wrench Sampling",
+      "summary": "按任务先验随机采样方向与强度",
+      "concept": "C-ICA3-SHIFT",
+      "kind": "external",
+      "x": 40,
+      "y": 90,
+      "w": 220,
+      "h": 110
+    },
+    {
+      "id": "ICA3-P-02",
+      "title": "Privileged Inputs",
+      "summary": "组合当前状态、Intent 与真实 Wrench",
+      "concept": "C-ICA3-TEACHER",
+      "x": 340,
+      "y": 90,
+      "w": 230,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-08",
+      "title": "Privileged Teacher",
+      "summary": "以真实 Wrench 为条件输出恢复 Action",
+      "concept": "C-ICA3-TEACHER",
+      "x": 660,
+      "y": 90,
+      "w": 240,
+      "h": 110
+    },
+    {
+      "id": "ICA3-P-03",
+      "title": "Same-Wrench Rollout",
+      "summary": "环境承受与 Teacher 输入相同的 Wrench",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 990,
+      "y": 90,
+      "w": 250,
+      "h": 110
+    },
+    {
+      "id": "ICA3-P-04",
+      "title": "Locomotion Objective",
+      "summary": "保持直线速度、航向与稳定性",
+      "concept": "C-ICA3-OBJECTIVE",
+      "x": 1330,
+      "y": 90,
+      "w": 240,
+      "h": 110
+    },
+    {
+      "id": "ICA3-P-05",
+      "title": "Teacher RL Update",
+      "summary": "从 nominal Tracker 微调条件恢复策略",
+      "concept": "C-ICA3-LEARNING",
+      "x": 1660,
+      "y": 90,
+      "w": 240,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-01",
+      "title": "Planner",
+      "summary": "冻结 Planner，产生同一短时程运动 Intent",
+      "concept": "C-ICA3-PLANNER",
+      "x": 40,
+      "y": 800,
+      "w": 190,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-02",
+      "title": "Tracker Encoder",
+      "summary": "编码状态、历史与 Planner Intent，输出 nominal latent z",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "encoder",
+      "shapeInset": 48,
+      "x": 290,
+      "y": 760,
+      "w": 260,
+      "h": 190
+    },
+    {
+      "id": "ICA3-T-11",
+      "title": "Latent Add",
+      "summary": "z + Δz",
+      "concept": "C-ICA3-TRACKER",
+      "x": 610,
+      "y": 815,
+      "w": 70,
+      "h": 80
+    },
+    {
+      "id": "ICA3-T-03",
+      "title": "Tracker Decoder",
+      "summary": "解码校准后的 latent，生成执行 Action",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "decoder",
+      "shapeInset": 48,
+      "x": 740,
+      "y": 760,
+      "w": 260,
+      "h": 190
+    },
+    {
+      "id": "ICA3-T-04",
+      "title": "Execution Shift",
+      "summary": "注入与 Teacher 训练同分布的可恢复 Wrench",
+      "concept": "C-ICA3-SHIFT",
+      "kind": "external",
+      "x": 1060,
+      "y": 800,
+      "w": 220,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-05",
+      "title": "Rollout",
+      "summary": "第一次轨迹作为 Context，第二次执行验证校准",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 1340,
+      "y": 800,
+      "w": 250,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-06",
+      "title": "Context Encoder",
+      "summary": "将失败轨迹压缩为 calibration latent Δz",
+      "concept": "C-ICA3-CONTEXT",
+      "shape": "context_encoder",
+      "shapeInset": 55,
+      "x": 515,
+      "y": 520,
+      "w": 260,
+      "h": 170
+    },
+    {
+      "id": "ICA3-T-10",
+      "title": "Privileged Teacher",
+      "summary": "以真实 Wrench 为条件输出恢复 Action",
+      "concept": "C-ICA3-TEACHER",
+      "x": 1650,
+      "y": 600,
+      "w": 240,
+      "h": 110
+    },
+    {
+      "id": "ICA3-T-09",
+      "title": "Calibration Learning",
+      "summary": "以 Teacher Action 训练 Context Encoder 与 Tracker",
+      "concept": "C-ICA3-LEARNING",
+      "x": 1650,
+      "y": 800,
+      "w": 240,
+      "h": 110
+    },
+    {
+      "id": "ICA3-D-01",
+      "title": "Controlled Action Shift",
+      "summary": "固定降低单侧 Action 强度，制造可重复直线偏移",
+      "concept": "C-ICA3-SHIFT",
+      "kind": "external",
+      "x": 40,
+      "y": 1300,
+      "w": 280,
+      "h": 110
+    },
+    {
+      "id": "ICA3-D-02",
+      "title": "First Rollout",
+      "summary": "相同 Tracker 首次执行，记录偏移下的 State-Action 轨迹",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 390,
+      "y": 1300,
+      "w": 280,
+      "h": 110
+    },
+    {
+      "id": "ICA3-D-03",
+      "title": "Calibration Signal",
+      "summary": "少量真机 Rollout 成为下一次执行的校准信号",
+      "concept": "C-ICA3-CONTEXT",
+      "x": 740,
+      "y": 1300,
+      "w": 290,
+      "h": 110
+    },
+    {
+      "id": "ICA3-D-04",
+      "title": "Frozen Re-execution",
+      "summary": "模型参数保持冻结，仅根据首次轨迹校准第二次执行",
+      "concept": "C-ICA3-TRACKER",
+      "x": 1100,
+      "y": 1300,
+      "w": 300,
+      "h": 110
+    },
+    {
+      "id": "ICA3-D-05",
+      "title": "Corrected Execution",
+      "summary": "相同缺陷下横向偏移与航向误差减小",
+      "concept": "C-ICA3-OBJECTIVE",
+      "kind": "external",
+      "x": 1470,
+      "y": 1300,
+      "w": 300,
+      "h": 110
+    }
+  ],
+  "edges": [
+    {
+      "from": "ICA3-P-01",
+      "to": "ICA3-P-02",
+      "label": "sampled Wrench",
+      "concept": "C-ICA3-SHIFT"
+    },
+    {
+      "from": "ICA3-P-02",
+      "to": "ICA3-T-08",
+      "label": "特权条件",
+      "concept": "C-ICA3-TEACHER"
+    },
+    {
+      "from": "ICA3-T-08",
+      "to": "ICA3-P-03",
+      "label": "Teacher Action",
+      "concept": "C-ICA3-TEACHER"
+    },
+    {
+      "from": "ICA3-P-01",
+      "to": "ICA3-P-03",
+      "label": "同一 Wrench",
+      "concept": "C-ICA3-SHIFT",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [
+        [150, 40],
+        [1115, 40]
+      ],
+      "labelX": 635,
+      "labelY": 48
+    },
+    {
+      "from": "ICA3-P-03",
+      "to": "ICA3-P-04",
+      "label": "受扰执行",
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA3-P-04",
+      "to": "ICA3-P-05",
+      "label": "task reward",
+      "concept": "C-ICA3-OBJECTIVE"
+    },
+    {
+      "from": "ICA3-P-05",
+      "to": "ICA3-T-08",
+      "label": "更新 Teacher",
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "bottom",
+      "toAnchor": "bottom",
+      "toOffset": 50,
+      "via": [
+        [1780, 350],
+        [830, 350]
+      ],
+      "labelX": 1305,
+      "labelY": 358
+    },
+    {
+      "from": "ICA3-T-10",
+      "to": "ICA3-T-09",
+      "label": "冻结 Teacher Action 目标",
+      "concept": "C-ICA3-TEACHER",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "labelX": 1788,
+      "labelY": 760
+    },
+    {
+      "from": "ICA3-T-01",
+      "to": "ICA3-T-02",
+      "label": "Intent",
+      "concept": "C-ICA3-PLANNER"
+    },
+    {
+      "from": "ICA3-T-02",
+      "to": "ICA3-T-11",
+      "label": "z",
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA3-T-11",
+      "to": "ICA3-T-03",
+      "label": "z + Δz",
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA3-T-03",
+      "to": "ICA3-T-04",
+      "label": "Action",
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA3-T-04",
+      "to": "ICA3-T-05",
+      "label": "执行",
+      "concept": "C-ICA3-SHIFT",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelX": 1275,
+      "labelY": 844
+    },
+    {
+      "from": "ICA3-T-05",
+      "to": "ICA3-T-06",
+      "label": "失败轨迹",
+      "concept": "C-ICA3-SUPPORT",
+      "fromAnchor": "top",
+      "toAnchor": "right",
+      "via": [
+        [1465, 605]
+      ],
+      "labelX": 1120,
+      "labelY": 594
+    },
+    {
+      "from": "ICA3-T-06",
+      "to": "ICA3-T-11",
+      "label": "Δz",
+      "concept": "C-ICA3-CONTEXT",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "labelX": 605,
+      "labelY": 753
+    },
+    {
+      "from": "ICA3-T-05",
+      "to": "ICA3-T-09",
+      "label": "第二次表现",
+      "concept": "C-ICA3-LEARNING",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelX": 1610,
+      "labelY": 844
+    },
+    {
+      "from": "ICA3-T-09",
+      "to": "ICA3-T-06",
+      "label": "训练 Context Encoder",
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "right",
+      "fromOffset": -25,
+      "toAnchor": "top",
+      "via": [
+        [1990, 830],
+        [1990, 490],
+        [645, 490]
+      ],
+      "labelX": 1295,
+      "labelY": 498
+    },
+    {
+      "from": "ICA3-T-09",
+      "to": "ICA3-T-02",
+      "label": "训练 Tracker Encoder",
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "right",
+      "fromOffset": 25,
+      "toAnchor": "bottom",
+      "via": [
+        [2020, 880],
+        [2020, 1120],
+        [420, 1120]
+      ],
+      "labelX": 1310,
+      "labelY": 1109
+    },
+    {
+      "from": "ICA3-T-09",
+      "to": "ICA3-T-03",
+      "label": "训练 Tracker Decoder",
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "bottom",
+      "fromOffset": -50,
+      "toAnchor": "bottom",
+      "via": [
+        [1720, 1060],
+        [870, 1060]
+      ],
+      "labelX": 1255,
+      "labelY": 1049
+    },
+    {
+      "from": "ICA3-D-01",
+      "to": "ICA3-D-02",
+      "label": "受控缺陷",
+      "concept": "C-ICA3-SHIFT"
+    },
+    {
+      "from": "ICA3-D-02",
+      "to": "ICA3-D-03",
+      "label": "失败轨迹",
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA3-D-03",
+      "to": "ICA3-D-04",
+      "label": "Context",
+      "concept": "C-ICA3-CONTEXT"
+    },
+    {
+      "from": "ICA3-D-04",
+      "to": "ICA3-D-05",
+      "label": "第二次执行",
+      "concept": "C-ICA3-TRACKER"
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

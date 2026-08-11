@@ -25,6 +25,10 @@ class OffPolicyRuntime:
         del obs_dim, critic_obs_dim
         return dict(self.actor_kwargs)
 
+    def validate_training_config(self, cfg: Any) -> None:
+        """Validate runtime-owned full-config invariants before environment creation."""
+        del cfg
+
 
 def _resolve_callable(path: str) -> Any:
     module_path: str

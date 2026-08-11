@@ -80,6 +80,9 @@ cache/
 src/unilab/assets/checkpoints/**/*.pt
 src/unilab/assets/checkpoints/**/*.onnx
 
+# Local training and evaluation checkpoints
+/checkpoints/
+
 
 # Local tool/runtime artifacts (any subfolder)
 .codex

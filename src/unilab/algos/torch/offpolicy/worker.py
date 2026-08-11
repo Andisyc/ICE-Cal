@@ -30,6 +30,14 @@ COLLECTOR_TIMING_KEYS = (
 )
 
 
+def offpolicy_actor_requires_priv_info(algo_type: str) -> bool:
+    return algo_type in {
+        "hora_sac",
+        "privileged_residual_sac",
+        "privileged_full_action_sac",
+    }
+
+
 def resolve_collector_actor_dims(
     env,
     obs_dim: int | None = None,
@@ -65,9 +73,9 @@ def sample_offpolicy_actions(
             torch.Tensor,
             actor.explore(obs_torch, dones=prev_dones_torch, deterministic=False),
         )
-    if algo_type == "hora_sac":
+    if offpolicy_actor_requires_priv_info(algo_type):
         if priv_info_torch is None:
-            raise ValueError("HORA-SAC collector action sampling requires priv_info_torch.")
+            raise ValueError(f"{algo_type} collector action sampling requires priv_info_torch.")
         return cast(
             torch.Tensor,
             actor.explore(obs_torch, priv_info_torch, deterministic=False),
@@ -83,21 +91,44 @@ def resolve_offpolicy_actor_priv_info(
     info: dict | None,
 ) -> np.ndarray | None:
     """Resolve optional collector-side actor context for privileged off-policy actors."""
-    if algo_type != "hora_sac":
+    if not offpolicy_actor_requires_priv_info(algo_type):
         return None
 
-    from unilab.algos.torch.hora.observations import split_hora_obs_with_priv_info
+    if algo_type == "hora_sac":
+        from unilab.algos.torch.hora.observations import split_hora_obs_with_priv_info
 
-    _, _, priv_info_np = split_hora_obs_with_priv_info(
-        {"obs": obs_np, "critic": critic_np},
-        info,
-    )
-    if priv_info_np is None:
-        raise ValueError(
-            "HORA-SAC collector requires privileged info from info['critic_info'] "
-            "or the critic observation tail."
+        _, _, priv_info_np = split_hora_obs_with_priv_info(
+            {"obs": obs_np, "critic": critic_np},
+            info,
         )
-    return np.asarray(priv_info_np, dtype=np.float32)
+        if priv_info_np is None:
+            raise ValueError(
+                "HORA-SAC collector requires privileged info from info['critic_info'] "
+                "or the critic observation tail."
+            )
+        return np.asarray(priv_info_np, dtype=np.float32)
+
+    from unilab.algos.torch.fada_context.privileged_full_action_sac import (
+        PRIVILEGED_ACTUATOR_STRENGTH_DIM,
+    )
+
+    explicit = None if info is None else info.get("privileged_actuator_strength")
+    if explicit is not None:
+        strength = np.asarray(explicit, dtype=np.float32)
+        expected_shape = (obs_np.shape[0], PRIVILEGED_ACTUATOR_STRENGTH_DIM)
+        if strength.shape != expected_shape:
+            raise ValueError(
+                f"{algo_type} requires explicit 29D actuator strength with "
+                f"shape {expected_shape}, got {strength.shape}."
+            )
+        return strength
+    minimum_critic_dim = int(obs_np.shape[-1]) + PRIVILEGED_ACTUATOR_STRENGTH_DIM
+    if critic_np.ndim != 2 or int(critic_np.shape[-1]) < minimum_critic_dim:
+        raise ValueError(
+            f"{algo_type} requires 29D actuator strength from "
+            "info['privileged_actuator_strength'] or the critic observation tail."
+        )
+    return np.asarray(critic_np[:, -PRIVILEGED_ACTUATOR_STRENGTH_DIM:], dtype=np.float32)
 
 
 def _record_timing_ms(timing_accum_ms, timing_counts, key: str, value: float) -> None:

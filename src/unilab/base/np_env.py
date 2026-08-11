@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import abc
+import copy
 import dataclasses
+import random
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from os import PathLike
-from typing import TYPE_CHECKING, Any, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Iterator, Optional, Tuple, cast
 
 import gymnasium as gym
 import numpy as np
@@ -33,6 +36,21 @@ class NpEnvState:
 
     def replace(self, **updates: Any) -> "NpEnvState":
         return dataclasses.replace(self, **updates)
+
+
+@dataclass(frozen=True)
+class NpEnvRolloutSnapshot:
+    """Complete mutable state needed to replay one temporary environment branch."""
+
+    backend_state: Any
+    task_state: Any
+    state: NpEnvState
+    step_counter: int
+    truncated_scratch: np.ndarray
+    final_observation_scratch: dict[str, np.ndarray] | None
+    numpy_random_state: Any
+    python_random_state: Any
+    autoreset: bool
 
 
 class NpEnv(ABEnv):
@@ -72,6 +90,66 @@ class NpEnv(ABEnv):
         self._state = self.update_state(self._state)
         return self._state
 
+    def capture_rollout_snapshot(self) -> NpEnvRolloutSnapshot:
+        """Capture the complete public environment boundary for a temporary rollout."""
+
+        if self._state is None:
+            raise RuntimeError("rollout snapshot requires an initialized environment state")
+        # B1: backend 与 env lifecycle 同时封存, 避免 physics-only restoration 丢失 command/history.
+        return NpEnvRolloutSnapshot(
+            backend_state=self._backend.capture_rollout_state(),
+            task_state=self._capture_task_rollout_state(),
+            state=copy.deepcopy(self._state),
+            step_counter=int(self.step_counter),
+            truncated_scratch=self._truncated_scratch.copy(),
+            final_observation_scratch=copy.deepcopy(self._final_observation_scratch),
+            numpy_random_state=copy.deepcopy(np.random.get_state()),
+            python_random_state=random.getstate(),
+            autoreset=bool(self._autoreset),
+        )
+
+    def restore_rollout_snapshot(self, snapshot: NpEnvRolloutSnapshot) -> None:
+        """Restore an exact environment snapshot captured by this instance."""
+
+        if not isinstance(snapshot, NpEnvRolloutSnapshot):
+            raise TypeError("snapshot must be NpEnvRolloutSnapshot")
+        # B1: 先恢复 backend, 再恢复 env carrier 与 RNG, 产出相同的下一 control-step 边界.
+        self._backend.restore_rollout_state(snapshot.backend_state)
+        self._restore_task_rollout_state(snapshot.task_state)
+        self._state = copy.deepcopy(snapshot.state)
+        self.step_counter = int(snapshot.step_counter)
+        self._truncated_scratch = snapshot.truncated_scratch.copy()
+        self._final_observation_scratch = copy.deepcopy(snapshot.final_observation_scratch)
+        np.random.set_state(snapshot.numpy_random_state)
+        random.setstate(snapshot.python_random_state)
+        self._autoreset = bool(snapshot.autoreset)
+
+    def _capture_task_rollout_state(self) -> Any:
+        """Capture mutable subclass state not represented by :class:`NpEnvState`."""
+
+        return None
+
+    def _restore_task_rollout_state(self, snapshot: Any) -> None:
+        """Restore the value returned by :meth:`_capture_task_rollout_state`."""
+
+        if snapshot is not None:
+            raise ValueError(
+                f"{self.__class__.__name__} returned task rollout state without a restore owner"
+            )
+
+    @contextmanager
+    def preserve_rollout_state(self) -> Iterator[None]:
+        """Run a non-autoreset branch and restore all environment state on exit."""
+
+        # B1: capture 后关闭 autoreset, 防止 shadow termination 触发 reset/curriculum 副作用.
+        snapshot = self.capture_rollout_snapshot()
+        self._autoreset = False
+        try:
+            yield
+        finally:
+            # B2: success/exception 均恢复同一 snapshot, 形成可重复的正式 rollout 起点.
+            self.restore_rollout_snapshot(snapshot)
+
     @property
     def obs_groups_spec(self) -> dict[str, int]:
         """Return observation group dimensions, e.g. {"obs": 98, "critic": 101}.
@@ -107,6 +185,20 @@ class NpEnv(ABEnv):
 
         self._state = NpEnvState(obs, reward, terminated, truncated, info)
         self._reset_done_envs()
+        self._clear_step_final_observation()
+        return self._state
+
+    def reset_all(self) -> NpEnvState:
+        """Reset every row through the same state-carrier lifecycle used by autoreset."""
+
+        if self._state is None:
+            return self.init_state()
+        # B1: 标记全部 row 后复用 _reset_done_envs, 同步 backend, obs 与 info carrier.
+        self._state.terminated.fill(True)
+        self._state.truncated.fill(False)
+        self._reset_done_envs()
+        self._state.terminated.fill(False)
+        self._state.truncated.fill(False)
         self._clear_step_final_observation()
         return self._state
 

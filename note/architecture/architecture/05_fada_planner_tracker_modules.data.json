@@ -1,0 +1,262 @@
+{
+  "title": "05 Planner–IDM Construction and Training Contracts",
+  "layout": "method_figure",
+  "figureWidth": 1840,
+  "figureHeight": 900,
+  "connectorClearance": 20,
+  "showLegend": false,
+  "concepts": {
+    "C-INPUT": { "name": "Deployable Input", "color": "#b45309" },
+    "C-PLANNER": { "name": "Planner", "color": "#0891b2" },
+    "C-IDM": { "name": "Inverse Dynamics Model", "color": "#7c3aed" },
+    "C-LOSS": { "name": "Training Contract", "color": "#2563eb" },
+    "C-OUTPUT": { "name": "Student Output", "color": "#64748b" }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "FADA-M-01",
+      "title": "History + Command",
+      "summary": "H=30 的 proprioceptive observations、executed actions 与 task command；cold-start 使用重复 reset observation 与全零 action history",
+      "concept": "C-INPUT",
+      "x": 35,
+      "y": 205,
+      "w": 255,
+      "h": 136
+    },
+    {
+      "id": "FADA-M-02",
+      "title": "Planner Tokens",
+      "summary": "observation embedding 加 broadcast command embedding 与 positional encoding",
+      "concept": "C-PLANNER",
+      "x": 350,
+      "y": 205,
+      "w": 270,
+      "h": 136
+    },
+    {
+      "id": "FADA-M-03",
+      "title": "Planner Encoder",
+      "summary": "3-layer、4-head、hidden-128 Transformer encoder",
+      "concept": "C-PLANNER",
+      "x": 680,
+      "y": 215,
+      "w": 240,
+      "h": 116
+    },
+    {
+      "id": "FADA-M-04",
+      "title": "Residual Future Head",
+      "summary": "预测 K=6 的 DeltaY_hat_t^K，并以最新 observation 重建绝对 future",
+      "concept": "C-PLANNER",
+      "x": 980,
+      "y": 205,
+      "w": 275,
+      "h": 136
+    },
+    {
+      "id": "FADA-M-05",
+      "title": "IDM History Encoder",
+      "summary": "observation-action history tokens 经 3-layer、4-head、hidden-128 encoder",
+      "concept": "C-IDM",
+      "x": 1315,
+      "y": 205,
+      "w": 280,
+      "h": 136
+    },
+    {
+      "id": "FADA-M-06",
+      "title": "IDM Future Decoder",
+      "summary": "K 个 future tokens 完整 self-attention，并 cross-attend 全部 encoded history",
+      "concept": "C-IDM",
+      "x": 1315,
+      "y": 455,
+      "w": 280,
+      "h": 136
+    },
+    {
+      "id": "FADA-M-07",
+      "title": "Action Head",
+      "summary": "2-layer decoder 后并行输出 K=6 的 action chunk",
+      "concept": "C-IDM",
+      "x": 980,
+      "y": 465,
+      "w": 275,
+      "h": 116
+    },
+    {
+      "id": "FADA-M-08",
+      "title": "First Action",
+      "summary": "Pi_1 选择 a_hat_t，训练与执行都只使用 action chunk 首项",
+      "concept": "C-OUTPUT",
+      "x": 680,
+      "y": 455,
+      "w": 240,
+      "h": 136
+    },
+    {
+      "id": "FADA-L-01",
+      "title": "IDM Loss",
+      "summary": "完整 replay（含 intermediate Oracle）训练 IDM；realized 与 valid Oracle-shadow causal pair 只比较各自 matched first action",
+      "concept": "C-LOSS",
+      "x": 1160,
+      "y": 700,
+      "w": 310,
+      "h": 136
+    },
+    {
+      "id": "FADA-L-02",
+      "title": "Planner Loss",
+      "summary": "仅 planner-eligible rows 按 walk/static/transition=50/25/25、static cold/steady=50/50 采样；经 frozen IDM 对齐 oracle a_t*",
+      "concept": "C-LOSS",
+      "x": 530,
+      "y": 700,
+      "w": 320,
+      "h": 136
+    }
+  ],
+  "edges": [
+    {
+      "from": "FADA-M-01",
+      "to": "FADA-M-02",
+      "label": "O_t^H + c_t",
+      "concept": "C-INPUT",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-02",
+      "to": "FADA-M-03",
+      "label": "planner tokens",
+      "concept": "C-PLANNER",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-03",
+      "to": "FADA-M-04",
+      "label": "history representation",
+      "concept": "C-PLANNER",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-04",
+      "to": "FADA-M-06",
+      "label": "Y_hat_t^K",
+      "concept": "C-PLANNER",
+      "route": "lower",
+      "fromAnchor": "right",
+      "toAnchor": "top",
+      "via": [[1280, 273], [1280, 400], [1455, 400]],
+      "labelX": 1370,
+      "labelY": 400,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-01",
+      "to": "FADA-M-05",
+      "label": "O_t^H + A_t^H",
+      "concept": "C-INPUT",
+      "route": "upper",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [[162.5, 85], [1455, 85]],
+      "labelX": 805,
+      "labelY": 85,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-05",
+      "to": "FADA-M-06",
+      "label": "encoded history + future tokens",
+      "concept": "C-IDM",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "labelDx": 16,
+      "labelDy": 0
+    },
+    {
+      "from": "FADA-M-06",
+      "to": "FADA-M-07",
+      "label": "decoded future tokens",
+      "concept": "C-IDM",
+      "route": "lower",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-07",
+      "to": "FADA-M-08",
+      "label": "U_hat_t^K",
+      "concept": "C-IDM",
+      "route": "lower",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-M-08",
+      "to": "FADA-L-01",
+      "label": "predicted first action",
+      "concept": "C-LOSS",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "left",
+      "via": [[920, 591], [920, 660], [1080, 660], [1080, 768]],
+      "labelX": 1000,
+      "labelY": 660,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-L-01",
+      "to": "FADA-M-05",
+      "label": "update psi only",
+      "concept": "C-LOSS",
+      "route": "lower",
+      "fromAnchor": "right",
+      "toAnchor": "right",
+      "via": [[1540, 768], [1645, 768], [1645, 273]],
+      "labelX": 1645,
+      "labelY": 640,
+      "labelDx": 12,
+      "kind": "feedback"
+    },
+    {
+      "from": "FADA-M-08",
+      "to": "FADA-L-02",
+      "label": "compare with oracle a_t*",
+      "concept": "C-LOSS",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "via": [[800, 650], [690, 650]],
+      "labelDx": -92,
+      "labelDy": 0
+    },
+    {
+      "from": "FADA-L-02",
+      "to": "FADA-M-02",
+      "label": "update phi through frozen IDM",
+      "concept": "C-LOSS",
+      "route": "lower",
+      "fromAnchor": "left",
+      "toAnchor": "bottom",
+      "via": [[470, 768], [470, 405], [485, 405]],
+      "labelX": 470,
+      "labelY": 560,
+      "labelDx": -100,
+      "kind": "feedback"
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

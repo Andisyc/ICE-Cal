@@ -407,6 +407,18 @@ class SimBackend(abc.ABC):
             f"{self.__class__.__name__} does not support physics-state playback"
         )
 
+    def capture_rollout_state(self) -> Any:
+        """Capture backend state required for an exact temporary rollout."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support exact rollout snapshots"
+        )
+
+    def restore_rollout_state(self, snapshot: Any) -> None:
+        """Restore a snapshot returned by :meth:`capture_rollout_state`."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support exact rollout snapshots"
+        )
+
     def get_playback_model(self, env_index: int | None = None) -> Any:
         """Return the playback model for a specific env when variants exist.
 

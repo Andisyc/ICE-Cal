@@ -1,0 +1,224 @@
+{
+  "title": "08 基于上下文的执行校准",
+  "layout": "method_figure",
+  "figureWidth": 1900,
+  "figureHeight": 1040,
+  "connectorClearance": 18,
+  "showLegend": false,
+  "concepts": {
+    "C-ICA-CMD": {
+      "name": "Task Command",
+      "color": "#64748b"
+    },
+    "C-ICA-PLANNER": {
+      "name": "Frozen Planner Intent",
+      "color": "#0891b2"
+    },
+    "C-ICA-IDM": {
+      "name": "Frozen Context-IDM",
+      "color": "#0f766e"
+    },
+    "C-ICA-REAL": {
+      "name": "Unknown Real Execution",
+      "color": "#7c3aed"
+    },
+    "C-ICA-ROLLOUT": {
+      "name": "Real Rollout Evidence",
+      "color": "#2563eb"
+    },
+    "C-ICA-CONTEXT": {
+      "name": "Execution Context",
+      "color": "#d97706"
+    },
+    "C-ICA-RESIDUAL": {
+      "name": "Wrench-Repair Residual",
+      "color": "#b45309"
+    },
+    "C-ICA-PRECISION": {
+      "name": "Precise Execution",
+      "color": "#db2777"
+    }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "ICA-P-01",
+      "design_id": "ICA-DP-CMD-01",
+      "title": "任务指令",
+      "summary": "给出期望运动，不携带真机缺陷信息",
+      "concept": "C-ICA-CMD",
+      "kind": "external",
+      "x": 40,
+      "y": 300,
+      "w": 210,
+      "h": 110
+    },
+    {
+      "id": "ICA-P-02",
+      "design_id": "ICA-DP-PLAN-01",
+      "title": "冻结 Planner",
+      "summary": "校准前后始终输出同一短时程运动 Intent",
+      "concept": "C-ICA-PLANNER",
+      "x": 330,
+      "y": 300,
+      "w": 250,
+      "h": 110
+    },
+    {
+      "id": "ICA-P-03",
+      "design_id": "ICA-DP-IDM-01",
+      "title": "冻结 IDM",
+      "summary": "输出 nominal Action，并与修复量 ΔAction 融合",
+      "concept": "C-ICA-IDM",
+      "shape": "decoder",
+      "shapeInset": 42,
+      "x": 680,
+      "y": 270,
+      "w": 280,
+      "h": 170
+    },
+    {
+      "id": "ICA-P-04",
+      "design_id": "ICA-DP-REAL-01",
+      "title": "未知真机",
+      "summary": "执行缺陷只通过真实动作响应显现",
+      "concept": "C-ICA-REAL",
+      "kind": "external",
+      "x": 1070,
+      "y": 300,
+      "w": 230,
+      "h": 110
+    },
+    {
+      "id": "ICA-P-05",
+      "design_id": "ICA-DP-ROLLOUT-01",
+      "title": "真机 Rollout",
+      "summary": "记录实际 state 与 action 历史，不提供缺陷标签",
+      "concept": "C-ICA-ROLLOUT",
+      "kind": "external",
+      "x": 1430,
+      "y": 100,
+      "w": 270,
+      "h": 120
+    },
+    {
+      "id": "ICA-P-06",
+      "design_id": "ICA-DP-CONTEXT-ENC-01",
+      "title": "Context Encoder",
+      "summary": "将真机 rollout 压缩为当前执行响应",
+      "concept": "C-ICA-CONTEXT",
+      "shape": "context_encoder",
+      "shapeInset": 52,
+      "x": 1550,
+      "y": 350,
+      "w": 290,
+      "h": 170
+    },
+    {
+      "id": "ICA-P-07",
+      "design_id": "ICA-DP-RESIDUAL-01",
+      "title": "Wrench 修复 Decoder",
+      "summary": "提前学习 6D Wrench 修复，只输出 ΔAction",
+      "concept": "C-ICA-RESIDUAL",
+      "x": 1370,
+      "y": 690,
+      "w": 260,
+      "h": 110
+    },
+    {
+      "id": "ICA-P-08",
+      "design_id": "ICA-DP-PRECISION-01",
+      "title": "精确执行",
+      "summary": "真实运动更精确地复现同一 Planner Intent",
+      "concept": "C-ICA-PRECISION",
+      "kind": "external",
+      "x": 980,
+      "y": 690,
+      "w": 270,
+      "h": 110
+    }
+  ],
+  "edges": [
+    {
+      "from": "ICA-P-01",
+      "to": "ICA-P-02",
+      "label": "cmd",
+      "concept": "C-ICA-CMD"
+    },
+    {
+      "from": "ICA-P-02",
+      "to": "ICA-P-03",
+      "label": "Planner Intent",
+      "concept": "C-ICA-PLANNER"
+    },
+    {
+      "from": "ICA-P-03",
+      "to": "ICA-P-04",
+      "label": "首次或校准 Action",
+      "concept": "C-ICA-IDM"
+    },
+    {
+      "from": "ICA-P-04",
+      "to": "ICA-P-05",
+      "label": "首次执行响应",
+      "concept": "C-ICA-ROLLOUT",
+      "fromAnchor": "top",
+      "toAnchor": "left",
+      "via": [
+        [1185, 160]
+      ],
+      "labelX": 1300,
+      "labelY": 150
+    },
+    {
+      "from": "ICA-P-05",
+      "to": "ICA-P-06",
+      "label": "rollout",
+      "concept": "C-ICA-ROLLOUT",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "labelX": 1690,
+      "labelY": 285
+    },
+    {
+      "from": "ICA-P-06",
+      "to": "ICA-P-07",
+      "label": "Context，仅前向推理",
+      "concept": "C-ICA-CONTEXT",
+      "fromAnchor": "bottom",
+      "toAnchor": "right",
+      "via": [
+        [1695, 745]
+      ],
+      "labelX": 1700,
+      "labelY": 640
+    },
+    {
+      "from": "ICA-P-07",
+      "to": "ICA-P-03",
+      "label": "ΔAction，不更新权重",
+      "concept": "C-ICA-RESIDUAL",
+      "kind": "feedback",
+      "fromAnchor": "bottom",
+      "toAnchor": "bottom",
+      "via": [
+        [1500, 900],
+        [820, 900]
+      ],
+      "labelX": 1160,
+      "labelY": 890
+    },
+    {
+      "from": "ICA-P-04",
+      "to": "ICA-P-08",
+      "label": "Context 后再次执行",
+      "concept": "C-ICA-PRECISION",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "labelX": 1205,
+      "labelY": 570
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

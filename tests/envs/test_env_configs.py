@@ -146,8 +146,10 @@ def test_g1_stand_still_cfg_adds_support_sensor_fragment_without_polluting_walk(
     assert walk_cfg.scene.fragment_files == []
     assert Path(stand_cfg.scene.model_file).as_posix().endswith("robots/g1/scene_flat.xml")
     assert len(stand_cfg.scene.fragment_files) == 1
-    assert Path(stand_cfg.scene.fragment_files[0]).as_posix().endswith(
-        "robots/g1/stand_support_task.xml"
+    assert (
+        Path(stand_cfg.scene.fragment_files[0])
+        .as_posix()
+        .endswith("robots/g1/stand_support_task.xml")
     )
     assert stand_height_cfg.scene == stand_cfg.scene
 

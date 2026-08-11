@@ -59,3 +59,11 @@ class G1BaseEnv(LocomotionBaseEnv):
     def _obs_noise(self, data: np.ndarray, scale: float) -> np.ndarray:
         """Same as base, but coerces back to ``data.dtype`` (G1 runs in float32)."""
         return np.asarray(super()._obs_noise(data, scale), dtype=data.dtype)
+
+    def get_base_pos(self) -> np.ndarray:
+        """Return batched world-frame base positions through the task boundary."""
+        return np.asarray(self._backend.get_base_pos())
+
+    def get_base_quat(self) -> np.ndarray:
+        """Return batched world-frame base quaternions in wxyz order."""
+        return np.asarray(self._backend.get_base_quat())

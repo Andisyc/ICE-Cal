@@ -119,3 +119,49 @@ def test_resolve_offpolicy_actor_priv_info_uses_critic_tail() -> None:
     )
 
     np.testing.assert_allclose(resolved, critic_tail)
+
+
+def test_resolve_privileged_residual_actor_uses_explicit_29d_motor_strength() -> None:
+    import numpy as np
+
+    obs = np.zeros((2, 98), dtype=np.float32)
+    critic = np.zeros((2, 130), dtype=np.float32)
+    explicit = np.full((2, 29), 0.9, dtype=np.float32)
+
+    resolved = resolve_offpolicy_actor_priv_info(
+        algo_type="privileged_residual_sac",
+        obs_np=obs,
+        critic_np=critic,
+        info={"privileged_actuator_strength": explicit},
+    )
+
+    np.testing.assert_allclose(resolved, explicit)
+
+
+def test_resolve_privileged_residual_actor_rejects_missing_29d_contract() -> None:
+    import numpy as np
+
+    with pytest.raises(ValueError, match="29D actuator strength"):
+        resolve_offpolicy_actor_priv_info(
+            algo_type="privileged_residual_sac",
+            obs_np=np.zeros((2, 98), dtype=np.float32),
+            critic_np=np.zeros((2, 101), dtype=np.float32),
+            info={},
+        )
+
+
+def test_sample_offpolicy_actions_passes_privileged_residual_motor_strength() -> None:
+    actor = _DummyHoraActor()
+    obs = torch.zeros(4, 5)
+    motor_strength = torch.full((4, 29), 0.9)
+
+    actions = sample_offpolicy_actions(
+        actor=actor,
+        algo_type="privileged_residual_sac",
+        obs_torch=obs,
+        prev_dones_torch=torch.zeros(4),
+        priv_info_torch=motor_strength,
+    )
+
+    assert actions.shape == (4, 3)
+    torch.testing.assert_close(actor.calls[0][1], motor_strength)

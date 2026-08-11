@@ -81,6 +81,63 @@ training:
   offline_min_balanced_replay_passes: 0
   offline_min_balanced_replay_labels: []
   online_dagger: false
+  fada:
+    enabled: false
+    execution_mode: persistent_async
+    async_request_timeout_seconds: 3600.0
+    async_artifact_dir: logs/fada/source_batches
+    paper_source_enabled: true
+    oracle_shadow_enabled: true
+    intermediate_oracle_checkpoint_paths: []
+    intermediate_oracle_count: 20
+    suboptimal_data_ratio: 2.0
+    quality_eval_max_windows: 4096
+    history_length: 30
+    prediction_horizon: 6
+    command_dim: 3
+    hidden_dim: 128
+    num_heads: 4
+    planner_layers: 3
+    idm_encoder_layers: 3
+    idm_decoder_layers: 2
+    feedforward_dim: 512
+    dropout: 0.0
+    iterations: 8
+    windows_per_iteration: 65536
+    num_envs: 64
+    replay_capacity: 524288
+    batch_size: 512
+    idm_updates: 128
+    planner_updates: 128
+    idm_learning_rate: 3.0e-4
+    planner_learning_rate: 3.0e-4
+    max_grad_norm: 1.0
+    observation_key: obs
+    teacher_projection: identity
+    student_projection: identity
+    student_drop_index: null
+    command_info_keys: [commands]
+    max_env_steps: null
+    checkpoint_path: logs/fada/planner_idm.pt
+    resume_path: null
+    initial_weights_path: null
+    stand_transition_curriculum:
+      enabled: false
+      standing_teacher_checkpoint_path: null
+      standing_task: g1_stand_still/mujoco
+      walk_ratio: 0.5
+      static_stand_ratio: 0.25
+      walk_to_stand_ratio: 0.25
+      walk_command: [0.4, 0.0, 0.0]
+      pre_switch_steps: 30
+      post_switch_steps: 36
+    v005_replay:
+      enabled: false
+      static_cold_start_ratio: 0.5
+      planner_scenario_ratios:
+        walk: 0.5
+        static_stand: 0.25
+        walk_to_stand: 0.25
   workflow:
     enabled: false
     mode: auto

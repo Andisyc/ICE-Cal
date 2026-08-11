@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_context_teacher_full_action_left_knee_090
+  - _self_
+
+env:
+  forward_progress_termination:
+    enabled: true
+    grace_steps: 50
+    min_command_forward_speed: 0.1
+    min_average_forward_speed: 0.2

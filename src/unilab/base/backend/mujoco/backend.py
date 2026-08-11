@@ -1179,6 +1179,45 @@ class MuJoCoBackend(SimBackend):
     def get_physics_state(self) -> np.ndarray:
         return self._physics_state
 
+    def capture_rollout_state(self) -> dict[str, np.ndarray]:
+        """Capture all mutable MuJoCo arrays used by the next batched step."""
+
+        # B1: 复制 FULLPHYSICS, sensor cache 与尚未消费的外力, 形成 shadow rollout backend snapshot.
+        return {
+            "physics_state": self._physics_state.copy(),
+            "sensor_data": self._sensor_data.copy(),
+            "pending_xfrc_applied": self._pending_xfrc_applied.copy(),
+        }
+
+    def restore_rollout_state(self, snapshot: Any) -> None:
+        """Restore one exact MuJoCo rollout snapshot without resetting the model."""
+
+        # B1: fail-closed 校验 snapshot 字段与 shape, 防止部分 physics restore 冒充完整恢复.
+        if not isinstance(snapshot, dict):
+            raise TypeError("MuJoCo rollout snapshot must be a mapping")
+        expected = {
+            "physics_state": self._physics_state,
+            "sensor_data": self._sensor_data,
+            "pending_xfrc_applied": self._pending_xfrc_applied,
+        }
+        if set(snapshot) != set(expected):
+            raise ValueError(
+                "MuJoCo rollout snapshot keys mismatch: "
+                f"expected={sorted(expected)} observed={sorted(snapshot)}"
+            )
+        for key, target in expected.items():
+            value = np.asarray(snapshot[key])
+            if value.shape != target.shape or value.dtype != target.dtype:
+                raise ValueError(
+                    f"MuJoCo rollout snapshot {key} mismatch: "
+                    f"expected={target.shape}/{target.dtype} observed={value.shape}/{value.dtype}"
+                )
+
+        # B2: 原位恢复数组以保留 cached views, 产出与 capture 时相同的下一步输入状态.
+        self._physics_state[:] = snapshot["physics_state"]
+        self._sensor_data[:] = snapshot["sensor_data"]
+        self._pending_xfrc_applied[:] = snapshot["pending_xfrc_applied"]
+
     def get_playback_model(self, env_index: int | None = None):
         """Return the MuJoCo model used by playback for one vectorized env.
 

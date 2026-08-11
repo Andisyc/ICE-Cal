@@ -15,6 +15,30 @@ import torch
 LogFn = Callable[[str], None]
 
 
+def _external_velocity_command_rows(
+    command: np.ndarray,
+    owner_rows: np.ndarray,
+) -> np.ndarray:
+    """Validate and broadcast one external velocity command to owner row shape."""
+
+    if owner_rows.ndim != 2 or owner_rows.shape[1] < 3:
+        raise RuntimeError(
+            "Playback command synchronization requires env.state.info['commands'] "
+            "with shape (num_envs, >=3)."
+        )
+    command_arr = np.asarray(command, dtype=owner_rows.dtype)
+    if command_arr.shape == (3,):
+        command_arr = np.broadcast_to(command_arr, (owner_rows.shape[0], 3))
+    if command_arr.shape != (owner_rows.shape[0], 3):
+        raise ValueError(
+            "Playback command synchronization expects command shape "
+            f"(3,) or ({owner_rows.shape[0]}, 3), got {command_arr.shape}."
+        )
+    if not np.all(np.isfinite(command_arr)):
+        raise ValueError("Playback command synchronization requires finite command values.")
+    return command_arr
+
+
 def _ensure_scripts_dir(root_dir: str | Path) -> None:
     scripts_dir = Path(root_dir) / "scripts"
     if scripts_dir.is_dir() and str(scripts_dir) not in sys.path:
@@ -30,6 +54,27 @@ def _actor_input_dim_from_state_dict(state_dict: Mapping[str, Any]) -> int | Non
         if key.endswith(".0.weight") and isinstance(weight, torch.Tensor) and weight.ndim == 2:
             return int(weight.shape[1])
     return None
+
+
+_PRIVILEGED_CHECKPOINT_SCHEMAS = {
+    "privileged_full_action_teacher": "unilab_privileged_full_action_teacher_v1",
+    "privileged_residual_teacher": "unilab_privileged_residual_teacher_v1",
+}
+
+
+def _offpolicy_checkpoint_actor_input_dim(checkpoint: Mapping[str, Any]) -> int | None:
+    for metadata_key, expected_schema in _PRIVILEGED_CHECKPOINT_SCHEMAS.items():
+        metadata = checkpoint.get(metadata_key)
+        if not isinstance(metadata, Mapping) or metadata.get("schema") != expected_schema:
+            continue
+        obs_dim = metadata.get("obs_dim")
+        if isinstance(obs_dim, int) and not isinstance(obs_dim, bool) and obs_dim > 0:
+            return obs_dim
+
+    actor_state = checkpoint.get("actor")
+    if not isinstance(actor_state, Mapping):
+        return None
+    return _actor_input_dim_from_state_dict(actor_state)
 
 
 _LEGACY_TAR_WEIGHTS_ONLY_ERROR = (
@@ -72,6 +117,7 @@ class RslRlPlaybackConfig:
     speed: float = 1.0
     start_paused: bool = False
     checkpoint_path: str | None = None
+    keyboard: bool = False
 
 
 @dataclass
@@ -220,6 +266,8 @@ class PlaybackSession(Protocol):
 
     def reset(self) -> Any: ...
 
+    def set_autoreset(self, enabled: bool) -> None: ...
+
     def advance(self, controls: PlaybackControls) -> bool: ...
 
     def physics_state(self) -> np.ndarray: ...
@@ -251,6 +299,7 @@ class RslRlPlaybackSession:
         self.action_obs: Any | None = None
         self.actions: torch.Tensor | None = None
         self.step_count = 0
+        self.autoreset_enabled = True
 
     def reset(self) -> Any:
         self.obs, _info = self.wrapped_env.reset()
@@ -258,6 +307,12 @@ class RslRlPlaybackSession:
         self.actions = None
         self.step_count = 0
         return self.obs
+
+    def set_autoreset(self, enabled: bool) -> None:
+        """Synchronize environment reset behavior with session history lifecycle."""
+
+        self.env.set_autoreset(bool(enabled))
+        self.autoreset_enabled = bool(enabled)
 
     def refresh_observation(self) -> Any:
         """Reload the current env observation without advancing the session."""
@@ -276,19 +331,9 @@ class RslRlPlaybackSession:
         state = getattr(self.env, "state", None)
         info = getattr(state, "info", None)
         commands = info.get("commands") if isinstance(info, dict) else None
-        if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
-            raise RuntimeError(
-                "Playback command synchronization requires env.state.info['commands'] "
-                "with shape (num_envs, >=3)."
-            )
-        command_arr = np.asarray(command, dtype=commands.dtype)
-        if command_arr.shape == (3,):
-            command_arr = np.broadcast_to(command_arr, (commands.shape[0], 3))
-        if command_arr.shape != (commands.shape[0], 3):
-            raise ValueError(
-                "Playback command synchronization expects command shape "
-                f"(3,) or ({commands.shape[0]}, 3), got {command_arr.shape}."
-            )
+        if not isinstance(commands, np.ndarray):
+            raise RuntimeError("Playback command synchronization requires command owner rows.")
+        command_arr = _external_velocity_command_rows(command, commands)
         if np.array_equal(commands[:, :3], command_arr):
             return self.obs
 
@@ -362,6 +407,41 @@ class RslRlPlaybackSession:
         return torch.zeros(self.num_envs, action_dim, device=self.device)
 
 
+class FADAPlaybackSession(RslRlPlaybackSession):
+    """Stateful Planner-IDM playback session with episode-aligned histories."""
+
+    def __init__(self, *, controller: Any | None, **kwargs: Any) -> None:
+        self.controller = controller
+        super().__init__(policy=self._fada_policy if controller is not None else None, **kwargs)
+
+    def reset(self) -> Any:
+        # B1: 环境 reset 与 FADA history reset 共享一个 lifecycle boundary.
+        if self.controller is not None:
+            self.controller.reset()
+        return super().reset()
+
+    def step_once(self) -> Any:
+        # B1: 先以当前 observation/command 计算并执行第一动作.
+        actions = self._build_actions()
+        self.actions = actions
+        self.obs, _reward, done, _info = self.wrapped_env.step(actions)
+        # B2: 将 episode 边界交回 history owner, 下一查询按 reset observation 初始化对应行.
+        if self.controller is not None and self.autoreset_enabled:
+            self.controller.reset(done)
+        self.step_count += 1
+        return self.obs
+
+    def _fada_policy(self, observation: Any) -> torch.Tensor:
+        commands = self.info.get("commands")
+        if commands is None:
+            raise RuntimeError(
+                "FADA playback requires env.state.info['commands'] as the complete task command."
+            )
+        if self.controller is None:
+            raise RuntimeError("FADA playback controller is unavailable.")
+        return self.controller.act(observation, commands)
+
+
 class OffPolicyPlaybackSession:
     """Direct env stepping session for SAC-style off-policy actors."""
 
@@ -390,6 +470,7 @@ class OffPolicyPlaybackSession:
         self.obs: np.ndarray | None = None
         self.current_priv_info: np.ndarray | None = None
         self.step_count = 0
+        self.autoreset_enabled = True
 
     def reset(self) -> np.ndarray:
         if self.env.state is None:
@@ -403,6 +484,12 @@ class OffPolicyPlaybackSession:
         self.current_priv_info = self._resolve_priv_info(obs_out, info_out)
         self.step_count = 0
         return self.obs
+
+    def set_autoreset(self, enabled: bool) -> None:
+        """Synchronize direct environment reset behavior with the playback session."""
+
+        self.env.set_autoreset(bool(enabled))
+        self.autoreset_enabled = bool(enabled)
 
     def step_once(self) -> np.ndarray:
         actions = self._build_actions()
@@ -427,19 +514,9 @@ class OffPolicyPlaybackSession:
         """Apply an external velocity command before the next policy action."""
 
         commands = self.info.get("commands")
-        if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
-            raise RuntimeError(
-                "Playback command synchronization requires env.state.info['commands'] "
-                "with shape (num_envs, >=3)."
-            )
-        command_arr = np.asarray(command, dtype=commands.dtype)
-        if command_arr.shape == (3,):
-            command_arr = np.broadcast_to(command_arr, (commands.shape[0], 3))
-        if command_arr.shape != (commands.shape[0], 3):
-            raise ValueError(
-                "Playback command synchronization expects command shape "
-                f"(3,) or ({commands.shape[0]}, 3), got {command_arr.shape}."
-            )
+        if not isinstance(commands, np.ndarray):
+            raise RuntimeError("Playback command synchronization requires command owner rows.")
+        command_arr = _external_velocity_command_rows(command, commands)
         if np.array_equal(commands[:, :3], command_arr):
             if self.obs is None:
                 return self.refresh_observation()
@@ -486,7 +563,9 @@ class OffPolicyPlaybackSession:
         obs_dict: dict[str, np.ndarray],
         info: dict[str, Any] | None,
     ) -> np.ndarray | None:
-        if self.actor_algo_type != "hora_sac":
+        from unilab.algos.torch.offpolicy.worker import offpolicy_actor_requires_priv_info
+
+        if not offpolicy_actor_requires_priv_info(self.actor_algo_type):
             return None
         if self.action_mode != "policy" or self.actor is None:
             return None
@@ -500,7 +579,9 @@ class OffPolicyPlaybackSession:
             info=info,
         )
         if priv_info is None:
-            raise ValueError("HORA-SAC interactive play step is missing privileged info.")
+            raise ValueError(
+                f"{self.actor_algo_type} interactive play step is missing privileged info."
+            )
         return np.asarray(priv_info, dtype=np.float32)
 
     def _build_actions(self) -> np.ndarray:
@@ -509,12 +590,16 @@ class OffPolicyPlaybackSession:
         action_space = self.env.action_space
         action_dim = int(action_space.shape[0])
         if self.action_mode == "policy" and self.actor is not None:
+            from unilab.algos.torch.offpolicy.worker import offpolicy_actor_requires_priv_info
+
             obs_torch = torch.from_numpy(self.obs).to(self.device)
             if self.normalizer is not None:
                 obs_torch = self.normalizer(obs_torch, update=False)
-            if self.actor_algo_type == "hora_sac":
+            if offpolicy_actor_requires_priv_info(self.actor_algo_type):
                 if self.current_priv_info is None:
-                    raise ValueError("HORA-SAC interactive play step is missing privileged info.")
+                    raise ValueError(
+                        f"{self.actor_algo_type} interactive play step is missing privileged info."
+                    )
                 priv_info_torch = torch.from_numpy(self.current_priv_info).to(self.device)
                 actions = self.actor.explore(
                     obs_torch,
@@ -951,7 +1036,7 @@ def create_sac_playback_session(
                 log=log,
             )
             checkpoint_actor = checkpoint["actor"]
-            checkpoint_obs_dim = _actor_input_dim_from_state_dict(checkpoint_actor)
+            checkpoint_obs_dim = _offpolicy_checkpoint_actor_input_dim(checkpoint)
             if checkpoint_obs_dim is not None and checkpoint_obs_dim != obs_dim:
                 raise RuntimeError(
                     "Off-policy checkpoint actor input dim mismatch: "
@@ -1169,6 +1254,34 @@ def _apply_distill_playback_reset_contract(
     return merged
 
 
+def _apply_keyboard_playback_reset_contract(
+    env_cfg_override: Mapping[str, Any] | None,
+    task_name: str,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Return deterministic standing reset overrides for keyboard-driven G1 playback."""
+
+    # B1: OFF 路径只复制原配置, 保持训练和非键盘回放的 reset 分布不变.
+    merged = dict(env_cfg_override or {})
+    if not enabled:
+        return merged
+
+    task_key = str(task_name).lower().split("/", 1)[0].replace("-", "_")
+    task_key = task_key.replace("_", "")
+    if task_key not in {"g1walkflat", "g1walkheight"}:
+        return merged
+
+    # B2: ON 路径在 env 创建前原子化派生静止 command 与零根部速度 reset 合同.
+    commands_override = dict(merged.get("commands") or {})
+    commands_override["rel_standing_envs"] = 1.0
+    commands_override["rel_transition_envs"] = 0.0
+    merged["commands"] = commands_override
+    merged["reset_base_qvel_limit"] = 0.0
+    merged["standing_reset_base_qvel_limit"] = 0.0
+    return merged
+
+
 def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
     _ensure_scripts_dir(root_dir)
     from unilab.algos.torch.distill import load_distillation_student_policy
@@ -1185,6 +1298,26 @@ def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
         ).build_task_env_cfg_override(),
         "create_env": create_env,
         "load_student_policy": load_distillation_student_policy,
+        "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
+        "wrapper_cls": HoraRslRlVecEnvWrapper,
+    }
+
+
+def _default_fada_playback_deps(root_dir: str | Path) -> dict[str, Any]:
+    _ensure_scripts_dir(root_dir)
+    from unilab.algos.torch.distill import load_fada_policy_checkpoint
+    from unilab.algos.torch.hora.rsl_rl import HoraRslRlVecEnvWrapper
+    from unilab.training import BackendAdapter, create_env, ensure_registries
+
+    ensure_registries()
+    return {
+        "build_env_cfg_override": lambda cfg: BackendAdapter(
+            cfg,
+            root_dir=root_dir,
+            algo_name="distill",
+        ).build_task_env_cfg_override(),
+        "create_env": create_env,
+        "load_fada_policy": load_fada_policy_checkpoint,
         "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
         "wrapper_cls": HoraRslRlVecEnvWrapper,
     }
@@ -1558,6 +1691,98 @@ def create_distill_playback_session(
     return session, policy_obs_mode, checkpoint_path
 
 
+def create_fada_playback_session(
+    *,
+    playback_cfg: RslRlPlaybackConfig,
+    cfg: Any,
+    root_dir: str | Path,
+    device: str | None,
+    deps: Mapping[str, Any] | None = None,
+    log: LogFn = print,
+) -> tuple[FADAPlaybackSession, str, str | None]:
+    """Create a stateful FADA Planner-IDM playback session."""
+
+    # B1: policy 模式先严格恢复 checkpoint, 避免加载失败后遗留已创建的环境资源.
+    resolved_deps = dict(_default_fada_playback_deps(root_dir) if deps is None else deps)
+    device_name = select_torch_device() if device is None else str(device)
+    checkpoint = resolved_deps["resolve_checkpoint"](playback_cfg, cfg, root_dir)
+    checkpoint_path = str(checkpoint) if checkpoint is not None else None
+    policy_obs_mode = playback_cfg.policy_obs_mode
+    if policy_obs_mode == "auto":
+        policy_obs_mode = "actor"
+    controller = None
+    architecture = None
+    if playback_cfg.action_mode == "policy":
+        if checkpoint is None or not Path(checkpoint).is_file():
+            raise FileNotFoundError(
+                "FADA policy playback requires training.play_checkpoint_path or a resolvable run."
+            )
+        from unilab.algos.torch.distill.fada_playback import FADAPlaybackController
+
+        loaded = resolved_deps["load_fada_policy"](checkpoint, device=device_name)
+        controller = FADAPlaybackController(loaded.policy, device=device_name)
+        architecture = loaded.policy.config
+        log(f"Loading FADA Planner-IDM checkpoint: {checkpoint}")
+        log(
+            "FADA checkpoint diagnostics: "
+            f"completed_iterations={int(loaded.checkpoint['completed_iterations'])}, "
+            f"obs_dim={architecture.obs_dim}, action_dim={architecture.action_dim}, "
+            f"command_dim={architecture.command_dim}, history={architecture.history_length}, "
+            f"horizon={architecture.prediction_horizon}"
+        )
+
+    # B2: 通过 distill task config 构造环境, 键盘模式先收敛为静止零速 reset, 再核对 policy IO.
+    create_env = resolved_deps["create_env"]
+    task_name = str(getattr(cfg.training, "task_name", playback_cfg.task))
+    build_env_cfg_override = resolved_deps.get("build_env_cfg_override")
+    env_cfg_override = build_env_cfg_override(cfg) if build_env_cfg_override is not None else {}
+    env_cfg_override = _apply_keyboard_playback_reset_contract(
+        env_cfg_override,
+        task_name,
+        enabled=playback_cfg.keyboard,
+    )
+    if playback_cfg.keyboard:
+        log("Keyboard playback reset: standing command with zero base velocity.")
+    env = create_env(
+        cfg,
+        num_envs=int(playback_cfg.num_envs),
+        env_cfg_override=env_cfg_override,
+        sim_backend="mujoco",
+        task_name=task_name,
+    )
+    if env is None:
+        raise RuntimeError("Playback env factory did not return an environment.")
+    wrapped_env = resolved_deps["wrapper_cls"](
+        env, device=device_name, policy_obs_mode=policy_obs_mode
+    )
+    if architecture is not None:
+        observed_obs_dim = int(wrapped_env.num_obs)
+        observed_action_dim = int(env.action_space.shape[0])
+        if (observed_obs_dim, observed_action_dim) != (
+            architecture.obs_dim,
+            architecture.action_dim,
+        ):
+            wrapped_env.close()
+            raise ValueError(
+                "FADA checkpoint/playback IO mismatch: "
+                f"checkpoint=({architecture.obs_dim}, {architecture.action_dim}) "
+                f"environment=({observed_obs_dim}, {observed_action_dim})"
+            )
+
+    # B3: session 连接 done/reset lifecycle 与 history owner, 对 viewer 暴露标准 playback contract.
+    log(f"Policy obs mode: {policy_obs_mode}")
+    log(f"Action mode: {playback_cfg.action_mode}")
+    session = FADAPlaybackSession(
+        env=env,
+        wrapped_env=wrapped_env,
+        device=device_name,
+        action_mode=playback_cfg.action_mode,
+        controller=controller,
+        num_envs=playback_cfg.num_envs,
+    )
+    return session, policy_obs_mode, checkpoint_path
+
+
 def prepare_motion_overlay_selection(
     env: Any,
     *,
@@ -1620,8 +1845,10 @@ __all__ = [
     "PlaybackSession",
     "RslRlPlaybackConfig",
     "RslRlPlaybackSession",
+    "FADAPlaybackSession",
     "create_appo_playback_session",
     "create_distill_playback_session",
+    "create_fada_playback_session",
     "create_hora_distill_playback_session",
     "create_rsl_rl_playback_session",
     "create_sac_playback_session",

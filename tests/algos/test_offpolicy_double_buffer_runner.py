@@ -249,6 +249,26 @@ def test_sac_async_collection_rejects_cpu_pinned_double_buffer():
         _offpolicy().build_runner("sac", cfg)
 
 
+def test_phase1_formal_profile_drift_fails_before_environment_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _offpolicy()
+    cfg = _offpolicy_cfg(
+        [
+            "task=sac/g1_walk_flat/mujoco_context_teacher_phase1",
+            "algo.num_envs=64",
+        ]
+    )
+    monkeypatch.setattr(
+        mod,
+        "create_env",
+        lambda *args, **kwargs: pytest.fail("profile drift must fail before environment creation"),
+    )
+
+    with pytest.raises(ValueError, match="algo.num_envs"):
+        mod.build_runner("sac", cfg)
+
+
 @pytest.mark.parametrize("device", ["cpu", "mps"])
 def test_flashsac_double_buffer_portable_devices_allowed(
     monkeypatch: pytest.MonkeyPatch,

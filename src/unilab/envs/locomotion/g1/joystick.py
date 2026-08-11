@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import os
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from unilab.base.backend import create_backend
 from unilab.base.curriculum import EpisodeLengthTracker, PenaltyCurriculum
 from unilab.base.np_env import NpEnvState
 from unilab.base.scene import SceneCfg
+from unilab.dr import ResetPlan, ResetRandomizationPayload
+from unilab.dr.types import RESET_TERM_KD, RESET_TERM_KP
 from unilab.dtype_config import get_global_dtype
 from unilab.envs.common.rotation import np_wrap_to_pi, np_yaw_from_quat
 from unilab.envs.locomotion.common import rewards
@@ -35,12 +38,31 @@ from unilab.envs.locomotion.g1.base import G1BaseCfg, G1BaseEnv
 
 
 @dataclass
+class G1ActuatorStrengthConfig:
+    """Optional per-actuator position-servo gain multipliers.
+
+    This is a gain-based approximation of actuator effectiveness for controlled
+    simulation experiments. It does not model a measured torque-limit curve.
+    """
+
+    enabled: bool = False
+    multipliers: list[float] = field(default_factory=list)
+    sampling_mode: str = "fixed"
+    candidate_actuator_indices: list[int] = field(default_factory=list)
+    multiplier_range: list[float] = field(default_factory=lambda: [1.0, 1.0])
+    nominal_probability: float = 0.0
+    include_in_critic_obs: bool = False
+
+
+@dataclass
 class G1DomainRandConfig(DomainRandConfig):
     randomize_kp: bool = True
     kp_multiplier_range: list[float] = field(default_factory=lambda: [0.9, 1.1])
 
     randomize_kd: bool = True
     kd_multiplier_range: list[float] = field(default_factory=lambda: [0.9, 1.1])
+
+    actuator_strength: G1ActuatorStrengthConfig = field(default_factory=G1ActuatorStrengthConfig)
 
 
 @dataclass
@@ -385,6 +407,55 @@ class CurriculumConfig:
 
 
 @dataclass
+class ForwardProgressTerminationConfig:
+    enabled: bool = False
+    grace_steps: int = 50
+    min_command_forward_speed: float = 0.1
+    min_average_forward_speed: float = 0.2
+
+
+def compute_forward_progress_failure(
+    current_position: np.ndarray,
+    initial_position: np.ndarray,
+    initial_yaw: np.ndarray,
+    steps_before_increment: np.ndarray,
+    commands: np.ndarray,
+    *,
+    ctrl_dt: float,
+    grace_steps: int,
+    min_command_forward_speed: float,
+    min_average_forward_speed: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return progress-failure mask and reset-frame episode-average forward speed."""
+    current = np.asarray(current_position, dtype=get_global_dtype())
+    initial = np.asarray(initial_position, dtype=get_global_dtype())
+    yaw = np.asarray(initial_yaw, dtype=get_global_dtype())
+    steps = np.asarray(steps_before_increment)
+    command = np.asarray(commands, dtype=get_global_dtype())
+    batch = int(current.shape[0])
+    if current.shape != (batch, 3) or initial.shape != (batch, 3):
+        raise ValueError("forward-progress positions must both have shape (N, 3)")
+    if yaw.shape != (batch,) or steps.shape != (batch,) or command.shape != (batch, 3):
+        raise ValueError("forward-progress yaw/steps/commands shapes do not match the batch")
+    if float(ctrl_dt) <= 0.0 or int(grace_steps) <= 0:
+        raise ValueError("forward-progress ctrl_dt and grace_steps must be positive")
+
+    delta = current[:, :2] - initial[:, :2]
+    forward_displacement = np.cos(yaw) * delta[:, 0] + np.sin(yaw) * delta[:, 1]
+    completed_steps = steps.astype(np.int64, copy=False) + 1
+    elapsed_seconds = completed_steps.astype(get_global_dtype()) * float(ctrl_dt)
+    average_forward_speed = forward_displacement / elapsed_seconds
+    failure = (
+        (completed_steps >= int(grace_steps))
+        & (command[:, 0] >= float(min_command_forward_speed))
+        & (average_forward_speed < float(min_average_forward_speed) - 1.0e-6)
+    )
+    return np.asarray(failure, dtype=np.bool_), np.asarray(
+        average_forward_speed, dtype=get_global_dtype()
+    )
+
+
+@dataclass
 class G1WalkEnvCfg(G1BaseCfg):
     scene: SceneCfg = field(
         default_factory=lambda: SceneCfg(
@@ -402,6 +473,9 @@ class G1WalkEnvCfg(G1BaseCfg):
     standing_reset_base_qvel_limit: float = 0.0
     stand_action_authority: bool = False
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
+    forward_progress_termination: ForwardProgressTerminationConfig = field(
+        default_factory=ForwardProgressTerminationConfig
+    )
 
 
 class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
@@ -412,11 +486,152 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
     def _get_base_actuator_gains(self, env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self._base_kp, self._base_kd
 
+    def _validated_actuator_strength_config(self, env: Any) -> Any | None:
+        strength_cfg = getattr(env.cfg.domain_rand, "actuator_strength", None)
+        if strength_cfg is None:
+            return None
+        enabled = bool(getattr(strength_cfg, "enabled", False))
+        include_in_critic = bool(getattr(strength_cfg, "include_in_critic_obs", False))
+        if not enabled:
+            if include_in_critic:
+                raise ValueError(
+                    "domain_rand.actuator_strength.include_in_critic_obs requires enabled=true"
+                )
+            return None
+
+        expected = int(env._num_action)
+        sampling_mode = str(getattr(strength_cfg, "sampling_mode", "fixed"))
+        if sampling_mode == "fixed":
+            multipliers = np.asarray(strength_cfg.multipliers, dtype=np.float64)
+            if multipliers.shape != (expected,):
+                raise ValueError(
+                    "domain_rand.actuator_strength requires exactly "
+                    f"{expected} multipliers, got shape {multipliers.shape}"
+                )
+            if not np.isfinite(multipliers).all():
+                raise ValueError("domain_rand.actuator_strength multipliers must be finite")
+            if np.any(multipliers <= 0.0) or np.any(multipliers > 1.0):
+                raise ValueError(
+                    "domain_rand.actuator_strength multipliers must be in the interval (0, 1]"
+                )
+            if list(getattr(strength_cfg, "candidate_actuator_indices", [])):
+                raise ValueError("fixed actuator strength cannot define candidate_actuator_indices")
+            return strength_cfg
+
+        if sampling_mode != "single_candidate":
+            raise ValueError(
+                "domain_rand.actuator_strength.sampling_mode must be 'fixed' or "
+                f"'single_candidate', got {sampling_mode!r}"
+            )
+        if list(getattr(strength_cfg, "multipliers", [])):
+            raise ValueError("single_candidate actuator strength cannot define fixed multipliers")
+        candidates = np.asarray(strength_cfg.candidate_actuator_indices, dtype=np.int64)
+        if candidates.ndim != 1 or candidates.size == 0:
+            raise ValueError(
+                "single_candidate actuator strength requires candidate_actuator_indices"
+            )
+        if np.unique(candidates).size != candidates.size:
+            raise ValueError("actuator strength candidate indices must be unique")
+        if np.any(candidates < 0) or np.any(candidates >= expected):
+            raise ValueError(f"actuator strength candidate indices must be in [0, {expected})")
+        multiplier_range = np.asarray(strength_cfg.multiplier_range, dtype=np.float64)
+        if multiplier_range.shape != (2,) or not np.isfinite(multiplier_range).all():
+            raise ValueError("actuator strength multiplier_range must contain two finite values")
+        low, high = multiplier_range.tolist()
+        if low <= 0.0 or high < low or high > 1.0:
+            raise ValueError("actuator strength multiplier_range must satisfy 0 < low <= high <= 1")
+        nominal_probability = float(strength_cfg.nominal_probability)
+        if not np.isfinite(nominal_probability) or not 0.0 <= nominal_probability <= 1.0:
+            raise ValueError("actuator strength nominal_probability must be in [0, 1]")
+        return strength_cfg
+
+    def _sample_actuator_strength_multipliers(
+        self,
+        env: Any,
+        num_reset: int,
+    ) -> np.ndarray | None:
+        strength_cfg = self._validated_actuator_strength_config(env)
+        if strength_cfg is None:
+            return None
+        expected = int(env._num_action)
+        sampling_mode = str(getattr(strength_cfg, "sampling_mode", "fixed"))
+        if sampling_mode == "fixed":
+            fixed = np.asarray(strength_cfg.multipliers, dtype=np.float64)
+            return np.broadcast_to(fixed, (num_reset, expected)).copy()
+
+        sampled = np.ones((num_reset, expected), dtype=np.float64)
+        anomaly_rows = np.flatnonzero(
+            np.random.uniform(size=(num_reset,)) >= float(strength_cfg.nominal_probability)
+        )
+        if anomaly_rows.size == 0:
+            return sampled
+        candidates = np.asarray(strength_cfg.candidate_actuator_indices, dtype=np.int64)
+        selected = np.random.choice(candidates, size=anomaly_rows.size, replace=True)
+        low, high = np.asarray(strength_cfg.multiplier_range, dtype=np.float64).tolist()
+        sampled[anomaly_rows, selected] = np.random.uniform(low, high, size=anomaly_rows.size)
+        return sampled
+
+    def validate(self, env: Any, capabilities: Any) -> None:
+        super().validate(env, capabilities)
+        if self._validated_actuator_strength_config(env) is None:
+            return
+        unsupported = {
+            term
+            for term in (RESET_TERM_KP, RESET_TERM_KD)
+            if not capabilities.supports_reset_term(term)
+        }
+        if unsupported:
+            raise NotImplementedError(
+                "G1 actuator strength requires reset-time actuator gain support; "
+                f"missing terms: {sorted(unsupported)}"
+            )
+        expected = int(env._num_action)
+        if self._base_kp is None or np.asarray(self._base_kp).shape != (expected,):
+            raise ValueError("G1 actuator strength requires one baseline Kp per actuator")
+        if self._base_kd is None or np.asarray(self._base_kd).shape != (expected,):
+            raise ValueError("G1 actuator strength requires one baseline Kd per actuator")
+
+    def _apply_actuator_strength_to_reset_plan(
+        self,
+        env: Any,
+        env_ids: np.ndarray,
+        plan: ResetPlan,
+    ) -> ResetPlan:
+        multipliers = self._sample_actuator_strength_multipliers(env, len(env_ids))
+        if multipliers is None:
+            return plan
+        if self._base_kp is None or self._base_kd is None:
+            raise ValueError("G1 actuator strength baselines were not initialized")
+
+        payload = plan.randomization or ResetRandomizationPayload()
+        num_reset = len(env_ids)
+        base_kp = np.broadcast_to(np.asarray(self._base_kp), (num_reset, env._num_action))
+        base_kd = np.broadcast_to(np.asarray(self._base_kd), (num_reset, env._num_action))
+        source_kp = base_kp if payload.kp is None else np.asarray(payload.kp)
+        source_kd = base_kd if payload.kd is None else np.asarray(payload.kd)
+        payload.kp = np.asarray(source_kp * multipliers, dtype=np.float64)
+        payload.kd = np.asarray(source_kd * multipliers, dtype=np.float64)
+        plan.randomization = payload
+        plan.info_updates["privileged_actuator_strength"] = multipliers.copy()
+        return plan
+
     def _get_qvel_limit(self, env: Any) -> float:
         return float(env.cfg.reset_base_qvel_limit)
 
     def build_reset_plan(self, env: Any, env_ids: np.ndarray):
         plan = super().build_reset_plan(env, env_ids)
+        reward_scales = getattr(getattr(env.cfg, "reward_config", None), "scales", {})
+        needs_episode_frame = any(
+            float(reward_scales.get(name, 0.0)) != 0.0
+            for name in ("penalty_lateral_displacement", "penalty_yaw_drift")
+        ) or bool(getattr(getattr(env.cfg, "forward_progress_termination", None), "enabled", False))
+        if needs_episode_frame:
+            plan.info_updates["episode_start_base_pos"] = np.asarray(
+                plan.qpos[:, :3], dtype=get_global_dtype()
+            ).copy()
+            plan.info_updates["episode_start_base_yaw"] = np.asarray(
+                np_yaw_from_quat(plan.qpos[:, 3:7]), dtype=get_global_dtype()
+            ).copy()
         gait_enabled = self._command_gait_mask(env, plan.info_updates["commands"]).astype(bool)
         standing = ~gait_enabled
         if np.any(standing):
@@ -428,7 +643,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                     np.random.uniform(-limit, limit, size=(int(np.sum(standing)), 6)),
                     dtype=get_global_dtype(),
                 )
-        return plan
+        return self._apply_actuator_strength_to_reset_plan(env, env_ids, plan)
 
     def _build_extra_info_updates_for_commands(
         self, env: Any, num_reset: int, commands: np.ndarray
@@ -522,6 +737,17 @@ class G1WalkEnv(G1BaseEnv):
     def __init__(self, cfg: G1WalkEnvCfg, num_envs=1, backend_type="mujoco"):
         if cfg.reward_config is None:
             raise ValueError("reward_config must be provided via Hydra configuration")
+        progress_cfg = cfg.forward_progress_termination
+        if progress_cfg.grace_steps <= 0:
+            raise ValueError("forward_progress_termination.grace_steps must be positive")
+        if progress_cfg.min_command_forward_speed < 0.0:
+            raise ValueError(
+                "forward_progress_termination.min_command_forward_speed must be non-negative"
+            )
+        if progress_cfg.min_average_forward_speed < 0.0:
+            raise ValueError(
+                "forward_progress_termination.min_average_forward_speed must be non-negative"
+            )
         backend = create_backend(
             backend_type,
             cfg.scene,
@@ -559,7 +785,10 @@ class G1WalkEnv(G1BaseEnv):
             )
 
         self._init_reward_functions()
-        if cfg.domain_rand.randomize_kp or cfg.domain_rand.randomize_kd:
+        strength_enabled = bool(
+            getattr(getattr(cfg.domain_rand, "actuator_strength", None), "enabled", False)
+        )
+        if cfg.domain_rand.randomize_kp or cfg.domain_rand.randomize_kd or strength_enabled:
             base_kp, base_kd = backend.get_actuator_gains()
             dr_provider = G1WalkDomainRandomizationProvider(base_kp=base_kp, base_kd=base_kd)
         else:
@@ -572,7 +801,11 @@ class G1WalkEnv(G1BaseEnv):
         # + phase(2) [+ mode(1)] = 98/99; critic additionally sees linvel(3).
         mode_dim = 1 if self._cfg.mode_observation else 0
         height_dim = 1 if self._uses_height_command_observation() else 0
-        return {"obs": 98 + mode_dim + height_dim, "critic": 101 + mode_dim + height_dim}
+        privileged_strength_dim = 29 if self._includes_privileged_actuator_strength_obs() else 0
+        return {
+            "obs": 98 + mode_dim + height_dim,
+            "critic": 101 + mode_dim + height_dim + privileged_strength_dim,
+        }
 
     def _init_reward_functions(self):
         self._reward_fns: dict[str, Any] = {
@@ -588,6 +821,8 @@ class G1WalkEnv(G1BaseEnv):
             "penalty_ang_vel_xy": rewards.ang_vel_xy,
             "action_rate": rewards.action_rate,
             "penalty_action_rate": rewards.action_rate,
+            "penalty_lateral_displacement": self._reward_lateral_displacement,
+            "penalty_yaw_drift": self._reward_yaw_drift,
             "base_height": rewards.base_height,
             "track_base_height_exp_smooth": rewards.track_base_height_exp_smooth,
             "pose": rewards.weighted_pose,
@@ -619,6 +854,68 @@ class G1WalkEnv(G1BaseEnv):
             "feet_air_time": self._reward_feet_air_time,
             "alive": rewards.alive,
         }
+
+    def _episode_frame_errors(self, info: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+        try:
+            initial_position = np.asarray(info["episode_start_base_pos"], dtype=get_global_dtype())
+            initial_yaw = np.asarray(info["episode_start_base_yaw"], dtype=get_global_dtype())
+        except KeyError as exc:
+            raise ValueError(
+                "trajectory-precision rewards require reset-time episode frame state"
+            ) from exc
+        current_position = np.asarray(self.get_base_pos(), dtype=get_global_dtype())
+        current_yaw = np.asarray(np_yaw_from_quat(self.get_base_quat()), dtype=get_global_dtype())
+        expected_position_shape = (self._num_envs, 3)
+        if initial_position.shape != expected_position_shape:
+            raise ValueError(
+                "episode_start_base_pos must have shape "
+                f"{expected_position_shape}, got {initial_position.shape}"
+            )
+        if initial_yaw.shape != (self._num_envs,):
+            raise ValueError(
+                "episode_start_base_yaw must have shape "
+                f"({self._num_envs},), got {initial_yaw.shape}"
+            )
+        delta = current_position[:, :2] - initial_position[:, :2]
+        lateral = -np.sin(initial_yaw) * delta[:, 0] + np.cos(initial_yaw) * delta[:, 1]
+        yaw_drift = np_wrap_to_pi(current_yaw - initial_yaw)
+        return lateral, yaw_drift
+
+    def _reward_lateral_displacement(self, ctx: RewardContext) -> np.ndarray:
+        lateral, _ = self._episode_frame_errors(ctx.info)
+        return np.asarray(np.square(lateral), dtype=get_global_dtype())
+
+    def _reward_yaw_drift(self, ctx: RewardContext) -> np.ndarray:
+        _, yaw_drift = self._episode_frame_errors(ctx.info)
+        return np.asarray(np.square(yaw_drift), dtype=get_global_dtype())
+
+    def _forward_progress_failure(self, info: dict[str, Any]) -> np.ndarray:
+        cfg = self._cfg.forward_progress_termination
+        if not cfg.enabled:
+            return np.zeros((self._num_envs,), dtype=np.bool_)
+        try:
+            initial_position = info["episode_start_base_pos"]
+            initial_yaw = info["episode_start_base_yaw"]
+            steps = info["steps"]
+            commands = info["commands"]
+        except KeyError as error:
+            raise ValueError(
+                "forward-progress termination requires episode frame, steps, and commands"
+            ) from error
+        failure, average_speed = compute_forward_progress_failure(
+            self.get_base_pos(),
+            initial_position,
+            initial_yaw,
+            steps,
+            commands,
+            ctrl_dt=float(self._cfg.ctrl_dt),
+            grace_steps=int(cfg.grace_steps),
+            min_command_forward_speed=float(cfg.min_command_forward_speed),
+            min_average_forward_speed=float(cfg.min_average_forward_speed),
+        )
+        info["forward_progress_average_speed"] = average_speed
+        info["forward_progress_failure"] = failure
+        return failure
 
     def _terrain_relative_base_height(self) -> np.ndarray:
         return np.asarray(self._backend.get_base_pos()[:, 2], dtype=get_global_dtype())
@@ -767,6 +1064,7 @@ class G1WalkEnv(G1BaseEnv):
             tilt > max_tilt_rad,
             self._terrain_relative_base_height() < self._reward_cfg.min_base_height,
         )
+        np.logical_or(terminated, self._forward_progress_failure(state.info), out=terminated)
 
         reward = self._compute_reward(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         self._debug_action_trace(
@@ -800,6 +1098,45 @@ class G1WalkEnv(G1BaseEnv):
             self._penalty_curriculum.current_scale
         )
         return state
+
+    def _capture_task_rollout_state(self) -> dict[str, Any]:
+        """Capture G1 curriculum state that may change on a shadow termination."""
+
+        return {
+            "episode_average_length": (
+                None
+                if self._episode_tracker is None
+                else float(self._episode_tracker.average_length)
+            ),
+            "penalty_scale": (
+                None
+                if self._penalty_curriculum is None
+                else float(self._penalty_curriculum.current_scale)
+            ),
+            "reward_scales": copy.deepcopy(self._reward_cfg.scales),
+        }
+
+    def _restore_task_rollout_state(self, snapshot: Any) -> None:
+        """Restore G1 curriculum and its derived reward-scale mutation."""
+
+        if not isinstance(snapshot, dict) or set(snapshot) != {
+            "episode_average_length",
+            "penalty_scale",
+            "reward_scales",
+        }:
+            raise ValueError("invalid G1 task rollout snapshot")
+        if self._episode_tracker is not None:
+            average = snapshot["episode_average_length"]
+            if average is None:
+                raise ValueError("G1 rollout snapshot is missing episode tracker state")
+            self._episode_tracker.average_length = float(average)
+        if self._penalty_curriculum is not None:
+            scale = snapshot["penalty_scale"]
+            if scale is None:
+                raise ValueError("G1 rollout snapshot is missing penalty curriculum state")
+            self._penalty_curriculum.current_scale = float(scale)
+        self._reward_cfg.scales.clear()
+        self._reward_cfg.scales.update(copy.deepcopy(snapshot["reward_scales"]))
 
     def _compute_obs(
         self, info: dict, linvel, gyro, gravity, dof_pos, dof_vel
@@ -856,8 +1193,32 @@ class G1WalkEnv(G1BaseEnv):
             axis=1,
             dtype=get_global_dtype(),
         )
+        if self._includes_privileged_actuator_strength_obs():
+            strength = np.asarray(
+                info.get("privileged_actuator_strength"),
+                dtype=get_global_dtype(),
+            )
+            expected_shape = (actor.shape[0], self._num_action)
+            if strength.shape != expected_shape:
+                raise ValueError(
+                    "critic actuator-strength observation requires "
+                    f"info['privileged_actuator_strength'] shape {expected_shape}, "
+                    f"got {strength.shape}"
+                )
+            if not np.isfinite(strength).all():
+                raise ValueError("critic actuator-strength observation must be finite")
+            critic = np.concatenate([critic, strength], axis=1, dtype=get_global_dtype())
 
         return {"obs": actor, "critic": critic}
+
+    def _includes_privileged_actuator_strength_obs(self) -> bool:
+        domain_rand = getattr(self._cfg, "domain_rand", None)
+        strength_cfg = getattr(domain_rand, "actuator_strength", None)
+        return bool(
+            strength_cfg is not None
+            and getattr(strength_cfg, "enabled", False)
+            and getattr(strength_cfg, "include_in_critic_obs", False)
+        )
 
     def _uses_height_command_observation(self) -> bool:
         command_cfg = getattr(self._cfg, "commands", None)

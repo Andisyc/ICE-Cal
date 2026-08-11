@@ -18,6 +18,15 @@ same Code Block ID
 - `concept/03_g1_multiteacher_distillation_method.data.json`: active stand/walk multi-teacher distillation Concept Figure.
 - `auxiliary/atlas_app/`: helper viewer, local server, static renderer, checks, and JS dependencies.
 
+## Temporary Discussion Map
+
+- `concept/04_fada_method_discussion.data.json`: user-confirmed Oracle trajectory -> IDM distillation -> Planner distillation Concept Figure; target adaptation and deployment are out of scope.
+- `architecture/05_fada_planner_tracker_modules.data.json`: implemented Planner and IDM construction, forward interface, and source-training loss boundaries.
+- `concept/06_fada_design_detail_discussion.data.json`: Design Inspector with canonical design-point tabs and the active UniLab Oracle-bootstrap/Planner-IDM DAgger spine.
+- `concept/07_fada_planner_idm_distillation.data.json`: current v005 Planner-IDM distillation Concept Figure using the 03 main-chain and DAgger-feedback visual grammar.
+- `architecture/08_trajectory_conditioned_execution_alignment.data.json`: human-confirmed deployment method in which a real rollout produces temporary Context for the frozen IDM, with no target-domain weight update.
+- `architecture/09_trajectory_conditioned_execution_alignment.data.json`: three-stage privileged-teacher, context-conditioned Tracker, and controlled real-world proof-of-concept figure imported from the downloaded 08 draft.
+
 ## Folder Contract
 
 ```text

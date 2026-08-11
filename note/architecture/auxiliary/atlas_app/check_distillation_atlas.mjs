@@ -35,35 +35,8 @@ const viewer = fs.readFileSync(path.join(here, "architecture_atlas.html"), "utf8
 const server = fs.readFileSync(path.join(here, "serve_architecture.mjs"), "utf8");
 const index = fs.readFileSync(path.join(atlasRoot, "index.html"), "utf8");
 
-const indexRedirectMatch = index.match(/<script>([\s\S]*?)<\/script>/);
-if (!indexRedirectMatch) throw new Error("Atlas index redirect script missing");
-let indexRedirectUrl = null;
-new vm.Script(indexRedirectMatch[1]).runInNewContext({
-  window: {
-    location: {
-      origin: "null",
-      replace: (url) => { indexRedirectUrl = url; },
-    },
-  },
-});
-if (indexRedirectUrl !== "http://127.0.0.1:8766/") {
-  throw new Error(`Atlas index redirect mismatch: ${indexRedirectUrl}`);
-}
-
-const viewerRedirectMatch = viewer.match(/<script>([\s\S]*?)<\/script>/);
-if (!viewerRedirectMatch) throw new Error("Atlas viewer redirect script missing");
-let viewerRedirectUrl = null;
-new vm.Script(viewerRedirectMatch[1]).runInNewContext({
-  window: {
-    location: {
-      origin: "http://preview.invalid",
-      search: "?data=../../runtime/01_unilab_runtime_atlas.data.json",
-      replace: (url) => { viewerRedirectUrl = url; },
-    },
-  },
-});
-if (viewerRedirectUrl !== "http://127.0.0.1:8766/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json") {
-  throw new Error(`Atlas viewer redirect mismatch: ${viewerRedirectUrl}`);
+if (index.includes("127.0.0.1:8766") || viewer.includes("127.0.0.1:8766")) {
+  throw new Error("Atlas index and viewer must preserve the serving origin and port");
 }
 
 const scriptMatch = viewer.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -406,12 +379,17 @@ for (const requiredId of ["U-RT-06", "U-RT-08"]) {
 }
 
 const indexAtlasLinks = [...index.matchAll(/architecture_atlas\.html\?data=/g)];
-if (indexAtlasLinks.length !== 3) throw new Error("Atlas index must expose exactly three maps");
+if (indexAtlasLinks.length !== 9) {
+  throw new Error("Atlas index must expose three active maps and six FADA discussion maps");
+}
 for (const forbidden of ["Supporting:", "Distillation Runtime", "Distillation Control Room"]) {
   if (index.includes(forbidden)) throw new Error(`Atlas index contains forbidden entry ${forbidden}`);
 }
 for (const required of [
   "01 UniLab Runtime Atlas", "02 Method-to-Code Atlas", "03 Concept Figure",
+  "04 Oracle → IDM → Planner Distillation", "05 Planner–IDM Construction",
+  "06 Planner–IDM Design Discussion", "07 规划器–IDM 蒸馏架构",
+  "08 上下文执行校准", "09 上下文条件 Tracker 校准",
 ]) {
   if (!index.includes(required)) throw new Error(`Atlas index missing ${required}`);
 }

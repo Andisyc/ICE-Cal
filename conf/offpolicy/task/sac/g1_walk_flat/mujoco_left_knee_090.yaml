@@ -1,0 +1,58 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco
+  - _self_
+
+# Controlled teacher playback profile: fixed 0.4 m/s straight command and a
+# gain-based actuator-effectiveness approximation on the left knee (index 3).
+interactive:
+  keyboard: false
+
+env:
+  commands:
+    vel_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+    rel_standing_envs: 0.0
+    rel_transition_envs: 0.0
+  reset_base_qvel_limit: 0.0
+  curriculum:
+    enabled: false
+  domain_rand:
+    randomize_kp: false
+    randomize_kd: false
+    actuator_strength:
+      enabled: true
+      multipliers:
+        # left leg: hip pitch/roll/yaw, knee, ankle pitch/roll
+        - 1.0
+        - 1.0
+        - 1.0
+        - 0.9
+        - 1.0
+        - 1.0
+        # right leg
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        # waist
+        - 1.0
+        - 1.0
+        - 1.0
+        # left arm
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        # right arm
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0

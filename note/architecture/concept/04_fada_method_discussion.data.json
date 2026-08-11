@@ -1,0 +1,294 @@
+{
+  "title": "04 Oracle Trajectory → IDM Distillation → Planner Distillation",
+  "layout": "method_figure",
+  "figureWidth": 1840,
+  "figureHeight": 900,
+  "connectorClearance": 20,
+  "showLegend": false,
+  "concepts": {
+    "C-ORACLE": { "name": "Pretrained Oracles", "color": "#b45309" },
+    "C-DATA": { "name": "Oracle Evidence", "color": "#2563eb" },
+    "C-IDM": { "name": "IDM Distillation", "color": "#7c3aed" },
+    "C-PLANNER": { "name": "Planner Distillation", "color": "#0891b2" },
+    "C-OUTPUT": { "name": "Trained Module", "color": "#64748b" }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "FADA-I-01",
+      "title": "Command",
+      "summary": "向 Oracle 或 Planner 输入同一个 task command c_t",
+      "concept": "C-ORACLE",
+      "x": 40,
+      "y": 170,
+      "w": 200,
+      "h": 100
+    },
+    {
+      "id": "FADA-I-02",
+      "title": "Pretrained Oracles",
+      "summary": "walking Oracle 负责行走，standing Oracle 负责站立与停止后的恢复",
+      "concept": "C-ORACLE",
+      "x": 300,
+      "y": 160,
+      "w": 250,
+      "h": 120
+    },
+    {
+      "id": "FADA-I-03",
+      "title": "Oracle Trajectory",
+      "summary": "G1StandStill 产生 static stand；G1WalkFlat 产生 walk 与 active-to-zero 停止 rollout",
+      "concept": "C-DATA",
+      "x": 610,
+      "y": 160,
+      "w": 260,
+      "h": 120
+    },
+    {
+      "id": "FADA-I-04",
+      "title": "Matched Window Extractor",
+      "summary": "IDM 保留 realized 与 same-state Oracle-shadow causal pairs；Planner 保留场景 Oracle first action",
+      "concept": "C-DATA",
+      "x": 930,
+      "y": 150,
+      "w": 290,
+      "h": 140
+    },
+    {
+      "id": "FADA-I-05",
+      "title": "IDM",
+      "summary": "输入 state windows，预测与这些 states 对应的 actions",
+      "concept": "C-IDM",
+      "x": 1280,
+      "y": 160,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "FADA-I-06",
+      "title": "IDM DAgger",
+      "summary": "用 realized rollout pair 与 same-state 场景 Oracle shadow pair 共同监督 IDM",
+      "concept": "C-IDM",
+      "x": 1550,
+      "y": 150,
+      "w": 250,
+      "h": 140
+    },
+    {
+      "id": "FADA-I-07",
+      "title": "Trained IDM",
+      "summary": "完成 state-to-action 映射后冻结，作为 Planner 的动作解释器",
+      "concept": "C-OUTPUT",
+      "x": 950,
+      "y": 440,
+      "w": 280,
+      "h": 130
+    },
+    {
+      "id": "FADA-P-01",
+      "title": "Planner",
+      "summary": "输入 command，预测可交给 IDM 执行的 future states",
+      "concept": "C-PLANNER",
+      "x": 300,
+      "y": 650,
+      "w": 240,
+      "h": 120
+    },
+    {
+      "id": "FADA-P-02",
+      "title": "Predicted States",
+      "summary": "Planner 输出 K-step future proprioceptive states",
+      "concept": "C-PLANNER",
+      "x": 600,
+      "y": 650,
+      "w": 260,
+      "h": 120
+    },
+    {
+      "id": "FADA-P-03",
+      "title": "Planner DAgger",
+      "summary": "冻结 IDM，将 predicted states 转为 actions，并与 oracle actions 比较",
+      "concept": "C-PLANNER",
+      "x": 1260,
+      "y": 650,
+      "w": 280,
+      "h": 120
+    },
+    {
+      "id": "FADA-P-04",
+      "title": "Trained Planner",
+      "summary": "完成 command-to-states 蒸馏，与 Trained IDM 组成最终 Planner–IDM",
+      "concept": "C-OUTPUT",
+      "x": 1580,
+      "y": 650,
+      "w": 220,
+      "h": 120
+    }
+  ],
+  "edges": [
+    {
+      "from": "FADA-I-01",
+      "to": "FADA-I-02",
+      "label": "c_t",
+      "concept": "C-ORACLE",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-02",
+      "to": "FADA-I-03",
+      "label": "execute policy",
+      "concept": "C-ORACLE",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-03",
+      "to": "FADA-I-04",
+      "label": "rollout trajectory",
+      "concept": "C-DATA",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-04",
+      "to": "FADA-I-05",
+      "label": "state windows",
+      "concept": "C-DATA",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-05",
+      "to": "FADA-I-06",
+      "label": "predicted actions",
+      "concept": "C-IDM",
+      "route": "spine",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-04",
+      "to": "FADA-I-06",
+      "label": "realized + Oracle-shadow causal pairs",
+      "concept": "C-DATA",
+      "route": "upper",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [[1075, 75], [1675, 75]],
+      "labelX": 1375,
+      "labelY": 75,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-06",
+      "to": "FADA-I-07",
+      "label": "updated IDM parameters",
+      "concept": "C-IDM",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "right",
+      "via": [[1675, 390], [1260, 390], [1260, 505]],
+      "labelX": 1460,
+      "labelY": 390,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-01",
+      "to": "FADA-P-01",
+      "label": "same c_t",
+      "concept": "C-ORACLE",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "via": [[140, 570], [420, 570]],
+      "labelX": 270,
+      "labelY": 570,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-P-01",
+      "to": "FADA-P-02",
+      "label": "future states",
+      "concept": "C-PLANNER",
+      "route": "lower",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-P-02",
+      "to": "FADA-I-07",
+      "label": "predicted state windows",
+      "concept": "C-PLANNER",
+      "route": "lower",
+      "fromAnchor": "right",
+      "toAnchor": "bottom",
+      "via": [[900, 710], [900, 600], [1090, 600]],
+      "labelX": 900,
+      "labelY": 620,
+      "labelDx": -80
+    },
+    {
+      "from": "FADA-I-07",
+      "to": "FADA-P-03",
+      "label": "frozen IDM predicted actions",
+      "concept": "C-IDM",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "left",
+      "via": [[1090, 710]],
+      "labelX": 1175,
+      "labelY": 710,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-I-04",
+      "to": "FADA-P-03",
+      "label": "same oracle actions",
+      "concept": "C-DATA",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "via": [[1075, 350], [1820, 350], [1820, 610], [1400, 610]],
+      "labelX": 1650,
+      "labelY": 350,
+      "labelDy": -12
+    },
+    {
+      "from": "FADA-P-03",
+      "to": "FADA-P-01",
+      "label": "update Planner only",
+      "concept": "C-PLANNER",
+      "route": "lower",
+      "fromAnchor": "bottom",
+      "toAnchor": "bottom",
+      "via": [[1400, 840], [420, 840]],
+      "labelX": 900,
+      "labelY": 840,
+      "labelDy": -12,
+      "kind": "feedback"
+    },
+    {
+      "from": "FADA-P-03",
+      "to": "FADA-P-04",
+      "label": "distilled Planner",
+      "concept": "C-PLANNER",
+      "route": "lower",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "labelDy": -12
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

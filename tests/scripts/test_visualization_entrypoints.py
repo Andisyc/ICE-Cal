@@ -23,6 +23,22 @@ def test_legacy_visualization_env_entrypoint_is_removed():
     assert not (_SCRIPTS_DIR / "visualization_env.py").exists()
 
 
+def test_playback_command_requires_session_owned_command_boundary() -> None:
+    mod = _load_script("play_interactive")
+
+    with pytest.raises(RuntimeError, match="set_external_command"):
+        mod._apply_playback_command(object(), np.zeros(3, dtype=np.float32))
+
+    calls: list[np.ndarray] = []
+
+    class Session:
+        def set_external_command(self, command: np.ndarray) -> None:
+            calls.append(command.copy())
+
+    mod._apply_playback_command(Session(), np.asarray([0.2, 0.0, -0.1]))
+    np.testing.assert_allclose(calls, [np.asarray([0.2, 0.0, -0.1], dtype=np.float32)])
+
+
 def test_visualize_task_env_keeps_canonical_defaults():
     mod = _load_script("visualize_task_env")
 
@@ -405,6 +421,47 @@ def test_play_interactive_routes_distill_to_generic_session(monkeypatch):
     assert calls["playback_cfg"].action_mode == "policy"
     assert calls["cfg"] is cfg
     assert calls["device"] == "cpu"
+
+
+def test_play_interactive_cli_routes_fada_to_stateful_session(monkeypatch):
+    mod = _load_script("play_interactive")
+    parsed = mod._parse_interactive_cli(
+        [
+            "--algo",
+            "fada",
+            "--task",
+            "g1_walk_flat",
+            "--sim",
+            "mujoco",
+            "training.play_checkpoint_path=/tmp/planner_idm.pt",
+            "interactive.keyboard=true",
+        ]
+    )
+    cfg = mod._compose_interactive_config(parsed.algo, parsed.overrides)
+    args = mod._build_play_args(cfg, algo=parsed.algo)
+    calls: dict[str, Any] = {}
+
+    class FakeSession:
+        env = object()
+
+    def fake_create_fada_playback_session(**kwargs):
+        calls.update(kwargs)
+        return FakeSession(), "actor", "/tmp/planner_idm.pt"
+
+    monkeypatch.setattr(mod, "create_fada_playback_session", fake_create_fada_playback_session)
+    monkeypatch.setattr(mod, "_uses_native_mujoco_viewer_launch", lambda: True)
+    monkeypatch.setattr(mod, "_can_launch_glfw_viewer", lambda: False)
+
+    mod.play_interactive(args, cfg=cfg, algo="fada")
+
+    assert cfg.training.task_name == "G1WalkFlat"
+    assert args.checkpoint_path == "/tmp/planner_idm.pt"
+    assert calls["playback_cfg"].action_mode == "policy"
+    assert calls["playback_cfg"].keyboard is True
+    assert calls["cfg"] is cfg
+    assert mod._normalize_interactive_overrides("fada", ["interactive.action_mode=zero"]) == [
+        "interactive.action_mode=zero"
+    ]
 
 
 def test_play_interactive_viewer_model_uses_shared_render_playback_resolver(

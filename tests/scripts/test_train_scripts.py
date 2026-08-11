@@ -2948,13 +2948,13 @@ def test_distill_script_rejects_owner_command_filter_override(
         )
 
 
-def test_distill_script_rejects_teacher_policy_collection_on_height_route(
+def test_distill_script_rejects_incomplete_teacher_policy_height_route(
     tmp_path: Path,
 ) -> None:
     mod = _train_distill()
     cfg = _distill_cfg(["training.collect_action_mode=teacher_policy"])
 
-    with pytest.raises(ValueError, match="G1WalkFlat/G1StandStill"):
+    with pytest.raises(ValueError, match="observed height_commands"):
         mod.run_collect_dataset(
             cfg,
             dataset_path=tmp_path / "height_teacher_policy_dataset.pt",

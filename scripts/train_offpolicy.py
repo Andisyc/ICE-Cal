@@ -228,7 +228,9 @@ def build_runner(algo_name: str, cfg: DictConfig):
         _device = cfg.training.device or get_default_device()
         _rl_cfg = cast(dict[str, Any], OmegaConf.to_container(cfg.algo, resolve=True))
         _custom_runtime = resolve_custom_offpolicy_runtime(_rl_cfg)
-        _env = create_env(cfg, num_envs=1, env_cfg_override=env_cfg_override)
+        if _custom_runtime is not None:
+            _custom_runtime.validate_training_config(cfg)
+        _env = cast(Any, create_env(cfg, num_envs=1, env_cfg_override=env_cfg_override))
         try:
             assert _env.action_space.shape
             from unilab.base.observations import get_obs_dims as _get_obs_dims
@@ -429,7 +431,10 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
     import torch
 
     from unilab.algos.torch.common.actor_factory import build_actor
-    from unilab.algos.torch.offpolicy.worker import resolve_offpolicy_actor_priv_info
+    from unilab.algos.torch.offpolicy.worker import (
+        offpolicy_actor_requires_priv_info,
+        resolve_offpolicy_actor_priv_info,
+    )
 
     load_path, load_path_dir = resolve_checkpoint_path(
         ROOT_DIR,
@@ -475,6 +480,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
         obs_dim=obs_dim,
         critic_obs_dim=critic_obs_dim,
     )
+    actor_requires_priv_info = offpolicy_actor_requires_priv_info(actor_algo_type)
 
     normalizer = None
     if algo_name == "sac":
@@ -523,6 +529,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
     else:
         raise ValueError(f"Unsupported algo: {algo_name}")
 
+    actor = cast(Any, actor)
     actor.eval()
 
     print(f"Loading model: {load_path}")
@@ -552,7 +559,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
                 device=device,
                 dtype=dummy_input.dtype,
             )
-            if actor_algo_type == "hora_sac"
+            if actor_requires_priv_info
             else None
         )
         with torch.inference_mode():
@@ -585,7 +592,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
         verify_input = torch.randn(1, obs_dim, device=device)
         verify_priv_info = (
             torch.zeros((1, int(actor_kwargs["priv_info_dim"])), device=device)
-            if actor_algo_type == "hora_sac"
+            if actor_requires_priv_info
             else None
         )
         with torch.inference_mode():
@@ -618,8 +625,8 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
     current_priv_info: np.ndarray | None = None
 
     def _resolve_play_priv_info(obs_dict: dict[str, np.ndarray], info: dict | None) -> np.ndarray:
-        if actor_algo_type != "hora_sac":
-            raise ValueError("Privileged play info was requested for a non-HORA actor.")
+        if not actor_requires_priv_info:
+            raise ValueError("Privileged play info was requested for a non-privileged actor.")
         from unilab.base.observations import split_obs_dict
 
         actor_obs_np, critic_np = split_obs_dict(obs_dict)
@@ -630,7 +637,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
             info=info,
         )
         if priv_info is None:
-            raise ValueError("HORA-SAC play step is missing privileged info.")
+            raise ValueError(f"{actor_algo_type} play step is missing privileged info.")
         return priv_info
 
     def _extract_reset_play_obs(reset_result) -> np.ndarray:
@@ -638,7 +645,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
         if not isinstance(reset_result, tuple) or len(reset_result) != 2:
             raise ValueError(f"Unexpected env.reset return format: {type(reset_result)!r}")
         obs_out, info_out = reset_result
-        if actor_algo_type == "hora_sac":
+        if actor_requires_priv_info:
             current_priv_info = _resolve_play_priv_info(obs_out, info_out)
         return np.asarray(extract_play_obs(obs_out), dtype=np.float32)
 
@@ -647,9 +654,9 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
         obs_torch = torch.from_numpy(obs_np).to(device)
         if normalizer:
             obs_torch = normalizer(obs_torch, update=False)
-        if actor_algo_type == "hora_sac":
+        if actor_requires_priv_info:
             if current_priv_info is None:
-                raise ValueError("HORA-SAC play step is missing privileged info.")
+                raise ValueError(f"{actor_algo_type} play step is missing privileged info.")
             priv_info_torch = torch.from_numpy(current_priv_info).to(device)
             actions_np = (
                 actor.explore(
@@ -665,7 +672,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
         else:
             actions_np = actor(obs_torch).cpu().numpy()
         state = env.step(actions_np)
-        if actor_algo_type == "hora_sac":
+        if actor_requires_priv_info:
             current_priv_info = _resolve_play_priv_info(state.obs, state.info)
         return np.asarray(extract_play_obs(state.obs), dtype=np.float32)
 

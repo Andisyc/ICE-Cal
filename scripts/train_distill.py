@@ -7,6 +7,7 @@ assembles the configured entrypoint routes.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -24,11 +25,20 @@ from omegaconf import DictConfig, OmegaConf
 from unilab.algos.torch.distill import (
     COLLECTOR_REQUEST_STAGE_NAMES,
     DISTILLATION_METRICS_SCHEMA_VERSION,
+    FADA_ASYNC_SCENARIO,
+    FADA_SCENARIO_IDS,
     LEGACY_REQUEST_STAGE_NAMES,
     BehaviorDistillationTrainer,
     DistillationPerformanceRunContext,
     DistillationStageObservation,
     DistillationTeacherSpec,
+    FADAArchitectureConfig,
+    FADACollectionSpec,
+    FADAPaperSourcePlan,
+    FADAPlannerIDMPolicy,
+    FADAReplayBuffer,
+    FADASourceBatch,
+    FADATrainer,
     MLPStudentPolicy,
     MoEStudentPolicy,
     RoleArtifactSpec,
@@ -37,16 +47,24 @@ from unilab.algos.torch.distill import (
     WorkflowScenarioSpec,
     WorkflowStudentUpdateResult,
     adopt_legacy_role_artifact,
+    allocate_fada_command_scenarios,
+    build_fada_paper_source_plan,
     build_multitask_distillation_dataset,
+    build_persistent_fada_runtime,
     collect_distillation_dataset_from_env,
+    collect_fada_source_windows,
     collect_transition_distillation_dataset_from_env,
     config_fingerprint,
+    evaluate_fada_source_batch,
     file_sha256,
     finalize_workflow_performance,
     fork_workflow_run,
     load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
+    load_fada_checkpoint,
+    load_fada_policy_checkpoint,
+    load_fada_source_batch,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
     required_balanced_replay_updates,
@@ -56,7 +74,20 @@ from unilab.algos.torch.distill import (
     run_multirole_dagger_workflow,
     run_offline_distillation_updates,
     save_distillation_dataset,
+    save_fada_checkpoint,
     validate_sac_teacher_checkpoint_contract,
+)
+from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
+from unilab.algos.torch.distill.fada_workflow import (
+    FADAWorkflowDependencies,
+    _fada_execution_mode,
+    _fada_quality_batch,
+    _fada_v005_replay_settings,
+    _paper_source_plan,
+    _require_fada_curriculum_artifact,
+    _slice_fada_batch,
+    build_fada_architecture_config,
+    run_fada_training_owner,
 )
 from unilab.algos.torch.distill.g1_persistent_worker import (
     build_persistent_g1_distillation_runtime,
@@ -2431,9 +2462,42 @@ def run_single_entry_workflow(
     }
 
 
+def run_fada_training(
+    cfg: DictConfig,
+    *,
+    teacher_checkpoint: str | Path | None = None,
+    create_env_fn: Any | None = None,
+    env_cfg_override_fn: Any | None = None,
+) -> dict[str, Any]:
+    """Compose dependencies and delegate the FADA use-case to its owner module."""
+
+    dependencies = FADAWorkflowDependencies(
+        require_teacher_policy_collection_route=_require_teacher_policy_collection_route,
+        apply_collect_command_distribution_overrides=_apply_collect_command_distribution_overrides,
+        resolve_teacher_checkpoint=resolve_teacher_checkpoint,
+        build_teacher_spec=build_teacher_spec,
+        build_persistent_fada_runtime=build_persistent_fada_runtime,
+        ensure_registries=ensure_registries,
+        create_env=create_env,
+        backend_adapter_cls=BackendAdapter,
+        load_sac_teacher_policy=load_sac_teacher_policy,
+    )
+    return run_fada_training_owner(
+        cfg,
+        teacher_checkpoint=teacher_checkpoint,
+        create_env_fn=create_env_fn,
+        env_cfg_override_fn=env_cfg_override_fn,
+        dependencies=dependencies,
+    )
+
+
 @hydra.main(config_path="../conf/distill", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     """Assemble offline, collection, or iterative online DAgger distillation."""
+
+    if bool(OmegaConf.select(cfg, "training.fada.enabled", default=False)):
+        print(_format_cli_result(run_fada_training(cfg)))
+        return
 
     if bool(OmegaConf.select(cfg, "training.workflow.enabled", default=False)):
         print(_format_cli_result(run_single_entry_workflow(cfg)))

@@ -1,0 +1,190 @@
+{
+  "title": "06 FADA Planner–IDM Design Inspector",
+  "subtitle": "Oracle Training 到 Planner–IDM Training：选择父设计点，在固定训练主链中检查其完整细节",
+  "layout": "design_transaction_inspector",
+  "defaultZoom": 0.8,
+  "footerText": "正式路径同时使用 realized causal windows、same-state scenario-Oracle shadow pairs 与 20 个 intermediate walking Oracle checkpoints。",
+  "cards": [
+    {
+      "designId": "FADA-DP-CMD-01",
+      "blockId": "CMD-COVERAGE",
+      "title": "Command Coverage",
+      "color": "#0f766e",
+      "responsibility": "设计完整、合法且可验收的 cmd 覆盖，使行走、站立和停止 rollout 同时具备训练 IDM 与 Planner 所需的数据支持。",
+      "highlightSteps": [
+        "define-command",
+        "sample-command",
+        "source-rollout",
+        "oracle-relabel",
+        "extract-evidence",
+        "idm-distill",
+        "planner-distill"
+      ],
+      "details": [
+        {
+          "heading": "覆盖目标",
+          "text": "每轮 optimal/current-policy 数据按 walk 50%、static stand 25%、walk-to-stand 25% 分配；static stand 内部再按 exact cold-start 50%、steady-state 50% 分配。"
+        },
+        {
+          "heading": "Command 维度",
+          "text": "G1WalkFlat 使用完整 3-D command [vx, vy, yaw]；G1StandStill 的 static stand 与 G1WalkFlat 停止后的 future command 固定为 [0, 0, 0]。"
+        },
+        {
+          "heading": "环境归属",
+          "text": "static stand 必须从专用 G1StandStill owner 环境采集，以继承站立 reset 与初始状态分布；walk 和 walk-to-stand 留在 G1WalkFlat，不能用 walking env 的零命令替代静态站立数据。"
+        },
+        {
+          "heading": "Exact Cold Start",
+          "text": "cold-start Planner 输入必须是 reset observation 重复 H=30 次、全零 action history 与零 command；其 K=6 causal targets 从 reset 时刻开始，禁止用第 H 步后的 steady window 替代。"
+        },
+        {
+          "heading": "行走命令",
+          "text": "walk 保留原有 active-command 分布；walk-to-stand 当前以 [0.4, 0, 0] 行走至少 H=30 步，再原子切换为零命令。"
+        },
+        {
+          "heading": "Oracle 权限",
+          "text": "walking Oracle 负责行走阶段；standing Oracle 负责 static stand 和 walk-to-stand 切换后，禁止用 walking Oracle 静默代替站立标签。"
+        },
+        {
+          "heading": "时间变化覆盖",
+          "text": "walk-to-stand 的 H-step history 必须保留 active-command 状态，anchor 与完整 K=6 future 必须保持零命令；跨切换 future window 会被拒绝。"
+        },
+        {
+          "heading": "中间 Oracle 边界",
+          "text": "20 个 intermediate Oracle 仍只扩展 walking IDM support，合计保持 optimal/current-policy 总预算的 2 倍，不承担 standing Planner 标签。"
+        },
+        {
+          "heading": "下游一致性",
+          "text": "artifact 每行记录 command scenario、planner eligibility 与 cold-start identity；parent learner 在 replay 前校验身份，并禁止通过 command 反推缺失 provenance。"
+        }
+      ]
+    },
+    {
+      "designId": "FADA-DP-PLAN-01",
+      "blockId": "PLANNER-INTERFACE",
+      "title": "Planner Interface",
+      "color": "#0891b2",
+      "responsibility": "把完整 task command 与最近 proprioception history 转换成可由 IDM 实现的短期 proprioceptive intent。",
+      "highlightSteps": ["extract-evidence", "planner-distill"],
+      "details": [
+        {"heading": "输入", "text": "Planner 输入 O_t^H 与 c_t；论文主实验固定 history length H=30，部署输入不包含 privileged simulator state。"},
+        {"heading": "Token 构造", "text": "每个 history token 由 observation embedding、broadcast command embedding 与 positional encoding 相加得到。"},
+        {"heading": "Encoder", "text": "Planner 使用 3-layer、4-head、hidden size 128 的 Transformer encoder。"},
+        {"heading": "Residual Future", "text": "Planner head 输出 K=6 个 future observation residual，并相对最新 observation 重建绝对 future proprioception。"},
+        {"heading": "Actionable Intent", "text": "Planner future 不直接回归 oracle observation trajectory；它通过固定 IDM 的 first-action loss 学成 action-grounded future。"}
+        ,{"heading": "Scenario Replay", "text": "Planner batch 只采样 planner-eligible rows，并固定保持 walk/static stand/walk-to-stand=50/25/25；static share 内 cold/steady=50/50。"}
+      ]
+    },
+    {
+      "designId": "FADA-DP-IDM-01",
+      "blockId": "IDM-INTERFACE",
+      "title": "IDM Interface",
+      "color": "#7c3aed",
+      "responsibility": "依据最近 execution history 与给定 future proprioception，输出并行 K-step action chunk。",
+      "highlightSteps": ["extract-evidence", "idm-distill", "planner-distill"],
+      "details": [
+        {"heading": "输入", "text": "IDM 输入 O_t^H、A_t^H 与 Y_t^K；observation history 和 executed-action history 都是 H=30。"},
+        {"heading": "History Encoder", "text": "每个 history token 相加 observation embedding、executed-action embedding 与 positional encoding，再进入 3-layer、4-head、hidden-128 encoder。"},
+        {"heading": "Future Tokens", "text": "K=6 个 future observations 分别 embedding 并加入 future positional encoding。"},
+        {"heading": "Non-causal Decoder", "text": "2-layer Transformer decoder 不使用 causal mask；future tokens 彼此完整 self-attention，并 cross-attend 全部 encoded history。"},
+        {"heading": "Action Chunk", "text": "Action head 在每个 decoded future token 上并行输出 action，形成 K-step chunk。"}
+      ]
+    },
+    {
+      "designId": "FADA-DP-IDM-02",
+      "blockId": "CAUSAL-IDM-SUPERVISION",
+      "title": "Causal IDM Supervision",
+      "color": "#6d28d9",
+      "responsibility": "只用物理上因果匹配的 future/action window 学习 inverse dynamics，禁止把 student future 与 oracle action 任意拼接。",
+      "highlightSteps": ["source-rollout", "oracle-relabel", "extract-evidence", "idm-distill"],
+      "details": [
+        {"heading": "Trajectory Pair", "text": "trajectory-source batch 使用同一 rollout segment 的 realized pair (Y_traj^K, U_traj^K)。"},
+        {"heading": "Scenario-Oracle Shadow", "text": "student visited state 必须恢复完整 simulator snapshot，并在同一 command 下滚动当前场景 authoritative Oracle K=6 步，形成额外 causal pair。"},
+        {"heading": "禁止错误标签", "text": "student rollout 的 IDM target 是实际 executed action，不一定是 privileged oracle action；oracle relabel 只属于 Planner 监督。"},
+        {"heading": "First-action Loss", "text": "Eq. 4.2 只比较 predicted chunk 与 matched executed chunk 的第一项，以对齐 receding-horizon 执行。"},
+        {"heading": "覆盖扩展", "text": "论文 source data 必须额外使用 20 个 intermediate Oracle checkpoints，suboptimal data budget 为 optimal data 的 2 倍；这些 rows 标记 planner-eligible=false，只扩展 IDM dynamics coverage。"}
+      ]
+    },
+    {
+      "designId": "FADA-DP-PLAN-02",
+      "blockId": "ACTIONABLE-PLANNER-SUPERVISION",
+      "title": "Actionable Planner Supervision",
+      "color": "#0369a1",
+      "responsibility": "通过固定 IDM 将 Planner future 转成动作，并用 visited state 上的 oracle first action 训练 Planner。",
+      "highlightSteps": ["source-rollout", "oracle-relabel", "planner-distill"],
+      "details": [
+        {"heading": "Visited-state Relabel", "text": "在 rollout action 执行前保存完整 simulator snapshot，并在同一 visited state 与 command 滚动当前场景 authoritative Oracle K=6 步。"},
+        {"heading": "Oracle Target", "text": "Oracle-shadow chunk 的第一项 a_t* 是 Eq. 4.3 的 Planner label，完整 shadow pair 同时进入 IDM causal supervision。"},
+        {"heading": "Stop-gradient IDM", "text": "Planner pass 固定当前 IDM 权重，但保留从 IDM output 到 Planner future 的梯度路径。"},
+        {"heading": "Action Loss", "text": "只比较 IDM(Planner future) 的 first action 与 oracle a_t*，不要求 Planner future 等于 oracle future。"},
+        {"heading": "Separate Passes", "text": "论文主训练每轮交替执行 teacher-forced IDM pass 与 fixed-IDM Planner pass；两者从不同 admissible replay views 采样。"},
+        {"heading": "Quality Split", "text": "checkpoint 必须分别报告三个 scenario 的 Planner-IDM Oracle-action MSE，并将 static cold-start 与 steady-state 分开，禁止只用全局均值验收。"}
+      ]
+    },
+    {
+      "designId": "FADA-DP-EXEC-01",
+      "blockId": "RECEDING-HORIZON",
+      "title": "Receding-Horizon Execution",
+      "color": "#475569",
+      "responsibility": "K-step 预测只执行第一项，然后更新 history 并重新查询 Planner 与 IDM。",
+      "highlightSteps": ["idm-distill", "planner-distill"],
+      "details": [
+        {"heading": "完整输出", "text": "Planner 始终输出 K-step future，IDM 始终输出 K-step action chunk。"},
+        {"heading": "唯一执行项", "text": "低层控制器只接收 Pi_1(U_hat_t^K)=a_hat_t，其余 action chunk 不直接执行。"},
+        {"heading": "History 更新", "text": "执行第一项后，以新 observation 与已执行 action 更新 O_t^H、A_t^H。"},
+        {"heading": "重新规划", "text": "每个控制 timestep 都重新查询 Planner 与 IDM，训练的 first-action loss 与该部署接口一致。"}
+      ]
+    }
+  ],
+  "transaction": {
+    "phaseTitles": {
+      "pre": "Command 设计",
+      "collection": "Oracle 证据",
+      "update": "DAgger 蒸馏"
+    },
+    "steps": [
+      {
+        "id": "define-command",
+        "label": "定义 cmd 空间",
+        "detail": "确定任务维度、合法范围、分辨率与组合约束",
+        "phase": "pre"
+      },
+      {
+        "id": "sample-command",
+        "label": "生成 cmd 序列",
+        "detail": "按分布采样静态 command 与时间变化序列",
+        "phase": "pre"
+      },
+      {
+        "id": "source-rollout",
+        "label": "当前 source policy rollout",
+        "detail": "static stand 路由到 G1StandStill，其余场景路由到 G1WalkFlat；iteration 0 执行场景 Oracle，后续执行 Planner-IDM；20 个 intermediate walking Oracle 另提供 2 倍 suboptimal rollout",
+        "phase": "collection"
+      },
+      {
+        "id": "oracle-relabel",
+        "label": "Same-state Oracle relabel",
+        "detail": "恢复同一 visited-state snapshot，滚动场景 authoritative Oracle K=6 步并取得 causal pair 与 first-action label",
+        "phase": "collection"
+      },
+      {
+        "id": "extract-evidence",
+        "label": "分流 causal / oracle target",
+        "detail": "IDM 保留 realized 与 Oracle-shadow causal pairs；Planner 保留场景 authoritative Oracle first-action label",
+        "phase": "collection"
+      },
+      {
+        "id": "idm-distill",
+        "label": "DAgger 训练 IDM",
+        "detail": "realized 与 valid scenario-Oracle shadow future 分别对齐各自 matched first action，共同训练 IDM",
+        "phase": "update"
+      },
+      {
+        "id": "planner-distill",
+        "label": "DAgger 训练 Planner",
+        "detail": "cmd 输入 Planner，预测 states 经冻结 IDM 转为 action，再对齐 Oracle action",
+        "phase": "update"
+      }
+    ]
+  }
+}
