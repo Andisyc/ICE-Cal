@@ -1,11 +1,12 @@
 ---
 contract_id: FADA-CONTEXT-PHASE1-METHOD-v005
-status: active
+status: superseded
 effective_date: 2026-08-11
 updated_date: 2026-08-11
 supersedes: FADA-CONTEXT-PHASE1-METHOD-v004
 prerequisite: FADA-CONTEXT-METHOD-v001
 scope: fixed-left-knee-0.9 privileged full-action teacher with forward-progress enforcement
+superseded_by: FADA-CONTEXT-PHASE1-METHOD-v006
 ---
 
 # FADA Context Phase-1 Full-Action Teacher v005 Contract

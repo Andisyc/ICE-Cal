@@ -1,11 +1,12 @@
 ---
 contract_id: FADA-CONTEXT-PHASE1-TRAIN-v005
-status: active
+status: superseded
 effective_date: 2026-08-11
 updated_date: 2026-08-11
 supersedes: FADA-CONTEXT-PHASE1-TRAIN-v004
 method_contract: FADA-CONTEXT-PHASE1-METHOD-v005
 scope: fixed-left-knee-0.9 full-action SAC with forward-progress failure termination
+superseded_by: FADA-CONTEXT-PHASE1-TRAIN-v006
 ---
 
 # FADA Context Phase-1 Full-Action Training v005 Contract

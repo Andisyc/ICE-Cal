@@ -8,7 +8,7 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher_full_action_v005"
+FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher_full_action_v006"
 FORMAL_EVALUATION_SEEDS = (101, 102, 103, 104, 105)
 FORMAL_EVALUATION_NUM_ENVS = 256
 FORMAL_EVALUATION_STEPS = 400
@@ -30,14 +30,16 @@ _TRAINING_PROFILE = {
         "checkpoints/oracles/G1WalkFlat/model_5000.pt"
     ),
     "algo.actor.priv_info_dim": 29,
+    "algo.actor.nominal_action_anchor_coef": 10.0,
+    "algo.actor_lr": 3e-5,
     "algo.num_envs": 2048,
     "algo.batch_size": 8192,
     "algo.replay_buffer_n": 512,
     "algo.updates_per_step": 8,
     "algo.learning_starts": 10,
     "algo.policy_frequency": 4,
-    "algo.max_iterations": 5000,
-    "algo.save_interval": 1000,
+    "algo.max_iterations": 1000,
+    "algo.save_interval": 100,
     "algo.use_symmetry": False,
     "algo.load_run": "-1",
     "algo.actor_warm_start_checkpoint": None,

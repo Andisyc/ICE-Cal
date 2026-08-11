@@ -96,6 +96,13 @@ def test_full_action_learner_uses_final_29d_tail_and_updates_complete_actor(tmp_
         for parameter in group["params"]
     }
     assert optimized == {id(parameter) for parameter in learner.actor.parameters()}
+    assert all(
+        not parameter.requires_grad for parameter in learner.nominal_anchor_actor.parameters()
+    )
+    assert learner._nominal_action_anchor_loss(obs, critic).item() == pytest.approx(0.0, abs=1e-12)
+    with torch.no_grad():
+        learner.actor.action_mean_head.bias.add_(0.1)
+    assert learner._nominal_action_anchor_loss(obs, critic).item() > 0.0
     before = {
         name: parameter.detach().clone() for name, parameter in learner.actor.named_parameters()
     }
@@ -114,6 +121,7 @@ def test_full_action_learner_uses_final_29d_tail_and_updates_complete_actor(tmp_
         }
     )
     assert torch.isfinite(torch.tensor(list(metrics.values()))).all()
+    assert metrics["nominal_action_anchor_mse"] >= 0.0
     assert any(
         not torch.equal(before[name], parameter)
         for name, parameter in learner.actor.named_parameters()

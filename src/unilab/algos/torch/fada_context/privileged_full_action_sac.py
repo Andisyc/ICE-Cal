@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 
 from unilab.algos.torch.fast_sac.learner import FastSACLearner, SACActor
@@ -180,6 +181,7 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
         use_tanh: bool = True,
         use_layer_norm: bool = True,
         actor_lr: float = 3e-4,
+        nominal_action_anchor_coef: float = 1.0,
         weight_decay: float = 0.001,
         use_symmetry: bool = False,
         symmetry_augmentation: Any | None = None,
@@ -193,6 +195,12 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
                 f"motor-strength tail: obs_dim={obs_dim}, critic_obs_dim={critic_obs_dim}, "
                 f"priv_info_dim={priv_info_dim}."
             )
+        if not float(nominal_action_anchor_coef) > 0.0:
+            raise ValueError(
+                "Privileged full-action SAC requires nominal_action_anchor_coef > 0, "
+                f"got {nominal_action_anchor_coef}."
+            )
+        self.nominal_action_anchor_coef = float(nominal_action_anchor_coef)
         super().__init__(
             obs_dim=obs_dim,
             critic_obs_dim=critic_obs_dim,
@@ -224,6 +232,24 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
             device=device,
             nominal_initialization_checkpoint=nominal_initialization_checkpoint,
         )
+        self.nominal_anchor_actor = SACActor(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            hidden_dim=actor_hidden_dim,
+            log_std_max=log_std_max,
+            log_std_min=log_std_min,
+            use_tanh=use_tanh,
+            use_layer_norm=use_layer_norm,
+            device=device,
+        )
+        nominal_checkpoint = torch.load(
+            Path(nominal_initialization_checkpoint).expanduser().resolve(),
+            map_location=device,
+            weights_only=True,
+        )
+        self.nominal_anchor_actor.load_state_dict(nominal_checkpoint["actor"], strict=True)
+        self.nominal_anchor_actor.eval()
+        self.nominal_anchor_actor.requires_grad_(False)
         fused = isinstance(device, str) and device.startswith("cuda")
         self.actor_optimizer = optim.AdamW(
             self.actor.parameters(),
@@ -265,6 +291,43 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
             self._strength(actor_obs, critic_obs, "actor update"),
         )
 
+    def _nominal_action_anchor_loss(
+        self,
+        actor_obs: torch.Tensor,
+        critic_obs: torch.Tensor,
+    ) -> torch.Tensor:
+        actor = cast(PrivilegedFullActionSACActor, self.actor)
+        teacher_action, _mean, _log_std = actor(
+            actor_obs,
+            self._strength(actor_obs, critic_obs, "nominal action anchor"),
+        )
+        with torch.no_grad():
+            nominal_action = self.nominal_anchor_actor.explore(
+                actor_obs,
+                deterministic=True,
+            )
+        return F.mse_loss(teacher_action, nominal_action)
+
+    def _actor_loss_tensors(
+        self,
+        obs: torch.Tensor,
+        critic_obs: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        sac_loss, policy_entropy, action_std = super()._actor_loss_tensors(obs, critic_obs)
+        anchor_loss = self._nominal_action_anchor_loss(obs, critic_obs)
+        return (
+            sac_loss + self.nominal_action_anchor_coef * anchor_loss,
+            policy_entropy,
+            action_std,
+        )
+
+    def update_actor(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+        metrics = super().update_actor(batch)
+        with torch.no_grad():
+            anchor_loss = self._nominal_action_anchor_loss(batch["obs"], batch["critic"])
+        metrics["nominal_action_anchor_mse"] = float(anchor_loss.detach().cpu())
+        return metrics
+
     def get_state_dict(self) -> dict[str, Any]:
         state = super().get_state_dict()
         actor = cast(PrivilegedFullActionSACActor, self.actor)
@@ -275,6 +338,7 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
             "obs_dim": actor.obs_dim,
             "priv_info_dim": actor.priv_info_dim,
             "action_dim": actor.action_dim,
+            "nominal_action_anchor_coef": self.nominal_action_anchor_coef,
         }
         return state
 
@@ -288,6 +352,7 @@ class PrivilegedFullActionSACLearner(FastSACLearner):
             "obs_dim": actor.obs_dim,
             "priv_info_dim": actor.priv_info_dim,
             "action_dim": actor.action_dim,
+            "nominal_action_anchor_coef": self.nominal_action_anchor_coef,
         }
         for key, value in expected.items():
             if metadata.get(key) != value:
@@ -329,6 +394,9 @@ class PrivilegedFullActionSACRuntime(OffPolicyRuntime):
             ),
             "nominal_initialization_checkpoint": str(
                 self.actor_cfg["nominal_initialization_checkpoint"]
+            ),
+            "nominal_action_anchor_coef": float(
+                self.actor_cfg.get("nominal_action_anchor_coef", 1.0)
             ),
         }
 

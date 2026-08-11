@@ -59,6 +59,10 @@ def test_full_action_formal_config_is_fixed_left_knee_only() -> None:
     result = validate_full_action_formal_training_config(cfg)
     assert result["formal_profile_match"] is True
     assert cfg.algo.runtime_impl == "privileged_full_action_sac"
+    assert cfg.algo.actor.nominal_action_anchor_coef == 10.0
+    assert float(cfg.algo.actor_lr) == 3e-5
+    assert cfg.algo.max_iterations == 1000
+    assert cfg.algo.save_interval == 100
     assert list(cfg.env.domain_rand.actuator_strength.multipliers).count(0.9) == 1
     assert cfg.env.domain_rand.actuator_strength.multipliers[3] == 0.9
     assert cfg.env.forward_progress_termination.enabled is True

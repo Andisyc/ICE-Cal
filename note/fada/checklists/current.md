@@ -127,3 +127,15 @@ policy quality is rejected. Training completion must not be presented as walking
 | Remote CUDA preflight matches v005 formal profile | composition root | S3 / preflight | passed | `preflight_cuda.json`, full action, no residual fusion, collector not started |
 | v005 formal full-action training completes | UniLab runner | S4 / training | passed | `5000/5000`, `10,262,528` env steps, final checkpoint SHA recorded |
 | v005 teacher outperforms original policy under the same fixed-0.9 physics | paired evaluator | S4 / quality | failed | teacher 50 steps/`0.0282 m`/100% failure vs baseline 400 steps/`2.5806 m`/0% failure |
+
+## Context Phase-1 v006 behavior-anchored teacher
+
+| Acceptance | Owner | Tier / kind | Status | Evidence |
+|---|---|---|---|---|
+| Teacher still emits one complete 29D action with no inference residual fusion | full-action actor | S1 / semantic | passed | actor contract test |
+| Frozen nominal actor anchors teacher actions and receives no gradients | full-action learner | S1 / gradient | passed | zero/perturbed anchor loss and optimizer ownership tests |
+| Formal profile fixes anchor `10.0`, actor LR `3e-5`, 100-step saves, and 1000-step budget | composition root | S2 / contract | passed | Hydra formal-profile test |
+| Local MuJoCo actor update remains finite | training entrypoint | S3 / live sentinel | passed | focused owner suite |
+| Remote CUDA no-training preflight matches v006 | composition root | S3 / preflight | passed | dimensions `(98,130,29,29)`, frozen anchor, collector not started |
+| First v006 checkpoint preserves walking under fixed left-knee `0.9` | checkpoint discriminator | S4 / quality | passed | model 100: 60/60 survival, `0.3479 m` progress |
+| A v006 checkpoint passes the unchanged paired quality gate | paired evaluator | S4 / quality | failed | model 100/500 both worsened maximum lateral and yaw drift |

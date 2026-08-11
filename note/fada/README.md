@@ -12,16 +12,14 @@ Current Context method authority: `FADA-CONTEXT-METHOD-v001`. It fixes latent re
 `z_repaired = z + delta_z`, keeps Tracker Encoder and Decoder frozen during Context distillation,
 and requires the privileged teacher to output a complete 29D action.
 
-Current implementation status: v005 fixed-left-knee-0.9 privileged full-action teacher retry
-completed under `FADA-CONTEXT-PHASE1-METHOD-v005` and `FADA-CONTEXT-PHASE1-TRAIN-v005`, but failed
-formal paired quality. It retained the
-complete 29D action teacher and adds a default-off forward-progress failure termination to reject
-the stationary shortcut. Threshold calibration, local/remote tests, a real MuJoCo discriminator,
-and CUDA no-training preflight passed, but the trained policy reached only `0.0282 m` and terminated
-at step 50 in every formal evaluation row. Context implementation remains blocked. The v002/v003
-residual routes and v004/v005 full-action checkpoints are retained as failed evidence.
+Current implementation status: v005 collapsed before its first saved checkpoint. Active v006 added
+a frozen original-policy behavior anchor, restored full-horizon walking, and improved forward speed,
+but failed formal paired quality because lateral displacement and yaw drift worsened. Its best
+candidate, model 100, advanced `2.8192 m` with no falls but reached `0.1807 m` maximum lateral error
+and `0.2673 rad` maximum yaw error. Context implementation remains blocked. Earlier residual routes
+and v004/v005 full-action checkpoints remain failed evidence.
 
 Phase-1 execution continues to use UniLab `DoubleBufferOffPolicyRunner` with synchronized collector
-ticks and shared replay. v005 uses a privileged full-action SAC learner; v002/v003 residual learners
-are rejected historical evidence. The completed Planner-IDM prerequisite uses `persistent_async`;
+ticks and shared replay. v006 uses a behavior-anchored privileged full-action SAC learner; v002/v003
+residual learners are rejected historical evidence. The completed Planner-IDM prerequisite uses `persistent_async`;
 the two execution routes must not be conflated.

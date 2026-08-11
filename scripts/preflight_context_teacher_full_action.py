@@ -81,6 +81,13 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
             )
         if actor.nominal_initialization_sha256 != FORMAL_NOMINAL_CHECKPOINT_SHA256:
             raise ValueError("Nominal initialization checkpoint SHA-256 mismatch")
+        if runner.learner.nominal_action_anchor_coef != 10.0:
+            raise ValueError("Nominal action anchor coefficient drifted")
+        if any(
+            parameter.requires_grad
+            for parameter in runner.learner.nominal_anchor_actor.parameters()
+        ):
+            raise ValueError("Nominal action anchor actor must remain frozen")
         optimized = {
             id(parameter)
             for group in runner.learner.actor_optimizer.param_groups
@@ -113,6 +120,8 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
                 "actor_parameter_count": sum(parameter.numel() for parameter in actor.parameters()),
                 "full_action_output": True,
                 "residual_fusion": False,
+                "nominal_action_anchor_coef": runner.learner.nominal_action_anchor_coef,
+                "nominal_anchor_frozen": True,
             },
         }
     finally:

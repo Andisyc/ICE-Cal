@@ -1,7 +1,7 @@
 ---
 status: active
 updated_date: 2026-08-11
-contracts: FADA-CONTEXT-PHASE1-METHOD-v005, FADA-CONTEXT-PHASE1-TRAIN-v005
+contracts: FADA-CONTEXT-PHASE1-METHOD-v006, FADA-CONTEXT-PHASE1-TRAIN-v006
 ---
 
 # Context Phase-1 Privileged Teacher Plan
@@ -72,3 +72,20 @@ the teacher survived exactly 50 steps in every evaluated row, reached only `0.02
 progress, and had `100%` failure rate. Checkpoints 1000 through 5000 all showed the same step-50
 failure in a bounded sweep, so the collapse occurred before the first saved checkpoint rather than
 as late-training regression. No further retry is authorized until the training mechanism changes.
+
+## v006 behavior-anchored retry
+
+21. Preserve complete-action inference, fixed left-knee `0.9`, v005 physics/rewards/termination, and
+    the unchanged paired quality gate.
+22. Add a separately frozen original actor as a training-only action anchor; optimize only the
+    privileged teacher with `L_SAC + 10 * MSE(a_teacher, stopgrad(a_nominal))`.
+23. Reduce actor learning rate to `3e-5`, save every 100 iterations, and cap the first run at 1000
+    iterations so collapse is screened before another full run completes.
+24. Pass owner tests, one-environment MuJoCo update, full regression, and remote CUDA no-training
+    preflight. Launch only after those gates; reject the run immediately if checkpoint 100 does not
+    preserve forward survival/progress.
+
+Steps 21-24 completed. Remote CUDA preflight passed and training completed `1000/1000`. The behavior
+anchor repaired stationary collapse: model 100 walked for the full formal horizon and advanced
+`2.8192 m`. Formal quality still failed because maximum lateral displacement and yaw drift were worse
+than the original actor. No v006 checkpoint is eligible for Context Encoder supervision.
