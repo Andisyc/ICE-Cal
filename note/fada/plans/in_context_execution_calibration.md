@@ -8,8 +8,8 @@ scope: differentiable fault-model trajectory training of Context with frozen Tra
 
 # In-Context Execution Calibration Plan
 
-This plan records the accepted design only. No Context, differentiable dynamics, or two-rollout
-runtime has been implemented or validated.
+The differentiable core, paired MuJoCo collector, persisted dataset contract, and no-update training
+preflight are implemented. Formal dynamics or Context optimization has not started.
 
 ## Accepted method
 
@@ -46,16 +46,17 @@ Context labels.
 
 ## Current stop condition
 
-Do not implement or train yet. The next engineering boundary is to specify the exact checkpoint,
-state/history/reference schema, paired rollout lifecycle, and numerical acceptance thresholds. The
-method is `note-confirmed`; feasibility and runtime behavior remain unconfirmed.
+The repository is at the training boundary. `planner_idm_v005.pt`, a fixed straight command, and
+fixed left-knee `0.9` are bound; the collector restores one healthy MuJoCo snapshot into a same-model
+fault environment so the initial physics, observation, command, and task carrier match while the
+fault model retains its own gain. The preflight persists and reloads data, builds disjoint Context and
+dynamics optimizers, and runs backward probes with zero optimizer steps. Do not begin formal dynamics
+or Context optimization until the user explicitly starts training.
 
 ## Open decisions
 
-1. Exact `E/D` checkpoint and latent dimension.
-2. Context history fields and probe length.
-3. Reference trajectory representation and temporal alignment.
-4. Dynamics model state, architecture, ensemble size, and rollout horizon.
-5. Tracking, safety, latent, smoothness, and uncertainty loss weights.
-6. Dataset perturbation coverage and model/real rollout update ratio.
-7. Conditions needed to rule out a constant repair.
+1. Formal dataset sample count and train/validation split.
+2. Held-out dynamics thresholds for one-step, short-horizon, and disagreement errors.
+3. Dataset perturbation coverage and model/real rollout update ratio.
+4. Safety-state projection or weights beyond full-observation tracking MSE.
+5. Conditions needed to rule out a constant repair.

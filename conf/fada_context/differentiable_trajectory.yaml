@@ -1,0 +1,31 @@
+checkpoint_path: ../planner_idm_v005.pt
+task_config: sac/g1_walk_flat/mujoco_left_knee_090
+device: cpu
+seed: 17
+
+collection:
+  num_envs: 2
+  num_samples: 2
+  reference_horizon: 3
+  max_reset_batches: 8
+  artifact_path: artifacts/fada_context/context_pretraining_dataset.pt
+
+context:
+  hidden_dim: 128
+  num_layers: 2
+  residual_scale: 0.1
+  learning_rate: 3.0e-4
+  latent_weight: 1.0e-3
+  action_smoothness_weight: 1.0e-3
+  uncertainty_weight: 1.0e-3
+
+dynamics:
+  hidden_dims: [256, 256]
+  ensemble_size: 5
+  learning_rate: 3.0e-4
+  rollout_horizon: 3
+  multi_step_weight: 1.0
+
+boundary:
+  optimizer_steps_allowed: false
+  training_started: false

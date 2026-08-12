@@ -40,6 +40,7 @@ htmlcov/
 # Project specific
 logs/
 runs/
+artifacts/fada_context/*.pt
 run_config.json
 run_summary.json
 .worktrees/

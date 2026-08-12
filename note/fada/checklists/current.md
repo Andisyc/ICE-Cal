@@ -100,11 +100,13 @@ policy quality is rejected. Training completion must not be presented as walking
 | Primary loss compares the differentiably predicted adapted trajectory with the healthy reference | Context trainer | note / supervision | note-confirmed | `FADA-CONTEXT-TRAIN-v002`, 2026-08-12 decision |
 | Actions and free/optimized `delta_z` are not treated as Context ground truth | supervision boundary | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
 | Zero `delta_z` is numerically identical to the original Planner-IDM path | Context integration | S1 / equivalence | passed | `test_zero_context_policy_is_exactly_the_nominal_planner_idm_path` |
-| Exact healthy `E/D` checkpoint, command, and left-knee `0.9` intervention are bound | experiment owner | S2/S3 / identity | pending | exact checkpoint and lifecycle not selected |
-| Fault transitions cover Decoder-reachable and current-Context visited states | dataset owner | S1/S3 / provenance | pending | dataset schema not implemented |
+| Exact healthy `E/D` checkpoint, command, and left-knee `0.9` intervention are bound | experiment owner | S2/S3 / identity | passed | v005 SHA-256, fixed `0.4` command, same-start cross-env MuJoCo preflight |
+| Fault transitions preserve continuous Decoder-reachable nominal-fault sequences | dataset owner | S1/S3 / provenance | passed | schema-v1 round trip, continuity validation, real MuJoCo preflight |
+| Fault transitions cover perturbed and current-Context visited states | dataset owner | S3 / provenance | pending | requires later data aggregation after Context exists |
 | Differentiable ensemble passes held-out one-step, short-horizon, and disagreement gates | dynamics owner | S1/S3 / model validity | pending | architecture and thresholds not selected |
-| Context consumes only causal deployable rollout fields and never `g` | Context input owner | S1/S2 / privilege boundary | pending | rollout schema not yet accepted |
+| Context consumes only causal deployable rollout fields and never `g` | Context input owner | S1/S2 / privilege boundary | passed | dataset exposes only observation/action history and command to Context |
 | Trajectory loss yields finite gradients while only Context parameters change | Context trainer | S1/S3 / gradient | passed | 2026-08-12 differentiable-core evidence; v005 checkpoint sentinel |
+| Pretraining boundary constructs disjoint optimizers and performs zero parameter updates | training setup | S1/S3 / ownership | passed | real paired MuJoCo preflight, `optimizer_steps=0`, all parameters unchanged |
 | Model-predicted Context improvement transfers to paired MuJoCo rollouts | Context evaluator | S3/S4 / transfer | pending | validation protocol not yet accepted |
 | Held-out and history-ablation tests rule out a constant `delta_z` | Context evaluator | S3/S4 / identifiability | pending | evaluation protocol not yet accepted |
 
