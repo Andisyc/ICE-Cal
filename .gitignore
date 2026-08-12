@@ -41,6 +41,7 @@ htmlcov/
 logs/
 runs/
 artifacts/fada_context/*.pt
+artifacts/fada_context/run_*/
 run_config.json
 run_summary.json
 .worktrees/

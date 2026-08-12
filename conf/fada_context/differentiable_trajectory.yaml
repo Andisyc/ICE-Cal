@@ -1,14 +1,14 @@
 checkpoint_path: ../planner_idm_v005.pt
 task_config: sac/g1_walk_flat/mujoco_left_knee_090
-device: cpu
+device: cuda:0
 seed: 17
 
 collection:
-  num_envs: 2
-  num_samples: 2
-  reference_horizon: 3
-  max_reset_batches: 8
-  artifact_path: artifacts/fada_context/context_pretraining_dataset.pt
+  num_envs: 64
+  num_samples: 512
+  reference_horizon: 6
+  max_reset_batches: 64
+  artifact_path: artifacts/fada_context/context_training_dataset.pt
 
 context:
   hidden_dim: 128
@@ -26,6 +26,12 @@ dynamics:
   rollout_horizon: 3
   multi_step_weight: 1.0
 
-boundary:
-  optimizer_steps_allowed: false
-  training_started: false
+training:
+  batch_size: 64
+  validation_fraction: 0.2
+  dynamics_steps: 10000
+  context_steps: 10000
+  log_interval: 25
+  checkpoint_interval: 500
+  gradient_clip_norm: 1.0
+  output_dir: artifacts/fada_context/run_001
