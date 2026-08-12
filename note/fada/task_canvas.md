@@ -12,7 +12,9 @@ Active Context authority: `FADA-CONTEXT-METHOD-v003` and `FADA-CONTEXT-TRAIN-v00
 direct-action-supervision route (`v002/v001`) and free-`delta_z` search-and-distill route are retained
 as superseded/rejected design history, not current training authority.
 
-Current cursor: method concept accepted on 2026-08-12; implementation and runtime validation have not
+Current cursor: method concept accepted on 2026-08-12; the pure-tensor Context, fault-dynamics
+ensemble, short differentiable rollout, and loss core are implemented and contract-tested. MuJoCo
+collection, model fitting, paired validation, persistence, and training orchestration have not
 started. The accepted causal roles are:
 
 - first faulty trajectory: causal, deployment-visible Context input;
@@ -31,6 +33,8 @@ Evidence classes:
 - `note-confirmed`: dual-rollout differentiable-fault-model Context design and parameter ownership;
 - `contract-confirmed`: source Planner-IDM contracts end before target adaptation;
 - `runtime-confirmed`: existing v005 checkpoint load only;
+- `runtime-confirmed`: v005 schema-2 checkpoint maps Planner future to `(B,6,98)`, IDM action chunk
+  to `(B,6,29)`, and a three-step Context sentinel sends finite nonzero gradients only to Context;
 - `unconfirmed`: left-knee-`0.9` degradation for the selected `E/D`, dynamics-model accuracy,
   trajectory-gradient utility, Context identifiability, model-to-MuJoCo transfer, and deployment.
 
