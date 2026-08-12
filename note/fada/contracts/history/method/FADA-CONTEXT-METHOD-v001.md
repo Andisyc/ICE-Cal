@@ -1,11 +1,12 @@
 ---
 contract_id: FADA-CONTEXT-METHOD-v001
-status: active
+status: superseded
 effective_date: 2026-08-11
 updated_date: 2026-08-11
 prerequisite: FADA-METHOD-v005
 scope: rollout-conditioned latent residual repair before a frozen Decoder
 implementation_status: design-only
+superseded_by: FADA-CONTEXT-METHOD-v002
 ---
 
 # FADA Context Method Contract

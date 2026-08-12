@@ -1,0 +1,247 @@
+{
+  "title": "10 FADA Context Calibration Design Inspector",
+  "subtitle": "历史：基于 tracking expert 动作监督的 Context 设计；已被 12 号可微轨迹方案取代",
+  "layout": "design_transaction_inspector",
+  "status": "superseded",
+  "supersededBy": "concept/12_fada_context_differentiable_trajectory.data.json",
+  "defaultZoom": 0.8,
+  "footerText": "唯一主链使用故障动力学中的轨迹跟踪专家生成纠正动作；选择设计点检查其责任、边界、证据和未决参数。",
+  "transaction": {
+    "phaseTitles": {
+      "pre": "异常与参考",
+      "collection": "故障专家证据",
+      "update": "Context 蒸馏与验收"
+    },
+    "steps": [
+      {
+        "id": "define-fault",
+        "label": "定义故障空间",
+        "detail": "规定执行器、强度、出现时刻、持续方式以及 train/validation/test 拆分",
+        "phase": "pre"
+      },
+      {
+        "id": "define-reference",
+        "label": "定义参考轨迹",
+        "detail": "把命令展开为可验收的位置、速度、横向、航向与安全参考",
+        "phase": "pre"
+      },
+      {
+        "id": "prove-degradation",
+        "label": "证明故障有效",
+        "detail": "同种子同初态比较正常物理与故障物理下的冻结原策略，先证明存在可修复退化",
+        "phase": "pre"
+      },
+      {
+        "id": "expert-correction",
+        "label": "故障专家纠正",
+        "detail": "轨迹跟踪专家在真实故障动力学中从 visited state 产生完整纠正动作",
+        "phase": "collection"
+      },
+      {
+        "id": "collect-history",
+        "label": "收集因果历史",
+        "detail": "只记录部署期可见的 observation、executed action、command 与时间信息，禁止泄漏 g",
+        "phase": "collection"
+      },
+      {
+        "id": "pair-direct-label",
+        "label": "配对直接监督标签",
+        "detail": "把部署可见的因果历史和同状态故障专家完整 29D action 配成监督样本",
+        "phase": "collection"
+      },
+      {
+        "id": "decoder-reachability",
+        "label": "验证 Decoder 可达性",
+        "detail": "优化自由 delta_z，确认冻结 Decoder 能表达专家要求的纠正动作，但不把该 latent 当作标签",
+        "phase": "update"
+      },
+      {
+        "id": "distill-context",
+        "label": "蒸馏 latent repair",
+        "detail": "冻结 Tracker Encoder 与 Decoder，仅训练 Context Encoder 输出 delta_z 并对齐专家完整动作",
+        "phase": "update"
+      },
+      {
+        "id": "deployment-proof",
+        "label": "无特权部署验收",
+        "detail": "Context 不接收 g，正式比较正常基线、fault baseline、tracking expert 上界与 Context policy",
+        "phase": "update"
+      }
+    ]
+  },
+  "cards": [
+    {
+      "designId": "FADA-CTX-DP-01",
+      "blockId": "FAULT-VALIDITY",
+      "title": "Fault Validity",
+      "color": "#b45309",
+      "responsibility": "先证明异常确实破坏冻结原策略且仍可恢复，禁止在无效异常上生成标签或训练 Context。",
+      "status": "human-accepted-design; runtime-unconfirmed",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Fault validity before label collection",
+      "implementationOwner": "fault owner and paired evaluator; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/task_canvas.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["define-fault", "prove-degradation", "decoder-reachability", "deployment-proof"],
+      "details": [
+        {"heading": "人类决定", "text": "固定左膝 0.9 已被现有扫描否证为有效退化；新设计不得把它直接当作已接受异常。"},
+        {"heading": "故障描述", "text": "每个样本显式记录执行器索引、强度、起始时刻、持续方式和故障族身份；训练、验证、测试故障集合分离。"},
+        {"heading": "最小对照", "text": "同种子、同初始状态、同 command 比较正常物理与故障物理下的同一冻结原策略。"},
+        {"heading": "进入门槛", "text": "故障 baseline 必须在横向、航向、速度或稳定性中产生预先定义且可重复的退化，同时保留专家可恢复空间。"},
+        {"heading": "禁止捷径", "text": "退化未成立时停止；不得用 Context 优于一个未受损 baseline 的结果声称完成异常修复。"},
+        {"heading": "当前证据", "text": "runtime-confirmed：0.9、0.8、0.7 左膝 Kp/Kd multiplier 未使原 walking policy 稳定退化；新故障空间仍待选择。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-02",
+      "blockId": "REFERENCE-CONTRACT",
+      "title": "Reference Trajectory",
+      "color": "#0f766e",
+      "responsibility": "把 precise control 变成独立于训练目标的轨迹对象、容差走廊和安全约束。",
+      "status": "human-accepted-role; thresholds-open",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Shared reference trajectory and tolerance contract",
+      "implementationOwner": "reference/evaluation owner; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/plans/in_context_execution_calibration.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["define-reference", "prove-degradation", "expert-correction", "decoder-reachability", "deployment-proof"],
+      "details": [
+        {"heading": "参考来源", "text": "command 和正常条件下的合格 rollout 用于定义参考状态轨迹；正常动力学 action 不作为故障修复标签。"},
+        {"heading": "参考分量", "text": "至少包含前向进度或速度、横向位置、航向和时间索引；姿态安全与存活作为并列约束。"},
+        {"heading": "容差走廊", "text": "验收使用规定时间或距离内的横向与航向容差，不要求双足机器人沿绝对数学直线。"},
+        {"heading": "同一对象", "text": "故障专家和 Context policy 必须跟踪同一 reference identity，禁止训练和验收各用一套目标。"},
+        {"heading": "未决参数", "text": "轨迹时域、位置/速度参考形式、横向容差、航向容差和安全阈值仍由人类确认。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-03",
+      "blockId": "FAULT-TRACKING-EXPERT",
+      "title": "Fault Tracking Expert",
+      "color": "#7c3aed",
+      "responsibility": "在故障动力学内产生真正能把偏离状态拉回参考轨迹的完整纠正动作。",
+      "status": "human-accepted-interface; provider-open",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Same-state fault tracking expert",
+      "implementationOwner": "offline tracking solver; provider open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["define-reference", "expert-correction", "pair-direct-label", "decoder-reachability"],
+      "details": [
+        {"heading": "纠正路线", "text": "纠正标签由故障条件下的轨迹跟踪专家产生。"},
+        {"heading": "公共接口", "text": "FaultExpert(state, reference, privileged_fault) -> complete 29D action。"},
+        {"heading": "状态覆盖", "text": "专家数据既覆盖参考轨迹附近状态，也覆盖故障 baseline 和当前 student 造成的偏离及恢复状态。"},
+        {"heading": "因果配对", "text": "标签必须来自与输入 state 完全相同的故障 simulator snapshot；不得拼接正常轨迹 action。"},
+        {"heading": "实现未决", "text": "MPC、轨迹优化或其他显式跟踪控制器属于 provider 选择；接口与验收先保持不变。"},
+        {"heading": "停止条件", "text": "若专家自身不能在选定故障与参考上通过轨迹门槛，则停止，不生成 Context 监督数据。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-04",
+      "blockId": "DIRECT-ACTION-SUPERVISION",
+      "title": "Direct Action Supervision",
+      "color": "#6d28d9",
+      "responsibility": "把同状态故障专家的完整纠正动作直接作为 Context 主监督，不训练中间教师网络。",
+      "status": "human-accepted-design; implementation-unconfirmed",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Direct complete-action supervision without a teacher model",
+      "implementationOwner": "Context dataset and trainer; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v001.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["expert-correction", "collect-history", "pair-direct-label", "decoder-reachability", "distill-context"],
+      "details": [
+        {"heading": "人类决定", "text": "不训练特权教师；轨迹跟踪专家直接生成同状态完整 29D corrective action 标签。"},
+        {"heading": "监督样本", "text": "每行绑定 causal history H、current input x、reference identity、审计 provenance 与完整 action a_expert。"},
+        {"heading": "主损失", "text": "L_action = distance(FrozenDecoder(FrozenTrackerEncoder(x) + ContextEncoder(H)), a_expert)。"},
+        {"heading": "目标分工", "text": "完整 action 是主标签；未来状态/轨迹只能作为可选辅助；delta_z 不作为唯一语义 ground truth。"},
+        {"heading": "支持扩展", "text": "监督数据必须覆盖 baseline 和 Context-policy visited states，并在同一故障 snapshot 上重新查询专家。"},
+        {"heading": "当前状态", "text": "note-confirmed；tracking expert provider、数据 schema、loss 细节与运行证据仍未确认。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-05",
+      "blockId": "CAUSAL-HISTORY",
+      "title": "Causal Rollout History",
+      "color": "#0369a1",
+      "responsibility": "只用部署时真实可观测的过去执行结果，为 Context 提供识别修复所需的因果证据。",
+      "status": "accepted-privilege-boundary; schema-open",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Causal deployable rollout history",
+      "implementationOwner": "Context dataset schema; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v001.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["collect-history", "distill-context", "deployment-proof"],
+      "details": [
+        {"heading": "允许输入", "text": "候选历史包含 observation、实际 executed action、command、相对时间和 episode/reset 边界。"},
+        {"heading": "禁止输入", "text": "Context 路径不得读取 motor-strength g、simulator privileged state、专家内部状态或未来观测。"},
+        {"heading": "时间顺序", "text": "窗口只含动作执行后真实观测到的结果；故障前、故障后和恢复期必须有明确位置编码。"},
+        {"heading": "可辨识性", "text": "相同可见 history 若要求互相冲突的修复动作，说明当前观测窗口不足，不能靠扩大网络掩盖。"},
+        {"heading": "未决参数", "text": "history 长度、采样频率、warm-up 生命周期和跨 reset 处理仍待独立设计。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-06",
+      "blockId": "LATENT-REPAIR",
+      "title": "Latent Repair Interface",
+      "color": "#0891b2",
+      "responsibility": "保持 Planner–IDM/Tracker 已有动作接口，只在冻结 Decoder 前加入可界定的 latent residual。",
+      "status": "human-accepted-interface; reachability-unconfirmed",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Frozen latent-repair interface and Decoder reachability",
+      "implementationOwner": "Context Encoder and frozen Tracker/Decoder; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v001.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["decoder-reachability", "distill-context", "deployment-proof"],
+      "details": [
+        {"heading": "固定方程", "text": "z = FrozenTrackerEncoder(input)；delta_z = ContextEncoder(history)；action = FrozenDecoder(z + delta_z)。"},
+        {"heading": "训练所有权", "text": "Context 阶段只有 Context Encoder 参数可更新；Tracker Encoder 和 Decoder 均冻结。"},
+        {"heading": "主监督", "text": "L_action = distance(FrozenDecoder(z + delta_z), a_expert)，直接对齐同状态故障专家完整动作。"},
+        {"heading": "辅助目标", "text": "未来状态预测只能作为可选动力学辅助，不得替代动作主监督或成为部署输出。"},
+        {"heading": "可达性门槛", "text": "训练前优化自由 delta_z 检查 Decoder 能否表达专家动作；优化结果仅作诊断，不作监督标签。"},
+        {"heading": "未决边界", "text": "delta_z 的尺度、范数约束、注入位置和多步一致性仍需在 latent shape 与 Decoder 敏感度检查后确认。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-07",
+      "blockId": "PRIVILEGE-LIFECYCLE",
+      "title": "Privilege Lifecycle",
+      "color": "#475569",
+      "responsibility": "把 g 和专家访问严格限制在 source training，确保部署证明不依赖隐藏的特权通路。",
+      "status": "human-accepted-boundary; implementation-unconfirmed",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Privilege lifecycle and deployment exclusion",
+      "implementationOwner": "dataset schema, module signatures, deployment loader; exact modules open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["expert-correction", "collect-history", "pair-direct-label", "distill-context", "deployment-proof"],
+      "details": [
+        {"heading": "专家阶段", "text": "轨迹跟踪专家可读取完整故障参数和 simulator state，以生成纠正证据。"},
+        {"heading": "标签阶段", "text": "轨迹跟踪专家可读取 g，但只用于离线同状态 action 标签生成和数据审计。"},
+        {"heading": "Context 阶段", "text": "Context Encoder 只能读取因果 rollout history；batch schema 必须使 privileged 字段不可达。"},
+        {"heading": "部署阶段", "text": "轨迹专家和 g 全部移除，冻结 Tracker、Context 和 Decoder 前向产生动作。"},
+        {"heading": "反泄漏检查", "text": "正式部署 gate 要从配置、batch、module forward signature 和 artifact 四层证明无 privileged 输入。"}
+      ]
+    },
+    {
+      "designId": "FADA-CTX-DP-08",
+      "blockId": "PAIRED-QUALITY-GATE",
+      "title": "Paired Quality Gate",
+      "color": "#9f1239",
+      "responsibility": "用训练目标之外的同条件配对测量控制质量，阻止完成训练或单项改善被误认为方法成功。",
+      "status": "accepted-gate-shape; thresholds-open",
+      "methodContract": "FADA-CONTEXT-METHOD-v002",
+      "contractAnchor": "Conjunctive paired quality gates",
+      "implementationOwner": "Context evaluator; exact module open",
+      "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v002.md", "note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v001.md"],
+      "evidenceRefs": ["note/fada/evidence/2026-08-11-context-direct-supervision-decision.md"],
+      "highlightSteps": ["prove-degradation", "expert-correction", "decoder-reachability", "deployment-proof"],
+      "details": [
+        {"heading": "三次比较", "text": "先验证 fault baseline 相对正常基线退化；再验证 tracking expert 能修复；最后验证无特权 Context 接近 expert 上界并优于 fault baseline。"},
+        {"heading": "配对条件", "text": "所有比较保持 seed、初始 simulator state、command、fault、reference 和 rollout horizon 一致。"},
+        {"heading": "合取门槛", "text": "前进/速度、横向、航向、生存和跌倒率分别设门槛并同时满足，禁止用全局标量相互补偿。"},
+        {"heading": "泛化拆分", "text": "已见故障、未见强度、未见执行器或时间变化故障分别报告，不用总体均值隐藏失败子集。"},
+        {"heading": "Context 上界", "text": "tracking expert 是离线能力上界而非部署依赖；若 expert 本身失败，Context 结果不进入解释。"},
+        {"heading": "当前阻塞", "text": "新故障有效性、tracking expert、Decoder reachability 和 Context deployment proof 均未产生运行证据。"}
+      ]
+    }
+  ]
+}

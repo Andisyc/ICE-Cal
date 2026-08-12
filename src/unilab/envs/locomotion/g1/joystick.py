@@ -339,6 +339,8 @@ class G1RewardConfig:
     stand_recovery_lin_vel_xy_threshold: float = 0.2
     stand_recovery_tilt_deg_threshold: float = 8.0
     close_feet_threshold: float = 0.15
+    straight_line_lateral_tolerance_m: float = 0.10
+    straight_line_yaw_tolerance_rad: float = 0.10
     stand_feet_x_target: float = 0.0
     stand_feet_y_width_target: float = 0.21
     stand_base_feet_center_x_target: float = 0.0
@@ -623,7 +625,12 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         reward_scales = getattr(getattr(env.cfg, "reward_config", None), "scales", {})
         needs_episode_frame = any(
             float(reward_scales.get(name, 0.0)) != 0.0
-            for name in ("penalty_lateral_displacement", "penalty_yaw_drift")
+            for name in (
+                "penalty_lateral_displacement",
+                "penalty_yaw_drift",
+                "penalty_lateral_corridor_violation",
+                "penalty_yaw_corridor_violation",
+            )
         ) or bool(getattr(getattr(env.cfg, "forward_progress_termination", None), "enabled", False))
         if needs_episode_frame:
             plan.info_updates["episode_start_base_pos"] = np.asarray(
@@ -748,6 +755,10 @@ class G1WalkEnv(G1BaseEnv):
             raise ValueError(
                 "forward_progress_termination.min_average_forward_speed must be non-negative"
             )
+        if cfg.reward_config.straight_line_lateral_tolerance_m <= 0.0:
+            raise ValueError("straight_line_lateral_tolerance_m must be positive")
+        if cfg.reward_config.straight_line_yaw_tolerance_rad <= 0.0:
+            raise ValueError("straight_line_yaw_tolerance_rad must be positive")
         backend = create_backend(
             backend_type,
             cfg.scene,
@@ -823,6 +834,8 @@ class G1WalkEnv(G1BaseEnv):
             "penalty_action_rate": rewards.action_rate,
             "penalty_lateral_displacement": self._reward_lateral_displacement,
             "penalty_yaw_drift": self._reward_yaw_drift,
+            "penalty_lateral_corridor_violation": self._reward_lateral_corridor_violation,
+            "penalty_yaw_corridor_violation": self._reward_yaw_corridor_violation,
             "base_height": rewards.base_height,
             "track_base_height_exp_smooth": rewards.track_base_height_exp_smooth,
             "pose": rewards.weighted_pose,
@@ -888,6 +901,23 @@ class G1WalkEnv(G1BaseEnv):
     def _reward_yaw_drift(self, ctx: RewardContext) -> np.ndarray:
         _, yaw_drift = self._episode_frame_errors(ctx.info)
         return np.asarray(np.square(yaw_drift), dtype=get_global_dtype())
+
+    @staticmethod
+    def _normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.ndarray:
+        excess = np.maximum(np.abs(error) - float(tolerance), 0.0)
+        return np.asarray(np.square(excess / float(tolerance)), dtype=get_global_dtype())
+
+    def _reward_lateral_corridor_violation(self, ctx: RewardContext) -> np.ndarray:
+        lateral, _ = self._episode_frame_errors(ctx.info)
+        return self._normalized_corridor_violation(
+            lateral, self._reward_cfg.straight_line_lateral_tolerance_m
+        )
+
+    def _reward_yaw_corridor_violation(self, ctx: RewardContext) -> np.ndarray:
+        _, yaw_drift = self._episode_frame_errors(ctx.info)
+        return self._normalized_corridor_violation(
+            yaw_drift, self._reward_cfg.straight_line_yaw_tolerance_rad
+        )
 
     def _forward_progress_failure(self, info: dict[str, Any]) -> np.ndarray:
         cfg = self._cfg.forward_progress_termination

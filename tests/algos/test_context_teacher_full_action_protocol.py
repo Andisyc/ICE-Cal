@@ -69,6 +69,10 @@ def test_full_action_formal_config_is_fixed_left_knee_only() -> None:
     assert cfg.env.forward_progress_termination.grace_steps == 50
     assert cfg.env.forward_progress_termination.min_command_forward_speed == 0.1
     assert cfg.env.forward_progress_termination.min_average_forward_speed == 0.2
+    assert cfg.reward.straight_line_lateral_tolerance_m == 0.10
+    assert cfg.reward.straight_line_yaw_tolerance_rad == 0.10
+    assert cfg.reward.scales.penalty_lateral_corridor_violation == -20.0
+    assert cfg.reward.scales.penalty_yaw_corridor_violation == -20.0
 
 
 def test_full_action_quality_gate_compares_only_same_condition_branches() -> None:

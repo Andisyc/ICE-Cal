@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_context_teacher_full_action_v006
+  - _self_
+
+reward:
+  straight_line_lateral_tolerance_m: 0.10
+  straight_line_yaw_tolerance_rad: 0.10
+  scales:
+    penalty_lateral_corridor_violation: -20.0
+    penalty_yaw_corridor_violation: -20.0

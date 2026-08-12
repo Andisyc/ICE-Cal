@@ -68,7 +68,7 @@ policy quality is rejected. Training completion must not be presented as walking
 | Formal v005 persistent-async training | formal UniLab run | S4 / training | passed | completed `8/8`, `1,572,864` samples; local checkpoint hash verified and strict-loaded |
 | v005 passes three-scenario, three-seed closed-loop acceptance | FADA playback | S4 / acceptance | pending | only after formal training |
 
-## Context Phase-1 privileged residual teacher
+## Historical Context Phase-1 privileged residual teacher
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
@@ -94,17 +94,21 @@ policy quality is rejected. Training completion must not be presented as walking
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
-| Context output is latent residual `delta_z`, fused exactly as `z_repaired = z + delta_z` before Decoder | Context method | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v001`, 2026-08-11 human decision |
-| Privileged teacher outputs a complete 29D action rather than an action residual | teacher method | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v001`, 2026-08-11 human decision |
-| Tracker Encoder, Decoder, and teacher are frozen; only Context Encoder trains | parameter ownership | note / gradient contract | note-confirmed | `FADA-CONTEXT-METHOD-v001`, 2026-08-11 human decision |
+| Context output is latent residual `delta_z`, fused exactly as `z_repaired = z + delta_z` before Decoder | Context method | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, differentiable-trajectory decision |
+| Fault probe trajectory is Context input; healthy same-command trajectory is the reference | rollout lifecycle | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
+| Tracker Encoder and Decoder are frozen; only Context Encoder trains | parameter ownership | note / gradient contract | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
+| Primary loss compares the differentiably predicted adapted trajectory with the healthy reference | Context trainer | note / supervision | note-confirmed | `FADA-CONTEXT-TRAIN-v002`, 2026-08-12 decision |
+| Actions and free/optimized `delta_z` are not treated as Context ground truth | supervision boundary | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
 | Zero `delta_z` is numerically identical to the original Tracker-Decoder path | Context integration | S1 / equivalence | pending | implementation not started |
-| Fixed-left-knee 0.9 measurably degrades the frozen nominal policy | intervention owner | S3 / intervention validity | failed | frozen nominal scan showed no degradation; human nevertheless accepted a teacher comparison retry |
-| Privileged full-action teacher passes paired trajectory-quality gates | teacher owner | S4 / quality | failed | v004 stationary shortcut; v005 step-50 termination collapse |
+| Exact healthy `E/D` checkpoint, command, and left-knee `0.9` intervention are bound | experiment owner | S2/S3 / identity | pending | exact checkpoint and lifecycle not selected |
+| Fault transitions cover Decoder-reachable and current-Context visited states | dataset owner | S1/S3 / provenance | pending | dataset schema not implemented |
+| Differentiable ensemble passes held-out one-step, short-horizon, and disagreement gates | dynamics owner | S1/S3 / model validity | pending | architecture and thresholds not selected |
 | Context consumes only causal deployable rollout fields and never `g` | Context input owner | S1/S2 / privilege boundary | pending | rollout schema not yet accepted |
-| Context student matches teacher actions with Tracker/Decoder weights unchanged | Context trainer | S1/S4 / distillation | pending | teacher prerequisite unavailable |
+| Trajectory loss yields finite gradients while only Context parameters change | Context trainer | S1/S3 / gradient | pending | implementation not started |
+| Model-predicted Context improvement transfers to paired MuJoCo rollouts | Context evaluator | S3/S4 / transfer | pending | validation protocol not yet accepted |
 | Held-out and history-ablation tests rule out a constant `delta_z` | Context evaluator | S3/S4 / identifiability | pending | evaluation protocol not yet accepted |
 
-## Context Phase-1 v004 full-action teacher
+## Historical Context Phase-1 v004 full-action teacher
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
@@ -117,7 +121,7 @@ policy quality is rejected. Training completion must not be presented as walking
 | v004 formal full-action training completes | UniLab runner | S4 / training | passed | completed `5000/5000`, `10,262,528` env steps; checkpoint SHA recorded |
 | v004 teacher outperforms original policy under the same fixed-0.9 physics | paired evaluator | S4 / quality | failed | lateral/yaw improved, but progress `-0.0256 m` and forward MAE `0.4027 m/s` |
 
-## Context Phase-1 v005 forward-progress teacher
+## Historical Context Phase-1 v005 forward-progress teacher
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
@@ -128,7 +132,7 @@ policy quality is rejected. Training completion must not be presented as walking
 | v005 formal full-action training completes | UniLab runner | S4 / training | passed | `5000/5000`, `10,262,528` env steps, final checkpoint SHA recorded |
 | v005 teacher outperforms original policy under the same fixed-0.9 physics | paired evaluator | S4 / quality | failed | teacher 50 steps/`0.0282 m`/100% failure vs baseline 400 steps/`2.5806 m`/0% failure |
 
-## Context Phase-1 v006 behavior-anchored teacher
+## Historical Context Phase-1 v006 behavior-anchored teacher
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|

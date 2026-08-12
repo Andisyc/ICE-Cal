@@ -8,18 +8,18 @@ Default recall order:
 4. `../architecture/concept/06_fada_design_detail_discussion.data.json`
 5. current plan/checklist only when continuing active work
 
-Current Context method authority: `FADA-CONTEXT-METHOD-v001`. It fixes latent repair as
-`z_repaired = z + delta_z`, keeps Tracker Encoder and Decoder frozen during Context distillation,
-and requires the privileged teacher to output a complete 29D action.
+Current Context method authority: `FADA-CONTEXT-METHOD-v003`, with design-only training authority
+`FADA-CONTEXT-TRAIN-v002`. Context remains `z_repaired = z + delta_z`; Tracker Encoder and Decoder
+stay frozen, and only Context Encoder trains. A first faulty rollout is Context input; a paired
+second trajectory is compared with the healthy reference through a learned differentiable fault
+dynamics ensemble. Actions and optimized `delta_z` are not Context labels.
 
-Current implementation status: v005 collapsed before its first saved checkpoint. Active v006 added
-a frozen original-policy behavior anchor, restored full-horizon walking, and improved forward speed,
-but failed formal paired quality because lateral displacement and yaw drift worsened. Its best
-candidate, model 100, advanced `2.8192 m` with no falls but reached `0.1807 m` maximum lateral error
-and `0.2673 rad` maximum yaw error. Context implementation remains blocked. Earlier residual routes
-and v004/v005 full-action checkpoints remain failed evidence.
+Current implementation status: design-only. Historical v006 restored full-horizon walking but failed
+formal paired quality because lateral displacement and yaw drift worsened. It remains negative
+evidence and is not a Context label source. Context implementation is blocked on an exact `E/D`
+checkpoint, paired probe/reference lifecycle, fault-transition schema, differentiable-model gates,
+trajectory loss, and model-to-MuJoCo validation protocol.
 
-Phase-1 execution continues to use UniLab `DoubleBufferOffPolicyRunner` with synchronized collector
-ticks and shared replay. v006 uses a behavior-anchored privileged full-action SAC learner; v002/v003
-residual learners are rejected historical evidence. The completed Planner-IDM prerequisite uses `persistent_async`;
-the two execution routes must not be conflated.
+The Phase-1 privileged-teacher runners and checkpoints are historical negative evidence and no
+longer define the active Context route. The completed Planner-IDM prerequisite continues to use
+`persistent_async`; no Context runtime owner has yet been accepted.

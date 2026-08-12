@@ -148,6 +148,20 @@
     }
 
     @media (max-width: 1040px) {
+      header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      h1 {
+        overflow-wrap: anywhere;
+      }
+
+      .toolbar {
+        flex-wrap: wrap;
+        white-space: normal;
+      }
+
       main {
         grid-template-columns: 1fr;
         height: auto;

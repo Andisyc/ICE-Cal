@@ -1,4 +1,4 @@
-"""Formal profile and paired quality gate for the v004 full-action teacher."""
+"""Formal profile and paired quality gate for the v007 full-action teacher."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher_full_action_v006"
+FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher_full_action_v007"
 FORMAL_EVALUATION_SEEDS = (101, 102, 103, 104, 105)
 FORMAL_EVALUATION_NUM_ENVS = 256
 FORMAL_EVALUATION_STEPS = 400
@@ -60,6 +60,10 @@ _TRAINING_PROFILE = {
     "env.forward_progress_termination.min_average_forward_speed": 0.2,
     "reward.scales.penalty_lateral_displacement": -20.0,
     "reward.scales.penalty_yaw_drift": -10.0,
+    "reward.straight_line_lateral_tolerance_m": 0.10,
+    "reward.straight_line_yaw_tolerance_rad": 0.10,
+    "reward.scales.penalty_lateral_corridor_violation": -20.0,
+    "reward.scales.penalty_yaw_corridor_violation": -20.0,
 }
 
 

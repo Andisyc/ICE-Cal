@@ -1,5 +1,8 @@
 {
-  "title": "09 In-Context Execution Calibration",
+  "title": "09 Historical In-Context Execution Calibration",
+  "subtitle": "Superseded privileged-teacher draft; current authority is 12 Differentiable-Trajectory Context and FADA-CONTEXT-METHOD-v003",
+  "status": "superseded",
+  "supersededBy": "concept/12_fada_context_differentiable_trajectory.data.json",
   "layout": "method_figure",
   "figureWidth": 2050,
   "figureHeight": 1540,

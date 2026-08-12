@@ -295,6 +295,15 @@ def test_trajectory_precision_rewards_use_episode_start_yaw_frame() -> None:
     )
 
 
+def test_trajectory_corridor_penalty_is_zero_inside_and_quadratic_outside() -> None:
+    error = np.asarray([-0.20, -0.10, 0.0, 0.15, 0.30], dtype=np.float32)
+    np.testing.assert_allclose(
+        G1WalkEnv._normalized_corridor_violation(error, 0.10),
+        np.asarray([1.0, 0.0, 0.0, 0.25, 4.0], dtype=np.float32),
+        atol=1e-6,
+    )
+
+
 def test_forward_progress_failure_uses_reset_yaw_and_exact_grace_boundary() -> None:
     from unilab.envs.locomotion.g1.joystick import compute_forward_progress_failure
 

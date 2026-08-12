@@ -1,6 +1,8 @@
 import fs from "node:fs";
+import path from "node:path";
 import rough from "./node_modules/roughjs/bundled/rough.esm.js";
 
+const repoRoot = path.resolve("../../../..");
 const html = fs.readFileSync("architecture_atlas.html", "utf8");
 const indexHtml = fs.readFileSync("../../index.html", "utf8");
 const runtimeAtlas = JSON.parse(
@@ -24,11 +26,21 @@ const fadaDesignDiscussion = JSON.parse(
 const fadaDistillationFigure = JSON.parse(
   fs.readFileSync("../../concept/07_fada_planner_idm_distillation.data.json", "utf8"),
 );
-const executionCalibrationFigure = JSON.parse(
-  fs.readFileSync("../../architecture/08_trajectory_conditioned_execution_alignment.data.json", "utf8"),
-);
 const contextTrackerCalibrationFigure = JSON.parse(
   fs.readFileSync("../../architecture/09_trajectory_conditioned_execution_alignment.data.json", "utf8"),
+);
+const contextCalibrationDesign = JSON.parse(
+  fs.readFileSync("../../concept/10_fada_context_calibration_design.data.json", "utf8"),
+);
+const contextSearchDistillationProposal = JSON.parse(
+  fs.readFileSync("../../concept/11_fada_context_search_distillation_proposal.data.json", "utf8"),
+);
+const contextDifferentiableTrajectory = JSON.parse(
+  fs.readFileSync("../../concept/12_fada_context_differentiable_trajectory.data.json", "utf8"),
+);
+const contextMethodContract = fs.readFileSync(
+  path.join(repoRoot, "note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"),
+  "utf8",
 );
 
 if (typeof rough.svg !== "function") {
@@ -92,20 +104,45 @@ if (fadaDesignDiscussion.layout !== "design_transaction_inspector") {
 if (fadaDistillationFigure.layout !== "method_figure") {
   throw new Error("FADA Planner-IDM distillation must reuse the 03 method_figure grammar");
 }
-if (executionCalibrationFigure.layout !== "method_figure") {
-  throw new Error("08 execution calibration must use the method_figure grammar");
-}
 if (contextTrackerCalibrationFigure.layout !== "method_figure") {
   throw new Error("09 context-conditioned Tracker calibration must use the method_figure grammar");
+}
+if (
+  contextTrackerCalibrationFigure.status !== "superseded"
+  || contextTrackerCalibrationFigure.supersededBy !== "concept/12_fada_context_differentiable_trajectory.data.json"
+) {
+  throw new Error("09 privileged-teacher draft must remain explicitly superseded by 12");
+}
+if (contextCalibrationDesign.layout !== "design_transaction_inspector") {
+  throw new Error("10 Context Calibration design must use the Design Inspector layout");
+}
+if (
+  contextSearchDistillationProposal.layout !== "design_transaction_inspector"
+  || contextSearchDistillationProposal.status !== "rejected-concept"
+) {
+  throw new Error("11 Context search-and-distill route must remain explicitly rejected history");
+}
+if (
+  contextDifferentiableTrajectory.layout !== "design_transaction_inspector"
+  || contextDifferentiableTrajectory.status !== "accepted-method-design"
+  || !String(contextDifferentiableTrajectory.authority || "").includes("FADA-CONTEXT-METHOD-v003")
+) {
+  throw new Error("12 differentiable-trajectory Context must map to active method v003");
 }
 if (!indexHtml.includes("../../concept/07_fada_planner_idm_distillation.data.json")) {
   throw new Error("Atlas index must expose the 07 FADA Planner-IDM distillation figure");
 }
-if (!indexHtml.includes("../../architecture/08_trajectory_conditioned_execution_alignment.data.json")) {
-  throw new Error("Atlas index must expose the 08 execution calibration figure");
-}
 if (!indexHtml.includes("../../architecture/09_trajectory_conditioned_execution_alignment.data.json")) {
   throw new Error("Atlas index must expose the 09 context-conditioned Tracker calibration figure");
+}
+if (!indexHtml.includes("../../concept/10_fada_context_calibration_design.data.json")) {
+  throw new Error("Atlas index must expose the 10 Context Calibration Design Inspector");
+}
+if (!indexHtml.includes("../../concept/11_fada_context_search_distillation_proposal.data.json")) {
+  throw new Error("Atlas index must expose the 11 Context search-and-distill proposal");
+}
+if (!indexHtml.includes("../../concept/12_fada_context_differentiable_trajectory.data.json")) {
+  throw new Error("Atlas index must expose the 12 differentiable-trajectory Context design");
 }
 if (!html.includes('layout === "design_transaction_inspector"')) {
   throw new Error("viewer does not route design_transaction_inspector data");
@@ -147,6 +184,96 @@ for (const card of fadaDesignDiscussion.cards) {
       throw new Error(`${card.designId} highlights missing shared step ${stepId}`);
     }
   }
+}
+const contextSteps = contextCalibrationDesign.transaction?.steps || [];
+if (contextSteps.length !== 9 || new Set(contextSteps.map((step) => step.id)).size !== 9) {
+  throw new Error("Context Calibration Design Inspector must contain nine unique transaction steps");
+}
+if ((contextCalibrationDesign.cards || []).length !== 8) {
+  throw new Error("Context Calibration Design Inspector must contain eight parent design points");
+}
+const contextStepIds = new Set(contextSteps.map((step) => step.id));
+for (const card of contextCalibrationDesign.cards || []) {
+  if (!/^FADA-CTX-DP-0[1-8]$/.test(card.designId || "")) {
+    throw new Error(`invalid Context Calibration design id ${card.designId}`);
+  }
+  if ((card.details || []).length < 5 || (card.details || []).length > 6) {
+    throw new Error(`${card.designId} must expose five or six atomic design details`);
+  }
+  for (const stepId of card.highlightSteps || []) {
+    if (!contextStepIds.has(stepId)) {
+      throw new Error(`${card.designId} highlights missing Context step ${stepId}`);
+    }
+  }
+  if (!card.contractAnchor || !card.implementationOwner || !card.status) {
+    throw new Error(`${card.designId} missing Design Inspector governance metadata`);
+  }
+  for (const sourceRef of card.sourceRefs || []) {
+    if (!fs.existsSync(path.join(repoRoot, sourceRef))) {
+      throw new Error(`${card.designId} source does not resolve: ${sourceRef}`);
+    }
+  }
+  for (const evidenceRef of card.evidenceRefs || []) {
+    if (!fs.existsSync(path.join(repoRoot, evidenceRef))) {
+      throw new Error(`${card.designId} evidence does not resolve: ${evidenceRef}`);
+    }
+  }
+}
+const proposalSteps = contextSearchDistillationProposal.transaction?.steps || [];
+const proposalStepIds = new Set(proposalSteps.map((step) => step.id));
+if (proposalSteps.length !== 10 || proposalStepIds.size !== 10) {
+  throw new Error("Context Route 2 proposal must contain ten unique transaction steps");
+}
+if ((contextSearchDistillationProposal.cards || []).length !== 7) {
+  throw new Error("Context Route 2 proposal must contain seven design cards");
+}
+for (const card of contextSearchDistillationProposal.cards || []) {
+  if (!/^FADA-CTX-R2-DP-0[1-7]$/.test(card.designId || "")) {
+    throw new Error(`invalid Context Route 2 proposal id ${card.designId}`);
+  }
+  if (card.methodContract !== "none — training route not accepted") throw new Error(`${card.designId} must not claim active-contract authority`);
+  if ((card.details || []).length < 5 || (card.details || []).length > 6) {
+    throw new Error(`${card.designId} must expose five or six atomic proposal details`);
+  }
+  for (const stepId of card.highlightSteps || []) {
+    if (!proposalStepIds.has(stepId)) {
+      throw new Error(`${card.designId} highlights missing Route 2 step ${stepId}`);
+    }
+  }
+  for (const sourceRef of card.sourceRefs || []) {
+    if (!fs.existsSync(path.join(repoRoot, sourceRef))) {
+      throw new Error(`${card.designId} source does not resolve: ${sourceRef}`);
+    }
+  }
+}
+const differentiableSteps = contextDifferentiableTrajectory.transaction?.steps || [];
+const differentiableStepIds = new Set(differentiableSteps.map((step) => step.id));
+if (differentiableSteps.length !== 9 || differentiableStepIds.size !== 9) {
+  throw new Error("Context differentiable-trajectory design must contain nine unique steps");
+}
+if ((contextDifferentiableTrajectory.cards || []).length !== 8) {
+  throw new Error("Context differentiable-trajectory design must contain eight design cards");
+}
+for (const card of contextDifferentiableTrajectory.cards || []) {
+  if (!/^FADA-CTX-DYN-DP-0[1-8]$/.test(card.designId || "")) throw new Error(`invalid differentiable Context id ${card.designId}`);
+  if (card.methodContract !== "FADA-CONTEXT-METHOD-v003") throw new Error(`${card.designId} must map to Context method v003`);
+  if (!contextMethodContract.includes(card.designId)) throw new Error(`${card.designId} missing from active Context method contract`);
+  if ((card.details || []).length !== 4) throw new Error(`${card.designId} must expose four atomic details`);
+  for (const stepId of card.highlightSteps || []) if (!differentiableStepIds.has(stepId)) throw new Error(`${card.designId} highlights missing step ${stepId}`);
+  for (const sourceRef of card.sourceRefs || []) if (!fs.existsSync(path.join(repoRoot, sourceRef))) throw new Error(`${card.designId} source does not resolve: ${sourceRef}`);
+  for (const evidenceRef of card.evidenceRefs || []) if (!fs.existsSync(path.join(repoRoot, evidenceRef))) throw new Error(`${card.designId} evidence does not resolve: ${evidenceRef}`);
+}
+const serializedContextDesign = JSON.stringify(contextCalibrationDesign);
+if (/reward|奖励/i.test(serializedContextDesign)) {
+  throw new Error("Context Calibration Design Inspector must not contain the rejected reward route");
+}
+for (const obsoleteStep of ["build-teacher", "teacher-gate"]) {
+  if (serializedContextDesign.includes(obsoleteStep)) {
+    throw new Error(`Context Calibration Design Inspector contains obsolete step ${obsoleteStep}`);
+  }
+}
+if (!contextMethodContract.includes("status: active") || !contextMethodContract.includes("FADA-CTX-DYN-DP-08")) {
+  throw new Error("active Context method v003 is missing status or complete design mapping");
 }
 const fadaModuleIds = new Set((fadaModuleFigure.nodes || []).map((node) => node.id));
 if (fadaModuleIds.size !== (fadaModuleFigure.nodes || []).length) {

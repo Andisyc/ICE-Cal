@@ -379,8 +379,8 @@ for (const requiredId of ["U-RT-06", "U-RT-08"]) {
 }
 
 const indexAtlasLinks = [...index.matchAll(/architecture_atlas\.html\?data=/g)];
-if (indexAtlasLinks.length !== 9) {
-  throw new Error("Atlas index must expose three active maps and six FADA discussion maps");
+if (indexAtlasLinks.length !== 11) {
+  throw new Error("Atlas index must expose three active maps and eight FADA discussion maps");
 }
 for (const forbidden of ["Supporting:", "Distillation Runtime", "Distillation Control Room"]) {
   if (index.includes(forbidden)) throw new Error(`Atlas index contains forbidden entry ${forbidden}`);
@@ -389,9 +389,15 @@ for (const required of [
   "01 UniLab Runtime Atlas", "02 Method-to-Code Atlas", "03 Concept Figure",
   "04 Oracle → IDM → Planner Distillation", "05 Planner–IDM Construction",
   "06 Planner–IDM Design Discussion", "07 规划器–IDM 蒸馏架构",
-  "08 上下文执行校准", "09 上下文条件 Tracker 校准",
+  "09 历史：上下文条件 Tracker 校准", "10 历史：Tracking-Expert Action Supervision",
+  "11 历史：Search-and-Distill Context Training", "12 当前：Differentiable-Trajectory Context",
 ]) {
   if (!index.includes(required)) throw new Error(`Atlas index missing ${required}`);
+}
+for (const obsolete of [
+  "08_trajectory_conditioned_execution_alignment",
+]) {
+  if (index.includes(obsolete)) throw new Error(`Atlas index contains obsolete map ${obsolete}`);
 }
 
 console.log(

@@ -91,13 +91,21 @@
       <strong>07 规划器–IDM 蒸馏架构</strong>
       <span>按 03 的主链与反馈环，展示当前 v005 指令、Oracle 监督、训练窗口、规划器、逆动力学模型、机器人执行与分场景 DAgger。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/08_trajectory_conditioned_execution_alignment.data.json">
-      <strong>08 上下文执行校准</strong>
-      <span>收集真机 rollout，编码临时执行 Context，并由冻结 IDM 在不微调权重的情况下产生精确动作。</span>
-    </a>
     <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/09_trajectory_conditioned_execution_alignment.data.json">
-      <strong>09 上下文条件 Tracker 校准</strong>
-      <span>展示特权教师训练、Context-Conditioned Tracker 训练，以及受控真机 Action Shift 的两次执行验证。</span>
+      <strong>09 历史：上下文条件 Tracker 校准</strong>
+      <span>已被 12 号图和 FADA-CONTEXT-METHOD-v003 取代的特权教师草案，仅保留用于方法演化追溯。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/10_fada_context_calibration_design.data.json">
+      <strong>10 历史：Tracking-Expert Action Supervision</strong>
+      <span>已被 12 号图取代的直接动作监督方案，仅保留用于方法演化追溯。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/11_fada_context_search_distillation_proposal.data.json">
+      <strong>11 历史：Search-and-Distill Context Training</strong>
+      <span>已拒绝：free delta_z 不作为可靠训练真值；保留用于记录讨论和相关工作。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/12_fada_context_differentiable_trajectory.data.json">
+      <strong>12 当前：Differentiable-Trajectory Context</strong>
+      <span>故障轨迹输入 Context，冻结 E/D，经可微故障动力学展开第二次轨迹并反传轨迹损失，只更新 Context，再回到 MuJoCo 聚合验证。</span>
     </a>
   </section>
 </body>

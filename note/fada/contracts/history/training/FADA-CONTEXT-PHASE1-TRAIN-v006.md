@@ -1,11 +1,12 @@
 ---
 contract_id: FADA-CONTEXT-PHASE1-TRAIN-v006
-status: active
+status: superseded
 effective_date: 2026-08-11
 updated_date: 2026-08-11
 supersedes: FADA-CONTEXT-PHASE1-TRAIN-v005
 method_contract: FADA-CONTEXT-PHASE1-METHOD-v006
 scope: behavior-anchored full-action SAC retry with early checkpoint discrimination
+superseded_by: FADA-CONTEXT-TRAIN-v001
 ---
 
 # FADA Context Phase-1 Full-Action Training v006 Contract

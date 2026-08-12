@@ -1,105 +1,61 @@
 ---
 status: accepted-method-design
-updated_date: 2026-08-11
-authority: FADA-CONTEXT-METHOD-v001
-scope: rollout-conditioned latent repair with frozen Tracker Encoder and Decoder
+updated_date: 2026-08-12
+authority: FADA-CONTEXT-METHOD-v003
+training_authority: FADA-CONTEXT-TRAIN-v002
+scope: differentiable fault-model trajectory training of Context with frozen Tracker Encoder and Decoder
 ---
 
 # In-Context Execution Calibration Plan
 
-The active semantic authority is
-`note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v001.md`. This plan tracks the work needed to
-make that architecture trainable and testable; it does not override the contract.
+This plan records the accepted design only. No Context, differentiable dynamics, or two-rollout
+runtime has been implemented or validated.
 
-## Accepted architecture
-
-### 1. Train the ideal controller representation
+## Accepted method
 
 ```text
-ideal input -> Tracker Encoder E -> z -> Decoder D -> full 29D action
+healthy simulation -> train and freeze Tracker Encoder E and Decoder D
+healthy robot + command c -> reference trajectory tau_ref
+left-knee strength 0.9 + same c + zero repair -> probe trajectory tau_probe
+deployable history H(tau_probe) -> Context Encoder C -> delta_z
+paired second rollout: a_t = D(E(x_t) + delta_z)
+differentiable fault dynamics -> predicted adapted trajectory tau_hat_adapt
+trajectory distance(tau_hat_adapt, tau_ref) -> gradient -> update only C
+current C -> real MuJoCo fault validation -> aggregate transitions -> refresh dynamics model
 ```
 
-### 2. Train a privileged repair teacher
-
-```text
-state/intent + privileged anomaly information g -> Teacher T -> full 29D action
-```
-
-The teacher is an independent full-action oracle for the accepted anomalous condition. The failed
-fixed-left-knee Kp/Kd residual-teacher experiments are retained as negative evidence and do not
-define this architecture.
-
-### 3. Distill rollout information into latent repair
-
-```text
-rollout history H -> Context Encoder C -> delta_z
-current input x -> frozen E -> z
-z_repaired = z + delta_z
-frozen D(z_repaired) -> full 29D student action
-```
-
-Freeze `E`, `D`, and `T`; train only `C`. The primary objective compares the decoded student action
-with the teacher's complete action:
-
-```text
-distance(D(E(x) + C(H)), T(x, g))
-```
-
-At deployment, `g` and `T` are absent and all model weights remain frozen.
-
-## Design register
-
-| Owner | Accepted role | Current status |
-|---|---|---|
-| Tracker Encoder `E` | maps current ideal/deployable input to nominal latent `z` | architecture accepted; checkpoint owner to identify |
-| Decoder `D` | maps nominal or repaired latent to complete 29D action | architecture accepted; checkpoint owner to identify |
-| Teacher `T` | privileged full-action oracle under a valid anomaly | unavailable; previous intervention invalid |
-| Context Encoder `C` | maps causal rollout history to `delta_z` | semantic output accepted; architecture/input open |
-| Latent fusion | exactly `z_repaired = z + delta_z` before `D` | accepted |
+The first fault trajectory is Context input, not a target. The healthy trajectory is the reference.
+The second adapted trajectory defines the primary loss. Actions and free/optimized `delta_z` are not
+Context labels.
 
 ## Work sequence
 
-1. Select a physically meaningful intervention that measurably degrades the frozen nominal policy.
-2. Define the privileged full-action teacher contract and paired quality gate for that intervention.
-3. Train and accept the teacher before creating Context labels.
-4. Identify the exact pretrained Tracker Encoder and Decoder checkpoints and verify their nominal
-   interface, latent dimension, and zero-repair behavior.
-5. Contract the deployable rollout fields, temporal window, alignment, and episode/session boundary.
-6. Implement Context Encoder and latent addition while freezing Tracker Encoder and Decoder.
-7. Distill against the teacher's complete action and verify parameter ownership.
-8. Evaluate held-out imitation, trajectory precision, privilege exclusion, and history dependence.
-
-## Required controls
-
-- original nominal path `D(E(x))`;
-- zero latent repair `D(E(x) + 0)`;
-- learned Context repair;
-- history-shuffled or history-masked Context;
-- at least two distinguishable execution conditions so a constant `delta_z` cannot satisfy the
-  scientific claim;
-- privileged full-action teacher as an upper-bound reference, not a deployment input.
-
-## Open decisions
-
-1. The valid anomaly and simulation owner.
-2. Teacher policy architecture, observations, reward, and quality thresholds.
-3. Exact Tracker/Decoder checkpoint and the latent dimension of `z`.
-4. Context history contents and temporal window.
-5. Latent scaling, bounds, normalization, and regularization.
-6. Exact action-level loss and any optional auxiliary loss.
-7. Calibration lifecycle and cross-command reuse.
-8. Precise trajectory target and publication-level acceptance metrics.
+1. Bind the exact healthy `E/D` checkpoint, latent shape, command, left-knee `0.9` intervention, and
+   reference/probe alignment lifecycle.
+2. Define the fault transition schema and collect Decoder-reachable MuJoCo data from nominal,
+   perturbed-latent, perturbed-action, and later current-Context rollouts.
+3. Implement an ensemble fault-dynamics model with one-step and scheduled short-horizon losses.
+4. Establish held-out prediction and ensemble-disagreement gates before Context optimization.
+5. Implement the probe-history encoder, one-shot bounded `delta_z`, paired model rollout, and
+   trajectory loss while strict-freezing `E/D/F_phi` parameters.
+6. Prove gradients pass through `F_phi`, `D`, and `E` to `C`, with only Context parameters changing.
+7. Alternate bounded Context model updates with paired real-MuJoCo validation and visited-state data
+   aggregation to control model exploitation.
+8. Evaluate zero repair, Context, constant repair, history mask, and history shuffle across
+   distinguishable fault/command/phase conditions.
 
 ## Current stop condition
 
-Do not implement or train Context Encoder yet. The next safe boundary is to select and baseline a
-valid intervention, then train a privileged teacher that outputs complete 29D actions and passes a
-paired quality gate. Any anomaly-owner choice remains a new human decision.
+Do not implement or train yet. The next engineering boundary is to specify the exact checkpoint,
+state/history/reference schema, paired rollout lifecycle, and numerical acceptance thresholds. The
+method is `note-confirmed`; feasibility and runtime behavior remain unconfirmed.
 
-## Novelty status
+## Open decisions
 
-History-conditioned latent adaptation with frozen policy weights is not novel by itself. The
-research claim remains unconfirmed until the method demonstrates target-specific precision from a
-bounded rollout, proves that the latent repair uses rollout evidence rather than a constant offset,
-and compares against nominal, history-conditioned, privileged-teacher, and optimization-based
-adaptation baselines under the same target-data budget.
+1. Exact `E/D` checkpoint and latent dimension.
+2. Context history fields and probe length.
+3. Reference trajectory representation and temporal alignment.
+4. Dynamics model state, architecture, ensemble size, and rollout horizon.
+5. Tracking, safety, latent, smoothness, and uncertainty loss weights.
+6. Dataset perturbation coverage and model/real rollout update ratio.
+7. Conditions needed to rule out a constant repair.

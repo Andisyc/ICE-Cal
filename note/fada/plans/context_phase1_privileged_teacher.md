@@ -1,7 +1,8 @@
 ---
-status: active
+status: superseded-history
 updated_date: 2026-08-11
 contracts: FADA-CONTEXT-PHASE1-METHOD-v006, FADA-CONTEXT-PHASE1-TRAIN-v006
+superseded_by: FADA-CONTEXT-METHOD-v003, FADA-CONTEXT-TRAIN-v002
 ---
 
 # Context Phase-1 Privileged Teacher Plan

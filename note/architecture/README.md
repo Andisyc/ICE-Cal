@@ -24,8 +24,10 @@ same Code Block ID
 - `architecture/05_fada_planner_tracker_modules.data.json`: implemented Planner and IDM construction, forward interface, and source-training loss boundaries.
 - `concept/06_fada_design_detail_discussion.data.json`: Design Inspector with canonical design-point tabs and the active UniLab Oracle-bootstrap/Planner-IDM DAgger spine.
 - `concept/07_fada_planner_idm_distillation.data.json`: current v005 Planner-IDM distillation Concept Figure using the 03 main-chain and DAgger-feedback visual grammar.
-- `architecture/08_trajectory_conditioned_execution_alignment.data.json`: human-confirmed deployment method in which a real rollout produces temporary Context for the frozen IDM, with no target-domain weight update.
-- `architecture/09_trajectory_conditioned_execution_alignment.data.json`: three-stage privileged-teacher, context-conditioned Tracker, and controlled real-world proof-of-concept figure imported from the downloaded 08 draft.
+- `architecture/09_trajectory_conditioned_execution_alignment.data.json`: superseded privileged-teacher draft retained only for method archaeology.
+- `concept/10_fada_context_calibration_design.data.json`: superseded tracking-expert action-supervision design retained as history.
+- `concept/11_fada_context_search_distillation_proposal.data.json`: rejected free-`delta_z` search-and-distill proposal retained as history.
+- `concept/12_fada_context_differentiable_trajectory.data.json`: current accepted method design for probe-history Context input, differentiable fault dynamics, trajectory-gradient Context training, and MuJoCo aggregation; implementation and runtime remain unconfirmed.
 
 ## Folder Contract
 
