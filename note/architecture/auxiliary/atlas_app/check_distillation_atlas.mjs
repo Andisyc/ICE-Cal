@@ -41,7 +41,9 @@ if (index.includes("127.0.0.1:8766") || viewer.includes("127.0.0.1:8766")) {
 
 const scriptMatch = viewer.match(/<script type="module">([\s\S]*?)<\/script>/);
 if (!scriptMatch) throw new Error("viewer module script missing");
-const parseable = scriptMatch[1].replace(/^\s*import rough[^;]+;\s*$/m, "const rough = {};");
+const parseable = scriptMatch[1]
+  .replace(/^\s*import rough[^;]+;\s*$/m, "const rough = {};")
+  .replace(/^\s*import katex[^;]+;\s*$/m, "const katex = { render() {} };");
 new vm.Script(parseable, { filename: "architecture_atlas.inline.mjs" });
 for (const required of [
   "function renderMethodFigure",
@@ -379,8 +381,8 @@ for (const requiredId of ["U-RT-06", "U-RT-08"]) {
 }
 
 const indexAtlasLinks = [...index.matchAll(/architecture_atlas\.html\?data=/g)];
-if (indexAtlasLinks.length !== 11) {
-  throw new Error("Atlas index must expose three active maps and eight FADA discussion maps");
+if (indexAtlasLinks.length !== 12) {
+  throw new Error("Atlas index must expose three active maps and nine FADA discussion maps");
 }
 for (const forbidden of ["Supporting:", "Distillation Runtime", "Distillation Control Room"]) {
   if (index.includes(forbidden)) throw new Error(`Atlas index contains forbidden entry ${forbidden}`);
@@ -389,8 +391,9 @@ for (const required of [
   "01 UniLab Runtime Atlas", "02 Method-to-Code Atlas", "03 Concept Figure",
   "04 Oracle → IDM → Planner Distillation", "05 Planner–IDM Construction",
   "06 Planner–IDM Design Discussion", "07 规划器–IDM 蒸馏架构",
-  "09 历史：上下文条件 Tracker 校准", "10 历史：Tracking-Expert Action Supervision",
-  "11 历史：Search-and-Distill Context Training", "12 当前：Differentiable-Trajectory Context",
+  "09 当前：Context-Conditioned Tracker Calibration", "10 当前训练：Context Encoder Support–Query Learning",
+  "11 历史备选：Tracking-Expert Action Supervision",
+  "12 已否决：Search-and-Distill Context Training", "13 已否决：Differentiable-Trajectory Context",
 ]) {
   if (!index.includes(required)) throw new Error(`Atlas index missing ${required}`);
 }

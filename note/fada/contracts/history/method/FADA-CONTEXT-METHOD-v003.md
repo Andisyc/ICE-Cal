@@ -1,15 +1,19 @@
 ---
 contract_id: FADA-CONTEXT-METHOD-v003
-status: active
+status: superseded-history
 effective_date: 2026-08-12
 updated_date: 2026-08-12
 supersedes: FADA-CONTEXT-METHOD-v002
 prerequisite: FADA-METHOD-v005
 scope: differentiable-model trajectory training of rollout-conditioned latent repair
 implementation_status: design-only
+superseded_by: pending In-Context Execution Calibration decision
 ---
 
 # FADA Context Differentiable-Trajectory Method Contract
+
+This route was stopped on 2026-08-12 after all 10 real-MuJoCo candidate gates rejected Context
+updates. It is retained as negative method history and is not current implementation authority.
 
 This contract records the accepted method design, not an implementation or feasibility result. The
 healthy-simulation Tracker Encoder `E` and Decoder `D` remain frozen. Under a simulated actuator
@@ -143,4 +147,3 @@ dynamics model nor fault identity is deployed.
 5. Perturbation/data-coverage schedule and real-MuJoCo aggregation cadence.
 6. `delta_z` bounds, normalization, and fixed-output horizon.
 7. Fault/command/phase family needed to establish history dependence.
-

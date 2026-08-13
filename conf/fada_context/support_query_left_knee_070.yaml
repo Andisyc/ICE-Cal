@@ -1,0 +1,31 @@
+checkpoint_path: ../planner_idm_v005.pt
+task_config: sac/g1_walk_flat/mujoco_left_knee_070
+device: cpu
+seed: 17
+
+collection:
+  num_envs: 64
+  num_pairs: 512
+  support_length: 60
+  max_reset_pairs: 64
+  artifact_path: artifacts/fada_context/support_query_left_knee_070.pt
+
+context:
+  hidden_dim: 128
+  num_layers: 2
+  delta_scale: 0.1
+  learning_rate: 3.0e-4
+
+training:
+  batch_size: 64
+  validation_fraction: 0.2
+  steps: 10000
+  log_interval: 25
+  checkpoint_interval: 500
+  gradient_clip_norm: 1.0
+  minimum_zero_context_mse: 1.0e-8
+  output_dir: artifacts/fada_context/support_query_left_knee_070_run_001
+
+boundary:
+  optimizer_steps_allowed: false
+  training_started: false

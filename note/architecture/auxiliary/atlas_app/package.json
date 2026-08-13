@@ -10,6 +10,7 @@
     "check": "node check_viewer_import.mjs && node check_distillation_atlas.mjs"
   },
   "dependencies": {
+    "katex": "^0.16.22",
     "roughjs": "^4.6.6"
   }
 }

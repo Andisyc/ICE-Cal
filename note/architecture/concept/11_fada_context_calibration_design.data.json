@@ -1,9 +1,9 @@
 {
-  "title": "10 FADA Context Calibration Design Inspector",
-  "subtitle": "历史：基于 tracking expert 动作监督的 Context 设计；已被 12 号可微轨迹方案取代",
+  "title": "11 Historical Alternative — Tracking-Expert Action Supervision",
+  "subtitle": "历史备选：基于 tracking expert 动作监督的 Context 设计",
   "layout": "design_transaction_inspector",
   "status": "superseded",
-  "supersededBy": "concept/12_fada_context_differentiable_trajectory.data.json",
+  "supersededBy": "architecture/09_trajectory_conditioned_execution_alignment.data.json",
   "defaultZoom": 0.8,
   "footerText": "唯一主链使用故障动力学中的轨迹跟踪专家生成纠正动作；选择设计点检查其责任、边界、证据和未决参数。",
   "transaction": {

@@ -321,7 +321,7 @@ class FADAInverseDynamicsModel(nn.Module):
         )
         self.action_head = nn.Linear(config.hidden_dim, config.action_dim)
 
-    def forward(
+    def encode_latent(
         self,
         observation_history: torch.Tensor,
         action_history: torch.Tensor,
@@ -356,8 +356,28 @@ class FADAInverseDynamicsModel(nn.Module):
         # B3: 无 causal mask 解码全部 future tokens, 并行产出 K-step action chunk.
         future_tokens = self.future_position(self.future_embedding(future))
         # No tgt mask: every future token has full self-attention over the K-step chunk.
-        decoded = self.future_decoder(tgt=future_tokens, memory=memory)
-        return self.action_head(decoded)
+        return self.future_decoder(tgt=future_tokens, memory=memory)
+
+    def decode_latent(self, latent: torch.Tensor) -> torch.Tensor:
+        """Decode the existing final IDM hidden tokens without changing checkpoint structure."""
+
+        _validate_sequence(
+            "latent",
+            latent,
+            length=self.config.prediction_horizon,
+            feature_dim=self.config.hidden_dim,
+        )
+        return self.action_head(latent)
+
+    def forward(
+        self,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+        future: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.decode_latent(
+            self.encode_latent(observation_history, action_history, future)
+        )
 
 
 class FADAPlannerIDMPolicy(nn.Module):

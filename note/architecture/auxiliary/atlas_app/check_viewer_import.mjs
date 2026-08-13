@@ -29,17 +29,20 @@ const fadaDistillationFigure = JSON.parse(
 const contextTrackerCalibrationFigure = JSON.parse(
   fs.readFileSync("../../architecture/09_trajectory_conditioned_execution_alignment.data.json", "utf8"),
 );
+const inContextExecutionCalibrationInspector = JSON.parse(
+  fs.readFileSync("../../concept/10_in_context_execution_calibration_design_inspector.data.json", "utf8"),
+);
 const contextCalibrationDesign = JSON.parse(
-  fs.readFileSync("../../concept/10_fada_context_calibration_design.data.json", "utf8"),
+  fs.readFileSync("../../concept/11_fada_context_calibration_design.data.json", "utf8"),
 );
 const contextSearchDistillationProposal = JSON.parse(
-  fs.readFileSync("../../concept/11_fada_context_search_distillation_proposal.data.json", "utf8"),
+  fs.readFileSync("../../concept/12_fada_context_search_distillation_proposal.data.json", "utf8"),
 );
 const contextDifferentiableTrajectory = JSON.parse(
-  fs.readFileSync("../../concept/12_fada_context_differentiable_trajectory.data.json", "utf8"),
+  fs.readFileSync("../../concept/13_fada_context_differentiable_trajectory.data.json", "utf8"),
 );
 const contextMethodContract = fs.readFileSync(
-  path.join(repoRoot, "note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"),
+  path.join(repoRoot, "note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"),
   "utf8",
 );
 
@@ -48,6 +51,13 @@ if (typeof rough.svg !== "function") {
 }
 if (!html.includes('import rough from "./node_modules/roughjs/bundled/rough.esm.js";')) {
   throw new Error("architecture_atlas.html does not import local roughjs");
+}
+if (
+  !html.includes('import katex from "./node_modules/katex/dist/katex.mjs";')
+  || !html.includes('href="./node_modules/katex/dist/katex.min.css"')
+  || !html.includes("katex.render(formula, formulaContainer")
+) {
+  throw new Error("architecture_atlas.html does not render Inspector LaTeX through local KaTeX");
 }
 if (!html.includes('new EventSource("/events")')) {
   throw new Error("architecture_atlas.html is not wired to the auto-refresh event stream");
@@ -108,10 +118,26 @@ if (contextTrackerCalibrationFigure.layout !== "method_figure") {
   throw new Error("09 context-conditioned Tracker calibration must use the method_figure grammar");
 }
 if (
-  contextTrackerCalibrationFigure.status !== "superseded"
-  || contextTrackerCalibrationFigure.supersededBy !== "concept/12_fada_context_differentiable_trajectory.data.json"
+  contextTrackerCalibrationFigure.status !== "current-method"
+  || !String(contextTrackerCalibrationFigure.authority || "").includes("human-selected")
 ) {
-  throw new Error("09 privileged-teacher draft must remain explicitly superseded by 12");
+  throw new Error("09 Context calibration must be the human-selected current method");
+}
+const currentContextSerialized = JSON.stringify(contextTrackerCalibrationFigure);
+for (const forbidden of ["Teacher", "teacher", "privileged", "训练 Tracker Encoder", "训练 Tracker Decoder"]) {
+  if (currentContextSerialized.includes(forbidden)) {
+    throw new Error(`09 current Context method contains forbidden legacy concept ${forbidden}`);
+  }
+}
+const currentContextIds = (contextTrackerCalibrationFigure.nodes || []).map((node) => node.id);
+if (new Set(currentContextIds).size !== currentContextIds.length || !currentContextIds.every((id) => /^ICA09-[MD]-\d{2}$/.test(id))) {
+  throw new Error("09 current Context nodes must use unique ICA09-M/D numbering");
+}
+if (
+  inContextExecutionCalibrationInspector.layout !== "design_transaction_inspector"
+  || inContextExecutionCalibrationInspector.status !== "current-training-method"
+) {
+  throw new Error("10 Support-Query learning must remain the current Context Encoder training method");
 }
 if (contextCalibrationDesign.layout !== "design_transaction_inspector") {
   throw new Error("10 Context Calibration design must use the Design Inspector layout");
@@ -120,14 +146,14 @@ if (
   contextSearchDistillationProposal.layout !== "design_transaction_inspector"
   || contextSearchDistillationProposal.status !== "rejected-concept"
 ) {
-  throw new Error("11 Context search-and-distill route must remain explicitly rejected history");
+  throw new Error("12 Context search-and-distill route must remain explicitly rejected history");
 }
 if (
   contextDifferentiableTrajectory.layout !== "design_transaction_inspector"
-  || contextDifferentiableTrajectory.status !== "accepted-method-design"
-  || !String(contextDifferentiableTrajectory.authority || "").includes("FADA-CONTEXT-METHOD-v003")
+  || contextDifferentiableTrajectory.status !== "rejected-experiment"
+  || !String(contextDifferentiableTrajectory.authority || "").includes("none")
 ) {
-  throw new Error("12 differentiable-trajectory Context must map to active method v003");
+  throw new Error("13 differentiable-trajectory Context must remain rejected experiment history");
 }
 if (!indexHtml.includes("../../concept/07_fada_planner_idm_distillation.data.json")) {
   throw new Error("Atlas index must expose the 07 FADA Planner-IDM distillation figure");
@@ -135,17 +161,33 @@ if (!indexHtml.includes("../../concept/07_fada_planner_idm_distillation.data.jso
 if (!indexHtml.includes("../../architecture/09_trajectory_conditioned_execution_alignment.data.json")) {
   throw new Error("Atlas index must expose the 09 context-conditioned Tracker calibration figure");
 }
-if (!indexHtml.includes("../../concept/10_fada_context_calibration_design.data.json")) {
-  throw new Error("Atlas index must expose the 10 Context Calibration Design Inspector");
+if (!indexHtml.includes("../../concept/10_in_context_execution_calibration_design_inspector.data.json")) {
+  throw new Error("Atlas index must expose the 10 current Context Encoder training method");
 }
-if (!indexHtml.includes("../../concept/11_fada_context_search_distillation_proposal.data.json")) {
-  throw new Error("Atlas index must expose the 11 Context search-and-distill proposal");
+if (!indexHtml.includes("../../concept/11_fada_context_calibration_design.data.json")) {
+  throw new Error("Atlas index must expose the 11 historical Context alternative");
 }
-if (!indexHtml.includes("../../concept/12_fada_context_differentiable_trajectory.data.json")) {
-  throw new Error("Atlas index must expose the 12 differentiable-trajectory Context design");
+if (!indexHtml.includes("../../concept/12_fada_context_search_distillation_proposal.data.json")) {
+  throw new Error("Atlas index must expose the 12 rejected search-and-distill proposal");
+}
+if (!indexHtml.includes("../../concept/13_fada_context_differentiable_trajectory.data.json")) {
+  throw new Error("Atlas index must expose the 13 rejected differentiable-trajectory design");
 }
 if (!html.includes('layout === "design_transaction_inspector"')) {
   throw new Error("viewer does not route design_transaction_inspector data");
+}
+if (!html.includes("const detailFormulaLines = (detail) =>")) {
+  throw new Error("Design Inspector must preserve and render data-row LaTeX formulas");
+}
+const inContextLatexRows = (inContextExecutionCalibrationInspector.cards || [])
+  .flatMap((card) => card.details || [])
+  .filter((detail) => typeof detail === "object" && detail !== null && detail.latex);
+const inContextLatexFormulaCount = inContextLatexRows.reduce(
+  (count, detail) => count + (Array.isArray(detail.latex) ? detail.latex.length : 1),
+  0,
+);
+if (inContextLatexFormulaCount !== 8) {
+  throw new Error("10 Context Encoder training method must preserve all eight LaTeX formula rows");
 }
 if ((fadaDesignDiscussion.cards || []).length !== 6) {
   throw new Error("FADA Design Inspector must contain all six active parent design points");
@@ -257,7 +299,7 @@ if ((contextDifferentiableTrajectory.cards || []).length !== 8) {
 for (const card of contextDifferentiableTrajectory.cards || []) {
   if (!/^FADA-CTX-DYN-DP-0[1-8]$/.test(card.designId || "")) throw new Error(`invalid differentiable Context id ${card.designId}`);
   if (card.methodContract !== "FADA-CONTEXT-METHOD-v003") throw new Error(`${card.designId} must map to Context method v003`);
-  if (!contextMethodContract.includes(card.designId)) throw new Error(`${card.designId} missing from active Context method contract`);
+  if (!contextMethodContract.includes(card.designId)) throw new Error(`${card.designId} missing from historical Context method contract`);
   if ((card.details || []).length !== 4) throw new Error(`${card.designId} must expose four atomic details`);
   for (const stepId of card.highlightSteps || []) if (!differentiableStepIds.has(stepId)) throw new Error(`${card.designId} highlights missing step ${stepId}`);
   for (const sourceRef of card.sourceRefs || []) if (!fs.existsSync(path.join(repoRoot, sourceRef))) throw new Error(`${card.designId} source does not resolve: ${sourceRef}`);
@@ -272,8 +314,8 @@ for (const obsoleteStep of ["build-teacher", "teacher-gate"]) {
     throw new Error(`Context Calibration Design Inspector contains obsolete step ${obsoleteStep}`);
   }
 }
-if (!contextMethodContract.includes("status: active") || !contextMethodContract.includes("FADA-CTX-DYN-DP-08")) {
-  throw new Error("active Context method v003 is missing status or complete design mapping");
+if (!contextMethodContract.includes("status: superseded-history") || !contextMethodContract.includes("FADA-CTX-DYN-DP-08")) {
+  throw new Error("historical Context method v003 is missing stopped status or complete design mapping");
 }
 const fadaModuleIds = new Set((fadaModuleFigure.nodes || []).map((node) => node.id));
 if (fadaModuleIds.size !== (fadaModuleFigure.nodes || []).length) {

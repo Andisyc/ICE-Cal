@@ -8,18 +8,20 @@ Default recall order:
 4. `../architecture/concept/06_fada_design_detail_discussion.data.json`
 5. current plan/checklist only when continuing active work
 
-Current Context method authority: `FADA-CONTEXT-METHOD-v003`, with design-only training authority
-`FADA-CONTEXT-TRAIN-v002`. Context remains `z_repaired = z + delta_z`; Tracker Encoder and Decoder
-stay frozen, and only Context Encoder trains. A first faulty rollout is Context input; a paired
-second trajectory is compared with the healthy reference through a learned differentiable fault
-dynamics ensemble. Actions and optimized `delta_z` are not Context labels.
+The active Context authority is `FADA-CONTEXT-METHOD-v004` with
+`FADA-CONTEXT-TRAIN-v003`. It implements the fixed-left-knee-`0.7` Support-Query action-supervision
+route accepted in Architecture 09 and Design Inspector 10. The former differentiable-dynamics route
+(`FADA-CONTEXT-METHOD-v003` / `FADA-CONTEXT-TRAIN-v002`) remains history after 10/10 real-MuJoCo
+gates rejected its Context candidates.
 
-Current implementation status: design-only. Historical v006 restored full-horizon walking but failed
-formal paired quality because lateral displacement and yaw drift worsened. It remains negative
-evidence and is not a Context label source. Context implementation is blocked on an exact `E/D`
-checkpoint, paired probe/reference lifecycle, fault-transition schema, differentiable-model gates,
-trajectory loss, and model-to-MuJoCo validation protocol.
+The current visual authorities are
+`architecture/architecture/09_trajectory_conditioned_execution_alignment.data.json` for the overall
+method and `architecture/concept/10_in_context_execution_calibration_design_inspector.data.json` for
+Context training. The implemented route uses one independent fault Support to produce a fixed
+`delta_z`, a no-Context fault Label Query for first-action supervision, and a separate post-training
+calibrated re-execution stage.
 
 The Phase-1 privileged-teacher runners and checkpoints are historical negative evidence and no
-longer define the active Context route. The completed Planner-IDM prerequisite continues to use
-`persistent_async`; no Context runtime owner has yet been accepted.
+longer define the active Context route. The Context model, dataset, collector, preflight, trainer,
+and checkpoint owners are implemented. The bounded fixed-`0.7` MuJoCo preflight passed; formal
+Context training and post-training closed-loop evaluation have not started.

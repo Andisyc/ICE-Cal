@@ -1,15 +1,19 @@
 ---
 contract_id: FADA-CONTEXT-TRAIN-v002
-status: active
+status: superseded-history
 effective_date: 2026-08-12
 updated_date: 2026-08-12
 supersedes: FADA-CONTEXT-TRAIN-v001
 method_contract: FADA-CONTEXT-METHOD-v003
 scope: differentiable fault-model trajectory optimization of Context Encoder only
 implementation_status: design-only
+superseded_by: pending In-Context Execution Calibration decision
 ---
 
 # FADA Context Differentiable-Trajectory Training Contract
+
+This training route was stopped on 2026-08-12 after 10/10 Context candidates worsened real-MuJoCo
+trajectory MSE and were rolled back. It is retained as negative training history.
 
 ## Training stages
 

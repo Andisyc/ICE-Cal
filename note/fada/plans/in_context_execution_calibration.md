@@ -1,62 +1,44 @@
 ---
-status: accepted-method-design
-updated_date: 2026-08-12
-authority: FADA-CONTEXT-METHOD-v003
-training_authority: FADA-CONTEXT-TRAIN-v002
-scope: differentiable fault-model trajectory training of Context with frozen Tracker Encoder and Decoder
+status: implementation-active
+updated_date: 2026-08-13
+authority: FADA-CONTEXT-METHOD-v004
+training_authority: FADA-CONTEXT-TRAIN-v003
+scope: implement fixed-0.7 Support-Query Context action supervision
 ---
 
 # In-Context Execution Calibration Plan
 
-The differentiable core, paired MuJoCo collector, persisted dataset contract, and no-update training
-preflight are implemented. Formal dynamics or Context optimization has not started.
+The differentiable-dynamics implementation remains stopped history. The human owner accepted Design
+Inspector 10 Support-Query action supervision and authorized implementation.
 
 ## Accepted method
 
 ```text
-healthy simulation -> train and freeze Tracker Encoder E and Decoder D
-healthy robot + command c -> reference trajectory tau_ref
-left-knee strength 0.9 + same c + zero repair -> probe trajectory tau_probe
-deployable history H(tau_probe) -> Context Encoder C -> delta_z
-paired second rollout: a_t = D(E(x_t) + delta_z)
-differentiable fault dynamics -> predicted adapted trajectory tau_hat_adapt
-trajectory distance(tau_hat_adapt, tau_ref) -> gradient -> update only C
-current C -> real MuJoCo fault validation -> aggregate transitions -> refresh dynamics model
+sample hidden execution condition xi
+-> collect Support (target motion, realized motion, executed action)
+-> Context encodes Support once into fixed delta_z_xi
+-> independently collect a disjoint no-Context Query under the same command and xi
+-> encode Query realized future through frozen IDM latent interface
+-> add Support delta_z immediately before the frozen action head
+-> reconstruct the physically executed Query first action
+-> update only Context Encoder
 ```
 
-The first fault trajectory is Context input, not a target. The healthy trajectory is the reference.
-The second adapted trajectory defines the primary loss. Actions and free/optimized `delta_z` are not
-Context labels.
+Support is Context input, not a repair label. Query action is emitted by the healthy-trained frozen
+Planner-IDM while running closed-loop in the fixed-`0.7` fault simulator. Fault identity remains
+hidden from Context. Training uses Query realized future; deployment uses Planner Intent.
 
-## Work sequence
+## Implementation steps
 
-1. Bind the exact healthy `E/D` checkpoint, latent shape, command, left-knee `0.9` intervention, and
-   reference/probe alignment lifecycle.
-2. Define the fault transition schema and collect Decoder-reachable MuJoCo data from nominal,
-   perturbed-latent, perturbed-action, and later current-Context rollouts.
-3. Implement an ensemble fault-dynamics model with one-step and scheduled short-horizon losses.
-4. Establish held-out prediction and ensemble-disagreement gates before Context optimization.
-5. Implement the probe-history encoder, one-shot bounded `delta_z`, paired model rollout, and
-   trajectory loss while strict-freezing `E/D/F_phi` parameters.
-6. Prove gradients pass through `F_phi`, `D`, and `E` to `C`, with only Context parameters changing.
-7. Alternate bounded Context model updates with paired real-MuJoCo validation and visited-state data
-   aggregation to control model exploitation.
-8. Evaluate zero repair, Context, constant repair, history mask, and history shuffle across
-   distinguishable fault/command/phase conditions.
+1. Expose the existing IDM final hidden tokens as a checkpoint-compatible latent interface.
+2. Add a full-Support Context Encoder and exact `z + delta_z` frozen-IDM wrapper.
+3. Define a versioned Support/Query dataset with strict provenance and causal first-action labels.
+4. Collect two independent fixed-`0.7` rollouts per pair under one straight command.
+5. Add preflight, offline trainer, checkpoint persistence, and focused contract tests.
+6. Run bounded real-MuJoCo collection/backward evidence before long training.
 
-## Current stop condition
+## Stop condition
 
-The repository is at the training boundary. `planner_idm_v005.pt`, a fixed straight command, and
-fixed left-knee `0.9` are bound; the collector restores one healthy MuJoCo snapshot into a same-model
-fault environment so the initial physics, observation, command, and task carrier match while the
-fault model retains its own gain. The preflight persists and reloads data, builds disjoint Context and
-dynamics optimizers, and runs backward probes with zero optimizer steps. Do not begin formal dynamics
-or Context optimization until the user explicitly starts training.
-
-## Open decisions
-
-1. Formal dataset sample count and train/validation split.
-2. Held-out dynamics thresholds for one-step, short-horizon, and disagreement errors.
-3. Dataset perturbation coverage and model/real rollout update ratio.
-4. Safety-state projection or weights beyond full-observation tracking MSE.
-5. Conditions needed to rule out a constant repair.
+Do not start long training if zero-Context Query action MSE is non-finite/indistinguishable from zero,
+if Context gradients are zero/non-finite, if any frozen parameter changes, or if Support/Query
+provenance fails validation.

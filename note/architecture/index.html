@@ -92,20 +92,24 @@
       <span>按 03 的主链与反馈环，展示当前 v005 指令、Oracle 监督、训练窗口、规划器、逆动力学模型、机器人执行与分场景 DAgger。</span>
     </a>
     <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/09_trajectory_conditioned_execution_alignment.data.json">
-      <strong>09 历史：上下文条件 Tracker 校准</strong>
-      <span>已被 12 号图和 FADA-CONTEXT-METHOD-v003 取代的特权教师草案，仅保留用于方法演化追溯。</span>
+      <strong>09 当前：Context-Conditioned Tracker Calibration</strong>
+      <span>总体思路：失败轨迹输入 Context，产生 Δz 并加到 Tracker Encoder 输出 z；Context Encoder 的训练方法见 10。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/10_fada_context_calibration_design.data.json">
-      <strong>10 历史：Tracking-Expert Action Supervision</strong>
-      <span>已被 12 号图取代的直接动作监督方案，仅保留用于方法演化追溯。</span>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/10_in_context_execution_calibration_design_inspector.data.json">
+      <strong>10 当前训练：Context Encoder Support–Query Learning</strong>
+      <span>09 总体思路的训练方法：Support 识别故障并产生 Δz，独立 Query 的因果 Executed Action 监督 Context Encoder。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/11_fada_context_search_distillation_proposal.data.json">
-      <strong>11 历史：Search-and-Distill Context Training</strong>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/11_fada_context_calibration_design.data.json">
+      <strong>11 历史备选：Tracking-Expert Action Supervision</strong>
+      <span>依赖故障 tracking expert 的直接动作监督方案，仅保留用于方法演化追溯。</span>
+    </a>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/12_fada_context_search_distillation_proposal.data.json">
+      <strong>12 已否决：Search-and-Distill Context Training</strong>
       <span>已拒绝：free delta_z 不作为可靠训练真值；保留用于记录讨论和相关工作。</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/12_fada_context_differentiable_trajectory.data.json">
-      <strong>12 当前：Differentiable-Trajectory Context</strong>
-      <span>故障轨迹输入 Context，冻结 E/D，经可微故障动力学展开第二次轨迹并反传轨迹损失，只更新 Context，再回到 MuJoCo 聚合验证。</span>
+    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/13_fada_context_differentiable_trajectory.data.json">
+      <strong>13 已否决：Differentiable-Trajectory Context</strong>
+      <span>正式实验 10/10 真实 MuJoCo 门控失败；保留方法结构和负结果证据。</span>
     </a>
   </section>
 </body>

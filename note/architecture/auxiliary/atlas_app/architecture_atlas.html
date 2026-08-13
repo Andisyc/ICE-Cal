@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>UniLab Architecture Atlas</title>
+  <link rel="stylesheet" href="./node_modules/katex/dist/katex.min.css" />
   <style>
     :root {
       --ink: #1f2933;
@@ -201,6 +202,7 @@
   </main>
   <script type="module">
     import rough from "./node_modules/roughjs/bundled/rough.esm.js";
+    import katex from "./node_modules/katex/dist/katex.mjs";
 
     const params = new URLSearchParams(window.location.search);
     const dataUrl = params.get("data") || "../../concept/03_g1_multiteacher_distillation_method.data.json";
@@ -604,11 +606,18 @@
       const detailRows = Array.isArray(activeCard.details) ? activeCard.details : [];
       const detailTextWidth = Math.min(contentWidth - 88, 1160);
       const detailHeaderHeight = activeCard.responsibility ? 104 : 64;
+      const detailFormulaLines = (detail) => {
+        const row = typeof detail === "string" ? {} : detail;
+        if (Array.isArray(row?.latex)) return row.latex.filter(Boolean).map(String);
+        return row?.latex ? [String(row.latex)] : [];
+      };
       const detailRowHeightFor = (detail) => {
         const row = typeof detail === "string" ? { text: detail } : detail;
         const headingHeight = row?.heading ? 27 : 0;
         const textLines = measuredLineCount(row?.text || "", detailTextWidth, { charWidth: 7.4 });
-        return 34 + headingHeight + Math.max(1, textLines) * 20;
+        const formulaLines = detailFormulaLines(detail);
+        const formulaHeight = formulaLines.length ? 14 + formulaLines.length * 27 : 0;
+        return 34 + headingHeight + Math.max(1, textLines) * 20 + formulaHeight;
       };
       const detailHeight = detailHeaderHeight + detailRows.reduce(
         (sum, detail) => sum + detailRowHeightFor(detail),
@@ -753,9 +762,41 @@
           });
           bodyY += 27;
         }
-        wrapText(row.text || "", left + 64, bodyY, detailTextWidth, {
+        const bodyLines = wrapText(row.text || "", left + 64, bodyY, detailTextWidth, {
           size: 15.5, lineHeight: 20, charWidth: 7.4, weight: 570, fill: "#34414e",
         });
+        const formulaLines = detailFormulaLines(detail);
+        if (formulaLines.length) {
+          const formulaTop = bodyY + Math.max(1, bodyLines) * 20 + 9;
+          formulaLines.forEach((formula, formulaIndex) => {
+            const formulaY = formulaTop + formulaIndex * 27;
+            const formulaBackground = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            formulaBackground.setAttribute("x", left + 60);
+            formulaBackground.setAttribute("y", formulaY - 17);
+            formulaBackground.setAttribute("width", Math.min(detailTextWidth + 8, Math.max(280, formula.length * 8.2 + 24)));
+            formulaBackground.setAttribute("height", 24);
+            formulaBackground.setAttribute("rx", 4);
+            formulaBackground.setAttribute("fill", colorWithAlpha(activeColor, 0.09));
+            formulaBackground.setAttribute("stroke", colorWithAlpha(activeColor, 0.2));
+            formulaBackground.setAttribute("stroke-width", 0.7);
+            svg.appendChild(formulaBackground);
+            const formulaObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+            formulaObject.setAttribute("x", left + 70);
+            formulaObject.setAttribute("y", formulaY - 18);
+            formulaObject.setAttribute("width", detailTextWidth - 12);
+            formulaObject.setAttribute("height", 28);
+            const formulaContainer = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+            formulaContainer.style.cssText = `height:28px;display:flex;align-items:center;color:${activeColor};font-size:15px;overflow:visible;`;
+            katex.render(formula, formulaContainer, {
+              throwOnError: false,
+              displayMode: false,
+              output: "html",
+              strict: "ignore",
+            });
+            formulaObject.appendChild(formulaContainer);
+            svg.appendChild(formulaObject);
+          });
+        }
         if (index < detailRows.length - 1) {
           const separator = document.createElementNS("http://www.w3.org/2000/svg", "line");
           separator.setAttribute("x1", left + 20);

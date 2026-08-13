@@ -92,12 +92,15 @@ policy quality is rejected. Training completion must not be presented as walking
 
 ## Context latent-repair method
 
+The rows in this section are retained as evidence for the stopped differentiable-dynamics route.
+They are not current ICA acceptance criteria. ICA has no active method/training contract yet.
+
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
-| Context output is latent residual `delta_z`, fused exactly as `z_repaired = z + delta_z` before Decoder | Context method | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, differentiable-trajectory decision |
+| Context output is latent residual `delta_z`, fused exactly as `z_repaired = z + delta_z` before Decoder | historical Context method | note / semantic | superseded | `FADA-CONTEXT-METHOD-v003`, differentiable-trajectory decision |
 | Fault probe trajectory is Context input; healthy same-command trajectory is the reference | rollout lifecycle | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
 | Tracker Encoder and Decoder are frozen; only Context Encoder trains | parameter ownership | note / gradient contract | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
-| Primary loss compares the differentiably predicted adapted trajectory with the healthy reference | Context trainer | note / supervision | note-confirmed | `FADA-CONTEXT-TRAIN-v002`, 2026-08-12 decision |
+| Primary loss compares the differentiably predicted adapted trajectory with the healthy reference | historical Context trainer | note / supervision | rejected | 10/10 real-MuJoCo candidates rejected on 2026-08-12 |
 | Actions and free/optimized `delta_z` are not treated as Context ground truth | supervision boundary | note / semantic | note-confirmed | `FADA-CONTEXT-METHOD-v003`, 2026-08-12 decision |
 | Zero `delta_z` is numerically identical to the original Planner-IDM path | Context integration | S1 / equivalence | passed | `test_zero_context_policy_is_exactly_the_nominal_planner_idm_path` |
 | Exact healthy `E/D` checkpoint, command, and left-knee `0.9` intervention are bound | experiment owner | S2/S3 / identity | passed | v005 SHA-256, fixed `0.4` command, same-start cross-env MuJoCo preflight |
@@ -107,8 +110,22 @@ policy quality is rejected. Training completion must not be presented as walking
 | Context consumes only causal deployable rollout fields and never `g` | Context input owner | S1/S2 / privilege boundary | passed | dataset exposes only observation/action history and command to Context |
 | Trajectory loss yields finite gradients while only Context parameters change | Context trainer | S1/S3 / gradient | passed | 2026-08-12 differentiable-core evidence; v005 checkpoint sentinel |
 | Pretraining boundary constructs disjoint optimizers and performs zero parameter updates | training setup | S1/S3 / ownership | passed | real paired MuJoCo preflight, `optimizer_steps=0`, all parameters unchanged |
-| Model-predicted Context improvement transfers to paired MuJoCo rollouts | Context evaluator | S3/S4 / transfer | pending | validation protocol not yet accepted |
+| Model-predicted Context improvement transfers to paired MuJoCo rollouts | Context evaluator | S3/S4 / transfer | failed | 10/10 gates rejected; mean trajectory MSE worsened 27.32% |
 | Held-out and history-ablation tests rule out a constant `delta_z` | Context evaluator | S3/S4 / identifiability | pending | evaluation protocol not yet accepted |
+
+## Active Context Support-Query method
+
+| Acceptance | Owner | Tier / kind | Status | Evidence |
+|---|---|---|---|---|
+| Existing IDM exposes `encode_latent`/`decode_latent` with exact zero-residual equivalence | `FADAInverseDynamicsModel` | S1 / compatibility | passed | `test_idm_latent_split_is_exactly_original_forward`, original FADA regressions |
+| Context reads full Support target/realized/action sequence and emits one `[B,128]` `delta_z` | Support Context owner | S1 / tensor contract | passed | Support-Query focused tests |
+| Support and Query share exact command/fault but use different rollout identities | collector + dataset | S1/S3 / provenance | passed | fake independent-reset test; 2026-08-13 MuJoCo preflight |
+| Query supervision uses fault realized future and physically executed first action only | loss owner | S1/S3 / semantics | passed | first-action invariance test; MuJoCo tensor evidence |
+| Planner/IDM remain frozen and only Context receives finite gradients | training setup | S1/S3 / gradient | passed | focused gradient test; MuJoCo gradient norm `1.7284e-04` |
+| Fixed-0.7 real MuJoCo data has nonzero zero-Context action loss | preflight | S3 / identifiability | passed | first-action MSE `1.8847e-05`, threshold `1e-08` |
+| Offline training lowers held-out Query action MSE | Context trainer | S4 / training | pending | training not started |
+| Fixed Context improves second-rollout trajectory under the same 0.7 fault | calibrated evaluator | S4 / quality | pending | post-training evaluation required |
+| Cross-fault condition generalization beats a constant-delta baseline | later Context campaign | S4 / identifiability | out of scope | fixed-0.7 first stage only |
 
 ## Historical Context Phase-1 v004 full-action teacher
 

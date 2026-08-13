@@ -1,11 +1,11 @@
 {
-  "title": "12 FADA Context — Differentiable Trajectory Training",
-  "subtitle": "已确认的方法设计，尚未实现：故障轨迹输入 Context，可微故障模型传递第二次轨迹损失，只更新 Context",
+  "title": "13 Rejected — Differentiable-Trajectory Context",
+  "subtitle": "已否决：真实 MuJoCo 中 10/10 Context 候选均未通过门控",
   "layout": "design_transaction_inspector",
-  "status": "accepted-method-design",
-  "authority": "FADA-CONTEXT-METHOD-v003; implementation and runtime remain unconfirmed",
+  "status": "rejected-experiment",
+  "authority": "none; FADA-CONTEXT-METHOD-v003 is stopped history",
   "defaultZoom": 0.8,
-  "footerText": "本图确认训练语义，不证明可行性：MuJoCo 负责数据与真实验证，学习到的动力学 ensemble 只在训练中传递轨迹梯度。",
+  "footerText": "负结果：正式运行完成 10 轮，真实 MuJoCo 门控接受 0 轮；本图仅保留方法与失败证据。",
   "transaction": {
     "phaseTitles": {
       "pre": "正常基线与故障探测",
@@ -27,7 +27,7 @@
   "cards": [
     {
       "designId": "FADA-CTX-DYN-DP-01", "blockId": "HEALTHY-REFERENCE", "title": "Healthy Reference & Frozen E/D", "color": "#0369a1",
-      "responsibility": "在正常机器人上建立固定控制表示和同命令参考轨迹，不把正常动作误作故障动作标签。", "status": "note-confirmed; checkpoint-open", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "HEALTHY-REFERENCE", "implementationOwner": "future nominal checkpoint/reference owner", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md", "note/fada/task_canvas.md"], "evidenceRefs": ["note/fada/evidence/2026-08-12-context-differentiable-trajectory-decision.md"], "highlightSteps": ["train-freeze-ed"],
+      "responsibility": "在正常机器人上建立固定控制表示和同命令参考轨迹，不把正常动作误作故障动作标签。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "HEALTHY-REFERENCE", "implementationOwner": "historical nominal checkpoint/reference owner", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md", "note/fada/task_canvas.md"], "evidenceRefs": ["note/fada/evidence/2026-08-12-context-differentiable-trajectory-decision.md"], "highlightSteps": ["train-freeze-ed"],
       "details": [
         {"heading": "角色", "text": "E 产生 nominal z，D 产生完整动作；两者在 Context 阶段参数身份不变。"},
         {"heading": "参考", "text": "健康机器人在同 command 和接受的起点/相位下生成 tau_ref。"},
@@ -37,7 +37,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-02", "blockId": "FAULT-PROBE", "title": "Fault Probe History", "color": "#b45309",
-      "responsibility": "用左膝强度 0.9 的第一次异常执行产生 Context 可观察证据。", "status": "note-confirmed; runtime-unconfirmed", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "FAULT-PROBE", "implementationOwner": "future fault/probe collector", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["fault-probe", "encode-context"],
+      "responsibility": "用左膝强度 0.9 的第一次异常执行产生 Context 可观察证据。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "FAULT-PROBE", "implementationOwner": "historical fault/probe collector", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["fault-probe", "encode-context"],
       "details": [
         {"heading": "输入身份", "text": "H 来自 fault robot 的 observation、executed action、command 和 lifecycle 边界。"},
         {"heading": "不是标签", "text": "异常轨迹只告诉 Context 当前执行表现，不是要复现的监督目标。"},
@@ -47,7 +47,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-03", "blockId": "LATENT-REPAIR", "title": "Context Latent Repair", "color": "#0891b2",
-      "responsibility": "保持 Context 的唯一学习角色：从故障历史产生进入冻结 Decoder 前的 latent residual。", "status": "note-confirmed; architecture-open", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "LATENT-REPAIR", "implementationOwner": "future Context model owner", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": ["note/fada/evidence/2026-08-12-context-differentiable-trajectory-decision.md"], "highlightSteps": ["encode-context", "model-rollout", "trajectory-gradient"],
+      "responsibility": "保持 Context 的唯一学习角色：从故障历史产生进入冻结 Decoder 前的 latent residual。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "LATENT-REPAIR", "implementationOwner": "historical Context model owner", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": ["note/fada/evidence/2026-08-12-context-differentiable-trajectory-decision.md"], "highlightSteps": ["encode-context", "model-rollout", "trajectory-gradient"],
       "details": [
         {"heading": "融合", "text": "delta_z=C(H)，z_repaired=E(x)+delta_z，a=D(z_repaired)。"},
         {"heading": "第一版", "text": "probe 后输出一次 bounded delta_z，并在短 adaptation horizon 固定。"},
@@ -57,7 +57,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-04", "blockId": "FAULT-DYNAMICS", "title": "Differentiable Fault Dynamics", "color": "#7c3aed",
-      "responsibility": "学习故障机器人动作到下一状态的可微近似，为 Context 提供轨迹梯度。", "status": "note-confirmed; implementation-unconfirmed", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "FAULT-DYNAMICS", "implementationOwner": "future dynamics dataset/model owner", "sourceRefs": ["note/fada/contracts/active/training/FADA-CONTEXT-TRAIN-v002.md"], "evidenceRefs": [], "highlightSteps": ["collect-transitions", "fit-ensemble"],
+      "responsibility": "学习故障机器人动作到下一状态的可微近似，为 Context 提供轨迹梯度。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "FAULT-DYNAMICS", "implementationOwner": "historical dynamics dataset/model owner", "sourceRefs": ["note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v002.md"], "evidenceRefs": [], "highlightSteps": ["collect-transitions", "fit-ensemble"],
       "details": [
         {"heading": "数据", "text": "MuJoCo 因果 tuple 覆盖 nominal、latent/action 扰动和当前 Context visited states。"},
         {"heading": "目标", "text": "监督预测 state increment，并加入 scheduled short-horizon rollout loss。"},
@@ -67,7 +67,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-05", "blockId": "PAIRED-SECOND-ROLLOUT", "title": "Paired Adapted Rollout", "color": "#166534",
-      "responsibility": "从可比较的初始条件在故障动力学模型中生成第二次修正轨迹。", "status": "note-confirmed; lifecycle-open", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "PAIRED-SECOND-ROLLOUT", "implementationOwner": "future model rollout owner", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["model-rollout"],
+      "responsibility": "从可比较的初始条件在故障动力学模型中生成第二次修正轨迹。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "PAIRED-SECOND-ROLLOUT", "implementationOwner": "historical model rollout owner", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["model-rollout"],
       "details": [
         {"heading": "展开", "text": "a_t=D(E(x_hat_t)+delta_z)，x_hat_next=F_phi(x_hat_t,a_t)。"},
         {"heading": "配对", "text": "fault、command、初始状态/相位和 reference 时间必须遵循同一生命周期。"},
@@ -77,7 +77,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-06", "blockId": "TRAJECTORY-LOSS", "title": "Trajectory Gradient", "color": "#9f1239",
-      "responsibility": "以修正轨迹接近健康参考作为主目标，把梯度传回 Context。", "status": "note-confirmed; loss-open", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "TRAJECTORY-LOSS", "implementationOwner": "future Context trainer", "sourceRefs": ["note/fada/contracts/active/training/FADA-CONTEXT-TRAIN-v002.md"], "evidenceRefs": [], "highlightSteps": ["trajectory-gradient"],
+      "responsibility": "以修正轨迹接近健康参考作为主目标，把梯度传回 Context。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "TRAJECTORY-LOSS", "implementationOwner": "historical Context trainer", "sourceRefs": ["note/fada/contracts/history/training/FADA-CONTEXT-TRAIN-v002.md"], "evidenceRefs": [], "highlightSteps": ["trajectory-gradient"],
       "details": [
         {"heading": "主目标", "text": "L_track(tau_hat_adapt,tau_ref) 直接表达不同机体实现相同轨迹。"},
         {"heading": "正则", "text": "加入 delta_z 范数、动作平滑、安全和 ensemble disagreement。"},
@@ -87,7 +87,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-07", "blockId": "REAL-SIM-AGGREGATION", "title": "MuJoCo Aggregation", "color": "#c2410c",
-      "responsibility": "用真实故障仿真检验模型内收益，并补充 Context 新状态数据。", "status": "note-confirmed; runtime-unconfirmed", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "REAL-SIM-AGGREGATION", "implementationOwner": "future paired evaluator and data loop", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["mujoco-validate", "collect-transitions", "fit-ensemble"],
+      "responsibility": "用真实故障仿真检验模型内收益，并补充 Context 新状态数据。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "REAL-SIM-AGGREGATION", "implementationOwner": "historical paired evaluator and data loop", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["mujoco-validate", "collect-transitions", "fit-ensemble"],
       "details": [
         {"heading": "必要性", "text": "Context 可能利用 surrogate error；模型内 loss 降低不能单独验收。"},
         {"heading": "闭环", "text": "当前 C 回到 MuJoCo rollout，比较 predicted/real trajectory 并聚合新转移。"},
@@ -97,7 +97,7 @@
     },
     {
       "designId": "FADA-CTX-DYN-DP-08", "blockId": "IDENTIFIABILITY", "title": "History & Deployment Gates", "color": "#475569",
-      "responsibility": "证明 Context 使用异常历史而不是记住固定 0.9 常量，并限定无特权部署。", "status": "note-confirmed; evaluation-open", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "IDENTIFIABILITY", "implementationOwner": "future Context evaluator/deployment owner", "sourceRefs": ["note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["history-gates", "mujoco-validate"],
+      "responsibility": "证明 Context 使用异常历史而不是记住固定 0.9 常量，并限定无特权部署。", "status": "rejected-route evidence", "methodContract": "FADA-CONTEXT-METHOD-v003", "contractAnchor": "IDENTIFIABILITY", "implementationOwner": "historical Context evaluator/deployment owner", "sourceRefs": ["note/fada/contracts/history/method/FADA-CONTEXT-METHOD-v003.md"], "evidenceRefs": [], "highlightSteps": ["history-gates", "mujoco-validate"],
       "details": [
         {"heading": "对照", "text": "比较 zero、constant、correct history、mask 和 shuffle history。"},
         {"heading": "条件", "text": "至少混合健康与多个 fault strength、command、phase 或 fault time。"},

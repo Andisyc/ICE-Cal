@@ -1,10 +1,10 @@
 {
-  "title": "11 FADA Context Route 2 — Search-and-Distill Proposal",
-  "subtitle": "历史候选，已拒绝：free delta_z 不是可靠真值；当前方案见 12 号可微轨迹 Context",
+  "title": "12 Rejected — Search-and-Distill Context Training",
+  "subtitle": "已否决：free delta_z 不是可靠真值",
   "layout": "design_transaction_inspector",
   "status": "rejected-concept",
   "authority": "human-rejected as semantic supervision on 2026-08-12",
-  "supersededBy": "concept/12_fada_context_differentiable_trajectory.data.json",
+  "supersededBy": "architecture/09_trajectory_conditioned_execution_alignment.data.json",
   "defaultZoom": 0.8,
   "footerText": "本图只记录路线 2 候选训练方式；尚未决定搜索器、目标函数、loss 权重、history schema 或是否进入 active contract。",
   "transaction": {

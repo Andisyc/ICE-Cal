@@ -1,28 +1,19 @@
 # FADA Task Canvas
 
-Objective: train the healthy-simulation Tracker Encoder `E` and Decoder `D`, then freeze both. In
-left-knee-strength-`0.9` simulation, use a faulty probe trajectory as Context input, emit latent
-residual `delta_z`, execute a paired adapted rollout through the frozen Decoder, and optimize only
-Context Encoder from reference-trajectory loss propagated through a learned differentiable fault
-dynamics model. Deployment uses frozen `E/C/D` without weight updates or privileged fault data.
+Active objective: keep the healthy Planner-IDM checkpoint frozen, infer one condition-level `delta_z`
+from a complete Support rollout, and train it from a disjoint fault-Query first-action label. Only
+Context Encoder trains; deployment uses no fault labels or online optimizer updates.
 
 Current plan: `note/fada/plans/in_context_execution_calibration.md`
 
-Active Context authority: `FADA-CONTEXT-METHOD-v003` and `FADA-CONTEXT-TRAIN-v002`. The former
-direct-action-supervision route (`v002/v001`) and free-`delta_z` search-and-distill route are retained
-as superseded/rejected design history, not current training authority.
+Active Context authority: `FADA-CONTEXT-METHOD-v004` and `FADA-CONTEXT-TRAIN-v003`, implementing
+Architecture 09 and Design Inspector 10. `FADA-CONTEXT-METHOD-v003` and
+`FADA-CONTEXT-TRAIN-v002` remain stopped history.
 
-Current cursor: method concept accepted on 2026-08-12; the pure-tensor Context, fault-dynamics
-ensemble, short differentiable rollout, and loss core are implemented and contract-tested. MuJoCo
-collection, model fitting, paired validation, persistence, and training orchestration have not
-started. The accepted causal roles are:
-
-- first faulty trajectory: causal, deployment-visible Context input;
-- healthy same-command trajectory: reference target;
-- second adapted trajectory: primary optimization result;
-- learned fault dynamics ensemble: differentiable training-only gradient carrier;
-- `E/D/F_phi`: frozen during Context updates; only `C` belongs to the optimizer;
-- MuJoCo: fault data and transfer-validation owner, not an autograd path.
+Current cursor: implementation and bounded real-MuJoCo preflight are complete. The existing IDM final
+hidden tokens are exposed as `z`; one Support-derived `[B,128]` condition vector is added immediately
+before the frozen action head. The next gate is formal offline Context training, followed by a
+separate fixed-Context fault-simulator trajectory evaluation.
 
 Completed prerequisite: formal paper-aligned v005 persistent-async Planner-IDM training completed
 `8/8` on 2026-08-06, and its local checkpoint was hash-verified and strict-loaded. This does not
@@ -30,14 +21,18 @@ establish Context feasibility.
 
 Evidence classes:
 
-- `note-confirmed`: dual-rollout differentiable-fault-model Context design and parameter ownership;
+- `note-confirmed`: Support and Query share command and fixed fault but use independent rollouts;
+  Context reads Support once and emits one fixed `delta_z`; Planner-IDM remains frozen;
 - `contract-confirmed`: source Planner-IDM contracts end before target adaptation;
-- `runtime-confirmed`: existing v005 checkpoint load only;
-- `runtime-confirmed`: v005 schema-2 checkpoint maps Planner future to `(B,6,98)`, IDM action chunk
-  to `(B,6,29)`, and a three-step Context sentinel sends finite nonzero gradients only to Context;
-- `unconfirmed`: left-knee-`0.9` degradation for the selected `E/D`, dynamics-model accuracy,
-  trajectory-gradient utility, Context identifiability, model-to-MuJoCo transfer, and deployment.
+- `runtime-confirmed`: existing v005 checkpoint strict-load; fixed-`0.7` independent Support/Query
+  collection; dataset round-trip; zero-Context first-action MSE `1.8847e-05`; Context gradient norm
+  `1.7284e-04`; Planner/IDM frozen; one-step `/tmp` checkpoint smoke run;
+- `runtime-confirmed`: the stopped route completed 10 rounds at left-knee strength `0.7`; every
+  candidate worsened real-MuJoCo trajectory MSE and was rolled back;
+- `unconfirmed`: full-dataset held-out action improvement and post-training deployment quality;
+  cross-condition identifiability/generalization is intentionally outside the first fixed-`0.7`
+  stage.
 
-Next true boundary: specify the exact `E/D` checkpoint, probe/reference state schema, paired initial
-condition lifecycle, short dynamics horizon, and numerical gates. No Context implementation or
-training is authorized by this canvas alone.
+Next true boundary: run formal Context training only with explicit
+`boundary.optimizer_steps_allowed=true`; then evaluate a fixed Support-derived `delta_z` in an
+independent second fault rollout. No formal training is running now.

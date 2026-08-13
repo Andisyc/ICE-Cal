@@ -1,0 +1,289 @@
+{
+  "title": "10 Current Training — Context Encoder Support–Query Learning",
+  "subtitle": "09 总体思路中的当前训练方法：用 Support 生成 Δz，以独立 Query 的 Executed Action 监督 Context Encoder",
+  "status": "current-training-method",
+  "layout": "design_transaction_inspector",
+  "defaultZoom": 0.8,
+  "transaction": {
+    "phaseTitles": {
+      "pre": "冻结健康源模型",
+      "collection": "采集数据",
+      "update": "监督更新"
+    },
+    "steps": [
+      {
+        "id": "sample-condition",
+        "phase": "pre",
+        "label": "采样一个隐藏执行条件 ξ",
+        "detail": "同一 episode 的 Support 与 Query 共享条件；条件真值不进入 Context Encoder"
+      },
+      {
+        "id": "freeze-source",
+        "phase": "pre",
+        "label": "冻结 Planner 与完整 Tracker",
+        "detail": "Planner、Tracker Encoder 和 Tracker Decoder 均保持源 checkpoint 参数不变"
+      },
+      {
+        "id": "collect-support",
+        "phase": "collection",
+        "label": "执行并记录第一次 Support Rollout",
+        "detail": "同步记录目标 Motion、Executed Action 与 Realized Motion 的完整时序证据"
+      },
+      {
+        "id": "seal-support",
+        "phase": "collection",
+        "label": "封存定长 Support 序列 C",
+        "detail": "按时间顺序形成 c0 到 cT；缺陷标签、扰动参数和正确修复动作均不可见"
+      },
+      {
+        "id": "encode-context",
+        "phase": "collection",
+        "label": "整段编码一次并产生 Δzξ",
+        "detail": "Context Encoder 将完整 Support 序列压缩成一个条件级低维校准表示"
+      },
+      {
+        "id": "run-query",
+        "phase": "collection",
+        "label": "独立采集无 Context 的 Label Query",
+        "detail": "相同直行命令与左膝 0.7 故障下重新 reset；冻结健康策略闭环运行并记录实际 Executed Action"
+      },
+      {
+        "id": "seal-query",
+        "phase": "collection",
+        "label": "封存不重叠 Query 窗口",
+        "detail": "Query 与 Support 来自相同命令和故障条件的两次独立 rollout；Query Action 不得出现在 Support 中"
+      },
+      {
+        "id": "supervise-action",
+        "phase": "update",
+        "label": "以因果匹配的 Executed Action 监督",
+        "detail": "Query Realized Future 与故障仿真中实际产生它的第一步 Action 构成逆动力学监督，不构造 Δz 真值"
+      },
+      {
+        "id": "update-context-only",
+        "phase": "update",
+        "label": "只更新 Context Encoder",
+        "detail": "梯度经过冻结 Tracker 的计算图，但 Planner、Encoder 与 Decoder 参数均不更新"
+      }
+    ]
+  },
+  "cards": [
+    {
+      "designId": "ICA-DP-01",
+      "blockId": "ICA-PERTURB",
+      "title": "Perturbation Condition",
+      "color": "#ad6b3d",
+      "responsibility": "产生跨 episode 变化、在单个 Support–Query episode 内保持一致的隐藏执行条件。",
+      "details": [
+        "扰动只改变 Action → Robot Dynamics → Realized Motion，不改写 Planner Intent。",
+        "每个 episode 独立采样条件 ξ；Support 与 Query 共享同一 ξ。",
+        "第一阶段固定左膝电机强度 0.7，只在不同独立 rollout pair 上训练与验证。",
+        "Context Encoder 不读取 ξ、Wrench、Action gain、零位偏差或其他缺陷真值。",
+        "跨故障强度、方向与组合泛化属于后续阶段，不能由固定 0.7 实验宣称。"
+      ],
+      "highlightSteps": [
+        "sample-condition",
+        "collect-support",
+        "run-query"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-02",
+      "blockId": "ICA-PLANNER",
+      "title": "Frozen Planner",
+      "color": "#47749f",
+      "responsibility": "始终决定机器人想做什么，为第一次和第二次 Rollout 提供目标 Motion。",
+      "details": [
+        {
+          "heading": "1. Planner 始终冻结",
+          "text": "无论离线训练还是部署，Planner 参数都不更新。"
+        },
+        {
+          "heading": "2. Planner 只输出目标 Motion",
+          "text": "它描述机器人应该怎样运动；具体 Action 仍由 Tracker 生成。"
+        },
+        {
+          "heading": "3. 第一次 Rollout 记录当次 Planner 输出",
+          "text": "轨迹直接保存当时交给 Tracker 的目标 Motion，不需要额外提供预先保存的 clean rollout。"
+        },
+        {
+          "heading": "4. 校准不能改变 Intent",
+          "text": "Context 只能调整目标 Motion 的执行方式，不能修改 Planner 原本要求完成的任务。"
+        }
+      ],
+      "highlightSteps": [
+        "freeze-source",
+        "collect-support",
+        "run-query"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-03",
+      "blockId": "ICA-TRACKER",
+      "title": "Frozen Tracker",
+      "color": "#6c4d91",
+      "responsibility": "保留成熟的 Motion-to-Action 逆映射；Tracker Encoder 与 Decoder 都不吸收目标条件。",
+      "details": [
+        {
+          "heading": "1. Tracker Encoder 生成基础运动表示 z_t",
+          "text": "它根据当前状态、历史和 Planner 的目标 Motion，判断当前应当怎样执行。"
+        },
+        {
+          "heading": "2. Tracker Decoder 实时输出 Action",
+          "text": "Decoder 将基础运动表示 z_t 与 Context Encoder 输出的 Δz 组合，并在每个控制时刻生成 Action。"
+        },
+        {
+          "heading": "3. Encoder 和 Decoder 始终冻结",
+          "text": "训练 Context Encoder 时，Tracker 参数不更新，避免它直接记住各种缺陷。"
+        },
+        {
+          "heading": "4. 部署时不进行任何训练",
+          "text": "真机上不会更新参数、优化器或 normalizer，只进行前向计算。"
+        },
+        {
+          "heading": "5. Tracker 是唯一的 Action 生成器",
+          "text": "Context Encoder 只能提供低维 Δz，不能绕开 Decoder 直接输出 Action。"
+        }
+      ],
+      "highlightSteps": [
+        "freeze-source",
+        "run-query",
+        "update-context-only"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-04",
+      "blockId": "ICA-SUPPORT",
+      "title": "Support Rollout",
+      "color": "#a05e4f",
+      "responsibility": "把第一次执行封存为可部署的目标—动作—实现响应时序证据，而不是正确修复标签。",
+      "details": [
+        {
+          "heading": "1. 明确三类信息的来源",
+          "text": "Y_target 是 Planner 想让机器人做什么；Y_realized 是机器人实际做成什么；A_exec 是真正发送给机器人的动作。"
+        },
+        {
+          "heading": "2. 三路数据必须正确对齐",
+          "text": "复用 FADA 因果窗口：时刻 t 的历史对应 t 到 t+K-1 的 realized next-state 序列及实际 action chunk；损失只使用物理执行的第一步 Action。"
+        },
+        {
+          "heading": "3. Support 中不能包含答案",
+          "text": "不输入缺陷参数、Teacher Action、Query Action 或人为构造的正确 Δz，避免模型利用部署时不存在的信息。"
+        }
+      ],
+      "highlightSteps": [
+        "collect-support",
+        "seal-support"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-05",
+      "blockId": "ICA-CONTEXT",
+      "title": "Context Encoder",
+      "color": "#3c7485",
+      "responsibility": "一次读取完整 Support 序列，将条件相关的动作—响应变化压缩为一个低维 Δzξ。",
+      "details": [
+        {
+          "heading": "1. 输入完整时序，而非单帧",
+          "text": "它读取第一次 Rollout 从开始到结束的轨迹。因为单个状态无法说明机器人为何逐渐偏离。"
+        },
+        {
+          "heading": "2. 整条轨迹只输出一个 Δz",
+          "text": "它不为每个时刻输出 Action，而是总结出一个代表当前执行条件的校准量。"
+        },
+        {
+          "heading": "3. 第二次 Rollout 固定复用 Δz",
+          "text": "第二次执行期间不再重复读取旧轨迹，也不动态修改 Δz。实时 Action 仍由 Tracker 输出。"
+        }
+      ],
+      "highlightSteps": [
+        "seal-support",
+        "encode-context",
+        "run-query"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-07",
+      "blockId": "ICA-LEARNING",
+      "title": "Calibration Learning",
+      "color": "#a75555",
+      "responsibility": "用同一动力学条件下相互独立的 Support–Query Rollout，只训练 Context Encoder 学习可跨轨迹复用的校准量。",
+      "details": [
+        {
+          "heading": "1. 按动力学条件构造 Episode",
+          "text": "每次采样一个固定的仿真动力学条件。它代表当前 Episode 中保持不变的机器人动力学。",
+          "latex": "\\xi \\sim p_{\\mathrm{train}}(\\xi)"
+        },
+        {
+          "heading": "2. 在相同条件下生成两条独立的无 Context Rollout",
+          "text": "Support 用于识别动力学变化；Label Query 提供监督。两条轨迹共享直行命令与左膝 0.7 故障，但分别 reset，且采集时都不使用 Context。",
+          "latex": "R_{\\mathrm{sup}},R_{\\mathrm{qry}} \\sim p(R\\mid\\xi),\\qquad R_{\\mathrm{sup}}\\neq R_{\\mathrm{qry}}"
+        },
+        {
+          "heading": "3. Support Rollout 生成校准量",
+          "text": "Context Encoder 读取完整 Support 时序，并将当前动力学条件的执行响应压缩成一个固定校准量。Support 可以包含自身的 Executed Action，但不能包含 Query Action。",
+          "latex": "\\Delta z_{\\xi}=A_{\\mathrm{ctx}}(S_{\\xi}),\\qquad S_{\\xi}=(Y_{\\mathrm{target}}^{s},Y_{\\mathrm{realized}}^{s},A_{\\mathrm{exec}}^{s})"
+        },
+        {
+          "heading": "4. Query Rollout 提供独立监督",
+          "text": "Query 不输入 Context Encoder。它提供因果匹配的 Realized Motion–Executed Action Pair：某段 Motion 实际由哪个 Action 产生，就用哪个 Action 作为标签。",
+          "latex": "Q_{\\xi}=(Y_{\\mathrm{realized}}^{q},A_{\\mathrm{exec}}^{q})"
+        },
+        {
+          "heading": "5. 冻结 Tracker 离线重建 Query Action",
+          "text": "Planner Intent 作为正确意图被记录；离线逆动力学监督用 Query 的故障历史与动作执行后的 Realized Future 生成 z_q。Decoder 使用 Support 推断出的校准量重建 Query Executed Action。部署时 Realized Future 不可得，改由 Planner Intent 占据 future 输入。",
+          "latex": [
+            "z_q=E_{\\mathrm{Tracker}}(Y_{\\mathrm{realized}}^{q},\\mathrm{history}^{q})",
+            "\\hat A_q=D_{\\mathrm{Tracker}}(z_q+\\Delta z_{\\xi},\\mathrm{history}^{q})"
+          ]
+        },
+        {
+          "heading": "6. 使用实际执行的第一步 Action 监督",
+          "text": "预测 chunk 只与 Query 中物理发送给故障仿真的第一步 Action 计算均方误差。不监督未实际执行的后续 chunk，也不使用 clean Action、Teacher Action、task Reward 或人为 Δz 真值。",
+          "latex": "\\mathcal{L}_{\\mathrm{cal}}=\\lVert\\hat a_{q,t}-a_{\\mathrm{exec},q,t}\\rVert_2^2"
+        },
+        {
+          "heading": "7. 梯度经过冻结 Tracker，只更新 Context Encoder",
+          "text": "损失梯度经过冻结的 Tracker Encoder 和 Decoder 计算并传回校准量，但 Planner、Tracker Encoder 与 Tracker Decoder 均不更新；优化器只更新 Context Encoder。"
+        },
+        {
+          "heading": "8. 第一阶段只做固定 0.7 条件内的 pair 泛化",
+          "text": "当前只在左膝 0.7 条件下采集多个独立 Support–Query pair，并按 pair 划分训练与验证。它检验该潜变量校准路径能否学习，不证明跨故障条件泛化。",
+          "latex": "\\xi_{\\mathrm{train}}=\\xi_{\\mathrm{val}}=(\\mathrm{left\\ knee},0.7),\\qquad \\mathcal{R}_{\\mathrm{train}}\\cap\\mathcal{R}_{\\mathrm{val}}=\\varnothing"
+        }
+      ],
+      "highlightSteps": [
+        "seal-query",
+        "supervise-action",
+        "update-context-only"
+      ],
+      "chips": []
+    },
+    {
+      "designId": "ICA-DP-08",
+      "blockId": "ICA-QUERY",
+      "title": "Frozen Calibrated Re-execution",
+      "color": "#437f86",
+      "responsibility": "在参数完全冻结的情况下，将一次 Support 推断出的 Δzξ 用于后续实时 Action 生成。",
+      "details": [
+        "训练完成后的验证/部署顺序为：第一次 rollout → 封存 Support → 计算一次 Δzξ → 带固定 Δz 的第二次 rollout。它不同于训练数据中的无 Context Label Query。",
+        "第二次 rollout 的每个控制周期只运行原 Tracker 实时路径，并复用固定 Δzξ。",
+        "Context Encoder 不需要以控制频率执行，因此不会把整条历史编码开销放进实时循环。",
+        "第二次 rollout 的当前或未来信息不得提前进入首次 Support Context。",
+        "所有模型参数、优化器状态与 normalizer 均保持冻结。",
+        "第一版只声明同一短时程任务边界内的校准；跨 Intent 复用属于待验证能力。"
+      ],
+      "highlightSteps": [
+        "encode-context",
+        "run-query",
+        "seal-query"
+      ],
+      "chips": []
+    }
+  ]
+}

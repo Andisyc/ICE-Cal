@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_left_knee_090
+  - _self_
+
+env:
+  domain_rand:
+    actuator_strength:
+      multipliers:
+        - 1.0
+        - 1.0
+        - 1.0
+        - 0.7
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
