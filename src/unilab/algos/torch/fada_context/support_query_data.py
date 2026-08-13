@@ -14,7 +14,7 @@ from unilab.algos.torch.fada_context.support_query import (
     SupportQueryBatch,
 )
 
-SUPPORT_QUERY_DATASET_SCHEMA_VERSION = 1
+SUPPORT_QUERY_DATASET_SCHEMA_VERSION = 2
 
 
 def support_query_split_identity_sha256(batch: SupportQueryBatch) -> str:
@@ -72,7 +72,9 @@ def _tensor_payload(batch: SupportQueryBatch) -> dict[str, torch.Tensor]:
         "query_command": batch.query.command.detach().cpu(),
         "query_planner_intent": batch.query.planner_intent.detach().cpu(),
         "query_realized_future": batch.query.realized_future.detach().cpu(),
-        "query_executed_action_chunk": batch.query.executed_action_chunk.detach().cpu(),
+        "query_executed_action": batch.query.executed_action.detach().cpu(),
+        "query_window_anchor": batch.query.window_anchor.detach().cpu(),
+        "query_valid_window_mask": batch.query.valid_window_mask.detach().cpu(),
         "support_command": batch.support_command.detach().cpu(),
         "pair_id": batch.pair_id.detach().cpu(),
         "support_rollout_id": batch.support_rollout_id.detach().cpu(),
@@ -80,7 +82,47 @@ def _tensor_payload(batch: SupportQueryBatch) -> dict[str, torch.Tensor]:
     }
 
 
-def _batch_from_payload(payload: Mapping[str, Any]) -> SupportQueryBatch:
+def _batch_from_payload(
+    payload: Mapping[str, Any],
+    config: FADAArchitectureConfig,
+    *,
+    legacy_single_anchor: bool = False,
+) -> SupportQueryBatch:
+    if legacy_single_anchor:
+        executed_chunk = payload.get("query_executed_action_chunk")
+        if not isinstance(executed_chunk, torch.Tensor):
+            raise ValueError("legacy Support-Query dataset is missing executed action chunk")
+        pair_count = int(executed_chunk.shape[0])
+        window_anchor = torch.full(
+            (pair_count, 1),
+            config.history_length - 1,
+            dtype=torch.int64,
+            device=executed_chunk.device,
+        )
+        valid_window_mask = torch.ones(
+            (pair_count, 1), dtype=torch.bool, device=executed_chunk.device
+        )
+        return SupportQueryBatch(
+            support=SupportContextBatch(
+                target_future=payload["support_target_future"],
+                realized_state=payload["support_realized_state"],
+                executed_action=payload["support_executed_action"],
+            ),
+            query=ContextQueryBatch(
+                observation_history=payload["query_observation_history"].unsqueeze(1),
+                action_history=payload["query_action_history"].unsqueeze(1),
+                command=payload["query_command"].unsqueeze(1),
+                planner_intent=payload["query_planner_intent"].unsqueeze(1),
+                realized_future=payload["query_realized_future"].unsqueeze(1),
+                executed_action=executed_chunk[:, 0].unsqueeze(1),
+                window_anchor=window_anchor,
+                valid_window_mask=valid_window_mask,
+            ),
+            support_command=payload["support_command"],
+            pair_id=payload["pair_id"],
+            support_rollout_id=payload["support_rollout_id"],
+            query_rollout_id=payload["query_rollout_id"],
+        )
     names = (
         "support_target_future",
         "support_realized_state",
@@ -90,7 +132,9 @@ def _batch_from_payload(payload: Mapping[str, Any]) -> SupportQueryBatch:
         "query_command",
         "query_planner_intent",
         "query_realized_future",
-        "query_executed_action_chunk",
+        "query_executed_action",
+        "query_window_anchor",
+        "query_valid_window_mask",
         "support_command",
         "pair_id",
         "support_rollout_id",
@@ -111,7 +155,9 @@ def _batch_from_payload(payload: Mapping[str, Any]) -> SupportQueryBatch:
             command=payload["query_command"],
             planner_intent=payload["query_planner_intent"],
             realized_future=payload["query_realized_future"],
-            executed_action_chunk=payload["query_executed_action_chunk"],
+            executed_action=payload["query_executed_action"],
+            window_anchor=payload["query_window_anchor"],
+            valid_window_mask=payload["query_valid_window_mask"],
         ),
         support_command=payload["support_command"],
         pair_id=payload["pair_id"],
@@ -126,6 +172,7 @@ def save_support_query_dataset(
     config: FADAArchitectureConfig,
     *,
     support_length: int,
+    query_length: int,
     metadata: Mapping[str, Any],
 ) -> Path:
     batch.validate(config, support_length=support_length)
@@ -146,6 +193,7 @@ def save_support_query_dataset(
         "schema_version": SUPPORT_QUERY_DATASET_SCHEMA_VERSION,
         "architecture": asdict(config),
         "support_length": int(support_length),
+        "query_length": int(query_length),
         "metadata": dict(metadata),
         **_tensor_payload(batch),
     }
@@ -162,21 +210,29 @@ def load_support_query_dataset(
     config: FADAArchitectureConfig,
     *,
     support_length: int,
+    query_length: int,
     map_location: str | torch.device = "cpu",
+    allow_legacy_single_anchor: bool = False,
 ) -> tuple[SupportQueryBatch, Mapping[str, Any]]:
     payload = torch.load(Path(path), map_location=map_location, weights_only=True)
     if not isinstance(payload, dict):
         raise ValueError("Support-Query dataset must be a mapping")
-    if payload.get("schema_version") != SUPPORT_QUERY_DATASET_SCHEMA_VERSION:
+    schema = int(payload.get("schema_version", -1))
+    legacy_single_anchor = schema == 1 and allow_legacy_single_anchor
+    if schema != SUPPORT_QUERY_DATASET_SCHEMA_VERSION and not legacy_single_anchor:
         raise ValueError("unsupported Support-Query dataset schema")
     if payload.get("architecture") != asdict(config):
         raise ValueError("Support-Query dataset architecture mismatch")
     if payload.get("support_length") != int(support_length):
         raise ValueError("Support-Query dataset support length mismatch")
+    if not legacy_single_anchor and payload.get("query_length") != int(query_length):
+        raise ValueError("Support-Query dataset Query length mismatch")
     metadata = payload.get("metadata")
     if not isinstance(metadata, Mapping):
         raise ValueError("Support-Query dataset metadata must be a mapping")
-    batch = _batch_from_payload(payload).validate(config, support_length=support_length)
+    batch = _batch_from_payload(
+        payload, config, legacy_single_anchor=legacy_single_anchor
+    ).validate(config, support_length=support_length)
     if torch.unique(batch.pair_id).numel() != batch.pair_id.numel():
         raise ValueError("sealed Support-Query dataset pair_id values must be unique")
     return batch, metadata

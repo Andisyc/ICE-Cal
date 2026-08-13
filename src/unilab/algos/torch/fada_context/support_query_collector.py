@@ -18,12 +18,18 @@ from unilab.algos.torch.fada_context.support_query import (
 class SupportQueryCollectionConfig:
     num_pairs: int
     support_length: int
+    query_length: int
     max_reset_pairs: int = 64
     observation_key: str = "obs"
     command_key: str = "commands"
 
     def __post_init__(self) -> None:
-        if self.num_pairs <= 0 or self.support_length <= 0 or self.max_reset_pairs <= 0:
+        if (
+            self.num_pairs <= 0
+            or self.support_length <= 0
+            or self.query_length <= 0
+            or self.max_reset_pairs <= 0
+        ):
             raise ValueError("collection sizes must be positive")
 
 
@@ -147,33 +153,53 @@ def _rollout(
     return transitions, invalid
 
 
-def _query_row(
+def _query_windows(
     records: Sequence[_Transition],
     row: int,
     policy: FADAPlannerIDMPolicy,
 ) -> ContextQueryBatch:
     config = policy.config
-    expected = config.history_length + config.prediction_horizon - 1
-    if len(records) != expected:
-        raise ValueError(f"Query record count mismatch: expected={expected} observed={len(records)}")
-    anchor = config.history_length - 1
-    history = records[: config.history_length]
-    future = records[anchor : anchor + config.prediction_horizon]
+    minimum = config.history_length + config.prediction_horizon - 1
+    if len(records) < minimum:
+        raise ValueError(
+            f"Query record count is too short: minimum={minimum} observed={len(records)}"
+        )
+    anchors = range(config.history_length - 1, len(records) - config.prediction_horizon + 1)
+    histories = [records[t - config.history_length + 1 : t + 1] for t in anchors]
+    futures = [records[t : t + config.prediction_horizon] for t in anchors]
+    anchor_values = list(
+        range(
+            config.history_length - 1,
+            len(records) - config.prediction_horizon + 1,
+        )
+    )
     return ContextQueryBatch(
         observation_history=torch.from_numpy(
-            np.stack([record.observation[row] for record in history])[None]
+            np.stack(
+                [[record.observation[row] for record in history] for history in histories]
+            )[None]
         ),
         action_history=torch.from_numpy(
-            np.stack([record.previous_action[row] for record in history])[None]
+            np.stack(
+                [[record.previous_action[row] for record in history] for history in histories]
+            )[None]
         ),
-        command=torch.from_numpy(future[0].command[row][None]),
-        planner_intent=torch.from_numpy(future[0].planner_intent[row][None]),
+        command=torch.from_numpy(
+            np.stack([future[0].command[row] for future in futures])[None]
+        ),
+        planner_intent=torch.from_numpy(
+            np.stack([future[0].planner_intent[row] for future in futures])[None]
+        ),
         realized_future=torch.from_numpy(
-            np.stack([record.next_observation[row] for record in future])[None]
+            np.stack(
+                [[record.next_observation[row] for record in future] for future in futures]
+            )[None]
         ),
-        executed_action_chunk=torch.from_numpy(
-            np.stack([record.executed_action[row] for record in future])[None]
+        executed_action=torch.from_numpy(
+            np.stack([future[0].executed_action[row] for future in futures])[None]
         ),
+        window_anchor=torch.tensor([anchor_values], dtype=torch.int64),
+        valid_window_mask=torch.ones((1, len(anchor_values)), dtype=torch.bool),
     )
 
 
@@ -206,7 +232,9 @@ def _concat_query(rows: Sequence[ContextQueryBatch]) -> ContextQueryBatch:
         "command",
         "planner_intent",
         "realized_future",
-        "executed_action_chunk",
+        "executed_action",
+        "window_anchor",
+        "valid_window_mask",
     )
     return ContextQueryBatch(
         **{
@@ -214,6 +242,39 @@ def _concat_query(rows: Sequence[ContextQueryBatch]) -> ContextQueryBatch:
             for name in names
         }
     )
+
+
+def collect_no_context_support(
+    fault_env: Any,
+    policy: FADAPlannerIDMPolicy,
+    initial_state: Any,
+    *,
+    support_length: int,
+    observation_key: str = "obs",
+    command_key: str = "commands",
+) -> SupportContextBatch:
+    """Collect one deploy-time Support rollout with the frozen policy and no Context."""
+
+    if support_length <= 0:
+        raise ValueError("support_length must be positive")
+    records, invalid = _rollout(
+        fault_env,
+        policy,
+        initial_state,
+        steps=support_length,
+        observation_key=observation_key,
+        command_key=command_key,
+    )
+    if bool(np.any(invalid)):
+        invalid_rows = np.flatnonzero(invalid).tolist()
+        raise RuntimeError(
+            "online Support rollout terminated, truncated, or changed command: "
+            f"invalid_rows={invalid_rows}"
+        )
+    support = _concat_support(
+        [_support_row(records, row) for row in range(int(fault_env.num_envs))]
+    )
+    return support.validate(policy.config, support_length=support_length)
 
 
 def collect_support_query_pairs(
@@ -228,7 +289,12 @@ def collect_support_query_pairs(
         raise TypeError("Support-Query collection requires set_autoreset")
     set_autoreset(False)
     config = policy.config
-    query_steps = config.history_length + config.prediction_horizon - 1
+    minimum_query_steps = config.history_length + config.prediction_horizon - 1
+    if spec.query_length < minimum_query_steps:
+        raise ValueError(
+            "query_length cannot supply one causal window: "
+            f"minimum={minimum_query_steps} observed={spec.query_length}"
+        )
     supports: list[SupportContextBatch] = []
     queries: list[ContextQueryBatch] = []
     support_commands: list[torch.Tensor] = []
@@ -252,7 +318,7 @@ def collect_support_query_pairs(
             fault_env,
             policy,
             query_initial,
-            steps=query_steps,
+            steps=spec.query_length,
             observation_key=spec.observation_key,
             command_key=spec.command_key,
         )
@@ -269,7 +335,7 @@ def collect_support_query_pairs(
             if len(pair_ids) >= spec.num_pairs:
                 break
             supports.append(_support_row(support_records, int(row)))
-            queries.append(_query_row(query_records, int(row), policy))
+            queries.append(_query_windows(query_records, int(row), policy))
             support_commands.append(torch.from_numpy(support_command[row][None]))
             pair_ids.append(len(pair_ids))
             support_rollout_ids.append(support_rollout_id)
@@ -294,3 +360,11 @@ def collect_support_query_pairs(
         rejected_pairs=rejected,
         reset_pairs=reset_pairs,
     )
+
+
+__all__ = [
+    "SupportQueryCollectionConfig",
+    "SupportQueryCollectionResult",
+    "collect_no_context_support",
+    "collect_support_query_pairs",
+]

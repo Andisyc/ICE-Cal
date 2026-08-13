@@ -1329,8 +1329,12 @@ def _handle_command_key(commander: KeyboardCommander, keycode: int) -> None:
     elif keycode == _KEY_DOWN:
         commander.nudge(commander.AXIS_VX, -1.0)
     elif keycode == _KEY_LEFT:
-        commander.nudge(commander.AXIS_VYAW, +1.0)
+        commander.nudge(commander.AXIS_VY, +1.0)
     elif keycode == _KEY_RIGHT:
+        commander.nudge(commander.AXIS_VY, -1.0)
+    elif keycode in (ord("Q"), ord("q")):
+        commander.nudge(commander.AXIS_VYAW, +1.0)
+    elif keycode in (ord("E"), ord("e")):
         commander.nudge(commander.AXIS_VYAW, -1.0)
     elif keycode in (_KEY_ENTER, _KEY_KP_ENTER):
         commander.zero()
@@ -1352,7 +1356,8 @@ def _handle_height_key(commander: HeightCommander, keycode: int) -> bool:
 def _print_keyboard_legend(args, *, height_control: bool = False) -> None:
     print("[play_interactive] Keyboard teleop ENABLED (drive style):")
     print("  Up / Down    : forward / backward (vx)")
-    print("  Left / Right : turn left / right  (vyaw)")
+    print("  Left / Right : translate left / right (vy)")
+    print("  Q / E        : turn left / right (vyaw)")
     print("  Enter        : full stop")
     if height_control:
         step = float(getattr(args, "keyboard_step_height", 0.01))
@@ -1626,7 +1631,13 @@ def _print_distill_action_trace(
     print("[play_interactive][distill-trace] " + " ".join(parts))
 
 
-def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = None):
+def play_interactive(
+    args,
+    cfg: DictConfig | None = None,
+    *,
+    algo: str | None = None,
+    fada_session_factory: Callable[..., Any] | None = None,
+):
     device = _select_playback_device(cfg)
     print(f"[play_interactive] Device: {device}")
     algo = str(algo or getattr(args, "algo", "ppo"))
@@ -1762,7 +1773,8 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
         elif algo == "fada":
             if cfg is None:
                 raise ValueError("FADA interactive playback requires a composed Hydra config.")
-            session = create_fada_playback_session(
+            session_factory = fada_session_factory or create_fada_playback_session
+            session = session_factory(
                 playback_cfg=playback_cfg,
                 cfg=cfg,
                 root_dir=ROOT_DIR,

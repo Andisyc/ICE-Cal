@@ -1,0 +1,51 @@
+# @package _global_
+defaults:
+  - /task/g1_walk_flat/mujoco
+  - _self_
+
+interactive:
+  keyboard: false
+
+env:
+  commands:
+    vel_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+    rel_standing_envs: 0.0
+    rel_transition_envs: 0.0
+  reset_base_qvel_limit: 0.0
+  curriculum:
+    enabled: false
+  domain_rand:
+    randomize_kp: false
+    randomize_kd: false
+    actuator_strength:
+      enabled: true
+      multipliers:
+        - 1.0
+        - 1.0
+        - 1.0
+        - 0.7
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0

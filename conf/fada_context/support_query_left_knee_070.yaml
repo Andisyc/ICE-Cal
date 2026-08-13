@@ -7,6 +7,7 @@ collection:
   num_envs: 64
   num_pairs: 512
   support_length: 60
+  query_length: 60
   max_reset_pairs: 64
   artifact_path: artifacts/fada_context/support_query_left_knee_070.pt
 

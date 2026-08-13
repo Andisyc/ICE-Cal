@@ -113,7 +113,7 @@ They are not current ICA acceptance criteria. ICA has no active method/training 
 | Model-predicted Context improvement transfers to paired MuJoCo rollouts | Context evaluator | S3/S4 / transfer | failed | 10/10 gates rejected; mean trajectory MSE worsened 27.32% |
 | Held-out and history-ablation tests rule out a constant `delta_z` | Context evaluator | S3/S4 / identifiability | pending | evaluation protocol not yet accepted |
 
-## Active Context Support-Query method
+## Historical single-anchor Context Support-Query baseline
 
 | Acceptance | Owner | Tier / kind | Status | Evidence |
 |---|---|---|---|---|
@@ -123,9 +123,22 @@ They are not current ICA acceptance criteria. ICA has no active method/training 
 | Query supervision uses fault realized future and physically executed first action only | loss owner | S1/S3 / semantics | passed | first-action invariance test; MuJoCo tensor evidence |
 | Planner/IDM remain frozen and only Context receives finite gradients | training setup | S1/S3 / gradient | passed | focused gradient test; MuJoCo gradient norm `1.7284e-04` |
 | Fixed-0.7 real MuJoCo data has nonzero zero-Context action loss | preflight | S3 / identifiability | passed | first-action MSE `1.8847e-05`, threshold `1e-08` |
-| Offline training lowers held-out Query action MSE | Context trainer | S4 / training | pending | training not started |
-| Fixed Context improves second-rollout trajectory under the same 0.7 fault | calibrated evaluator | S4 / quality | pending | post-training evaluation required |
+| Offline single-anchor training completes | Context trainer | S4 / training | passed | `context_500.pt`; prior v004/v003 authority |
+| Fixed Context improves second-rollout trajectory under the same 0.7 fault | calibrated evaluator | S4 / quality | failed | stored and online Support each worsened 7/7 healthy-distance metrics |
 | Cross-fault condition generalization beats a constant-delta baseline | later Context campaign | S4 / identifiability | out of scope | fixed-0.7 first stage only |
+
+## Active Context Multi-Window method
+
+| Acceptance | Owner | Tier / kind | Status | Evidence |
+|---|---|---|---|---|
+| Complete Query produces all valid `[P,W,H/K,...]` windows with explicit anchors/mask | pair-window data owner | S1 / tensor contract | passed | schema-v2 round trip; `L=60` gives 26 anchors `29..54` |
+| Every window aligns history through `s_t`, future from `s_(t+1)`, and label `a_t` | collector | S1/S3 / causality | passed | numbered-transition test; 8-pair/208-window MuJoCo preflight |
+| Reset/done/truncation/command-changing windows never enter the loss | collector + validator | S1 / negative contract | passed | parameterized invalid-rollout rejection test |
+| One Support forward emits one fixed `delta_z` reused across all owning Query windows | Context wrapper | S1 / lifecycle | passed | call-count and broadcast-value test |
+| Loss is a masked mean of executed first actions and ignores five nonexecuted chunk entries | loss owner | S1 / semantics | passed | masked first-action invariance and gradient test |
+| Rollout-group split keeps all windows from one Query on one side | dataset/split owner | S1 / leakage | passed | group-disjoint split identity test |
+| Multi-window held-out action MSE beats single-anchor and zero-Context baselines | trainer/evaluator | S4 / action fit | pending | training not authorized or started |
+| Multi-window fixed Context improves healthy-reference trajectory distance | closed-loop evaluator | S4 / repair | pending | separate post-training gate; action fit is insufficient |
 
 ## Historical Context Phase-1 v004 full-action teacher
 

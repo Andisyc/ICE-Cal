@@ -85,7 +85,7 @@
     {
       "id": "ICA09-M-08",
       "title": "Calibration Learning",
-      "summary": "训练细节见 10：Support–Query 学习，只更新 Context Encoder",
+      "summary": "训练细节见 10：固定 Δz 的多窗口 Query 学习，只更新 Context Encoder",
       "concept": "C-ICA09-LEARNING",
       "x": 1645, "y": 325, "w": 220, "h": 120
     },

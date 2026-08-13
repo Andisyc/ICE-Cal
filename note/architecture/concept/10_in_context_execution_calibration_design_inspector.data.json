@@ -1,6 +1,6 @@
 {
-  "title": "10 Current Training — Context Encoder Support–Query Learning",
-  "subtitle": "09 总体思路中的当前训练方法：用 Support 生成 Δz，以独立 Query 的 Executed Action 监督 Context Encoder",
+  "title": "10 Current Training Design — Multi-Window Context Learning",
+  "subtitle": "完整 Support 生成一个固定 Δz；独立完整 Query 沿时间构造多个因果窗口，以 Executed First Action 监督 Context Encoder",
   "status": "current-training-method",
   "layout": "design_transaction_inspector",
   "defaultZoom": 0.8,
@@ -50,14 +50,20 @@
       {
         "id": "seal-query",
         "phase": "collection",
-        "label": "封存不重叠 Query 窗口",
-        "detail": "Query 与 Support 来自相同命令和故障条件的两次独立 rollout；Query Action 不得出现在 Support 中"
+        "label": "封存独立完整 Query Rollout",
+        "detail": "Query 与 Support 来自相同命令和故障条件的两次独立 rollout；先按完整 rollout 身份划分训练与验证"
+      },
+      {
+        "id": "expand-query-windows",
+        "phase": "collection",
+        "label": "沿完整 Query 构造多个因果窗口",
+        "detail": "每个锚点包含过去 H=30 步历史、未来 K=6 步 realized states 和对应实际第一步 Action"
       },
       {
         "id": "supervise-action",
         "phase": "update",
-        "label": "以因果匹配的 Executed Action 监督",
-        "detail": "Query Realized Future 与故障仿真中实际产生它的第一步 Action 构成逆动力学监督，不构造 Δz 真值"
+        "label": "平均所有有效窗口的 First-Action Loss",
+        "detail": "同一 Support 的固定 Δz 复用于整条 Query；只平均有效窗口中因果匹配的实际第一步 Action，不构造 Δz 真值"
       },
       {
         "id": "update-context-only",
@@ -208,6 +214,45 @@
       "chips": []
     },
     {
+      "designId": "ICA-DP-06",
+      "blockId": "ICA-QUERY-WINDOWS",
+      "title": "Pair–Window Query",
+      "color": "#6f6b3f",
+      "responsibility": "保留 Support–Query pair 归属，并把一条完整 Query 沿时间展开为多个因果对齐的训练窗口。",
+      "details": [
+        {
+          "heading": "1. Pair 是数据归属单位",
+          "text": "一条 Support 与一条独立 Query 构成一个 pair；同一 Query 的所有窗口必须留在同一个训练或验证划分中。"
+        },
+        {
+          "heading": "2. Window 是监督单位",
+          "text": "每个有效锚点 t 保存过去 H=30 步 observation/action history、未来 K=6 步故障 realized states 与 a_fault_t。"
+        },
+        {
+          "heading": "3. 明确因果索引",
+          "text": "history 截止于 s_t；realized future 从 s_(t+1) 开始；标签 a_t 必须正是产生首个 future state 的实际动作。"
+        },
+        {
+          "heading": "4. 一个 Δz 服务全部窗口",
+          "text": "Context Encoder 对 Support 只前向一次；其固定 Δz 广播到该 pair 的所有有效 Query 窗口，不生成状态相关 Δz_t。"
+        },
+        {
+          "heading": "5. Mask 只处理有效窗口",
+          "text": "跨 reset、termination、truncation 或 command change 的窗口被拒绝；padding 不参与损失。"
+        },
+        {
+          "heading": "6. 解决范围有限",
+          "text": "该设计只修复原实现每条 Query 单锚点造成的时序覆盖不足；标签仍是原始故障动作，因此不保证恢复健康轨迹。"
+        }
+      ],
+      "highlightSteps": [
+        "seal-query",
+        "expand-query-windows",
+        "supervise-action"
+      ],
+      "chips": []
+    },
+    {
       "designId": "ICA-DP-07",
       "blockId": "ICA-LEARNING",
       "title": "Calibration Learning",
@@ -231,12 +276,12 @@
         },
         {
           "heading": "4. Query Rollout 提供独立监督",
-          "text": "Query 不输入 Context Encoder。它提供因果匹配的 Realized Motion–Executed Action Pair：某段 Motion 实际由哪个 Action 产生，就用哪个 Action 作为标签。",
+          "text": "Query 不输入 Context Encoder。完整 Query 沿时间产生多个因果窗口；每个窗口的 Realized Motion 只与实际产生其首个 next state 的 Action 配对。",
           "latex": "Q_{\\xi}=(Y_{\\mathrm{realized}}^{q},A_{\\mathrm{exec}}^{q})"
         },
         {
           "heading": "5. 冻结 Tracker 离线重建 Query Action",
-          "text": "Planner Intent 作为正确意图被记录；离线逆动力学监督用 Query 的故障历史与动作执行后的 Realized Future 生成 z_q。Decoder 使用 Support 推断出的校准量重建 Query Executed Action。部署时 Realized Future 不可得，改由 Planner Intent 占据 future 输入。",
+          "text": "每个窗口用各自的故障历史与 Realized Future 生成 z_(q,t)，同一 Support 推断出的固定 Δz 在整条 Query 的所有窗口复用。部署时 Realized Future 不可得，改由 Planner Intent 占据 future 输入。",
           "latex": [
             "z_q=E_{\\mathrm{Tracker}}(Y_{\\mathrm{realized}}^{q},\\mathrm{history}^{q})",
             "\\hat A_q=D_{\\mathrm{Tracker}}(z_q+\\Delta z_{\\xi},\\mathrm{history}^{q})"
@@ -244,7 +289,7 @@
         },
         {
           "heading": "6. 使用实际执行的第一步 Action 监督",
-          "text": "预测 chunk 只与 Query 中物理发送给故障仿真的第一步 Action 计算均方误差。不监督未实际执行的后续 chunk，也不使用 clean Action、Teacher Action、task Reward 或人为 Δz 真值。",
+          "text": "对所有有效 Query 窗口的 first-action MSE 求平均。每个预测 chunk 只监督物理执行的第一步，不监督后五步，也不使用 clean Action、Teacher Action、task Reward 或人为 Δz 真值。",
           "latex": "\\mathcal{L}_{\\mathrm{cal}}=\\lVert\\hat a_{q,t}-a_{\\mathrm{exec},q,t}\\rVert_2^2"
         },
         {
@@ -259,6 +304,7 @@
       ],
       "highlightSteps": [
         "seal-query",
+        "expand-query-windows",
         "supervise-action",
         "update-context-only"
       ],

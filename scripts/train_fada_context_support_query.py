@@ -92,6 +92,7 @@ def main() -> int:
         collected.batch,
         loaded.policy.config,
         support_length=int(cfg.collection.support_length),
+        query_length=int(cfg.collection.query_length),
         metadata={
             "source_checkpoint_sha256": checkpoint_sha,
             "task_config": str(cfg.task_config),

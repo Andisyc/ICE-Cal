@@ -25,7 +25,7 @@ same Code Block ID
 - `concept/06_fada_design_detail_discussion.data.json`: Design Inspector with canonical design-point tabs and the active UniLab Oracle-bootstrap/Planner-IDM DAgger spine.
 - `concept/07_fada_planner_idm_distillation.data.json`: current v005 Planner-IDM distillation Concept Figure using the 03 main-chain and DAgger-feedback visual grammar.
 - `architecture/09_trajectory_conditioned_execution_alignment.data.json`: current Context-conditioned Tracker calibration method; failed rollout -> Context -> `delta_z`, fused as `z + delta_z`, with no privileged teacher.
-- `concept/10_in_context_execution_calibration_design_inspector.data.json`: current Context Encoder training method under the 09 overall design; Support produces `delta_z` and an independent Query provides executed-action supervision.
+- `concept/10_in_context_execution_calibration_design_inspector.data.json`: current accepted Context Encoder training design under the 09 overall method; one Support produces a fixed `delta_z`, while a complete independent Query supplies multiple causally aligned first-action windows. Implementation remains pending.
 - `concept/11_fada_context_calibration_design.data.json`: superseded tracking-expert action-supervision alternative retained as history.
 - `concept/12_fada_context_search_distillation_proposal.data.json`: rejected free-`delta_z` search-and-distill proposal retained as history.
 - `concept/13_fada_context_differentiable_trajectory.data.json`: rejected differentiable-trajectory method retained with its 10/10 real-MuJoCo gate failure.

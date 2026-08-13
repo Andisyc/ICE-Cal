@@ -31,6 +31,7 @@ Camera controls (browser):
 
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -247,7 +248,13 @@ def _follow_viser_clients(
         previous_target[client_id] = target.copy()
 
 
-def play_viser(args: PlayInteractiveArgs, cfg: DictConfig, *, algo: str = "ppo") -> None:
+def play_viser(
+    args: PlayInteractiveArgs,
+    cfg: DictConfig,
+    *,
+    algo: str = "ppo",
+    fada_session_factory: Callable[..., Any] | None = None,
+) -> None:
     device = select_torch_device()
     print(f"[play_viser] Device: {device}")
 
@@ -281,7 +288,8 @@ def play_viser(args: PlayInteractiveArgs, cfg: DictConfig, *, algo: str = "ppo")
         )
 
     if algo == "fada":
-        playback_session, _policy_obs_mode, _checkpoint_path = create_fada_playback_session(
+        session_factory = fada_session_factory or create_fada_playback_session
+        playback_session, _policy_obs_mode, _checkpoint_path = session_factory(
             playback_cfg=_build_playback_config(args, num_envs=num_envs),
             cfg=cfg,
             root_dir=ROOT_DIR,

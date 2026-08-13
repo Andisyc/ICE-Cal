@@ -1,14 +1,19 @@
 ---
 contract_id: FADA-CONTEXT-TRAIN-v003
-status: active
+status: superseded-history
 effective_date: 2026-08-13
 updated_date: 2026-08-13
 supersedes: FADA-CONTEXT-TRAIN-v002
 method_contract: FADA-CONTEXT-METHOD-v004
 scope: offline support-query Context training under fixed left-knee strength 0.7
+superseded_by: FADA-CONTEXT-TRAIN-v004
+implementation_status: implemented-and-evaluated-negative
 ---
 
 # FADA Context Support-Query Training Contract
+
+This contract governed the completed single-anchor Query training run. It is superseded by the
+multi-sliding-window training contract and remains unchanged as the authority for prior artifacts.
 
 The dataset owner runs the frozen healthy Planner-IDM twice in the same fixed-`0.7` fault environment.
 Each accepted pair contains one complete Support trajectory and one independent causal Query window.

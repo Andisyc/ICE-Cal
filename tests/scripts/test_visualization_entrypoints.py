@@ -248,14 +248,19 @@ def test_handle_command_key_maps_drive_style_keys():
     commander = mod.KeyboardCommander.from_vel_limit([[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]])
 
     mod._handle_command_key(commander, mod._KEY_UP)  # forward (vx +)
-    mod._handle_command_key(commander, mod._KEY_LEFT)  # turn left (vyaw +)
-    assert commander.command == pytest.approx([0.1, 0.0, 0.2])
+    mod._handle_command_key(commander, mod._KEY_LEFT)  # translate left (vy +)
+    assert commander.command == pytest.approx([0.1, 0.1, 0.0])
 
-    mod._handle_command_key(commander, mod._KEY_RIGHT)  # turn right cancels yaw
-    assert commander.command[2] == pytest.approx(0.0)
+    mod._handle_command_key(commander, mod._KEY_RIGHT)  # translate right cancels vy
+    assert commander.command[1] == pytest.approx(0.0)
+
+    mod._handle_command_key(commander, ord("q"))  # turn left (vyaw +)
+    assert commander.command == pytest.approx([0.1, 0.0, 0.2])
+    mod._handle_command_key(commander, ord("E"))  # turn right cancels yaw
+    assert commander.command == pytest.approx([0.1, 0.0, 0.0])
 
     before = commander.command.copy()
-    mod._handle_command_key(commander, ord("q"))  # unmapped key is a no-op
+    mod._handle_command_key(commander, ord("a"))  # unmapped key is a no-op
     assert commander.command.tolist() == before.tolist()
 
     mod._handle_command_key(commander, mod._KEY_ENTER)  # full stop

@@ -99,25 +99,50 @@ class ContextQueryBatch:
     command: torch.Tensor
     planner_intent: torch.Tensor
     realized_future: torch.Tensor
-    executed_action_chunk: torch.Tensor
+    executed_action: torch.Tensor
+    window_anchor: torch.Tensor
+    valid_window_mask: torch.Tensor
 
     @property
     def batch_size(self) -> int:
         return int(self.observation_history.shape[0])
 
+    @property
+    def window_count(self) -> int:
+        return int(self.observation_history.shape[1])
+
     def validate(self, config: FADAArchitectureConfig) -> ContextQueryBatch:
         batch_size = self.batch_size
+        if self.observation_history.ndim != 4:
+            raise ValueError("query observation_history must be rank-4 [pair, window, history, obs]")
+        window_count = self.window_count
         expected = {
-            "observation_history": (batch_size, config.history_length, config.obs_dim),
-            "action_history": (batch_size, config.history_length, config.action_dim),
-            "command": (batch_size, config.command_dim),
-            "planner_intent": (batch_size, config.prediction_horizon, config.obs_dim),
-            "realized_future": (batch_size, config.prediction_horizon, config.obs_dim),
-            "executed_action_chunk": (
+            "observation_history": (
                 batch_size,
-                config.prediction_horizon,
+                window_count,
+                config.history_length,
+                config.obs_dim,
+            ),
+            "action_history": (
+                batch_size,
+                window_count,
+                config.history_length,
                 config.action_dim,
             ),
+            "command": (batch_size, window_count, config.command_dim),
+            "planner_intent": (
+                batch_size,
+                window_count,
+                config.prediction_horizon,
+                config.obs_dim,
+            ),
+            "realized_future": (
+                batch_size,
+                window_count,
+                config.prediction_horizon,
+                config.obs_dim,
+            ),
+            "executed_action": (batch_size, window_count, config.action_dim),
         }
         for name, shape in expected.items():
             value = getattr(self, name)
@@ -126,8 +151,27 @@ class ContextQueryBatch:
                     f"query {name} shape mismatch: expected={shape} observed={tuple(value.shape)}"
                 )
             _finite(f"query {name}", value)
+        identity_shapes = {
+            "window_anchor": self.window_anchor,
+            "valid_window_mask": self.valid_window_mask,
+        }
+        for name, value in identity_shapes.items():
+            if tuple(value.shape) != (batch_size, window_count):
+                raise ValueError(
+                    f"query {name} shape mismatch: expected={(batch_size, window_count)} "
+                    f"observed={tuple(value.shape)}"
+                )
+        if self.window_anchor.dtype != torch.int64:
+            raise ValueError("query window_anchor must be int64")
+        if self.valid_window_mask.dtype != torch.bool:
+            raise ValueError("query valid_window_mask must be bool")
+        if not bool(self.valid_window_mask.any(dim=1).all()):
+            raise ValueError("every Query pair must contain at least one valid window")
+        valid_anchors = self.window_anchor[self.valid_window_mask]
+        if bool((valid_anchors < config.history_length - 1).any()):
+            raise ValueError("query valid window anchor precedes complete history")
         devices = {value.device for value in self.tensors()}
-        dtypes = {value.dtype for value in self.tensors()}
+        dtypes = {value.dtype for value in self.tensors()[:6]}
         if len(devices) != 1:
             raise ValueError("query tensors must share one device")
         if len(dtypes) != 1:
@@ -141,7 +185,9 @@ class ContextQueryBatch:
             self.command,
             self.planner_intent,
             self.realized_future,
-            self.executed_action_chunk,
+            self.executed_action,
+            self.window_anchor,
+            self.valid_window_mask,
         )
 
     def to(self, device: str | torch.device) -> ContextQueryBatch:
@@ -195,7 +241,10 @@ class SupportQueryBatch:
             raise ValueError("Support, Query, and support_command must share one device")
         if len(batch_dtypes) != 1:
             raise ValueError("Support, Query, and support_command must share one dtype")
-        if not torch.equal(self.support_command, self.query.command):
+        expected_query_command = self.support_command[:, None, :].expand(
+            -1, self.query.window_count, -1
+        )
+        if not torch.equal(expected_query_command, self.query.command):
             raise ValueError("Support and Query commands must match exactly")
         for name in ("pair_id", "support_rollout_id", "query_rollout_id"):
             value = getattr(self, name)
@@ -289,6 +338,8 @@ class ContextActionOutput:
 
     @property
     def action(self) -> torch.Tensor:
+        if self.action_chunk.ndim == 4:
+            return self.action_chunk[:, :, 0]
         return self.action_chunk[:, 0]
 
 
@@ -327,17 +378,23 @@ class FrozenIDMSupportQueryPolicy(nn.Module):
             support_length=self.context_encoder.context_config.support_length,
         )
         delta_z = self.context_encoder(batch.support)
-        query_latent = self.idm.encode_latent(
-            batch.query.observation_history,
-            batch.query.action_history,
-            batch.query.realized_future,
+        pairs = batch.batch_size
+        windows = batch.query.window_count
+        query_latent_flat = self.idm.encode_latent(
+            batch.query.observation_history.flatten(0, 1),
+            batch.query.action_history.flatten(0, 1),
+            batch.query.realized_future.flatten(0, 1),
         )
-        repaired_latent = query_latent + delta_z[:, None, :]
+        query_latent = query_latent_flat.unflatten(0, (pairs, windows))
+        repaired_latent = query_latent + delta_z[:, None, None, :]
+        action_chunk = self.idm.decode_latent(repaired_latent.flatten(0, 1)).unflatten(
+            0, (pairs, windows)
+        )
         return ContextActionOutput(
             delta_z=delta_z,
             query_latent=query_latent,
             repaired_latent=repaired_latent,
-            action_chunk=self.idm.decode_latent(repaired_latent),
+            action_chunk=action_chunk,
         )
 
     def act_with_context(
@@ -369,4 +426,10 @@ def context_first_action_loss(
     batch: SupportQueryBatch,
 ) -> torch.Tensor:
     output = policy.reconstruct_query(batch)
-    return F.mse_loss(output.action, batch.query.executed_action_chunk[:, 0])
+    per_window = F.mse_loss(
+        output.action,
+        batch.query.executed_action,
+        reduction="none",
+    ).mean(dim=-1)
+    mask = batch.query.valid_window_mask.to(per_window.dtype)
+    return torch.sum(per_window * mask) / torch.sum(mask)

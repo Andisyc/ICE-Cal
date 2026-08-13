@@ -1,14 +1,20 @@
 ---
 contract_id: FADA-CONTEXT-METHOD-v004
-status: active
+status: superseded-history
 effective_date: 2026-08-13
 updated_date: 2026-08-13
 supersedes: FADA-CONTEXT-METHOD-v003
 prerequisite: FADA-METHOD-v005
 scope: support-query inverse-dynamics supervision for one fixed left-knee actuator fault
+superseded_by: FADA-CONTEXT-METHOD-v005
+implementation_status: implemented-and-evaluated-negative
 ---
 
 # FADA Context Support-Query Method Contract
+
+This single-anchor Query version was superseded after closed-loop evaluation showed that both stored
+and online Support produced Context corrections that worsened all seven healthy-trajectory distance
+metrics. It remains the exact authority for the completed `context_500.pt` run and its evidence.
 
 This contract records the human-selected method in Architecture 09 and Design Inspector 10. A
 healthy-simulation Planner-IDM checkpoint is frozen. Two independent rollouts under the same command

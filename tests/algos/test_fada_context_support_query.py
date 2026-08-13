@@ -68,6 +68,7 @@ def _config() -> FADAArchitectureConfig:
 
 def _batch(config: FADAArchitectureConfig, *, batch_size: int = 4, support_length: int = 8) -> SupportQueryBatch:
     command = torch.full((batch_size, config.command_dim), 0.4)
+    windows = 4
     return SupportQueryBatch(
         support=SupportContextBatch(
             target_future=torch.randn(
@@ -78,21 +79,25 @@ def _batch(config: FADAArchitectureConfig, *, batch_size: int = 4, support_lengt
         ),
         query=ContextQueryBatch(
             observation_history=torch.randn(
-                batch_size, config.history_length, config.obs_dim
+                batch_size, windows, config.history_length, config.obs_dim
             ),
             action_history=torch.randn(
-                batch_size, config.history_length, config.action_dim
+                batch_size, windows, config.history_length, config.action_dim
             ),
-            command=command.clone(),
+            command=command[:, None].expand(-1, windows, -1).clone(),
             planner_intent=torch.randn(
-                batch_size, config.prediction_horizon, config.obs_dim
+                batch_size, windows, config.prediction_horizon, config.obs_dim
             ),
             realized_future=torch.randn(
-                batch_size, config.prediction_horizon, config.obs_dim
+                batch_size, windows, config.prediction_horizon, config.obs_dim
             ),
-            executed_action_chunk=torch.randn(
-                batch_size, config.prediction_horizon, config.action_dim
-            ),
+            executed_action=torch.randn(batch_size, windows, config.action_dim),
+            window_anchor=torch.arange(
+                config.history_length - 1,
+                config.history_length - 1 + windows,
+                dtype=torch.int64,
+            )[None].expand(batch_size, -1).clone(),
+            valid_window_mask=torch.ones(batch_size, windows, dtype=torch.bool),
         ),
         support_command=command,
         pair_id=torch.arange(batch_size, dtype=torch.int64),
@@ -128,13 +133,40 @@ def test_zero_context_matches_frozen_query_reconstruction() -> None:
 
     output = setup.policy.reconstruct_query(batch)
     nominal = healthy.idm(
-        batch.query.observation_history,
-        batch.query.action_history,
-        batch.query.realized_future,
-    )
+        batch.query.observation_history.flatten(0, 1),
+        batch.query.action_history.flatten(0, 1),
+        batch.query.realized_future.flatten(0, 1),
+    ).unflatten(0, (batch.batch_size, batch.query.window_count))
 
     torch.testing.assert_close(output.delta_z, torch.zeros_like(output.delta_z))
     torch.testing.assert_close(output.action_chunk, nominal, rtol=0.0, atol=0.0)
+
+
+def test_context_is_encoded_once_per_pair_and_reused_for_every_window() -> None:
+    torch.manual_seed(4)
+    config = _config()
+    batch = _batch(config)
+    setup = prepare_support_query_training(
+        FADAPlannerIDMPolicy(config),
+        SupportQueryContextConfig(support_length=8, context_hidden_dim=12, context_layers=1),
+        learning_rate=3.0e-4,
+    )
+    calls = 0
+
+    def count_context_calls(_module: torch.nn.Module, _inputs: tuple[object, ...]) -> None:
+        nonlocal calls
+        calls += 1
+
+    handle = setup.policy.context_encoder.register_forward_pre_hook(count_context_calls)
+    try:
+        output = setup.policy.reconstruct_query(batch)
+    finally:
+        handle.remove()
+
+    assert calls == 1
+    assert output.delta_z.shape == (batch.batch_size, config.hidden_dim)
+    expected = output.query_latent + output.delta_z[:, None, None, :]
+    torch.testing.assert_close(output.repaired_latent, expected)
 
 
 def test_context_loss_supervises_only_executed_first_action_and_updates_context() -> None:
@@ -146,11 +178,22 @@ def test_context_loss_supervises_only_executed_first_action_and_updates_context(
         SupportQueryContextConfig(support_length=8, context_hidden_dim=12, context_layers=1),
         learning_rate=3.0e-4,
     )
-    changed_chunk = batch.query.executed_action_chunk.clone()
-    changed_chunk[:, 1:] += 1000.0
-    changed = replace(batch, query=replace(batch.query, executed_action_chunk=changed_chunk))
+    changed_action = batch.query.executed_action.clone()
+    changed_action[:, -1] += 1000.0
+    changed_mask = batch.query.valid_window_mask.clone()
+    changed_mask[:, -1] = False
+    baseline_mask = changed_mask.clone()
+    baseline = replace(batch, query=replace(batch.query, valid_window_mask=baseline_mask))
+    changed = replace(
+        batch,
+        query=replace(
+            batch.query,
+            executed_action=changed_action,
+            valid_window_mask=changed_mask,
+        ),
+    )
 
-    loss = context_first_action_loss(setup.policy, batch)
+    loss = context_first_action_loss(setup.policy, baseline)
     torch.testing.assert_close(context_first_action_loss(setup.policy, changed), loss)
     loss.backward()
 
@@ -172,6 +215,12 @@ def test_support_query_rejects_command_or_rollout_identity_mismatch() -> None:
         replace(batch, query_rollout_id=batch.support_rollout_id).validate(config)
     with pytest.raises(ValueError, match="share one dtype"):
         replace(batch, support_command=batch.support_command.double()).validate(config)
+    invalid_mask = torch.zeros_like(batch.query.valid_window_mask)
+    with pytest.raises(ValueError, match="at least one valid window"):
+        replace(
+            batch,
+            query=replace(batch.query, valid_window_mask=invalid_mask),
+        ).validate(config)
 
 
 def test_support_query_dataset_round_trip(tmp_path: Path) -> None:
@@ -182,6 +231,7 @@ def test_support_query_dataset_round_trip(tmp_path: Path) -> None:
         batch,
         config,
         support_length=8,
+        query_length=10,
         metadata={
             "source_checkpoint_sha256": "abc",
             "task_config": "fault-070",
@@ -192,7 +242,9 @@ def test_support_query_dataset_round_trip(tmp_path: Path) -> None:
         },
     )
 
-    loaded, metadata = load_support_query_dataset(path, config, support_length=8)
+    loaded, metadata = load_support_query_dataset(
+        path, config, support_length=8, query_length=10
+    )
 
     torch.testing.assert_close(loaded.query.realized_future, batch.query.realized_future)
     torch.testing.assert_close(loaded.support.target_future, batch.support.target_future)
@@ -381,6 +433,24 @@ class _IndependentResetEnv:
         return self.state
 
 
+class _InvalidatingEnv(_IndependentResetEnv):
+    def __init__(self, config: FADAArchitectureConfig, event: str) -> None:
+        super().__init__(config)
+        self.event = event
+
+    def step(self, action: np.ndarray) -> _State:
+        state = super().step(action)
+        if self.event == "terminated":
+            state.terminated[0] = True
+        elif self.event == "truncated":
+            state.truncated[0] = True
+        elif self.event == "command":
+            state.info["commands"][0, 0] += 0.1
+        else:
+            raise AssertionError(f"unknown invalidation event: {self.event}")
+        return state
+
+
 def test_collector_uses_two_independent_fault_rollouts_and_actual_actions() -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config).eval()
@@ -391,7 +461,9 @@ def test_collector_uses_two_independent_fault_rollouts_and_actual_actions() -> N
     result = collect_support_query_pairs(
         env,
         policy,
-        SupportQueryCollectionConfig(num_pairs=2, support_length=8, max_reset_pairs=1),
+        SupportQueryCollectionConfig(
+            num_pairs=2, support_length=8, query_length=10, max_reset_pairs=1
+        ),
     )
 
     assert env.reset_count == 2
@@ -400,10 +472,88 @@ def test_collector_uses_two_independent_fault_rollouts_and_actual_actions() -> N
     assert torch.all(result.batch.support_rollout_id == 0)
     assert torch.all(result.batch.query_rollout_id == 1)
     torch.testing.assert_close(
-        result.batch.query.executed_action_chunk,
-        torch.full_like(result.batch.query.executed_action_chunk, 0.25),
+        result.batch.query.executed_action,
+        torch.full_like(result.batch.query.executed_action, 0.25),
     )
     assert not torch.equal(
         result.batch.support.realized_state[:, 0],
-        result.batch.query.observation_history[:, 0],
+        result.batch.query.observation_history[:, 0, 0],
     )
+
+
+def test_collector_builds_every_causally_aligned_query_window() -> None:
+    config = _config()
+    policy = FADAPlannerIDMPolicy(config).eval()
+    torch.nn.init.zeros_(policy.idm.action_head.weight)
+    torch.nn.init.constant_(policy.idm.action_head.bias, 0.25)
+    env = _IndependentResetEnv(config)
+
+    result = collect_support_query_pairs(
+        env,
+        policy,
+        SupportQueryCollectionConfig(
+            num_pairs=2, support_length=8, query_length=10, max_reset_pairs=1
+        ),
+    )
+    query = result.batch.query
+
+    assert query.window_count == 4
+    torch.testing.assert_close(
+        query.window_anchor,
+        torch.tensor([[4, 5, 6, 7], [4, 5, 6, 7]], dtype=torch.int64),
+    )
+    assert bool(query.valid_window_mask.all())
+    # The fixture starts Query at 0.2 and each executed action adds 0.25 to the first 3 state dims.
+    for window, anchor in enumerate((4, 5, 6, 7)):
+        expected_state_t = 0.2 + 0.25 * anchor
+        expected_next = expected_state_t + 0.25
+        torch.testing.assert_close(
+            query.observation_history[:, window, -1, :3],
+            torch.full((2, 3), expected_state_t),
+        )
+        torch.testing.assert_close(
+            query.realized_future[:, window, 0, :3],
+            torch.full((2, 3), expected_next),
+        )
+        torch.testing.assert_close(
+            query.executed_action[:, window], torch.full((2, 3), 0.25)
+        )
+
+
+def test_collector_rejects_query_too_short_for_one_causal_window() -> None:
+    config = _config()
+    policy = FADAPlannerIDMPolicy(config).eval()
+    env = _IndependentResetEnv(config)
+
+    with pytest.raises(ValueError, match="cannot supply one causal window"):
+        collect_support_query_pairs(
+            env,
+            policy,
+            SupportQueryCollectionConfig(
+                num_pairs=2,
+                support_length=8,
+                query_length=config.history_length + config.prediction_horizon - 2,
+                max_reset_pairs=1,
+            ),
+        )
+
+
+@pytest.mark.parametrize("event", ["terminated", "truncated", "command"])
+def test_collector_rejects_rows_with_invalid_rollout_events(event: str) -> None:
+    config = _config()
+    policy = FADAPlannerIDMPolicy(config).eval()
+    env = _InvalidatingEnv(config, event)
+
+    result = collect_support_query_pairs(
+        env,
+        policy,
+        SupportQueryCollectionConfig(
+            num_pairs=1,
+            support_length=8,
+            query_length=10,
+            max_reset_pairs=1,
+        ),
+    )
+
+    assert result.accepted_pairs == 1
+    assert result.rejected_pairs == 1

@@ -70,12 +70,14 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
         collected.batch,
         loaded.policy.config,
         support_length=int(cfg.collection.support_length),
+        query_length=int(cfg.collection.query_length),
         metadata=metadata,
     )
     batch, round_trip_metadata = load_support_query_dataset(
         artifact,
         loaded.policy.config,
         support_length=int(cfg.collection.support_length),
+        query_length=int(cfg.collection.query_length),
         map_location=str(cfg.device),
     )
     setup = prepare_support_query_training(
@@ -133,16 +135,24 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "rejected_pairs": collected.rejected_pairs,
             "reset_pairs": collected.reset_pairs,
             "support_length": int(cfg.collection.support_length),
+            "query_length": int(cfg.collection.query_length),
+            "window_count": batch.query.window_count,
+            "valid_window_count": int(batch.query.valid_window_mask.sum()),
+            "anchor_min": int(batch.query.window_anchor[batch.query.valid_window_mask].min()),
+            "anchor_max": int(batch.query.window_anchor[batch.query.valid_window_mask].max()),
             "round_trip_fault_strength": round_trip_metadata["fault_strength"],
         },
         "tensors": {
             "support_target_future": list(batch.support.target_future.shape),
             "support_realized_state": list(batch.support.realized_state.shape),
             "support_executed_action": list(batch.support.executed_action.shape),
-            "query_history": list(batch.query.observation_history.shape),
+            "query_observation_history": list(batch.query.observation_history.shape),
+            "query_action_history": list(batch.query.action_history.shape),
             "query_planner_intent": list(batch.query.planner_intent.shape),
             "query_realized_future": list(batch.query.realized_future.shape),
-            "query_executed_action_chunk": list(batch.query.executed_action_chunk.shape),
+            "query_executed_action": list(batch.query.executed_action.shape),
+            "query_window_anchor": list(batch.query.window_anchor.shape),
+            "query_valid_window_mask": list(batch.query.valid_window_mask.shape),
             "delta_z": [batch.batch_size, loaded.policy.config.hidden_dim],
         },
         "supervision": {

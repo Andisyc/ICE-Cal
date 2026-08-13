@@ -16,7 +16,7 @@ from unilab.algos.torch.fada_context.support_query import (
     context_first_action_loss,
 )
 
-CONTEXT_SUPPORT_QUERY_CHECKPOINT_SCHEMA_VERSION = 2
+CONTEXT_SUPPORT_QUERY_CHECKPOINT_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 from pathlib import Path
 from typing import Any, cast
@@ -14,7 +15,7 @@ from unilab.algos.torch.fada_context.support_query_collector import (
     SupportQueryCollectionResult,
     collect_support_query_pairs,
 )
-from unilab.training import BackendAdapter, create_env, ensure_registries
+from unilab.training import BackendAdapter, apply_training_seed, create_env, ensure_registries
 
 
 def resolve_repo_path(root_dir: Path, value: str) -> Path:
@@ -47,6 +48,7 @@ def load_support_query_config(
         "collection.num_envs": cfg.collection.num_envs,
         "collection.num_pairs": cfg.collection.num_pairs,
         "collection.support_length": cfg.collection.support_length,
+        "collection.query_length": cfg.collection.query_length,
         "collection.max_reset_pairs": cfg.collection.max_reset_pairs,
         "context.hidden_dim": cfg.context.hidden_dim,
         "context.num_layers": cfg.context.num_layers,
@@ -69,9 +71,7 @@ def load_support_query_config(
 
 
 def _compose_task(root_dir: Path, task_config: str) -> DictConfig:
-    with initialize_config_dir(
-        config_dir=str(root_dir / "conf" / "offpolicy"), version_base="1.3"
-    ):
+    with initialize_config_dir(config_dir=str(root_dir / "conf" / "offpolicy"), version_base="1.3"):
         return compose(config_name="config", overrides=[f"task={task_config}"])
 
 
@@ -92,9 +92,7 @@ def _fixed_fault_override(root_dir: Path, task_cfg: DictConfig) -> dict[str, Any
         raise ValueError("Support-Query collection requires simulate_action_latency=false")
     expected_command = [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
     if override["commands"]["vel_limit"] != expected_command:
-        raise ValueError(
-            "formal Support-Query command must be fixed straight-line [0.4, 0.0, 0.0]"
-        )
+        raise ValueError("formal Support-Query command must be fixed straight-line [0.4, 0.0, 0.0]")
     return override
 
 
@@ -102,9 +100,7 @@ def parameter_snapshot(module: torch.nn.Module) -> tuple[torch.Tensor, ...]:
     return tuple(parameter.detach().cpu().clone() for parameter in module.parameters())
 
 
-def parameters_equal(
-    module: torch.nn.Module, snapshot: tuple[torch.Tensor, ...]
-) -> bool:
+def parameters_equal(module: torch.nn.Module, snapshot: tuple[torch.Tensor, ...]) -> bool:
     return all(
         torch.equal(parameter.detach().cpu(), original)
         for parameter, original in zip(module.parameters(), snapshot, strict=True)
@@ -133,8 +129,53 @@ def collect_fixed_fault_support_query(
             SupportQueryCollectionConfig(
                 num_pairs=int(cfg.collection.num_pairs),
                 support_length=int(cfg.collection.support_length),
+                query_length=int(cfg.collection.query_length),
                 max_reset_pairs=int(cfg.collection.max_reset_pairs),
             ),
         )
     finally:
         env.close()
+
+
+def create_fixed_fault_paired_environments(
+    root_dir: Path,
+    cfg: DictConfig,
+    *,
+    num_envs: int,
+    seed: int,
+) -> tuple[Any, Any]:
+    """Create exact-seed healthy/fault environments differing only in actuator strength."""
+
+    if num_envs <= 0:
+        raise ValueError("paired environment count must be positive")
+    task_cfg = _compose_task(root_dir, str(cfg.task_config))
+    fault_override = _fixed_fault_override(root_dir, task_cfg)
+    healthy_override = copy.deepcopy(fault_override)
+    healthy_override["domain_rand"]["actuator_strength"]["multipliers"] = [1.0] * 29
+    ensure_registries()
+
+    apply_training_seed(seed, torch_runtime=True, cuda=True)
+    healthy_env = create_env(
+        task_cfg,
+        num_envs=num_envs,
+        env_cfg_override=healthy_override,
+        sim_backend="mujoco",
+    )
+    fault_env: Any | None = None
+    try:
+        healthy_env.init_state()
+        apply_training_seed(seed, torch_runtime=True, cuda=True)
+        fault_env = create_env(
+            task_cfg,
+            num_envs=num_envs,
+            env_cfg_override=fault_override,
+            sim_backend="mujoco",
+        )
+        fault_env.init_state()
+    except Exception:
+        if fault_env is not None:
+            fault_env.close()
+        healthy_env.close()
+        raise
+    assert fault_env is not None
+    return healthy_env, fault_env
