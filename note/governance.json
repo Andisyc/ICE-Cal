@@ -1,12 +1,13 @@
 {
   "schema_version": "workflow-governance/v1",
-  "governance_id": "ice-cal-calibratable-tracker-module-correct-2026-08-20",
+  "governance_id": "ice-cal-calibration-stage-isolation-module-correct-2026-08-20",
   "lifecycle_phase": "module-testing",
   "target_phase": "formal-audit",
   "admission": "TRANSITION-ADMITTED",
   "scope": {
     "requested": [
-      "Execute the approved v007/v006 calibratable-Tracker engineering plan",
+      "Isolate calibration Stage 1, Stage 2, and Stage 3 behind persisted predecessor artifacts",
+      "Complete offline module alignment and the independent code-health final gate",
       "Synchronize repository and engineering documentation with the implemented state"
     ],
     "preserved": [
@@ -25,10 +26,10 @@
     "project": "ICE-Cal",
     "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage",
     "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006",
-    "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
-    "entrypoint": "prepare dataset -> prepare scale evidence -> train -> evaluate/play calibration",
-    "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,serial-S1-S2-S3",
-    "checkpoint": "no-real-checkpoint; offline-module-transaction-only"
+    "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
+    "entrypoint": "prepare dataset -> Stage 1 direction artifact -> Stage 2 coefficient artifact -> Scale Evidence + Stage 2 -> calibration artifact -> evaluate/play",
+    "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,stage-artifact-v2,isolated-S1-S2-S3",
+    "checkpoint": "no-real-checkpoint; typed stage-artifact v2 verified offline only"
   },
   "authority": {
     "semantic": {
@@ -39,7 +40,7 @@
     "local_reversible": {
       "status": "approved",
       "scope": "Repository-local implementation, tests, configuration, receipts, Atlas, and governance documents",
-      "receipt": "User approved the implementation plan and instructed execution in this session"
+      "receipt": "User instructed one-shot Stage 1/2/3 isolation and code-health review on 2026-08-20"
     },
     "git_actions": {"status": "not-requested", "scope": "No Git writes"},
     "external_operations": {"status": "not-required", "scope": "No network or remote operations"},
@@ -74,63 +75,63 @@
       "path": "fada/contracts/active/training/FADA-CONTEXT-TRAIN-v006.md",
       "lifecycle": "current", "status": "active", "current": true,
       "content_hash": "sha256:e84c89e532b24aaa7a860b9f9d396570885a0c507fbf14904a3cb2357d49406d",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
-      "kind": "plan", "artifact_id": "calibratable-tracker-engineering-plan",
-      "path": "fada/plans/2026-08-19-calibratable-tracker-three-stage.md",
+      "kind": "plan", "artifact_id": "calibration-stage-isolation-plan",
+      "path": "fada/plans/2026-08-20-calibration-stage-isolation.md",
       "lifecycle": "volatile", "status": "active", "current": true,
-      "content_hash": "sha256:93f6f1688ee536bc760334222a5aa9267a0781c062e2a5ad028e241e34fd57ce",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:ef3c4e48bd292da6b6fec9ecda1459f27e45a1072f2c94328785a1e828f942e3",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
       "kind": "checklist", "artifact_id": "calibratable-tracker-current-checklist",
       "path": "fada/checklists/current.md",
       "lifecycle": "volatile", "status": "active", "current": true,
-      "content_hash": "sha256:0fb58ba274659199dbfe1e88c90d5e81b92e5c9be7d079ddbc0b5941aee056e7",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:1bb422e12f5e256dcf38133747adec9d6a115f1dba05efff6263a1f2c237e449",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
       "kind": "task-canvas", "artifact_id": "calibratable-tracker-task-canvas",
       "path": "fada/task_canvas.md",
       "lifecycle": "volatile", "status": "active", "current": true,
-      "content_hash": "sha256:0a387d9015da27a613461002ae226e5d5b7bcddc4cbf350df48b93feafdb478a",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:f3cc1ae4d35a5055aa7e44c14ee80497f075081a367790cb7dd0a35fe6e0cdb9",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
       "kind": "module-test-cards", "artifact_id": "calibratable-tracker-module-test-cards",
       "path": "testing/module_test_cards.md",
       "lifecycle": "current", "status": "confirmed", "current": true,
-      "content_hash": "sha256:b3972d27d1aea920c4ec7ab90c5c058998a8d68aee147e91b57fd867b85e6265",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:fd2698646aa085720c87bbde04b74642a242964cccb67a52f73be838d082a39a",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
       "kind": "architecture", "artifact_id": "calibratable-tracker-atlas",
       "path": "architecture/atlas_manifest.json",
       "lifecycle": "current", "status": "active", "current": true,
-      "content_hash": "sha256:d347d3a2164666d6ed828b93af53eed78dfb0a20ce9107284fefa7092a0ecd01",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:985e4576111f2263b57eff36c650ebeb53b83f666e3f7ef02e093d94d96e015e",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
-      "kind": "evidence-ledger", "artifact_id": "calibratable-tracker-implementation-ledger",
-      "path": "fada/evidence/2026-08-20-calibratable-tracker-implementation.md",
+      "kind": "evidence-ledger", "artifact_id": "calibration-stage-isolation-ledger",
+      "path": "fada/evidence/2026-08-20-calibration-stage-isolation.md",
       "lifecycle": "current", "status": "active", "current": true,
-      "content_hash": "sha256:e0750b226b5fbd6c2557cede8bdbf4bf6b978903da1050d6a8fcc6e993c0e409",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:51c1d7b9e964d6ff5b33a6f48a880a9f6d34b0697bff241fac373a71d4b02fb9",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
       "kind": "module-test-manifest", "artifact_id": "calibratable-tracker-module-manifest",
       "path": "testing/module_test_manifest.json",
       "lifecycle": "current", "status": "active", "current": true,
-      "content_hash": "sha256:e02818473a65af4ca015669218fe4e0106c3e5a6caa88931d092b89166cd9218",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:9291950abc4e287295cc565f52620161be0373f7a151336379bb0e0e1cbd2024",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     },
     {
-      "kind": "maintainability-review", "artifact_id": "calibratable-tracker-final-gate",
-      "path": "fada/reviews/2026-08-20-calibratable-tracker-final-gate.json",
+      "kind": "maintainability-review", "artifact_id": "calibration-stage-isolation-final-gate",
+      "path": "fada/reviews/2026-08-20-calibration-stage-isolation-final.json",
       "lifecycle": "current", "status": "active", "current": true,
-      "content_hash": "sha256:e84383533c61c0b2195e5245f05caf75d63b73a9f445395c2068f0003b509645",
-      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9"}
+      "content_hash": "sha256:fefac886b87d58549fe735d452c6dd53fe88074d826c14cb9aff626586bfbd8a",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage", "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006", "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978"}
     }
   ],
   "dependencies": [
@@ -139,21 +140,21 @@
       "status": "MODULE-CORRECT",
       "schema_version": "module-alignment-test/v1",
       "manifest_path": "testing/module_test_manifest.json",
-      "manifest_hash": "sha256:e02818473a65af4ca015669218fe4e0106c3e5a6caa88931d092b89166cd9218",
+      "manifest_hash": "sha256:9291950abc4e287295cc565f52620161be0373f7a151336379bb0e0e1cbd2024",
       "current": true,
       "identities": {
         "project": "ICE-Cal",
         "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage",
         "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006",
-        "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
-        "entrypoint": "prepare dataset -> prepare scale evidence -> train -> evaluate/play calibration",
-        "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,serial-S1-S2-S3",
-        "checkpoint": "no-real-checkpoint; offline-module-transaction-only"
+        "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
+        "entrypoint": "prepare dataset -> Stage 1 direction artifact -> Stage 2 coefficient artifact -> Scale Evidence + Stage 2 -> calibration artifact -> evaluate/play",
+        "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,stage-artifact-v2,isolated-S1-S2-S3",
+        "checkpoint": "no-real-checkpoint; typed stage-artifact v2 verified offline only"
       },
       "validation": {
         "command": "uv run python module-alignment validator with exact design and checkout identity",
         "exit_code": 0,
-        "identity": "ADMITTED-OFFLINE; 15 owners; 42 module tests; 0 missing cases",
+        "identity": "ADMITTED-OFFLINE; 17 owners; 75 semantic cases; 0 missing cases",
         "current": true
       }
     },
@@ -161,17 +162,17 @@
       "kind": "code-review-expert",
       "status": "FINAL_GATE_PASS",
       "schema_version": "code-review-expert/v1",
-      "manifest_path": "fada/reviews/2026-08-20-calibratable-tracker-final-gate.json",
-      "manifest_hash": "sha256:e84383533c61c0b2195e5245f05caf75d63b73a9f445395c2068f0003b509645",
+      "manifest_path": "fada/reviews/2026-08-20-calibration-stage-isolation-final.json",
+      "manifest_hash": "sha256:fefac886b87d58549fe735d452c6dd53fe88074d826c14cb9aff626586bfbd8a",
       "current": true,
       "identities": {
         "project": "ICE-Cal",
         "design": "ICA-DP-01..10-calibratable-tracker-serial-three-stage",
         "contract": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006",
-        "checkout": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
-        "entrypoint": "prepare dataset -> prepare scale evidence -> train -> evaluate/play calibration",
-        "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,serial-S1-S2-S3",
-        "checkpoint": "no-real-checkpoint; offline-module-transaction-only"
+        "checkout": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
+        "entrypoint": "prepare dataset -> Stage 1 direction artifact -> Stage 2 coefficient artifact -> Scale Evidence + Stage 2 -> calibration artifact -> evaluate/play",
+        "effective_config": "H=30,K=6,D=128,m=3,axes=gain-delay-offset,stage-artifact-v2,isolated-S1-S2-S3",
+        "checkpoint": "no-real-checkpoint; typed stage-artifact v2 verified offline only"
       },
       "validation": {
         "command": "uv run python code-review-expert validator --target final-gate",

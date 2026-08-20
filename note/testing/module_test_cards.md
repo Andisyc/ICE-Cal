@@ -31,10 +31,16 @@ not by itself claim official-route connectivity, training quality, or deployment
 
 ## MTC-04 Serial Stage Ownership
 
-- Owner: three-stage training orchestrator in the library, not scripts.
+- Owner: three independent stage transactions in the library; scripts and the
+  serial convenience route only compose them.
 - Must prove: Stage 1 mutates one direction only; Stage 2 mutates Encoder only; Stage 3 mutates only
   curve artifacts and constructs no optimizer.
-- Must prove ordering gates, rollback on frozen mutation, exact checkpoint identity, and no joint
+- Must prove: Stage 1 needs no future-stage input; Stage 2 can start only from a
+  freshly loaded admitted Stage 1 artifact; Stage 3 can start only from a
+  freshly loaded admitted Stage 2 artifact plus the exact typed Scale Evidence
+  bytes it fingerprints.
+- Must prove ordering gates, parent-digest identity, rollback on frozen mutation,
+  serial-versus-independent fresh-reload equivalence, and no joint
   direction/Encoder gradient path.
 
 ## MTC-05 Stage 2 Loss Semantics
@@ -79,4 +85,11 @@ not by itself claim official-route connectivity, training quality, or deployment
 - Owner: v007/v006 dataset/checkpoint preparation.
 - Must bind Contracts, catalog, H/K/D/m, normalization, Encoder, curves, stages, data/splits, source
   Tracker and provenance before construction.
+- The active stage envelope is a discriminated artifact: Stage 1 contains no
+  random future Encoder, Stage 2 binds its Stage 1 parent digest, and the final
+  artifact binds Stage 2 plus Scale Evidence digests. Stage publication uses a
+  unique temporary sibling; failure exposes no new target, preserves an existing
+  target byte-for-byte, and leaves no temporary residue.
 - v006/v005 Support/Query datasets/checkpoints must reject before policy, optimizer, or mutable load.
+- The pre-isolation generic calibration training-checkpoint schema must also
+  reject; it is not an active fallback.

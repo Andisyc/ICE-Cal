@@ -88,14 +88,14 @@
     </div>
 
     <div class="stamps">
-      <div class="stamp"><b><span class="x">✗</span>查不了</b><p>z 没有真值，补偿量无从查证。</p></div>
-      <div class="stamp"><b><span class="x">✗</span>修不动</b><p>映射隐含在策略参数中，只能整体重训。</p></div>
-      <div class="stamp"><b><span class="x">✗</span>合不了</b><p>多个原因在 z 中相互干扰，无法线性组合。</p></div>
+      <div class="stamp"><b><span class="x">✗</span>无法组合</b><p>组合失配只能靠网络外推去赌，没有可相加的系数。</p></div>
+      <div class="stamp"><b><span class="x">✗</span>无法标定</b><p>真机和仿真不一致时，只能整体重训 RL。</p></div>
+      <div class="stamp"><b><span class="x">✗</span>无法检查</b><p>静默给出错误修正，部署时无从察觉。</p></div>
     </div>
-    <p class="quote-head">SplitAdapter · Introduction · arXiv 2606.03297</p>
+    <p class="quote-head">SplitAdapter · Methodology 3.5 · arXiv 2606.03297</p>
 
     <div class="quote-card">
-      <blockquote><span class="quote-en">a single latent can mix load-related information with residual dynamics mismatch</span> <span class="quote-note">—— 他们清楚这一局限，并依赖 RL 在训练中覆盖它。</span></blockquote>
+      <blockquote><span class="quote-en">adapter training uses the same reinforcement-learning objective and reward as the base policy</span> <span class="quote-note">—— 修正完全交给 RL 奖励去覆盖，没有任何显式的、可单独标定的修正量。</span></blockquote>
     </div>
   </div></section>
 

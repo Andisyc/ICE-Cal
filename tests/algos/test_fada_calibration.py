@@ -71,6 +71,18 @@ def _normalized_bank(*, latent_dim: int = 128) -> DirectionBank:
     return bank.normalize_()
 
 
+def _artifact_metadata() -> dict[str, str]:
+    return {
+        "source_tracker_sha256": "1" * 64,
+        "dataset_sha256": "2" * 64,
+        "split_sha256": "3" * 64,
+        "axis_catalog_version": CALIBRATION_AXIS_CATALOG_VERSION,
+        "stage": "complete",
+        "parent_stage_sha256": "4" * 64,
+        "scale_evidence_sha256": "5" * 64,
+    }
+
+
 def test_axis_catalog_has_analytic_gain_delay_offset_targets() -> None:
     catalog = FaultAxisCatalog.default()
     nominal = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]])
@@ -236,18 +248,113 @@ def test_stage_three_artifact_round_trip_binds_contract_and_is_not_a_neural_chec
         direction_bank=_normalized_bank(),
         coefficient_encoder=CoefficientEncoder(state_dim=4, action_dim=3, axis_count=3),
         scale_curves=bank,
-        metadata={
-            "source_tracker_sha256": "abc",
-            "dataset_sha256": "def",
-            "split_sha256": "ghi",
-            "axis_catalog_version": CALIBRATION_AXIS_CATALOG_VERSION,
-        },
+        metadata=_artifact_metadata(),
     )
     payload = load_calibration_artifact(path)
     assert payload["schema_version"] == CALIBRATION_ARTIFACT_SCHEMA
     assert payload["method_contract_id"] == CALIBRATION_METHOD_CONTRACT_ID
-    assert payload["metadata"]["source_tracker_sha256"] == "abc"
+    assert payload["metadata"] == _artifact_metadata()
     assert payload["architecture"] == config.__dict__
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("stage", None),
+        ("stage", "coefficient_frozen"),
+        ("source_tracker_sha256", "a" * 63),
+        ("source_tracker_sha256", "A" * 64),
+        ("source_tracker_sha256", "g" * 64),
+        ("dataset_sha256", "b" * 63),
+        ("dataset_sha256", "B" * 64),
+        ("dataset_sha256", "h" * 64),
+        ("split_sha256", "c" * 63),
+        ("split_sha256", "C" * 64),
+        ("split_sha256", "i" * 64),
+        ("parent_stage_sha256", None),
+        ("parent_stage_sha256", "a" * 63),
+        ("parent_stage_sha256", "A" * 64),
+        ("parent_stage_sha256", "g" * 64),
+        ("scale_evidence_sha256", None),
+        ("scale_evidence_sha256", "b" * 63),
+        ("scale_evidence_sha256", "B" * 64),
+        ("scale_evidence_sha256", "h" * 64),
+    ],
+)
+def test_artifact_writer_rejects_missing_or_malformed_lineage(
+    tmp_path: Path,
+    field: str,
+    value: str | None,
+) -> None:
+    metadata = _artifact_metadata()
+    if value is None:
+        metadata.pop(field)
+    else:
+        metadata[field] = value
+    target = tmp_path / "calibration.pt"
+    with pytest.raises(ValueError, match="lineage"):
+        save_calibration_artifact(
+            target,
+            config=FADAArchitectureConfig(obs_dim=4, action_dim=3, command_dim=2),
+            direction_bank=_normalized_bank(),
+            coefficient_encoder=CoefficientEncoder(state_dim=4, action_dim=3, axis_count=3),
+            scale_curves=fit_scale_curve_bank(
+                torch.linspace(-1.0, 1.0, 21).repeat(3, 1),
+                torch.linspace(-0.4, 0.4, 21).repeat(3, 1),
+            ),
+            metadata=metadata,
+        )
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("stage", None),
+        ("stage", "direction_frozen"),
+        ("source_tracker_sha256", "a" * 63),
+        ("source_tracker_sha256", "A" * 64),
+        ("source_tracker_sha256", "g" * 64),
+        ("dataset_sha256", "b" * 63),
+        ("dataset_sha256", "B" * 64),
+        ("dataset_sha256", "h" * 64),
+        ("split_sha256", "c" * 63),
+        ("split_sha256", "C" * 64),
+        ("split_sha256", "i" * 64),
+        ("parent_stage_sha256", None),
+        ("parent_stage_sha256", "a" * 63),
+        ("parent_stage_sha256", "A" * 64),
+        ("parent_stage_sha256", "g" * 64),
+        ("scale_evidence_sha256", None),
+        ("scale_evidence_sha256", "b" * 63),
+        ("scale_evidence_sha256", "B" * 64),
+        ("scale_evidence_sha256", "h" * 64),
+    ],
+)
+def test_artifact_loader_rejects_missing_or_malformed_lineage(
+    tmp_path: Path,
+    field: str,
+    value: str | None,
+) -> None:
+    target = save_calibration_artifact(
+        tmp_path / "calibration.pt",
+        config=FADAArchitectureConfig(obs_dim=4, action_dim=3, command_dim=2),
+        direction_bank=_normalized_bank(),
+        coefficient_encoder=CoefficientEncoder(state_dim=4, action_dim=3, axis_count=3),
+        scale_curves=fit_scale_curve_bank(
+            torch.linspace(-1.0, 1.0, 21).repeat(3, 1),
+            torch.linspace(-0.4, 0.4, 21).repeat(3, 1),
+        ),
+        metadata=_artifact_metadata(),
+    )
+    payload = torch.load(target, map_location="cpu", weights_only=True)
+    if value is None:
+        payload["metadata"].pop(field)
+    else:
+        payload["metadata"][field] = value
+    torch.save(payload, target)
+    with pytest.raises(ValueError, match="lineage"):
+        load_calibration_artifact(target)
 
 
 def test_artifact_rejects_nonfinite_state_before_policy_construction(tmp_path: Path) -> None:
@@ -262,12 +369,7 @@ def test_artifact_rejects_nonfinite_state_before_policy_construction(tmp_path: P
         direction_bank=_normalized_bank(),
         coefficient_encoder=CoefficientEncoder(state_dim=4, action_dim=3, axis_count=3),
         scale_curves=curves,
-        metadata={
-            "source_tracker_sha256": "abc",
-            "dataset_sha256": "def",
-            "split_sha256": "ghi",
-            "axis_catalog_version": CALIBRATION_AXIS_CATALOG_VERSION,
-        },
+        metadata=_artifact_metadata(),
     )
     payload = torch.load(path, map_location="cpu", weights_only=True)
     payload["direction_bank"]["directions"][0, 0, 0] = torch.nan
@@ -288,12 +390,7 @@ def test_artifact_rejects_finite_but_nonmonotone_curve_state(tmp_path: Path) -> 
         direction_bank=_normalized_bank(),
         coefficient_encoder=CoefficientEncoder(state_dim=4, action_dim=3, axis_count=3),
         scale_curves=curves,
-        metadata={
-            "source_tracker_sha256": "abc",
-            "dataset_sha256": "def",
-            "split_sha256": "ghi",
-            "axis_catalog_version": CALIBRATION_AXIS_CATALOG_VERSION,
-        },
+        metadata=_artifact_metadata(),
     )
     payload = torch.load(path, map_location="cpu", weights_only=True)
     payload["scale_curves"][0]["y"][10] = 1.0

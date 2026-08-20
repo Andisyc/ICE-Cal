@@ -17,6 +17,9 @@ def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
         "prepare_fada_calibration_dataset.py",
         "prepare_fada_calibration_scale_evidence.py",
         "train_fada_calibration.py",
+        "train_fada_calibration_stage1.py",
+        "train_fada_calibration_stage2.py",
+        "train_fada_calibration_stage3.py",
         "evaluate_fada_calibration.py",
         "play_fada_calibration_viser.py",
     ):
@@ -31,6 +34,21 @@ def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
         if script == "train_fada_calibration.py":
             assert "--scale-evidence" in result.stdout
             assert "--scale-readings" not in result.stdout
+        if script == "train_fada_calibration_stage1.py":
+            assert "--stage1-steps" in result.stdout
+            assert "--stage1-artifact" not in result.stdout
+            assert "--stage2-artifact" not in result.stdout
+            assert "--scale-evidence" not in result.stdout
+        if script == "train_fada_calibration_stage2.py":
+            assert "--stage1-artifact" in result.stdout
+            assert "--stage2-steps" in result.stdout
+            assert "--scale-evidence" not in result.stdout
+        if script == "train_fada_calibration_stage3.py":
+            assert "--stage2-artifact" in result.stdout
+            assert "--scale-evidence" in result.stdout
+            assert "--learning-rate" not in result.stdout
+            assert "--stage1-steps" not in result.stdout
+            assert "--stage2-steps" not in result.stdout
 
 
 def test_calibration_playback_preset_enables_policy_consumption() -> None:

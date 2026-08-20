@@ -12,13 +12,13 @@ repositories.
 | Concept Figure | `architecture/08_in_context_execution_calibration.html` | Synchronized with ICA-DP-08 |
 | Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed axis-bank + serial three-stage design |
 | Active FADA Contract lineage | `fada/contracts/README.md` | Base v005 plus active Context v007/v006 |
-| Engineering transition | `fada/plans/2026-08-19-calibratable-tracker-three-stage.md` | Implemented offline; module-correct; formal audit pending |
+| Engineering transition | `fada/plans/2026-08-20-calibration-stage-isolation.md` | Three stages isolated; module-correct; formal audit pending |
 | Governance | `governance.json` | MODULE-CORRECT / FORMAL-AUDIT-PENDING |
 
-The Concept Figure, Inspector, active Context Contracts, implementation, Module Test Cards, and
-current offline receipts agree. The older query-conditioned module/final/formal receipts remain
-historical. Current offline implementation evidence does not authorize training, simulation,
-deployment, or policy-quality claims.
+The Concept Figure, Inspector, active Context Contracts, independently invokable Stage 1/2/3
+implementation, Module Test Cards, and current offline receipts agree. The older query-conditioned
+and pre-isolation receipts remain historical. Current offline implementation evidence does not
+authorize training, simulation, deployment, or policy-quality claims.
 
 ## Recall order
 

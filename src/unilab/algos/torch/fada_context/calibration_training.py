@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import math
+import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
@@ -24,15 +29,108 @@ from unilab.algos.torch.fada_context.calibration import (
     save_calibration_artifact,
 )
 
-CALIBRATION_CHECKPOINT_SCHEMA = "unilab_fada_calibration_checkpoint_v1"
+CALIBRATION_STAGE_ARTIFACT_SCHEMA = "unilab_fada_calibration_stage_artifact_v2"
 CALIBRATION_SCALE_EVIDENCE_SCHEMA = "unilab_fada_calibration_scale_evidence_v1"
-_STAGES = {"prepared", "direction_frozen", "coefficient_frozen", "complete"}
 _IDENTITY_FIELDS = (
     "source_tracker_sha256",
     "dataset_sha256",
     "split_sha256",
     "axis_catalog_version",
 )
+_DIRECTION_STAGE: Literal["direction_frozen"] = "direction_frozen"
+_COEFFICIENT_STAGE: Literal["coefficient_frozen"] = "coefficient_frozen"
+_COMPENSATION_RATIO_LIMIT = 0.1
+_COEFFICIENT_ERROR_LIMIT = 0.05
+
+
+@dataclass(frozen=True)
+class CalibrationStageIdentity:
+    source_tracker_sha256: str
+    dataset_sha256: str
+    split_sha256: str
+    axis_catalog_version: str
+
+    def validate(self) -> CalibrationStageIdentity:
+        for name in _IDENTITY_FIELDS[:-1]:
+            value = getattr(self, name)
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise ValueError(
+                    f"calibration stage identity {name} must be a "
+                    "64-character lowercase hexadecimal digest"
+                )
+        if not isinstance(self.axis_catalog_version, str) or not self.axis_catalog_version:
+            raise ValueError("calibration stage identity axis catalog is incomplete")
+        if self.axis_catalog_version != CALIBRATION_AXIS_CATALOG_VERSION:
+            raise ValueError("calibration stage identity axis catalog mismatch")
+        return self
+
+
+@dataclass(frozen=True)
+class DirectionStageConfig:
+    steps_per_axis: int = 100
+    learning_rate: float = 3.0e-4
+    compensation_ratio_threshold: float = 0.1
+    training_split_id: int = 0
+    validation_split_id: int = 1
+
+    def __post_init__(self) -> None:
+        if self.steps_per_axis <= 0:
+            raise ValueError("Stage 1 steps_per_axis must be positive")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("Stage 1 learning_rate must be finite and positive")
+        if not 0 < self.compensation_ratio_threshold <= _COMPENSATION_RATIO_LIMIT:
+            raise ValueError("Stage 1 compensation_ratio_threshold must be in (0,0.1]")
+        if self.training_split_id == self.validation_split_id:
+            raise ValueError("Stage 1 training and validation split IDs must differ")
+
+
+@dataclass(frozen=True)
+class CoefficientStageConfig:
+    steps: int = 1000
+    learning_rate: float = 3.0e-4
+    coefficient_error_threshold: float = 0.05
+    training_split_id: int = 0
+    validation_split_id: int = 1
+
+    def __post_init__(self) -> None:
+        if self.steps <= 0:
+            raise ValueError("Stage 2 steps must be positive")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("Stage 2 learning_rate must be finite and positive")
+        if not 0 < self.coefficient_error_threshold <= _COEFFICIENT_ERROR_LIMIT:
+            raise ValueError("Stage 2 coefficient_error_threshold must be in (0,0.05]")
+        if self.training_split_id == self.validation_split_id:
+            raise ValueError("Stage 2 training and validation split IDs must differ")
+
+
+@dataclass(frozen=True)
+class DirectionStageResult:
+    stage: Literal["direction_frozen"]
+    artifact_path: Path
+    artifact_sha256: str
+    compensation_ratios: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class CoefficientStageResult:
+    stage: Literal["coefficient_frozen"]
+    artifact_path: Path
+    artifact_sha256: str
+    parent_stage_sha256: str
+    coefficient_error: float
+
+
+@dataclass(frozen=True)
+class ScaleStageResult:
+    stage: Literal["complete"]
+    artifact_path: Path
+    artifact_sha256: str
+    parent_stage_sha256: str
+    scale_evidence_sha256: str
 
 
 @dataclass(frozen=True)
@@ -48,18 +146,37 @@ class SerialCalibrationConfig:
     def __post_init__(self) -> None:
         if self.stage1_steps_per_axis <= 0 or self.stage2_steps <= 0:
             raise ValueError("serial calibration steps must be positive")
-        if self.learning_rate <= 0:
-            raise ValueError("serial calibration learning_rate must be positive")
-        if not 0 < self.compensation_ratio_threshold < 1:
-            raise ValueError("compensation_ratio_threshold must be in (0,1)")
-        if not 0 < self.coefficient_error_threshold < 1:
-            raise ValueError("coefficient_error_threshold must be in (0,1)")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("serial calibration learning_rate must be finite and positive")
+        if not 0 < self.compensation_ratio_threshold <= _COMPENSATION_RATIO_LIMIT:
+            raise ValueError("compensation_ratio_threshold must be in (0,0.1]")
+        if not 0 < self.coefficient_error_threshold <= _COEFFICIENT_ERROR_LIMIT:
+            raise ValueError("coefficient_error_threshold must be in (0,0.05]")
         if self.training_split_id == self.validation_split_id:
             raise ValueError("training and validation split IDs must differ")
+
+    def direction_stage(self) -> DirectionStageConfig:
+        return DirectionStageConfig(
+            steps_per_axis=self.stage1_steps_per_axis,
+            learning_rate=self.learning_rate,
+            compensation_ratio_threshold=self.compensation_ratio_threshold,
+            training_split_id=self.training_split_id,
+            validation_split_id=self.validation_split_id,
+        )
+
+    def coefficient_stage(self) -> CoefficientStageConfig:
+        return CoefficientStageConfig(
+            steps=self.stage2_steps,
+            learning_rate=self.learning_rate,
+            coefficient_error_threshold=self.coefficient_error_threshold,
+            training_split_id=self.training_split_id,
+            validation_split_id=self.validation_split_id,
+        )
 
 
 @dataclass(frozen=True)
 class CalibrationScaleEvidence:
+    coefficient_scan_grid: torch.Tensor
     readings: torch.Tensor
     candidate_scales: torch.Tensor
     action_errors: torch.Tensor
@@ -67,6 +184,7 @@ class CalibrationScaleEvidence:
 
     def validate(self) -> CalibrationScaleEvidence:
         _validate_scale_evidence_tensors(
+            self.coefficient_scan_grid,
             self.readings,
             self.candidate_scales,
             self.action_errors,
@@ -82,10 +200,22 @@ class CalibrationScaleEvidence:
 
 
 def _validate_scale_evidence_tensors(
+    coefficient_scan_grid: torch.Tensor,
     readings: torch.Tensor,
     candidate_scales: torch.Tensor,
     action_errors: torch.Tensor,
 ) -> None:
+    expected_grid = torch.linspace(
+        -1.0,
+        1.0,
+        21,
+        dtype=coefficient_scan_grid.dtype,
+        device=coefficient_scan_grid.device,
+    ).repeat(len(CALIBRATION_AXIS_NAMES), 1)
+    if coefficient_scan_grid.shape != expected_grid.shape or not torch.equal(
+        coefficient_scan_grid, expected_grid
+    ):
+        raise ValueError("Stage 3 coefficient scan grid must be three [-1,1] 21-point rows")
     if readings.ndim != 3 or readings.shape[1:] != (21, 32):
         raise ValueError("Stage 3 requires 21 points and 32 repetitions per axis")
     if readings.shape[0] != len(CALIBRATION_AXIS_NAMES):
@@ -99,11 +229,46 @@ def _validate_scale_evidence_tensors(
     if action_errors.shape != (*readings.shape, candidate_scales.numel()):
         raise ValueError("Stage 3 Action errors must be [axis,21,32,candidate]")
     if not bool(
-        torch.isfinite(readings).all()
+        torch.isfinite(coefficient_scan_grid).all()
+        and torch.isfinite(readings).all()
         and torch.isfinite(candidate_scales).all()
         and torch.isfinite(action_errors).all()
     ):
         raise ValueError("Stage 3 evidence must be finite")
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_file(path: str | Path) -> str:
+    return _sha256_bytes(Path(path).read_bytes())
+
+
+def _load_exact_torch_payload(path: str | Path) -> tuple[Any, str]:
+    serialized = Path(path).expanduser().resolve().read_bytes()
+    digest = _sha256_bytes(serialized)
+    payload = torch.load(io.BytesIO(serialized), map_location="cpu", weights_only=True)
+    return payload, digest
+
+
+def _atomic_torch_save(target_path: str | Path, payload: object) -> Path:
+    target = Path(target_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=target.parent,
+        delete=False,
+    )
+    temporary = Path(temporary_handle.name)
+    temporary_handle.close()
+    try:
+        torch.save(payload, temporary)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
 
 
 def save_calibration_scale_evidence(
@@ -111,24 +276,20 @@ def save_calibration_scale_evidence(
     evidence: CalibrationScaleEvidence,
 ) -> Path:
     evidence.validate()
-    target = Path(path).expanduser().resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(f"{target.suffix}.tmp")
-    torch.save(
+    return _atomic_torch_save(
+        path,
         {
             "schema_version": CALIBRATION_SCALE_EVIDENCE_SCHEMA,
             "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
             "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
             "axis_names": CALIBRATION_AXIS_NAMES,
+            "coefficient_scan_grid": evidence.coefficient_scan_grid.detach().cpu(),
             "readings": evidence.readings.detach().cpu(),
             "candidate_scales": evidence.candidate_scales.detach().cpu(),
             "action_errors": evidence.action_errors.detach().cpu(),
             "metadata": dict(evidence.metadata),
         },
-        temporary,
     )
-    temporary.replace(target)
-    return target
 
 
 def load_calibration_scale_evidence(
@@ -136,7 +297,14 @@ def load_calibration_scale_evidence(
     *,
     expected_metadata: Mapping[str, str],
 ) -> CalibrationScaleEvidence:
-    payload = torch.load(Path(path), map_location="cpu", weights_only=True)
+    payload, _ = _load_exact_torch_payload(path)
+    return _calibration_scale_evidence_from_payload(payload, expected_metadata)
+
+
+def _calibration_scale_evidence_from_payload(
+    payload: object,
+    expected_metadata: Mapping[str, str],
+) -> CalibrationScaleEvidence:
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version") != CALIBRATION_SCALE_EVIDENCE_SCHEMA
@@ -154,17 +322,20 @@ def load_calibration_scale_evidence(
     ):
         raise ValueError("calibration scale evidence metadata identity mismatch")
     tensors = (
+        payload.get("coefficient_scan_grid"),
         payload.get("readings"),
         payload.get("candidate_scales"),
         payload.get("action_errors"),
     )
     if not all(isinstance(value, torch.Tensor) for value in tensors):
         raise ValueError("calibration scale evidence tensor fields are missing")
-    readings, candidate_scales, action_errors = tensors
+    coefficient_scan_grid, readings, candidate_scales, action_errors = tensors
+    assert isinstance(coefficient_scan_grid, torch.Tensor)
     assert isinstance(readings, torch.Tensor)
     assert isinstance(candidate_scales, torch.Tensor)
     assert isinstance(action_errors, torch.Tensor)
     return CalibrationScaleEvidence(
+        coefficient_scan_grid=coefficient_scan_grid,
         readings=readings,
         candidate_scales=candidate_scales,
         action_errors=action_errors,
@@ -385,7 +556,19 @@ def fit_scale_stage(
     candidate_scales: torch.Tensor,
     action_errors: torch.Tensor,
 ) -> tuple[MonotoneScaleCurve, ...]:
-    _validate_scale_evidence_tensors(readings, candidate_scales, action_errors)
+    coefficient_scan_grid = torch.linspace(
+        -1.0,
+        1.0,
+        21,
+        dtype=readings.dtype,
+        device=readings.device,
+    ).repeat(len(CALIBRATION_AXIS_NAMES), 1)
+    _validate_scale_evidence_tensors(
+        coefficient_scan_grid,
+        readings,
+        candidate_scales,
+        action_errors,
+    )
     optimal_indices = action_errors.argmin(dim=-1)
     optimal_scales = candidate_scales.to(action_errors)[optimal_indices]
     curves = fit_scale_curve_bank(readings.mean(dim=2), optimal_scales.mean(dim=2))
@@ -402,156 +585,567 @@ def fit_scale_stage(
     return curves
 
 
-def save_calibration_training_checkpoint(
-    path: str | Path,
-    *,
-    policy: FADAPlannerIDMPolicy,
-    direction_bank: DirectionBank,
-    coefficient_encoder: CoefficientEncoder,
-    stage: str,
-    metadata: dict[str, str],
-    scale_curves: tuple[MonotoneScaleCurve, ...] | None = None,
-) -> str:
-    if stage not in _STAGES:
-        raise ValueError(f"unknown calibration stage: {stage}")
-    required_metadata = {
-        "source_tracker_sha256",
-        "dataset_sha256",
-        "split_sha256",
-        "axis_catalog_version",
-    }
-    if any(not metadata.get(name) for name in required_metadata):
-        raise ValueError(
-            "calibration checkpoint requires source, dataset, split, and catalog identity"
-        )
-    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration checkpoint axis catalog mismatch")
-    if stage != "prepared":
-        norms = direction_bank.directions.detach().flatten(1).norm(dim=1)
-        if not torch.allclose(norms, torch.ones_like(norms), rtol=1e-5, atol=1e-6):
-            raise ValueError("frozen calibration checkpoint requires normalized directions")
-    if stage == "complete" and (
-        scale_curves is None or len(scale_curves) != direction_bank.axis_count
-    ):
-        raise ValueError("complete calibration checkpoint requires every scale curve")
-    if stage != "complete" and scale_curves is not None:
-        raise ValueError("scale curves are only valid in a complete calibration checkpoint")
-    target = Path(path).expanduser().resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(f"{target.suffix}.tmp")
-    torch.save(
-        {
-            "schema_version": CALIBRATION_CHECKPOINT_SCHEMA,
-            "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
-            "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
-            "architecture": policy.config.__dict__,
-            "axis_names": CALIBRATION_AXIS_NAMES,
-            "stage": stage,
-            "planner_state_dict": policy.planner.state_dict(),
-            "idm_state_dict": policy.idm.state_dict(),
-            "direction_bank_state_dict": direction_bank.state_dict(),
-            "coefficient_encoder_state_dict": coefficient_encoder.state_dict(),
-            "scale_curves": None
-            if scale_curves is None
-            else [
-                {"x": curve.x, "y": curve.y, "slopes": curve.slopes, "kind": curve.kind}
-                for curve in scale_curves
-            ],
-            "metadata": dict(metadata),
-        },
-        temporary,
-    )
-    temporary.replace(target)
-    return str(target)
+def _cpu_state_dict(module: torch.nn.Module) -> dict[str, torch.Tensor]:
+    return {name: value.detach().cpu().clone() for name, value in module.state_dict().items()}
 
 
-def load_calibration_training_checkpoint(
-    path: str | Path,
-    policy: FADAPlannerIDMPolicy,
-    direction_bank: DirectionBank,
-    coefficient_encoder: CoefficientEncoder,
+def _identity_payload(identity: CalibrationStageIdentity) -> dict[str, str]:
+    return {name: str(getattr(identity, name)) for name in _IDENTITY_FIELDS}
+
+
+def _stage_envelope(
     *,
-    expected_metadata: dict[str, str],
-    expected_stage: str,
+    policy: FADAPlannerIDMPolicy,
+    identity: CalibrationStageIdentity,
+    stage: Literal["direction_frozen", "coefficient_frozen"],
+    gate: Mapping[str, object],
+    owners: Mapping[str, object],
+    parent_stage_sha256: str | None = None,
 ) -> dict[str, object]:
-    payload = torch.load(path, map_location="cpu", weights_only=True)
+    payload: dict[str, object] = {
+        "schema_version": CALIBRATION_STAGE_ARTIFACT_SCHEMA,
+        "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
+        "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
+        "stage": stage,
+        "architecture": asdict(policy.config),
+        "dimensions": {
+            "history_length": policy.config.history_length,
+            "prediction_horizon": policy.config.prediction_horizon,
+            "latent_dim": policy.config.hidden_dim,
+        },
+        "axis_names": CALIBRATION_AXIS_NAMES,
+        "identity": _identity_payload(identity),
+        "gate": dict(gate),
+        "owners": dict(owners),
+    }
+    if parent_stage_sha256 is not None:
+        payload["parent_stage_sha256"] = parent_stage_sha256
+    return payload
+
+
+def _validate_common_stage_envelope(
+    payload: object,
+    *,
+    policy: FADAPlannerIDMPolicy,
+    identity: CalibrationStageIdentity,
+    expected_stage: Literal["direction_frozen", "coefficient_frozen"],
+) -> dict[str, object]:
     if (
         not isinstance(payload, dict)
-        or payload.get("schema_version") != CALIBRATION_CHECKPOINT_SCHEMA
+        or payload.get("schema_version") != CALIBRATION_STAGE_ARTIFACT_SCHEMA
     ):
-        raise ValueError("unsupported calibration checkpoint schema")
+        raise ValueError("unsupported calibration stage artifact schema")
     if payload.get("method_contract_id") != CALIBRATION_METHOD_CONTRACT_ID:
-        raise ValueError("calibration checkpoint method Contract mismatch")
+        raise ValueError("calibration stage artifact method Contract mismatch")
     if payload.get("training_contract_id") != CALIBRATION_TRAINING_CONTRACT_ID:
-        raise ValueError("calibration checkpoint training Contract mismatch")
-    if payload.get("architecture") != policy.config.__dict__:
-        raise ValueError("calibration checkpoint architecture mismatch")
-    if payload.get("stage") not in _STAGES:
-        raise ValueError("calibration checkpoint has invalid stage ordering")
+        raise ValueError("calibration stage artifact training Contract mismatch")
     if payload.get("stage") != expected_stage:
         raise ValueError(
-            f"calibration checkpoint stage mismatch: expected={expected_stage} "
+            f"calibration stage artifact stage mismatch: expected={expected_stage} "
             f"observed={payload.get('stage')}"
         )
-    if expected_stage == "complete" and not isinstance(payload.get("scale_curves"), list):
-        raise ValueError("complete calibration checkpoint is missing scale curves")
-    if expected_stage != "complete" and payload.get("scale_curves") is not None:
-        raise ValueError("incomplete calibration checkpoint cannot contain scale curves")
-    if expected_stage == "complete":
-        if len(payload["scale_curves"]) != len(CALIBRATION_AXIS_NAMES):
-            raise ValueError("complete calibration checkpoint scale curve count mismatch")
-        for curve in payload["scale_curves"]:
-            _validate_scale_curve_payload(curve)
+    if payload.get("architecture") != asdict(policy.config):
+        raise ValueError("calibration stage artifact architecture mismatch")
+    if payload.get("dimensions") != {
+        "history_length": policy.config.history_length,
+        "prediction_horizon": policy.config.prediction_horizon,
+        "latent_dim": policy.config.hidden_dim,
+    }:
+        raise ValueError("calibration stage artifact H/K/D mismatch")
     if tuple(payload.get("axis_names", ())) != CALIBRATION_AXIS_NAMES:
-        raise ValueError("calibration checkpoint axis catalog mismatch")
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, dict) or any(
-        metadata.get(name) != expected_metadata.get(name)
-        for name in (
-            "source_tracker_sha256",
-            "dataset_sha256",
-            "split_sha256",
-            "axis_catalog_version",
+        raise ValueError("calibration stage artifact axis order mismatch")
+    if payload.get("identity") != _identity_payload(identity):
+        raise ValueError("calibration stage artifact transaction identity mismatch")
+    if not isinstance(payload.get("gate"), Mapping):
+        raise ValueError("calibration stage artifact gate is missing")
+    if not isinstance(payload.get("owners"), Mapping):
+        raise ValueError("calibration stage artifact owners are missing")
+    _validate_finite_state_tree("calibration stage artifact", payload)
+    return payload
+
+
+def _load_direction_stage_artifact(
+    path: str | Path,
+    *,
+    policy: FADAPlannerIDMPolicy,
+    identity: CalibrationStageIdentity,
+) -> tuple[DirectionBank, str, dict[str, object]]:
+    payload, digest = _load_exact_torch_payload(path)
+    payload = _validate_common_stage_envelope(
+        payload,
+        policy=policy,
+        identity=identity,
+        expected_stage=_DIRECTION_STAGE,
+    )
+    owners = payload["owners"]
+    assert isinstance(owners, Mapping)
+    if set(owners) != {"direction_bank"}:
+        raise ValueError("direction stage artifact has forbidden owners")
+    direction_owner = owners.get("direction_bank")
+    expected_config = {
+        "axis_count": len(CALIBRATION_AXIS_NAMES),
+        "prediction_horizon": policy.config.prediction_horizon,
+        "latent_dim": policy.config.hidden_dim,
+    }
+    if not isinstance(direction_owner, Mapping) or direction_owner.get("config") != expected_config:
+        raise ValueError("direction stage artifact Direction Bank config mismatch")
+    direction_state = direction_owner.get("state_dict")
+    if not isinstance(direction_state, Mapping):
+        raise ValueError("direction stage artifact Direction Bank state is missing")
+    directions = direction_state.get("directions")
+    normalization_scale = direction_state.get("normalization_scale")
+    if (
+        not isinstance(directions, torch.Tensor)
+        or directions.shape
+        != (
+            len(CALIBRATION_AXIS_NAMES),
+            policy.config.prediction_horizon,
+            policy.config.hidden_dim,
         )
+        or not isinstance(normalization_scale, torch.Tensor)
+        or normalization_scale.shape != (len(CALIBRATION_AXIS_NAMES),)
     ):
-        raise ValueError("calibration checkpoint metadata identity mismatch")
-    _validate_finite_state_tree("calibration checkpoint", payload)
-    if expected_stage != "prepared":
-        direction_state = payload.get("direction_bank_state_dict")
-        directions = (
-            direction_state.get("directions") if isinstance(direction_state, dict) else None
+        raise ValueError("direction stage artifact Direction Bank state is malformed")
+    if not torch.allclose(
+        directions.flatten(1).norm(dim=1),
+        torch.ones(directions.shape[0]),
+        rtol=1e-5,
+        atol=1e-6,
+    ):
+        raise ValueError("direction stage artifact directions are not normalized")
+    if bool((normalization_scale <= 0).any()):
+        raise ValueError("direction stage artifact normalization scale must be positive")
+    gate = payload["gate"]
+    assert isinstance(gate, Mapping)
+    ratios = gate.get("result")
+    threshold = gate.get("threshold")
+    if (
+        gate.get("name") != "compensation_ratio"
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(float(threshold))
+        or not 0 < float(threshold) <= _COMPENSATION_RATIO_LIMIT
+        or not isinstance(ratios, list)
+        or len(ratios) != len(CALIBRATION_AXIS_NAMES)
+        or any(not isinstance(value, (int, float)) for value in ratios)
+        or any(not math.isfinite(float(value)) for value in ratios)
+        or any(float(value) > float(threshold) for value in ratios)
+    ):
+        raise ValueError("direction stage artifact gate did not pass")
+    bank = DirectionBank(**expected_config)
+    bank.load_state_dict(dict(direction_state), strict=True)
+    bank.requires_grad_(False)
+    return bank, digest, payload
+
+
+def _coefficient_encoder_config(policy: FADAPlannerIDMPolicy) -> dict[str, int]:
+    return {
+        "state_dim": policy.config.obs_dim,
+        "action_dim": policy.config.action_dim,
+        "axis_count": len(CALIBRATION_AXIS_NAMES),
+        "hidden_dim": 128,
+        "layers": 2,
+    }
+
+
+def _load_coefficient_stage_artifact(
+    path: str | Path,
+    *,
+    policy: FADAPlannerIDMPolicy,
+    identity: CalibrationStageIdentity,
+) -> tuple[DirectionBank, CoefficientEncoder, str, dict[str, object]]:
+    payload, digest = _load_exact_torch_payload(path)
+    payload = _validate_common_stage_envelope(
+        payload,
+        policy=policy,
+        identity=identity,
+        expected_stage=_COEFFICIENT_STAGE,
+    )
+    parent_digest = payload.get("parent_stage_sha256")
+    if (
+        not isinstance(parent_digest, str)
+        or len(parent_digest) != 64
+        or any(character not in "0123456789abcdef" for character in parent_digest)
+    ):
+        raise ValueError("coefficient stage artifact parent digest is missing")
+    owners = payload["owners"]
+    assert isinstance(owners, Mapping)
+    if set(owners) != {"direction_bank", "coefficient_encoder"}:
+        raise ValueError("coefficient stage artifact owner set is invalid")
+    direction_owner = owners.get("direction_bank")
+    encoder_owner = owners.get("coefficient_encoder")
+    direction_config = {
+        "axis_count": len(CALIBRATION_AXIS_NAMES),
+        "prediction_horizon": policy.config.prediction_horizon,
+        "latent_dim": policy.config.hidden_dim,
+    }
+    encoder_config = _coefficient_encoder_config(policy)
+    if (
+        not isinstance(direction_owner, Mapping)
+        or direction_owner.get("config") != direction_config
+        or not isinstance(direction_owner.get("state_dict"), Mapping)
+    ):
+        raise ValueError("coefficient stage artifact Direction Bank is malformed")
+    if (
+        not isinstance(encoder_owner, Mapping)
+        or encoder_owner.get("config") != encoder_config
+        or not isinstance(encoder_owner.get("state_dict"), Mapping)
+    ):
+        raise ValueError("coefficient stage artifact Encoder is malformed")
+    directions = direction_owner["state_dict"].get("directions")
+    normalization_scale = direction_owner["state_dict"].get("normalization_scale")
+    if (
+        not isinstance(directions, torch.Tensor)
+        or directions.shape
+        != (
+            len(CALIBRATION_AXIS_NAMES),
+            policy.config.prediction_horizon,
+            policy.config.hidden_dim,
         )
-        if not isinstance(directions, torch.Tensor) or not torch.allclose(
+        or not isinstance(normalization_scale, torch.Tensor)
+        or normalization_scale.shape != (len(CALIBRATION_AXIS_NAMES),)
+        or not torch.allclose(
             directions.flatten(1).norm(dim=1),
             torch.ones(directions.shape[0]),
             rtol=1e-5,
             atol=1e-6,
-        ):
-            raise ValueError("frozen calibration checkpoint directions are not normalized")
-    owners: tuple[torch.nn.Module, ...] = (
-        policy.planner,
-        policy.idm,
-        direction_bank,
-        coefficient_encoder,
+        )
+        or bool((normalization_scale <= 0).any())
+    ):
+        raise ValueError("coefficient stage artifact directions are invalid")
+    gate = payload["gate"]
+    assert isinstance(gate, Mapping)
+    error = gate.get("result")
+    threshold = gate.get("threshold")
+    if (
+        gate.get("name") != "coefficient_error"
+        or not isinstance(error, (int, float))
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(float(error))
+        or not math.isfinite(float(threshold))
+        or not 0 < float(threshold) <= _COEFFICIENT_ERROR_LIMIT
+        or float(error) > float(threshold)
+    ):
+        raise ValueError("coefficient stage artifact gate did not pass")
+    bank = DirectionBank(**direction_config)
+    bank.load_state_dict(dict(direction_owner["state_dict"]), strict=True)
+    bank.requires_grad_(False)
+    encoder = CoefficientEncoder(**encoder_config)
+    encoder.load_state_dict(dict(encoder_owner["state_dict"]), strict=True)
+    encoder.requires_grad_(False)
+    return bank, encoder, digest, payload
+
+
+def _split_stage_batch(
+    policy: FADAPlannerIDMPolicy,
+    batch: CalibrationRolloutBatch,
+    *,
+    training_split_id: int,
+    validation_split_id: int,
+    stage_name: str,
+) -> tuple[CalibrationRolloutBatch, CalibrationRolloutBatch]:
+    axis_count = len(CALIBRATION_AXIS_NAMES)
+    batch.validate(policy.config, axis_count=axis_count)
+    training_rows = torch.nonzero(
+        (batch.split_id == training_split_id) & ~batch.is_held_out_combination,
+        as_tuple=False,
+    ).flatten()
+    validation_rows = torch.nonzero(
+        (batch.split_id == validation_split_id) & ~batch.is_held_out_combination,
+        as_tuple=False,
+    ).flatten()
+    if training_rows.numel() == 0 or validation_rows.numel() == 0:
+        raise ValueError(f"{stage_name} requires non-empty train and validation rows")
+    validate_calibration_source_projection(policy, batch)
+    return batch.index_select(training_rows), batch.index_select(validation_rows)
+
+
+def run_direction_stage_training(
+    policy: FADAPlannerIDMPolicy,
+    batch: CalibrationRolloutBatch,
+    output_path: str | Path,
+    identity: CalibrationStageIdentity,
+    config: DirectionStageConfig,
+) -> DirectionStageResult:
+    identity.validate()
+    training_batch, validation_batch = _split_stage_batch(
+        policy,
+        batch,
+        training_split_id=config.training_split_id,
+        validation_split_id=config.validation_split_id,
+        stage_name="Stage 1",
     )
-    state_names = (
-        "planner_state_dict",
-        "idm_state_dict",
-        "direction_bank_state_dict",
-        "coefficient_encoder_state_dict",
-    )
-    snapshots = tuple(
-        {name: value.detach().clone() for name, value in owner.state_dict().items()}
-        for owner in owners
-    )
+    axis_count = len(CALIBRATION_AXIS_NAMES)
+    direction_bank = DirectionBank(
+        axis_count=axis_count,
+        prediction_horizon=policy.config.prediction_horizon,
+        latent_dim=policy.config.hidden_dim,
+    ).to(batch.observation_history.device)
+    policy_snapshot = _snapshot(policy)
+    policy.zero_grad(set_to_none=True)
+    ratios: list[float] = []
     try:
-        for owner, state_name in zip(owners, state_names, strict=True):
-            owner.load_state_dict(payload[state_name], strict=True)
+        for axis_index in range(axis_count):
+            if not bool((training_batch.axis_id == axis_index).any()) or not bool(
+                (validation_batch.axis_id == axis_index).any()
+            ):
+                raise ValueError(
+                    f"Stage 1 axis {axis_index} is missing train or validation evidence"
+                )
+            optimizer = torch.optim.Adam(
+                [direction_bank.directions],
+                lr=config.learning_rate,
+            )
+            for _ in range(config.steps_per_axis):
+                optimizer.zero_grad(set_to_none=True)
+                loss = direction_stage_loss(
+                    policy,
+                    direction_bank,
+                    training_batch,
+                    axis_index=axis_index,
+                )
+                if not bool(torch.isfinite(loss)):
+                    raise ValueError("Stage 1 produced a non-finite loss")
+                loss.backward()
+                bank_snapshot = _snapshot(direction_bank)
+                optimizer.step()
+                _require_unchanged("Stage 1", policy, policy_snapshot)
+                other_axes = (
+                    torch.arange(axis_count, device=direction_bank.directions.device) != axis_index
+                )
+                if not torch.equal(
+                    direction_bank.directions[other_axes],
+                    bank_snapshot["directions"][other_axes],
+                ):
+                    raise ValueError("frozen Direction Bank axis mutated during Stage 1")
+            direction_bank.normalize_axis_(axis_index)
+            ratio = float(
+                direction_stage_compensation_ratio(
+                    policy,
+                    direction_bank,
+                    validation_batch,
+                    axis_index=axis_index,
+                )
+            )
+            if not torch.isfinite(torch.tensor(ratio)):
+                raise ValueError("Stage 1 produced a non-finite compensation ratio")
+            if ratio > config.compensation_ratio_threshold:
+                raise ValueError(
+                    f"Stage 1 axis {axis_index} compensation ratio {ratio:.6f} exceeds "
+                    f"{config.compensation_ratio_threshold:.6f}"
+                )
+            ratios.append(ratio)
     except Exception:
-        for owner, snapshot in zip(owners, snapshots, strict=True):
-            owner.load_state_dict(snapshot, strict=True)
+        _restore(policy, policy_snapshot)
         raise
-    return payload
+    _require_unchanged("Stage 1", policy, policy_snapshot)
+    direction_bank.requires_grad_(False)
+    direction_bank.zero_grad(set_to_none=True)
+    payload = _stage_envelope(
+        policy=policy,
+        identity=identity,
+        stage=_DIRECTION_STAGE,
+        gate={
+            "name": "compensation_ratio",
+            "threshold": config.compensation_ratio_threshold,
+            "result": ratios,
+        },
+        owners={
+            "direction_bank": {
+                "config": {
+                    "axis_count": axis_count,
+                    "prediction_horizon": policy.config.prediction_horizon,
+                    "latent_dim": policy.config.hidden_dim,
+                },
+                "state_dict": _cpu_state_dict(direction_bank),
+            }
+        },
+    )
+    artifact_path = _atomic_torch_save(output_path, payload)
+    return DirectionStageResult(
+        stage=_DIRECTION_STAGE,
+        artifact_path=artifact_path,
+        artifact_sha256=_sha256_file(artifact_path),
+        compensation_ratios=(ratios[0], ratios[1], ratios[2]),
+    )
+
+
+def run_coefficient_stage_training(
+    policy: FADAPlannerIDMPolicy,
+    batch: CalibrationRolloutBatch,
+    direction_artifact_path: str | Path,
+    output_path: str | Path,
+    identity: CalibrationStageIdentity,
+    config: CoefficientStageConfig,
+) -> CoefficientStageResult:
+    identity.validate()
+    training_batch, validation_batch = _split_stage_batch(
+        policy,
+        batch,
+        training_split_id=config.training_split_id,
+        validation_split_id=config.validation_split_id,
+        stage_name="Stage 2",
+    )
+    direction_bank, parent_digest, _ = _load_direction_stage_artifact(
+        direction_artifact_path,
+        policy=policy,
+        identity=identity,
+    )
+    direction_bank = direction_bank.to(batch.observation_history.device)
+    encoder_config = _coefficient_encoder_config(policy)
+    encoder = CoefficientEncoder(**encoder_config).to(batch.observation_history.device)
+    policy_snapshot = _snapshot(policy)
+    direction_snapshot = _snapshot(direction_bank)
+    policy.zero_grad(set_to_none=True)
+    optimizer = torch.optim.Adam(encoder.parameters(), lr=config.learning_rate)
+    try:
+        for _ in range(config.steps):
+            optimizer.zero_grad(set_to_none=True)
+            loss = coefficient_stage_loss(policy, direction_bank, encoder, training_batch)
+            if not bool(torch.isfinite(loss)):
+                raise ValueError("Stage 2 produced a non-finite loss")
+            loss.backward()
+            validate_encoder_gradients(encoder)
+            optimizer.step()
+            _require_unchanged("Stage 2", policy, policy_snapshot)
+            _require_unchanged("Stage 2", direction_bank, direction_snapshot)
+    except Exception:
+        _restore(policy, policy_snapshot)
+        _restore(direction_bank, direction_snapshot)
+        raise
+    with torch.no_grad():
+        coefficient_error = float(
+            coefficient_validation_error(
+                encoder(
+                    validation_batch.observation_history[:, -30:],
+                    validation_batch.action_history[:, -30:],
+                ),
+                validation_batch.c_true,
+            )
+        )
+    if not torch.isfinite(torch.tensor(coefficient_error)):
+        raise ValueError("Stage 2 produced a non-finite coefficient error")
+    if coefficient_error > config.coefficient_error_threshold:
+        raise ValueError(
+            f"Stage 2 coefficient error {coefficient_error:.6f} exceeds "
+            f"{config.coefficient_error_threshold:.6f}"
+        )
+    _require_unchanged("Stage 2", policy, policy_snapshot)
+    _require_unchanged("Stage 2", direction_bank, direction_snapshot)
+    encoder.requires_grad_(False)
+    payload = _stage_envelope(
+        policy=policy,
+        identity=identity,
+        stage=_COEFFICIENT_STAGE,
+        parent_stage_sha256=parent_digest,
+        gate={
+            "name": "coefficient_error",
+            "threshold": config.coefficient_error_threshold,
+            "result": coefficient_error,
+        },
+        owners={
+            "direction_bank": {
+                "config": {
+                    "axis_count": len(CALIBRATION_AXIS_NAMES),
+                    "prediction_horizon": policy.config.prediction_horizon,
+                    "latent_dim": policy.config.hidden_dim,
+                },
+                "state_dict": _cpu_state_dict(direction_bank),
+            },
+            "coefficient_encoder": {
+                "config": encoder_config,
+                "state_dict": _cpu_state_dict(encoder),
+            },
+        },
+    )
+    artifact_path = _atomic_torch_save(output_path, payload)
+    return CoefficientStageResult(
+        stage=_COEFFICIENT_STAGE,
+        artifact_path=artifact_path,
+        artifact_sha256=_sha256_file(artifact_path),
+        parent_stage_sha256=parent_digest,
+        coefficient_error=coefficient_error,
+    )
+
+
+def _atomic_save_deployment_artifact(
+    target_path: str | Path,
+    *,
+    policy: FADAPlannerIDMPolicy,
+    direction_bank: DirectionBank,
+    coefficient_encoder: CoefficientEncoder,
+    scale_curves: tuple[MonotoneScaleCurve, ...],
+    metadata: Mapping[str, str],
+) -> Path:
+    target = Path(target_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.name}.",
+        suffix=".staging",
+        dir=target.parent,
+        delete=False,
+    )
+    temporary = Path(handle.name)
+    handle.close()
+    nested_temporary = temporary.with_suffix(f"{temporary.suffix}.tmp")
+    try:
+        save_calibration_artifact(
+            temporary,
+            config=policy.config,
+            direction_bank=direction_bank,
+            coefficient_encoder=coefficient_encoder,
+            scale_curves=scale_curves,
+            metadata=metadata,
+        )
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+        nested_temporary.unlink(missing_ok=True)
+    return target
+
+
+def run_scale_stage_fitting(
+    policy: FADAPlannerIDMPolicy,
+    coefficient_artifact_path: str | Path,
+    scale_evidence_path: str | Path,
+    output_path: str | Path,
+    identity: CalibrationStageIdentity,
+) -> ScaleStageResult:
+    identity.validate()
+    direction_bank, encoder, parent_digest, _ = _load_coefficient_stage_artifact(
+        coefficient_artifact_path,
+        policy=policy,
+        identity=identity,
+    )
+    scale_payload, scale_digest = _load_exact_torch_payload(scale_evidence_path)
+    evidence = _calibration_scale_evidence_from_payload(
+        scale_payload,
+        _identity_payload(identity),
+    )
+    curves = fit_scale_stage(
+        evidence.readings,
+        evidence.candidate_scales,
+        evidence.action_errors,
+    )
+    artifact_path = _atomic_save_deployment_artifact(
+        output_path,
+        policy=policy,
+        direction_bank=direction_bank,
+        coefficient_encoder=encoder,
+        scale_curves=curves,
+        metadata={
+            **_identity_payload(identity),
+            "stage": "complete",
+            "parent_stage_sha256": parent_digest,
+            "scale_evidence_sha256": scale_digest,
+        },
+    )
+    return ScaleStageResult(
+        stage="complete",
+        artifact_path=artifact_path,
+        artifact_sha256=_sha256_file(artifact_path),
+        parent_stage_sha256=parent_digest,
+        scale_evidence_sha256=scale_digest,
+    )
 
 
 def run_serial_calibration_training(
@@ -563,183 +1157,58 @@ def run_serial_calibration_training(
     dataset_sha256: str,
     split_sha256: str,
     axis_catalog_version: str,
-    scale_evidence: CalibrationScaleEvidence,
+    scale_evidence: CalibrationScaleEvidence | None = None,
+    scale_evidence_path: str | Path | None = None,
     config: SerialCalibrationConfig = SerialCalibrationConfig(),
 ) -> dict[str, object]:
-    """Run S1/S2/S3 as one serial transaction over already-collected labeled data."""
+    """Compose S1/S2/S3 through the same persisted boundaries as independent runs."""
 
-    axis_count = int(batch.c_true.shape[-1])
-    batch.validate(policy.config, axis_count=axis_count)
-    training_rows = torch.nonzero(
-        (batch.split_id == config.training_split_id) & ~batch.is_held_out_combination,
-        as_tuple=False,
-    ).flatten()
-    validation_rows = torch.nonzero(
-        (batch.split_id == config.validation_split_id) & ~batch.is_held_out_combination,
-        as_tuple=False,
-    ).flatten()
-    if training_rows.numel() == 0 or validation_rows.numel() == 0:
-        raise ValueError("serial calibration requires non-empty train and validation rows")
-    validate_calibration_source_projection(policy, batch)
-    checkpoint_metadata = {
-        "source_tracker_sha256": source_tracker_sha256,
-        "dataset_sha256": dataset_sha256,
-        "split_sha256": split_sha256,
-        "axis_catalog_version": axis_catalog_version,
-    }
-    scale_evidence.validate()
-    if any(
-        scale_evidence.metadata.get(name) != value for name, value in checkpoint_metadata.items()
-    ):
-        raise ValueError("Stage 3 scale evidence metadata identity mismatch")
-    training_batch = batch.index_select(training_rows)
-    validation_batch = batch.index_select(validation_rows)
-    direction_bank = DirectionBank(
-        axis_count=axis_count,
-        prediction_horizon=policy.config.prediction_horizon,
-        latent_dim=policy.config.hidden_dim,
-    ).to(batch.observation_history.device)
-    encoder = CoefficientEncoder(
-        state_dim=policy.config.obs_dim,
-        action_dim=policy.config.action_dim,
-        axis_count=axis_count,
-    ).to(batch.observation_history.device)
-    policy.zero_grad(set_to_none=True)
+    identity = CalibrationStageIdentity(
+        source_tracker_sha256=source_tracker_sha256,
+        dataset_sha256=dataset_sha256,
+        split_sha256=split_sha256,
+        axis_catalog_version=axis_catalog_version,
+    ).validate()
+    if (scale_evidence is None) == (scale_evidence_path is None):
+        raise ValueError("serial calibration requires exactly one typed scale evidence source")
     output = Path(output_dir).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
-
-    # Stage 1: one optimizer transaction per axis; the loss filters its own axis rows.
-    for axis_index in range(axis_count):
-        if not bool((training_batch.axis_id == axis_index).any()) or not bool(
-            (validation_batch.axis_id == axis_index).any()
-        ):
-            raise ValueError(f"Stage 1 axis {axis_index} is missing train or validation evidence")
-        optimizer = torch.optim.Adam([direction_bank.directions], lr=config.learning_rate)
-        for _ in range(config.stage1_steps_per_axis):
-            optimizer.zero_grad(set_to_none=True)
-            loss = direction_stage_loss(
-                policy,
-                direction_bank,
-                training_batch,
-                axis_index=axis_index,
-            )
-            if not bool(torch.isfinite(loss)):
-                raise ValueError("Stage 1 produced a non-finite loss")
-            loss.backward()
-            owner_snapshots = (_snapshot(policy), _snapshot(direction_bank), _snapshot(encoder))
-            try:
-                optimizer.step()
-                _require_unchanged("Stage 1", policy, owner_snapshots[0])
-                _require_unchanged("Stage 1", encoder, owner_snapshots[2])
-                before_directions = owner_snapshots[1]["directions"]
-                other_axes = (
-                    torch.arange(axis_count, device=direction_bank.directions.device) != axis_index
-                )
-                if not torch.equal(
-                    direction_bank.directions[other_axes], before_directions[other_axes]
-                ):
-                    raise ValueError("frozen Direction Bank axis mutated during Stage 1")
-            except Exception:
-                _restore(policy, owner_snapshots[0])
-                _restore(direction_bank, owner_snapshots[1])
-                _restore(encoder, owner_snapshots[2])
-                raise
-        direction_bank.normalize_axis_(axis_index)
-        ratio = direction_stage_compensation_ratio(
-            policy,
-            direction_bank,
-            validation_batch,
-            axis_index=axis_index,
-        )
-        if bool(ratio > config.compensation_ratio_threshold):
-            raise ValueError(
-                f"Stage 1 axis {axis_index} compensation ratio {float(ratio):.6f} exceeds "
-                f"{config.compensation_ratio_threshold:.6f}"
-            )
-    direction_bank.requires_grad_(False)
-    direction_bank.zero_grad(set_to_none=True)
-    save_calibration_training_checkpoint(
-        str(output / "stage1_direction_frozen.pt"),
-        policy=policy,
-        direction_bank=direction_bank,
-        coefficient_encoder=encoder,
-        stage="direction_frozen",
-        metadata=checkpoint_metadata,
+    direction_result = run_direction_stage_training(
+        policy,
+        batch,
+        output / "stage1_direction_frozen.pt",
+        identity,
+        config.direction_stage(),
     )
-
-    # Stage 2: the only optimizer parameter is the Coefficient Encoder.
-    optimizer = torch.optim.Adam(encoder.parameters(), lr=config.learning_rate)
-    for _ in range(config.stage2_steps):
-        optimizer.zero_grad(set_to_none=True)
-        loss = coefficient_stage_loss(policy, direction_bank, encoder, training_batch)
-        if not bool(torch.isfinite(loss)):
-            raise ValueError("Stage 2 produced a non-finite loss")
-        loss.backward()
-        validate_encoder_gradients(encoder)
-        owner_snapshots = (_snapshot(policy), _snapshot(direction_bank), _snapshot(encoder))
-        try:
-            optimizer.step()
-            _require_unchanged("Stage 2", policy, owner_snapshots[0])
-            _require_unchanged("Stage 2", direction_bank, owner_snapshots[1])
-        except Exception:
-            _restore(policy, owner_snapshots[0])
-            _restore(direction_bank, owner_snapshots[1])
-            _restore(encoder, owner_snapshots[2])
-            raise
-    with torch.no_grad():
-        coefficient_error = float(
-            coefficient_validation_error(
-                encoder(
-                    validation_batch.observation_history[:, -30:],
-                    validation_batch.action_history[:, -30:],
-                ),
-                validation_batch.c_true,
-            )
-        )
-    encoder.requires_grad_(False)
-    if coefficient_error > config.coefficient_error_threshold:
-        raise ValueError(
-            f"Stage 2 coefficient error {coefficient_error:.6f} exceeds "
-            f"{config.coefficient_error_threshold:.6f}"
-        )
-    save_calibration_training_checkpoint(
-        str(output / "stage2_coefficient_frozen.pt"),
-        policy=policy,
-        direction_bank=direction_bank,
-        coefficient_encoder=encoder,
-        stage="coefficient_frozen",
-        metadata=checkpoint_metadata,
+    coefficient_result = run_coefficient_stage_training(
+        policy,
+        batch,
+        direction_result.artifact_path,
+        output / "stage2_coefficient_frozen.pt",
+        identity,
+        config.coefficient_stage(),
     )
-
-    # Stage 3: fit curve artifacts only; no optimizer is constructed here.
-    curves = fit_scale_stage(
-        scale_evidence.readings,
-        scale_evidence.candidate_scales,
-        scale_evidence.action_errors,
-    )
-    artifact_path = save_calibration_artifact(
+    if scale_evidence is not None:
+        scale_path = save_calibration_scale_evidence(
+            output / "scale_evidence.pt",
+            scale_evidence,
+        )
+    else:
+        assert scale_evidence_path is not None
+        scale_path = Path(scale_evidence_path).expanduser().resolve()
+    scale_result = run_scale_stage_fitting(
+        policy,
+        coefficient_result.artifact_path,
+        scale_path,
         output / "calibration_artifact.pt",
-        config=policy.config,
-        direction_bank=direction_bank,
-        coefficient_encoder=encoder,
-        scale_curves=curves,
-        metadata={
-            **checkpoint_metadata,
-            "stage": "complete",
-        },
-    )
-    save_calibration_training_checkpoint(
-        str(output / "stage3_complete.pt"),
-        policy=policy,
-        direction_bank=direction_bank,
-        coefficient_encoder=encoder,
-        stage="complete",
-        metadata=checkpoint_metadata,
-        scale_curves=curves,
+        identity,
     )
     return {
         "stage": "complete",
-        "artifact_path": str(artifact_path),
-        "coefficient_error": coefficient_error,
-        "axis_count": axis_count,
+        "artifact_path": str(scale_result.artifact_path),
+        "coefficient_error": coefficient_result.coefficient_error,
+        "axis_count": len(CALIBRATION_AXIS_NAMES),
+        "direction_stage": direction_result,
+        "coefficient_stage": coefficient_result,
+        "scale_stage": scale_result,
     }

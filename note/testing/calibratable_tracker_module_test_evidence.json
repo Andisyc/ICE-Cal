@@ -1,28 +1,108 @@
 {
   "schema_version": 1,
-  "scope": "v007/v006 calibratable Tracker module alignment",
-  "design_identity": "ICE-Cal / ICA-DP-01..10 / FADA-CONTEXT-METHOD-v007 + FADA-CONTEXT-TRAIN-v006",
-  "checkout_identity": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061",
+  "scope": "v007/v006 calibratable Tracker serial-three-stage module alignment",
+  "design_identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage",
+  "contract_identity": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006",
+  "checkout_identity": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
+  "base_checkout_identity": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491",
   "content_identity": {
-    "algorithm": "sha256(path\\0file_sha256\\0 ...)",
-    "sha256": "2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
-    "files": 18
+    "algorithm": "sha256(lexicographically sorted relative path + NUL + file sha256 + NUL)",
+    "sha256": "73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
+    "file_count": 21,
+    "files": [
+      "conf/distill/calibration_playback/gain_delay_offset_v1.yaml",
+      "conf/distill/config.yaml",
+      "conf/fada_context/calibration_axes/gain_delay_offset_v1.yaml",
+      "scripts/evaluate_fada_calibration.py",
+      "scripts/play_fada_calibration_viser.py",
+      "scripts/prepare_fada_calibration_dataset.py",
+      "scripts/prepare_fada_calibration_scale_evidence.py",
+      "scripts/train_fada_calibration.py",
+      "scripts/train_fada_calibration_stage1.py",
+      "scripts/train_fada_calibration_stage2.py",
+      "scripts/train_fada_calibration_stage3.py",
+      "src/unilab/algos/torch/fada_context/__init__.py",
+      "src/unilab/algos/torch/fada_context/calibration.py",
+      "src/unilab/algos/torch/fada_context/calibration_data.py",
+      "src/unilab/algos/torch/fada_context/calibration_evaluation.py",
+      "src/unilab/algos/torch/fada_context/calibration_runtime.py",
+      "src/unilab/algos/torch/fada_context/calibration_training.py",
+      "tests/algos/test_fada_calibration.py",
+      "tests/algos/test_fada_calibration_evaluation.py",
+      "tests/algos/test_fada_calibration_training.py",
+      "tests/scripts/test_fada_calibration_entrypoints.py"
+    ]
+  },
+  "review": {
+    "changed_file_count": 11,
+    "changed_files": [
+      "src/unilab/algos/torch/fada_context/calibration.py",
+      "src/unilab/algos/torch/fada_context/calibration_training.py",
+      "src/unilab/algos/torch/fada_context/__init__.py",
+      "scripts/prepare_fada_calibration_scale_evidence.py",
+      "scripts/train_fada_calibration.py",
+      "scripts/train_fada_calibration_stage1.py",
+      "scripts/train_fada_calibration_stage2.py",
+      "scripts/train_fada_calibration_stage3.py",
+      "tests/algos/test_fada_calibration.py",
+      "tests/algos/test_fada_calibration_training.py",
+      "tests/scripts/test_fada_calibration_entrypoints.py"
+    ],
+    "owner_rows": 17,
+    "semantic_case_rows": 75,
+    "missing_cases": 0
   },
   "affected_suite": {
     "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
     "exit_code": 0,
-    "test_count": 42,
-    "normalized_stdout_sha256": "a999fb85a52abc1f74bd6a09a59f2706d39c85dba484bef5c3ab616371cd6618",
-    "result": "42 passed"
+    "test_count": 151,
+    "normalization": "151 passed\\n",
+    "normalized_stdout_sha256": "fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32",
+    "result": "151 passed"
+  },
+  "s0_export_evidence": {
+    "classification": "STATIC-ONLY",
+    "command": "uv run pytest tests/algos/test_fada_calibration_training.py::test_stage_isolation_public_export_surface_has_no_generic_checkpoint_api -q",
+    "exit_code": 0,
+    "test_count": 1,
+    "result": "1 passed",
+    "test_node": "tests/algos/test_fada_calibration_training.py::test_stage_isolation_public_export_surface_has_no_generic_checkpoint_api"
+  },
+  "connectivity_compatibility": {
+    "classification": "CONNECTIVITY-ONLY",
+    "command": "uv run pytest tests/algos/test_fada_calibration_training.py::test_serial_and_independent_transactions_are_fresh_reload_action_equivalent -q",
+    "exit_code": 0,
+    "test_count": 1,
+    "result": "1 passed",
+    "test_node": "tests/algos/test_fada_calibration_training.py::test_serial_and_independent_transactions_are_fresh_reload_action_equivalent",
+    "claim_boundary": "Fresh-reload serial/independent Action equivalence is an S2 connectivity sentinel, not module-semantic or official-route evidence."
   },
   "static_checks": {
-    "ruff": "passed",
-    "ruff_format": "passed",
-    "mypy": "passed"
+    "ruff": {
+      "result": "passed",
+      "scope": "11 changed Python files",
+      "source": "note/fada/reviews/2026-08-20-calibration-stage-isolation-final.json"
+    },
+    "ruff_format": {
+      "result": "passed",
+      "scope": "11 changed Python files",
+      "source": "note/fada/reviews/2026-08-20-calibration-stage-isolation-final.json"
+    },
+    "mypy": {
+      "result": "passed",
+      "scope": "calibration.py and calibration_training.py",
+      "source": "note/fada/reviews/2026-08-20-calibration-stage-isolation-final.json"
+    }
   },
   "formal_handoff": {
-    "status": "NOT-RUN",
-    "reason": "Module evidence is offline unit/owner evidence; simulator, long training, live playback, and deployment authorization remain separate gates."
+    "status": "PENDING-FORMAL",
+    "required_edges": [
+      "Stage 1 CLI -> direction_frozen artifact path",
+      "Stage 2 CLI -> strict predecessor-path reload -> coefficient_frozen artifact path",
+      "Stage 3 CLI -> strict coefficient/evidence path reload -> deployment artifact",
+      "deployment artifact -> fresh calibrated runtime -> first Action"
+    ],
+    "reason": "Module evidence is offline owner/persistence evidence; simulator, device, long training, live playback and deployment authorization remain separate gates."
   },
   "policy_quality": "NOT-CLAIMED"
 }

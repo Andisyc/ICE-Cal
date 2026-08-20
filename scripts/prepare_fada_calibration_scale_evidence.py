@@ -44,10 +44,16 @@ def main() -> int:
     raw = torch.load(args.raw_evidence, map_location="cpu", weights_only=True)
     if not isinstance(raw, Mapping):
         raise ValueError("raw scale evidence must be a mapping")
-    tensor_fields = ("readings", "candidate_scales", "action_errors")
+    tensor_fields = (
+        "coefficient_scan_grid",
+        "readings",
+        "candidate_scales",
+        "action_errors",
+    )
     if any(not isinstance(raw.get(name), torch.Tensor) for name in tensor_fields):
         raise ValueError("raw scale evidence is missing tensor fields")
     evidence = CalibrationScaleEvidence(
+        coefficient_scan_grid=raw["coefficient_scan_grid"],
         readings=raw["readings"],
         candidate_scales=raw["candidate_scales"],
         action_errors=raw["action_errors"],

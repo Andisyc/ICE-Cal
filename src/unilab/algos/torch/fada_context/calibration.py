@@ -498,6 +498,36 @@ def fit_scale_curve_bank(
     return tuple(MonotoneScaleCurve.fit(readings[i], scales[i]) for i in range(readings.shape[0]))
 
 
+def _validate_calibration_artifact_metadata(metadata: object) -> Mapping[str, Any]:
+    if not isinstance(metadata, Mapping):
+        raise ValueError("calibration artifact metadata is missing")
+    digest_fields = (
+        "source_tracker_sha256",
+        "dataset_sha256",
+        "split_sha256",
+        "parent_stage_sha256",
+        "scale_evidence_sha256",
+    )
+    for name in digest_fields:
+        value = metadata.get(name)
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise ValueError(
+                f"calibration artifact lineage {name} must be a "
+                "64-character lowercase hexadecimal digest"
+            )
+    if not isinstance(metadata.get("axis_catalog_version"), str):
+        raise ValueError("calibration artifact metadata axis catalog is missing")
+    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
+        raise ValueError("calibration artifact axis catalog mismatch")
+    if metadata.get("stage") != "complete":
+        raise ValueError("calibration artifact lineage stage must be complete")
+    return metadata
+
+
 def save_calibration_artifact(
     path: str | Path,
     *,
@@ -541,21 +571,7 @@ def save_calibration_artifact(
     )
     if observed_encoder != expected_encoder:
         raise ValueError("calibration artifact Coefficient Encoder architecture mismatch")
-    required_metadata = {
-        "source_tracker_sha256",
-        "dataset_sha256",
-        "split_sha256",
-        "axis_catalog_version",
-    }
-    missing = sorted(
-        name
-        for name in required_metadata
-        if not isinstance(metadata.get(name), str) or not metadata[name]
-    )
-    if missing:
-        raise ValueError(f"calibration artifact metadata is missing: {missing}")
-    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration artifact axis catalog mismatch")
+    _validate_calibration_artifact_metadata(metadata)
     for curve in scale_curves:
         if curve.x.numel() != 21:
             raise ValueError("calibration artifact requires a 21-point scale grid")
@@ -603,21 +619,7 @@ def load_calibration_artifact(path: str | Path) -> dict[str, Any]:
         raise ValueError("calibration artifact architecture is missing")
     if tuple(payload.get("axis_names", ())) != CALIBRATION_AXIS_NAMES:
         raise ValueError("calibration artifact axis catalog mismatch")
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, Mapping):
-        raise ValueError("calibration artifact metadata is missing")
-    required_metadata = {
-        "source_tracker_sha256",
-        "dataset_sha256",
-        "split_sha256",
-        "axis_catalog_version",
-    }
-    if any(
-        not isinstance(metadata.get(name), str) or not metadata[name] for name in required_metadata
-    ):
-        raise ValueError("calibration artifact metadata identity is incomplete")
-    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration artifact axis catalog mismatch")
+    _validate_calibration_artifact_metadata(payload.get("metadata"))
     if (
         not isinstance(payload.get("direction_bank"), Mapping)
         or not isinstance(payload.get("coefficient_encoder"), Mapping)

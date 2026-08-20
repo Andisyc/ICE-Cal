@@ -3,7 +3,7 @@
   "mode": "design-inspector",
   "identity": {
     "atlas_id": "ICE-CAL-CALIBRATABLE-TRACKER-DESIGN-INSPECTOR",
-    "repository": "ICE-Cal@codex/in-context-execution-calibration@5949136e43d3+content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
+    "repository": "ICE-Cal@codex/in-context-execution-calibration@0e49ea9a5b94+content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
     "contract_id": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006",
     "current": true
   },
@@ -26,12 +26,15 @@
     {"path": "note/architecture/concept/09_in_context_execution_calibration_design_inspector.data.json", "line": 1},
     {"path": "note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v007.md", "line": 1},
     {"path": "note/fada/contracts/active/training/FADA-CONTEXT-TRAIN-v006.md", "line": 1},
-    {"path": "note/fada/plans/2026-08-19-calibratable-tracker-three-stage.md", "line": 1},
+    {"path": "note/fada/plans/2026-08-20-calibration-stage-isolation.md", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration.py", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration_data.py", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration_training.py", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration_evaluation.py", "line": 1},
-    {"path": "src/unilab/algos/torch/fada_context/calibration_runtime.py", "line": 1}
+    {"path": "src/unilab/algos/torch/fada_context/calibration_runtime.py", "line": 1},
+    {"path": "scripts/train_fada_calibration_stage1.py", "line": 1},
+    {"path": "scripts/train_fada_calibration_stage2.py", "line": 1},
+    {"path": "scripts/train_fada_calibration_stage3.py", "line": 1}
   ],
   "runtime_receipts": [
     {
@@ -45,7 +48,7 @@
       "claim_id": "ICA-DP-01-10-V007-V006-FINAL-GATE",
       "producer": "code-review-expert",
       "status": "FINAL_GATE_PASS",
-      "path": "note/fada/reviews/2026-08-20-calibratable-tracker-final-gate.json",
+      "path": "note/fada/reviews/2026-08-20-calibration-stage-isolation-final.json",
       "current": true
     },
     {
