@@ -375,9 +375,7 @@ class FADAInverseDynamicsModel(nn.Module):
         action_history: torch.Tensor,
         future: torch.Tensor,
     ) -> torch.Tensor:
-        return self.decode_latent(
-            self.encode_latent(observation_history, action_history, future)
-        )
+        return self.decode_latent(self.encode_latent(observation_history, action_history, future))
 
 
 class FADAPlannerIDMPolicy(nn.Module):

@@ -12,13 +12,13 @@ import torch
 
 from unilab.algos.torch.common.device import get_env_dims
 from unilab.algos.torch.offpolicy.worker import off_policy_collector_fn
+from unilab.base.nan_guard import NanGuardCfg
 from unilab.ipc import SharedObsNormStats, SharedWeightSync
 from unilab.ipc.async_runner import _SPAWN_CTX, AsyncRunner
 from unilab.ipc.replay_buffer import ReplayBuffer
 from unilab.logging import OffPolicyLogger, TraceRecorder
 from unilab.training.seed import apply_training_seed, derive_worker_seed
 from unilab.utils.device import get_default_device
-from unilab.utils.nan_guard import NanGuardCfg
 
 
 def compute_train_start_threshold(batch_size: int, learning_starts: int, num_envs: int) -> int:

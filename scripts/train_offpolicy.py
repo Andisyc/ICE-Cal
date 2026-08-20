@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 ROOT_DIR = Path(__file__).parent.parent
 sys.path.append(str(ROOT_DIR))
 
+from unilab.base.nan_guard import NanGuardCfg
 from unilab.training import (
     BackendAdapter,
     apply_configured_training_seed,
@@ -29,7 +30,6 @@ from unilab.training import (
 )
 from unilab.training.experiment import ExperimentTracker
 from unilab.training.sim2sim import policy_load_dim_guard, resolve_sim2sim_config
-from unilab.utils.nan_guard import NanGuardCfg
 
 
 def enable_faulthandler() -> None:

@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from unilab.base.nan_guard import NanGuard, NanGuardCfg
 from unilab.tools.viz_nan import load_dump
-from unilab.utils.nan_guard import NanGuard, NanGuardCfg
 
 NUM_ENVS = 4
 OBS_DIM = 10

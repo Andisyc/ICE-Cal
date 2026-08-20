@@ -8,10 +8,10 @@ from omegaconf import DictConfig
 
 from unilab.algos.torch.flash_sac.learner import FlashSACLearner
 from unilab.algos.torch.offpolicy.double_buffer_runner import DoubleBufferOffPolicyRunner
+from unilab.base.nan_guard import NanGuardCfg
 from unilab.training import create_env, ensure_registries
 from unilab.training.seed import apply_training_seed
 from unilab.utils.device import get_default_device
-from unilab.utils.nan_guard import NanGuardCfg
 
 
 def _validate_flashsac_double_buffer_runtime(

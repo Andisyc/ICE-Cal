@@ -39,6 +39,7 @@ from unilab.algos.torch.distill.workflow import (
     finalize_workflow_performance,
     fork_workflow_run,
     preflight_role_artifacts,
+    resolve_walk_to_stop_role_pair,
     run_bootstrap_workflow,
     run_multirole_dagger_workflow,
     write_role_artifact_manifest,
@@ -136,6 +137,89 @@ def _spec(tmp_path: Path, role: str = "stand") -> RoleArtifactSpec:
             "ctrl_dt": 0.02,
         },
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "source_roles",
+        "command_filters",
+        "target_height_keys",
+        "expected_roles",
+        "error_match",
+    ),
+    [
+        pytest.param(
+            ("walk", "stand"),
+            {"walk": "active", "stand": "inactive"},
+            {"walk": "height_commands", "stand": "height_commands"},
+            ("walk", "stand", "height_commands"),
+            None,
+            id="valid-active-inactive-pair",
+        ),
+        pytest.param(
+            ("walk", "stand", "aux"),
+            {"walk": "active", "stand": "inactive", "aux": "none"},
+            {"walk": None, "stand": None, "aux": None},
+            None,
+            "exactly two source roles",
+            id="third-role",
+        ),
+        pytest.param(
+            ("walk",),
+            {"walk": "active"},
+            {"walk": None},
+            None,
+            "exactly two source roles",
+            id="missing-inactive-role",
+        ),
+        pytest.param(
+            ("walk_a", "walk_b"),
+            {"walk_a": "active", "walk_b": "active"},
+            {"walk_a": None, "walk_b": None},
+            None,
+            "one active role and one inactive role",
+            id="duplicate-command-filter",
+        ),
+        pytest.param(
+            ("walk", "other"),
+            {"walk": "active", "other": "none"},
+            {"walk": None, "other": None},
+            None,
+            "unsupported command sample filter",
+            id="unknown-command-filter",
+        ),
+        pytest.param(
+            ("walk", "stand"),
+            {"walk": "active", "stand": "inactive"},
+            {"walk": "height_commands", "stand": "other_height"},
+            None,
+            "agree on target-height info key",
+            id="target-height-key-mismatch",
+        ),
+    ],
+)
+def test_walk_to_stop_role_pair_contract_table(
+    source_roles: tuple[str, ...],
+    command_filters: dict[str, str],
+    target_height_keys: dict[str, str | None],
+    expected_roles: tuple[str, str, str | None] | None,
+    error_match: str | None,
+) -> None:
+    if error_match is not None:
+        with pytest.raises(ValueError, match=error_match):
+            resolve_walk_to_stop_role_pair(
+                source_roles=source_roles,
+                command_sample_filters=command_filters,
+                target_height_info_keys=target_height_keys,
+            )
+        return
+
+    pair = resolve_walk_to_stop_role_pair(
+        source_roles=source_roles,
+        command_sample_filters=command_filters,
+        target_height_info_keys=target_height_keys,
+    )
+    assert (pair.walking_role, pair.standing_role, pair.target_height_info_key) == expected_roles
 
 
 def _materialize(spec: RoleArtifactSpec, *, num_samples: int = 8) -> None:

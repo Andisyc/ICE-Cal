@@ -264,6 +264,62 @@ class WorkflowScenarioSpec:
 
 
 @dataclass(frozen=True)
+class WalkToStopRolePair:
+    walking_role: str
+    standing_role: str
+    target_height_info_key: str | None
+
+
+def resolve_walk_to_stop_role_pair(
+    *,
+    source_roles: Sequence[str],
+    command_sample_filters: Mapping[str, str],
+    target_height_info_keys: Mapping[str, str | None],
+) -> WalkToStopRolePair:
+    """Resolve the sole semantic role pair for a walk-to-stop collection."""
+
+    roles = tuple(str(role) for role in source_roles)
+    if len(roles) != 2 or len(set(roles)) != 2:
+        raise ValueError(f"walk_to_stop scenario requires exactly two source roles, got {roles}")
+
+    missing_filters = tuple(role for role in roles if role not in command_sample_filters)
+    missing_height_keys = tuple(role for role in roles if role not in target_height_info_keys)
+    if missing_filters or missing_height_keys:
+        missing = tuple(dict.fromkeys((*missing_filters, *missing_height_keys)))
+        raise ValueError(f"walk_to_stop scenario references unknown roles: {missing}")
+
+    filters_by_role = {role: str(command_sample_filters[role]) for role in roles}
+    role_by_filter: dict[str, str] = {}
+    for role, command_filter in filters_by_role.items():
+        if command_filter not in {"active", "inactive"}:
+            raise ValueError(
+                "walk_to_stop scenario has unsupported command sample filter: "
+                f"role={role!r} filter={command_filter!r}"
+            )
+        if command_filter in role_by_filter:
+            raise ValueError(
+                "walk_to_stop scenario requires one active role and one inactive role, "
+                f"got {filters_by_role}"
+            )
+        role_by_filter[command_filter] = role
+
+    walking_role = role_by_filter["active"]
+    standing_role = role_by_filter["inactive"]
+    walking_height_key = target_height_info_keys[walking_role]
+    standing_height_key = target_height_info_keys[standing_role]
+    if walking_height_key != standing_height_key:
+        raise ValueError(
+            "walk_to_stop roles must agree on target-height info key: "
+            f"walk={walking_height_key!r} stand={standing_height_key!r}"
+        )
+    return WalkToStopRolePair(
+        walking_role=walking_role,
+        standing_role=standing_role,
+        target_height_info_key=walking_height_key,
+    )
+
+
+@dataclass(frozen=True)
 class DaggerWorkflowResult:
     run_dir: Path
     manifest_path: Path
@@ -319,12 +375,25 @@ def _validate_workflow_scenarios(
     names = [scenario.name for scenario in scenarios]
     if len(names) != len(set(names)):
         raise ValueError(f"workflow scenario names must be unique, got {names}")
-    roles = {spec.role for spec in role_specs}
+    role_specs_by_role = {spec.role: spec for spec in role_specs}
+    roles = set(role_specs_by_role)
     for scenario in scenarios:
         missing = sorted(set(scenario.source_roles) - roles)
         if missing:
             raise ValueError(
                 f"workflow scenario {scenario.name!r} references unknown roles: {missing}"
+            )
+        if scenario.kind == "transition" and scenario.name == "walk_to_stop":
+            resolve_walk_to_stop_role_pair(
+                source_roles=scenario.source_roles,
+                command_sample_filters={
+                    role: role_specs_by_role[role].command_sample_filter
+                    for role in scenario.source_roles
+                },
+                target_height_info_keys={
+                    role: role_specs_by_role[role].target_height_info_key
+                    for role in scenario.source_roles
+                },
             )
     return scenarios
 

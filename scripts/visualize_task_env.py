@@ -216,8 +216,7 @@ def _env_scene(env) -> "SceneCfg | None":
 def _mujoco_visual_xml_paths(env) -> tuple[Path, Path]:
     scene = _env_scene(env)
     static_model_file = None if scene is None else scene.model_file
-    backend = getattr(env, "_backend", None)
-    parent_xml = getattr(backend, "scene_visual_model_file", None)
+    parent_xml = env.get_scene_artifacts().visual_model_file
     if parent_xml is None:
         parent_xml = static_model_file
     if parent_xml is None:
@@ -297,18 +296,18 @@ def _build_env_cfg_override(task_name: str) -> dict[str, Any]:
 
 
 def _print_backend_scene(env) -> None:
-    backend = getattr(env, "_backend", None)
     scene = _env_scene(env)
-    scene_source = getattr(backend, "scene_visual_model_file", None)
+    artifacts = env.get_scene_artifacts()
+    scene_source = artifacts.visual_model_file
     if scene_source is None:
-        scene_source = getattr(backend, "scene_model_file", None)
+        scene_source = artifacts.model_file
     if scene_source is None and scene is not None:
         scene_source = scene.model_file
     if scene_source is None:
         scene_source = "<unknown>"
     print(f"[visualize_task_env] backend scene: {scene_source}")
 
-    artifacts_dir = getattr(backend, "scene_artifacts_dir", None)
+    artifacts_dir = artifacts.artifacts_dir
     if artifacts_dir is not None:
         print(f"[visualize_task_env] artifacts: {artifacts_dir}")
 

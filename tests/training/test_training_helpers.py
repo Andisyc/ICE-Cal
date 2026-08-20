@@ -9,6 +9,7 @@ import pytest
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
+from unilab.base.backend.base import BackendSceneArtifacts
 from unilab.base.backend.motrix.backend import MotrixBackend
 from unilab.base.backend.motrix.playback import run_motrix_playback
 from unilab.base.backend.mujoco.backend import MuJoCoBackend
@@ -575,6 +576,9 @@ def test_render_play_mode_defaults_to_env_physics_snapshot(
             self.snapshot_calls += 1
             return np.full((2, 4), self.snapshot_calls, dtype=np.float32)
 
+        def get_scene_artifacts(self) -> BackendSceneArtifacts:
+            return BackendSceneArtifacts()
+
         def run_playback(self, **kwargs):
             kwargs = _resolve_low_level_playback_flags(kwargs)
             kwargs.pop("render_offset_mode", None)
@@ -656,6 +660,9 @@ def test_render_play_mode_uses_visualized_per_env_playback_models_for_video_expo
         def get_physics_state_snapshot(self) -> np.ndarray:
             self.snapshot_calls += 1
             return np.full((2, 2), self.snapshot_calls, dtype=np.float32)
+
+        def get_scene_artifacts(self) -> BackendSceneArtifacts:
+            return BackendSceneArtifacts()
 
         def get_playback_model(self, env_index: int | None = None):
             idx = 0 if env_index is None else int(env_index)

@@ -40,6 +40,13 @@ def test_utils_directory_is_whitelisted() -> None:
     assert modules == ALLOWED_UTILS_MODULES
 
 
+def test_nan_guard_utils_module_is_forwarding_compatibility_shim() -> None:
+    nan_guard = importlib.import_module("unilab.utils.nan_guard")
+
+    assert nan_guard.NanGuard.__module__ == "unilab.base.nan_guard"
+    assert nan_guard.NanGuardCfg.__module__ == "unilab.base.nan_guard"
+
+
 def test_repo_has_no_package_level_utils_imports() -> None:
     current_file = Path(__file__).resolve()
     for root in (Path("src"), Path("tests"), Path("scripts"), Path("benchmark")):

@@ -1,12 +1,16 @@
-# @package context_playback
-enabled: true
-healthy_checkpoint: ../planner_idm_v005.pt
-context_checkpoint: artifacts/fada_context/support_query_left_knee_070_run_002/context_500.pt
-dataset: artifacts/fada_context/support_query_left_knee_070_run_002.pt
-support_length: 60
-validation_fraction: 0.2
-split_seed: 17
-support_index: 0
-hidden_dim: 128
-num_layers: 2
-delta_scale: 0.1
+# @package _global_
+context_playback:
+  enabled: true
+  healthy_checkpoint: ../planner_idm_v005.pt
+  context_checkpoint: artifacts/fada_context/support_query_left_knee_070_run_002/context_500.pt
+  dataset: artifacts/fada_context/support_query_left_knee_070_run_002.pt
+  support_length: 60
+  validation_fraction: 0.2
+  split_seed: 17
+  support_index: 0
+  hidden_dim: 128
+  num_layers: 2
+  delta_scale: 0.1
+
+interactive:
+  action_mode: policy

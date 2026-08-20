@@ -32,9 +32,9 @@ sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
 from unilab.base.backend.mujoco.xml import materialize_scene_visual_override  # noqa: E402
+from unilab.base.nan_guard import NanGuard, NanGuardCfg  # noqa: E402
 from unilab.training import BackendAdapter, create_env, ensure_registries  # noqa: E402
 from unilab.training.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
-from unilab.utils.nan_guard import NanGuard, NanGuardCfg  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers

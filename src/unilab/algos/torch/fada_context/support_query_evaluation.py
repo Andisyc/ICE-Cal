@@ -13,6 +13,7 @@ import torch
 from unilab.algos.torch.distill.fada import FADAPlannerIDMPolicy
 from unilab.algos.torch.fada_context.support_query import (
     FrozenIDMSupportQueryPolicy,
+    SupportBoundContextPolicy,
     SupportContextBatch,
 )
 from unilab.algos.torch.fada_context.support_query_collector import (
@@ -45,6 +46,7 @@ class _TrajectoryTrace:
     fell: np.ndarray
     truncated: np.ndarray
     survival_steps: np.ndarray
+    delta_z: np.ndarray | None
 
 
 def _state_matrix(state: Any, carrier_name: str, key: str) -> np.ndarray:
@@ -118,11 +120,11 @@ def _assert_exact_start(healthy_env: Any, fault_env: Any) -> list[str]:
 
 def _rollout(
     env: Any,
-    policy: FrozenIDMSupportQueryPolicy,
-    delta_z: torch.Tensor,
+    policy: torch.nn.Module,
     *,
     steps: int,
     device: str | torch.device,
+    record_delta_z: bool = False,
 ) -> _TrajectoryTrace:
     start = _features(env)
     config = policy.config
@@ -131,19 +133,13 @@ def _rollout(
         raise ValueError("environment actor observation does not match FADA checkpoint")
     if start["command"].shape != (rows, config.command_dim):
         raise ValueError("environment command does not match FADA checkpoint")
-    expected_delta = (rows, config.hidden_dim)
-    if tuple(delta_z.shape) != expected_delta:
-        raise ValueError(
-            f"closed-loop delta_z shape mismatch: expected={expected_delta} "
-            f"observed={tuple(delta_z.shape)}"
-        )
-
     observation = start["actor_observation"]
     command = start["command"]
     observation_history = np.repeat(observation[:, None, :], config.history_length, axis=1)
     action_history = np.zeros((rows, config.history_length, config.action_dim), dtype=np.float32)
     feature_rows = {name: [value.copy()] for name, value in start.items() if name != "command"}
     actions: list[np.ndarray] = []
+    residuals: list[np.ndarray] = []
     state_valid = [np.ones((rows,), dtype=np.bool_)]
     action_valid: list[np.ndarray] = []
     active = np.ones((rows,), dtype=np.bool_)
@@ -152,13 +148,31 @@ def _rollout(
     survival = np.zeros((rows,), dtype=np.int64)
 
     for _ in range(steps):
+        if not np.any(active):
+            # Pad masked distance traces without another policy query or environment step.
+            actions.append(np.zeros((rows, config.action_dim), dtype=np.float32))
+            action_valid.append(active.copy())
+            for name in feature_rows:
+                feature_rows[name].append(feature_rows[name][-1].copy())
+            state_valid.append(active.copy())
+            continue
         with torch.inference_mode():
-            output = policy.act_with_context(
+            output = policy(
                 torch.as_tensor(observation_history, device=device),
                 torch.as_tensor(action_history, device=device),
                 torch.as_tensor(command, device=device),
-                delta_z,
             )
+        if record_delta_z:
+            delta_z = getattr(output, "delta_z", None)
+            expected_delta = (rows, config.hidden_dim)
+            if not isinstance(delta_z, torch.Tensor) or tuple(delta_z.shape) != expected_delta:
+                raise ValueError(
+                    "closed-loop Context policy must emit current delta_z: "
+                    f"expected={expected_delta}"
+                )
+            if not bool(torch.isfinite(delta_z).all()):
+                raise ValueError("closed-loop Context policy emitted non-finite delta_z")
+            residuals.append(delta_z.detach().cpu().numpy().astype(np.float32))
         action = output.action.detach().cpu().numpy().astype(np.float32)
         if action.shape != (rows, config.action_dim) or not np.isfinite(action).all():
             raise ValueError("closed-loop policy emitted an invalid action")
@@ -196,6 +210,7 @@ def _rollout(
         fell=fell,
         truncated=truncated_rows,
         survival_steps=survival,
+        delta_z=np.stack(residuals) if record_delta_z else None,
     )
 
 
@@ -264,6 +279,7 @@ def evaluate_support_query_closed_loop(
     policy: FrozenIDMSupportQueryPolicy,
     support: SupportContextBatch,
     *,
+    support_command: torch.Tensor,
     steps: int,
     device: str | torch.device,
 ) -> dict[str, Any]:
@@ -291,73 +307,41 @@ def evaluate_support_query_closed_loop(
     fault_snapshot = fault_env.capture_rollout_snapshot()
     policy.eval()
     support_device = support.to(device)
-    with torch.inference_mode():
-        delta_z = policy.context_encoder(support_device)
-    zero_z = torch.zeros_like(delta_z)
+    nominal_policy = (
+        FADAPlannerIDMPolicy(
+            policy.config,
+            planner=policy.planner,
+            idm=policy.idm,
+        )
+        .to(device)
+        .eval()
+    )
+    context_policy = SupportBoundContextPolicy(
+        policy,
+        support_device,
+        support_command.to(device),
+    ).eval()
 
     _restore(healthy_env, healthy_snapshot)
-    healthy = _rollout(healthy_env, policy, zero_z, steps=steps, device=device)
+    healthy = _rollout(healthy_env, nominal_policy, steps=steps, device=device)
     _restore(fault_env, fault_snapshot)
-    fault_zero = _rollout(fault_env, policy, zero_z, steps=steps, device=device)
+    fault_zero = _rollout(fault_env, nominal_policy, steps=steps, device=device)
     _restore(fault_env, fault_snapshot)
-    fault_context = _rollout(fault_env, policy, delta_z, steps=steps, device=device)
-
-    zero_distance = _distance(healthy, fault_zero)
-    context_distance = _distance(healthy, fault_context)
-    difference = {
-        name: float(context_distance[name] - zero_distance[name])
-        for name in TRAJECTORY_DISTANCE_METRICS
-    }
-    improvement_fraction = {
-        name: float(
-            (zero_distance[name] - context_distance[name]) / max(zero_distance[name], 1e-12)
-        )
-        for name in TRAJECTORY_DISTANCE_METRICS
-    }
-    zero_health = _branch_health(fault_zero)
-    context_health = _branch_health(fault_context)
-    primary_improved = (
-        context_distance["actor_observation_mse"] < zero_distance["actor_observation_mse"]
+    fault_context = _rollout(
+        fault_env,
+        context_policy,
+        steps=steps,
+        device=device,
+        record_delta_z=True,
     )
-    health_not_worse = (
-        context_health["fall_rate"] <= zero_health["fall_rate"]
-        and context_health["survival_steps_mean"] >= zero_health["survival_steps_mean"]
+    return _build_report(
+        healthy,
+        fault_zero,
+        fault_context,
+        steps=steps,
+        rows=rows,
+        compared_fields=compared_fields,
     )
-    return {
-        "schema": "unilab_fada_context_support_query_closed_loop_v1",
-        "steps": int(steps),
-        "num_envs": rows,
-        "pairing": {
-            "exact_initial_state_match": True,
-            "same_command": [0.4, 0.0, 0.0],
-            "compared_fields": compared_fields,
-            "healthy_strength": 1.0,
-            "fault_joint_index": 3,
-            "fault_strength": 0.7,
-            "autoreset": False,
-        },
-        "context": {
-            "delta_z_l2_mean": float(torch.linalg.vector_norm(delta_z, dim=1).mean()),
-            "delta_z_linf_max": float(delta_z.abs().max()),
-        },
-        "healthy": _branch_health(healthy),
-        "fault_zero": zero_health,
-        "fault_context": context_health,
-        "fault_zero_distance_to_healthy": zero_distance,
-        "fault_context_distance_to_healthy": context_distance,
-        "context_minus_zero_distance": difference,
-        "context_improvement_fraction": improvement_fraction,
-        "verdict": {
-            "primary_metric": "actor_observation_mse",
-            "primary_metric_improved": primary_improved,
-            "fall_and_survival_not_worse": health_not_worse,
-            "context_closer_to_healthy": primary_improved and health_not_worse,
-            "improved_distance_metric_count": sum(
-                context_distance[name] < zero_distance[name] for name in TRAJECTORY_DISTANCE_METRICS
-            ),
-            "distance_metric_count": len(TRAJECTORY_DISTANCE_METRICS),
-        },
-    }
 
 
 def evaluate_online_support_closed_loop(
@@ -386,11 +370,15 @@ def evaluate_online_support_closed_loop(
     healthy_snapshot = healthy_env.capture_rollout_snapshot()
     fault_snapshot = fault_env.capture_rollout_snapshot()
     policy.eval()
-    baseline_policy = FADAPlannerIDMPolicy(
-        policy.config,
-        planner=policy.planner,
-        idm=policy.idm,
-    ).to(device).eval()
+    baseline_policy = (
+        FADAPlannerIDMPolicy(
+            policy.config,
+            planner=policy.planner,
+            idm=policy.idm,
+        )
+        .to(device)
+        .eval()
+    )
 
     _restore(fault_env, fault_snapshot)
     support_initial = fault_env.state
@@ -400,27 +388,39 @@ def evaluate_online_support_closed_loop(
         support_initial,
         support_length=policy.context_encoder.context_config.support_length,
     )
-    with torch.inference_mode():
-        delta_z = policy.context_encoder(support.to(device))
-    zero_z = torch.zeros_like(delta_z)
+    support_device = support.to(device)
+    support_command = torch.as_tensor(
+        _features(fault_env)["command"],
+        device=device,
+    )
+    context_policy = SupportBoundContextPolicy(
+        policy,
+        support_device,
+        support_command,
+    ).eval()
 
     _restore(healthy_env, healthy_snapshot)
-    healthy = _rollout(healthy_env, policy, zero_z, steps=steps, device=device)
+    healthy = _rollout(healthy_env, baseline_policy, steps=steps, device=device)
     _restore(fault_env, fault_snapshot)
-    fault_zero = _rollout(fault_env, policy, zero_z, steps=steps, device=device)
+    fault_zero = _rollout(fault_env, baseline_policy, steps=steps, device=device)
     _restore(fault_env, fault_snapshot)
-    fault_context = _rollout(fault_env, policy, delta_z, steps=steps, device=device)
+    fault_context = _rollout(
+        fault_env,
+        context_policy,
+        steps=steps,
+        device=device,
+        record_delta_z=True,
+    )
 
     report = _build_report(
         healthy,
         fault_zero,
         fault_context,
-        delta_z,
         steps=steps,
         rows=rows,
         compared_fields=compared_fields,
     )
-    report["schema"] = "unilab_fada_context_online_support_closed_loop_v1"
+    report["schema"] = "unilab_fada_context_online_support_closed_loop_v2"
     report["support"] = {
         "source": "same_fault_environment_no_context_rollout",
         "length": support.support_length,
@@ -433,7 +433,6 @@ def _build_report(
     healthy: _TrajectoryTrace,
     fault_zero: _TrajectoryTrace,
     fault_context: _TrajectoryTrace,
-    delta_z: torch.Tensor,
     *,
     steps: int,
     rows: int,
@@ -462,8 +461,11 @@ def _build_report(
         context_health["fall_rate"] <= zero_health["fall_rate"]
         and context_health["survival_steps_mean"] >= zero_health["survival_steps_mean"]
     )
+    if fault_context.delta_z is None:
+        raise ValueError("fault-Context trace is missing per-cycle delta_z")
+    delta_z = fault_context.delta_z
     return {
-        "schema": "unilab_fada_context_support_query_closed_loop_v1",
+        "schema": "unilab_fada_context_support_query_closed_loop_v2",
         "steps": int(steps),
         "num_envs": rows,
         "pairing": {
@@ -476,8 +478,10 @@ def _build_report(
             "autoreset": False,
         },
         "context": {
-            "delta_z_l2_mean": float(torch.linalg.vector_norm(delta_z, dim=1).mean()),
-            "delta_z_linf_max": float(delta_z.abs().max()),
+            "delta_z_trace_shape": list(delta_z.shape),
+            "delta_z_trace": delta_z.tolist(),
+            "delta_z_l2_mean": float(np.mean(np.linalg.norm(delta_z, axis=-1))),
+            "delta_z_linf_max": float(np.max(np.abs(delta_z))),
         },
         "healthy": _branch_health(healthy),
         "fault_zero": zero_health,
@@ -529,8 +533,12 @@ def aggregate_support_query_closed_loop_reports(
         context_health["fall_rate"] <= zero_health["fall_rate"]
         and context_health["survival_steps_mean"] >= zero_health["survival_steps_mean"]
     )
+    context_summary = {
+        key: float(np.mean([float(report["context"][key]) for report in reports]))
+        for key in ("delta_z_l2_mean", "delta_z_linf_max")
+    }
     return {
-        "schema": "unilab_fada_context_support_query_closed_loop_aggregate_v1",
+        "schema": "unilab_fada_context_support_query_closed_loop_aggregate_v2",
         "seed_count": len(reports),
         "seeds": [int(report["seed"]) for report in reports],
         "num_envs_total": sum(int(report["num_envs"]) for report in reports),
@@ -544,7 +552,7 @@ def aggregate_support_query_closed_loop_reports(
         "fault_context_distance_to_healthy": context_distance,
         "context_minus_zero_distance": difference,
         "context_improvement_fraction": improvement,
-        "context": average_group("context"),
+        "context": context_summary,
         "verdict": {
             "primary_metric": "actor_observation_mse",
             "primary_metric_improved": primary_improved,

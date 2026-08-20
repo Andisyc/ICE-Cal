@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+from unilab.base.backend.base import BackendSceneArtifacts
+
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 
 
@@ -124,12 +126,11 @@ def test_mujoco_visual_xml_paths_prefer_backend_visual_scene(tmp_path: Path):
     class FakeScene:
         model_file = str(robot_xml)
 
-    class FakeBackend:
-        scene_visual_model_file = str(visual_xml)
-
     class FakeEnv:
-        _backend = FakeBackend()
         cfg = type("Cfg", (), {"scene": FakeScene()})()
+
+        def get_scene_artifacts(self):
+            return BackendSceneArtifacts(visual_model_file=str(visual_xml))
 
     parent, robot = mod._mujoco_visual_xml_paths(FakeEnv())
 
@@ -501,11 +502,9 @@ def test_play_interactive_viewer_model_uses_shared_render_playback_resolver(
         fake_resolve_render_play_model_files,
     )
 
-    class FakeBackend:
-        scene_visual_model_file = str(visual_xml)
-
     class FakeEnv:
-        _backend = FakeBackend()
+        def get_scene_artifacts(self):
+            return BackendSceneArtifacts(visual_model_file=str(visual_xml))
 
     env = FakeEnv()
     model = mod._load_viewer_model(env, use_env_visual_model=False)

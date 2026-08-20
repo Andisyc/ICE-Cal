@@ -646,7 +646,7 @@ class TestRewardSanitization:
         np.testing.assert_array_equal(state.reward, [0.0, 0.0, 0.0, 1.0])
 
     def test_guard_detects_nan_reward_before_sanitization(self):
-        from unilab.utils.nan_guard import NanGuard, NanGuardCfg
+        from unilab.base.nan_guard import NanGuard, NanGuardCfg
 
         rewards = np.array([0.0, np.nan, 0.0, 0.0], dtype=np.float32)
         env = _NanRewardStubEnv(num_envs=4, bad_rewards=rewards)
@@ -661,7 +661,7 @@ class TestRewardSanitization:
         assert np.all(np.isfinite(state.reward)), "reward should be clean after step"
 
     def test_guard_warns_each_step_for_nan_reward(self, caplog):
-        from unilab.utils.nan_guard import NanGuard, NanGuardCfg
+        from unilab.base.nan_guard import NanGuard, NanGuardCfg
 
         env = _NanRewardStubEnv(num_envs=4, bad_rewards=np.array([0.0, np.nan, 0.0, 0.0]))
         guard = NanGuard(
@@ -677,3 +677,23 @@ class TestRewardSanitization:
         assert len(warnings) >= 2
         # reward 仍被清零
         assert np.all(np.isfinite(env._state.reward))
+
+    def test_guard_does_not_read_scene_metadata_on_anomalous_step(self, tmp_path):
+        from unilab.base.nan_guard import NanGuard, NanGuardCfg
+
+        env = _NanRewardStubEnv(
+            num_envs=4,
+            bad_rewards=np.array([0.0, np.nan, 0.0, 0.0], dtype=np.float32),
+        )
+        env._backend.get_scene_artifacts.side_effect = AssertionError(
+            "step must use cold-path cached scene metadata"
+        )
+        env.set_nan_guard(
+            NanGuard(
+                NanGuardCfg(enabled=True, output_dir=str(tmp_path)),
+                num_envs=4,
+                supports_state_playback=False,
+            )
+        )
+
+        env.step(np.zeros((4, 3), dtype=np.float32))

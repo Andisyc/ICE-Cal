@@ -1,0 +1,576 @@
+{
+  "title": "08 In-Context Execution Calibration",
+  "layout": "method_figure",
+  "figureWidth": 2050,
+  "figureHeight": 1110,
+  "connectorClearance": 18,
+  "showLegend": false,
+  "layerDividers": [
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 52,
+      "bottomLabel": "Stage 1 · Direction — c_true 代入，只学方向 Δz"
+    },
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 292,
+      "bottomLabel": "Stage 2 · Coefficient — Δz 冻结 ❄，只学系数 Encoder"
+    },
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 512,
+      "bottomLabel": "Stage 3 · Scale & Proof — 全链路冻结 ❄，离线扫描拟合 σᵢ，出证不训练"
+    },
+    {
+      "x1": 40,
+      "x2": 2010,
+      "y": 760,
+      "topLabel": "Offline Serial Construction — 三阶段各自成图，严格串行，禁联合训练",
+      "bottomLabel": "Deployment on Unseen Conditions"
+    }
+  ],
+  "concepts": {
+    "C-ICA3-PLANNER": {
+      "name": "Planner Intent",
+      "color": "#0891b2"
+    },
+    "C-ICA3-TRACKER": {
+      "name": "Frozen Tracker",
+      "color": "#0f766e"
+    },
+    "C-ICA3-FAULT": {
+      "name": "Fault Axis",
+      "color": "#b91c1c"
+    },
+    "C-ICA3-LABEL": {
+      "name": "Analytic Label",
+      "color": "#7c3aed"
+    },
+    "C-ICA3-SUPPORT": {
+      "name": "Rollout Evidence",
+      "color": "#2563eb"
+    },
+    "C-ICA3-CONTEXT": {
+      "name": "Coefficient Encoder",
+      "color": "#d97706"
+    },
+    "C-ICA3-LEARNING": {
+      "name": "Serial Stage Training",
+      "color": "#db2777"
+    },
+    "C-ICA3-OBJECTIVE": {
+      "name": "Execution Objective",
+      "color": "#b45309"
+    }
+  },
+  "zones": [],
+  "nodes": [
+    {
+      "id": "ICA4-S1-DATA",
+      "title": "Sim Rollout + Analytic Label",
+      "summary": "单轴失真（增益 / 延迟 / 摩擦）下 rollout；α_true 已知 → 公式算正确动作 a*；不经网络、不经 RL",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 40,
+      "y": 110,
+      "w": 240,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S1-ENC",
+      "title": "Frozen Tracker Encoder",
+      "frozen": true,
+      "summary": "30 帧 History + 6 帧 Motion → z",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "encoder",
+      "shapeInset": 48,
+      "x": 330,
+      "y": 110,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S1-ADD",
+      "title": "Latent Add",
+      "summary": "z + c_true·Δz",
+      "summarySize": 14,
+      "concept": "C-ICA3-TRACKER",
+      "x": 600,
+      "y": 130,
+      "w": 90,
+      "h": 80
+    },
+    {
+      "id": "ICA4-S1-DEC",
+      "title": "Frozen Tracker Decoder",
+      "frozen": true,
+      "summary": "→ 6 步 Action，首步为 â",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "decoder",
+      "shapeInset": 48,
+      "x": 740,
+      "y": 110,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S1-LOSS",
+      "title": "Loss → 方向 Δz",
+      "summary": "‖â−a*‖² 梯度只进方向 Δz；学成即冻结为架构常量 ❄",
+      "concept": "C-ICA3-LEARNING",
+      "x": 1010,
+      "y": 110,
+      "w": 290,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S2-DATA",
+      "title": "Support / History",
+      "summary": "一次短读数 + 当前 history；c_true 由轴真值给出，对 Encoder 不可见",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 40,
+      "y": 340,
+      "w": 240,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S2-CTX",
+      "title": "Context Encoder",
+      "summary": "唯一新网络；只输出 m 个标量 ĉ；c=0 ≡ 标称",
+      "concept": "C-ICA3-CONTEXT",
+      "shape": "context_encoder",
+      "shapeInset": 55,
+      "x": 330,
+      "y": 340,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S2-ENC",
+      "title": "Frozen Tracker Encoder",
+      "frozen": true,
+      "summary": "输入同 Stage 1 → z（冻结复用）",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "encoder",
+      "shapeInset": 48,
+      "x": 600,
+      "y": 340,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S2-ADD",
+      "title": "Latent Add",
+      "summary": "z + ĉ·Δz（Δz 冻结 ❄）",
+      "summarySize": 13,
+      "concept": "C-ICA3-TRACKER",
+      "x": 870,
+      "y": 360,
+      "w": 90,
+      "h": 80
+    },
+    {
+      "id": "ICA4-S2-DEC",
+      "title": "Frozen Tracker Decoder",
+      "frozen": true,
+      "summary": "→ â（冻结复用）",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "decoder",
+      "shapeInset": 48,
+      "x": 1010,
+      "y": 340,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S2-LOSS",
+      "title": "Loss → Encoder",
+      "summary": "‖ĉ−c_true‖² + ‖â−a*‖² 只进 Encoder；学成即冻结",
+      "concept": "C-ICA3-LEARNING",
+      "x": 1280,
+      "y": 340,
+      "w": 290,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-DATA",
+      "title": "Support / History（多强度扫描）",
+      "summary": "每轴按多个已知强度 rollout，取短读数；轴真值已知",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 40,
+      "y": 560,
+      "w": 240,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-CTX",
+      "title": "Context Encoder",
+      "frozen": true,
+      "summary": "冻结复用；逐点读出 ĉ",
+      "concept": "C-ICA3-CONTEXT",
+      "shape": "context_encoder",
+      "shapeInset": 55,
+      "x": 330,
+      "y": 560,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-ENC",
+      "title": "Frozen Tracker Encoder",
+      "frozen": true,
+      "summary": "输入同 Stage 1 → z（冻结复用）",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "encoder",
+      "shapeInset": 48,
+      "x": 600,
+      "y": 560,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-ADD",
+      "title": "Latent Add",
+      "summary": "z + ĉ·Δz（全冻结 ❄）",
+      "summarySize": 13,
+      "concept": "C-ICA3-TRACKER",
+      "x": 870,
+      "y": 580,
+      "w": 90,
+      "h": 80
+    },
+    {
+      "id": "ICA4-S3-DEC",
+      "title": "Frozen Tracker Decoder",
+      "frozen": true,
+      "summary": "→ â（冻结复用）",
+      "concept": "C-ICA3-TRACKER",
+      "shape": "decoder",
+      "shapeInset": 48,
+      "x": 1010,
+      "y": 560,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-FIT",
+      "title": "一维标定拟合",
+      "summary": "σᵢ(c)：离线一次性拟合，吸收单模态非线性",
+      "concept": "C-ICA3-LEARNING",
+      "x": 1280,
+      "y": 560,
+      "w": 240,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-PROOF",
+      "title": "出证（不训练）",
+      "summary": "方向夹角 / 残差 / 恒等锚定 / 奇异值谱",
+      "concept": "C-ICA3-OBJECTIVE",
+      "x": 1560,
+      "y": 560,
+      "w": 220,
+      "h": 120
+    },
+    {
+      "id": "ICA4-S3-NOTE",
+      "title": "组合 = 系数相加",
+      "summary": "c_{A+B} ≈ c_A + c_B；留出组合为主图；Δz 有界小拧保持一阶区",
+      "concept": "C-ICA3-LEARNING",
+      "kind": "external",
+      "x": 1820,
+      "y": 560,
+      "w": 210,
+      "h": 120
+    },
+    {
+      "id": "ICA4-D-01",
+      "title": "Unseen Condition",
+      "summary": "新机器 / 新失真；含未枚举组合（如 α×τ 同时）",
+      "concept": "C-ICA3-FAULT",
+      "kind": "external",
+      "x": 40,
+      "y": 870,
+      "w": 270,
+      "h": 110
+    },
+    {
+      "id": "ICA4-D-02",
+      "title": "Short Support Reading",
+      "summary": "一次短读数进入冻结 Context Encoder",
+      "concept": "C-ICA3-SUPPORT",
+      "kind": "external",
+      "x": 390,
+      "y": 870,
+      "w": 270,
+      "h": 110
+    },
+    {
+      "id": "ICA4-D-03",
+      "title": "Coefficient Readout",
+      "summary": "c=(c₁…cₘ) 直接读作各通道打几折；组合 = 系数相加",
+      "concept": "C-ICA3-CONTEXT",
+      "x": 740,
+      "y": 870,
+      "w": 300,
+      "h": 110
+    },
+    {
+      "id": "ICA4-D-04",
+      "title": "Frozen Calibrated Execution",
+      "frozen": true,
+      "summary": "逐拍 z+Σσᵢ(cᵢ)·Δzᵢ 有界小拧；Planner / Tracker 全冻结",
+      "concept": "C-ICA3-TRACKER",
+      "x": 1110,
+      "y": 870,
+      "w": 300,
+      "h": 110
+    },
+    {
+      "id": "ICA4-D-05",
+      "title": "Held-Out Combo Recovery",
+      "summary": "未枚举组合恢复执行（主图）；量程外推属显式边界",
+      "concept": "C-ICA3-OBJECTIVE",
+      "kind": "external",
+      "x": 1480,
+      "y": 870,
+      "w": 300,
+      "h": 110
+    }
+  ],
+  "edges": [
+    {
+      "from": "ICA4-S1-DATA",
+      "to": "ICA4-S1-ENC",
+      "label": "history · motion",
+      "labelSize": 13,
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA4-S1-ENC",
+      "to": "ICA4-S1-ADD",
+      "label": "z",
+      "labelSize": 15,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S1-ADD",
+      "to": "ICA4-S1-DEC",
+      "label": "z+c_true·Δz",
+      "labelSize": 12,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S1-DEC",
+      "to": "ICA4-S1-LOSS",
+      "label": "â",
+      "labelSize": 14,
+      "concept": "C-ICA3-LEARNING"
+    },
+    {
+      "from": "ICA4-S1-DATA",
+      "to": "ICA4-S1-LOSS",
+      "label": "a*",
+      "labelSize": 14,
+      "concept": "C-ICA3-LABEL",
+      "fromAnchor": "bottom",
+      "toAnchor": "bottom",
+      "via": [
+        [
+          160,
+          262
+        ],
+        [
+          1155,
+          262
+        ]
+      ],
+      "labelX": 600,
+      "labelY": 258
+    },
+    {
+      "from": "ICA4-S1-LOSS",
+      "to": "ICA4-S1-ADD",
+      "label": "Δz 写回 · 学成冻结",
+      "labelSize": 13,
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [
+        [
+          1155,
+          90
+        ],
+        [
+          645,
+          90
+        ]
+      ],
+      "labelX": 880,
+      "labelY": 86
+    },
+    {
+      "from": "ICA4-S2-DATA",
+      "to": "ICA4-S2-CTX",
+      "label": "读数",
+      "labelSize": 13,
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA4-S2-CTX",
+      "to": "ICA4-S2-ADD",
+      "label": "ĉ（仅 m 个标量）",
+      "labelSize": 13,
+      "concept": "C-ICA3-CONTEXT",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [
+        [
+          440,
+          316
+        ],
+        [
+          915,
+          316
+        ]
+      ],
+      "labelX": 640,
+      "labelY": 312
+    },
+    {
+      "from": "ICA4-S2-ENC",
+      "to": "ICA4-S2-ADD",
+      "label": "z",
+      "labelSize": 15,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S2-ADD",
+      "to": "ICA4-S2-DEC",
+      "label": "z+ĉ·Δz",
+      "labelSize": 12,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S2-DEC",
+      "to": "ICA4-S2-LOSS",
+      "label": "â",
+      "labelSize": 14,
+      "concept": "C-ICA3-LEARNING"
+    },
+    {
+      "from": "ICA4-S2-LOSS",
+      "to": "ICA4-S2-CTX",
+      "label": "梯度只进 Encoder",
+      "labelSize": 13,
+      "concept": "C-ICA3-LEARNING",
+      "kind": "feedback",
+      "fromAnchor": "bottom",
+      "toAnchor": "bottom",
+      "via": [
+        [
+          1425,
+          494
+        ],
+        [
+          440,
+          494
+        ]
+      ],
+      "labelX": 900,
+      "labelY": 488
+    },
+    {
+      "from": "ICA4-S3-DATA",
+      "to": "ICA4-S3-CTX",
+      "label": "读数",
+      "labelSize": 13,
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA4-S3-CTX",
+      "to": "ICA4-S3-ADD",
+      "label": "ĉ（仅 m 个标量）",
+      "labelSize": 13,
+      "concept": "C-ICA3-CONTEXT",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "via": [
+        [
+          440,
+          536
+        ],
+        [
+          915,
+          536
+        ]
+      ],
+      "labelX": 640,
+      "labelY": 532
+    },
+    {
+      "from": "ICA4-S3-ENC",
+      "to": "ICA4-S3-ADD",
+      "label": "z",
+      "labelSize": 15,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S3-ADD",
+      "to": "ICA4-S3-DEC",
+      "label": "z+ĉ·Δz",
+      "labelSize": 12,
+      "concept": "C-ICA3-TRACKER"
+    },
+    {
+      "from": "ICA4-S3-DEC",
+      "to": "ICA4-S3-FIT",
+      "label": "逐点 (ĉ, 误差)",
+      "labelSize": 13,
+      "concept": "C-ICA3-LEARNING"
+    },
+    {
+      "from": "ICA4-S3-FIT",
+      "to": "ICA4-S3-PROOF",
+      "label": "σᵢ + 证书",
+      "labelSize": 13,
+      "concept": "C-ICA3-LEARNING"
+    },
+    {
+      "from": "ICA4-D-01",
+      "to": "ICA4-D-02",
+      "label": "缺陷暴露",
+      "labelSize": 13,
+      "concept": "C-ICA3-FAULT"
+    },
+    {
+      "from": "ICA4-D-02",
+      "to": "ICA4-D-03",
+      "label": "读数",
+      "labelSize": 13,
+      "concept": "C-ICA3-SUPPORT"
+    },
+    {
+      "from": "ICA4-D-03",
+      "to": "ICA4-D-04",
+      "label": "σ(c)·Δz 相加",
+      "labelSize": 13,
+      "concept": "C-ICA3-CONTEXT"
+    },
+    {
+      "from": "ICA4-D-04",
+      "to": "ICA4-D-05",
+      "label": "第二次执行",
+      "labelSize": 13,
+      "concept": "C-ICA3-TRACKER"
+    }
+  ],
+  "callouts": [],
+  "acceptance": []
+}

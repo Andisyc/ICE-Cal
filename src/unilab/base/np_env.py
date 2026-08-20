@@ -14,7 +14,7 @@ import gymnasium as gym
 import numpy as np
 
 from unilab.base.backend import SimBackend
-from unilab.base.backend.base import BackendPlayRenderPlan
+from unilab.base.backend.base import BackendPlayRenderPlan, BackendSceneArtifacts
 from unilab.base.base import ABEnv, EnvCfg, EnvPlayCapabilities
 from unilab.base.scene import SceneCfg
 from unilab.dr import DomainRandomizationManager, DomainRandomizationProvider
@@ -22,7 +22,7 @@ from unilab.dtype_config import get_global_dtype
 
 if TYPE_CHECKING:
     from unilab.base.augmentation import SymmetryAugmentation
-    from unilab.utils.nan_guard import NanGuard
+    from unilab.base.nan_guard import NanGuard
 
 
 @dataclass
@@ -68,6 +68,7 @@ class NpEnv(ABEnv):
         self._init_randomization_applied = False
         self._nan_guard: NanGuard | None = None
         self._autoreset = True
+        self._nan_guard_dump_model_file = self._resolve_nan_guard_model_file()
 
     @property
     def cfg(self) -> EnvCfg:
@@ -76,6 +77,10 @@ class NpEnv(ABEnv):
     @property
     def num_envs(self) -> int:
         return self._num_envs
+
+    def get_scene_artifacts(self) -> BackendSceneArtifacts:
+        """Expose backend-owned cold-path scene files without leaking backend internals."""
+        return self._backend.get_scene_artifacts()
 
     @property
     def state(self) -> Optional[NpEnvState]:
@@ -226,7 +231,7 @@ class NpEnv(ABEnv):
             if bad_ctrl_ids is not None:
                 self._nan_guard.dump(
                     bad_ctrl_ids,
-                    self._nan_guard_model_file(),
+                    self._nan_guard_dump_model_file,
                     self.step_counter,
                 )
 
@@ -271,7 +276,11 @@ class NpEnv(ABEnv):
                 self._state.obs, self._state.reward, step=self.step_counter
             )
             if nan_ids is not None:
-                self._nan_guard.dump(nan_ids, self._nan_guard_model_file(), self.step_counter)
+                self._nan_guard.dump(
+                    nan_ids,
+                    self._nan_guard_dump_model_file,
+                    self.step_counter,
+                )
 
         np.nan_to_num(self._state.reward, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -314,11 +323,12 @@ class NpEnv(ABEnv):
                 elif isinstance(value, np.ndarray):
                     self._state.info[key][env_indices] = value
 
-    def _nan_guard_model_file(self) -> str:
+    def _resolve_nan_guard_model_file(self) -> str:
+        """Resolve dump metadata once on the environment cold path."""
         scene = getattr(self._cfg, "scene", None)
         if isinstance(scene, SceneCfg) and scene.model_file:
             return str(scene.model_file)
-        model_file = getattr(self._backend, "scene_model_file", None)
+        model_file = self.get_scene_artifacts().model_file
         if model_file:
             return str(model_file)
         return ""

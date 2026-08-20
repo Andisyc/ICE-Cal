@@ -23,6 +23,7 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
+from unilab.base.backend.base import BackendSceneArtifacts
 from unilab.base.backend.motrix.playback import run_motrix_playback
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
@@ -6388,6 +6389,7 @@ def test_play_interactive_runner_log_dir_uses_algo_log_name(monkeypatch: pytest.
         obs_groups_spec={"obs": 5},
         action_space=types.SimpleNamespace(shape=(3,), low=np.full((3,), -1.0), high=np.ones((3,))),
         cfg=types.SimpleNamespace(ctrl_dt=0.02),
+        get_scene_artifacts=lambda: BackendSceneArtifacts(),
         get_playback_model=lambda: object(),
         get_physics_state_snapshot=lambda: np.zeros((1, 8), dtype=np.float32),
     )

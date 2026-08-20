@@ -28,8 +28,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
 from unilab.base.base import EnvCfg
+from unilab.base.nan_guard import NanGuard, NanGuardCfg
 from unilab.base.np_env import NpEnv, NpEnvState
-from unilab.utils.nan_guard import NanGuard, NanGuardCfg
 
 
 @dataclass

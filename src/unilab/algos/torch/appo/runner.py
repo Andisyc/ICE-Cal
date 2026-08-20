@@ -20,10 +20,10 @@ from rsl_rl.utils import resolve_callable
 from unilab.algos.torch.appo.learner import APPOLearner
 from unilab.algos.torch.appo.staging import RolloutStagingPool
 from unilab.algos.torch.appo.worker import appo_collector_fn
+from unilab.base.nan_guard import NanGuardCfg
 from unilab.ipc import AsyncRunner, RolloutRingBuffer, SharedWeightSync
 from unilab.logging import OffPolicyLogger
 from unilab.training.seed import apply_training_seed, derive_worker_seed
-from unilab.utils.nan_guard import NanGuardCfg
 
 
 def _optimizer_lr_from_state(optimizer: torch.optim.Optimizer) -> float:

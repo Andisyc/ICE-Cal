@@ -179,6 +179,10 @@ def test_full_action_one_env_mujoco_step_and_update_are_finite() -> None:
     from unilab.base.observations import split_obs_dict
     from unilab.training import BackendAdapter, create_env, ensure_registries
 
+    nominal_checkpoint = ROOT_DIR / "checkpoints/oracles/G1WalkFlat/model_5000.pt"
+    if not nominal_checkpoint.is_file():
+        pytest.skip("formal nominal SAC checkpoint is a local, untracked artifact")
+
     with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "offpolicy"), version_base="1.3"):
         cfg = compose(config_name="config", overrides=[f"task={FORMAL_TASK_CONFIG}"])
     ensure_registries()
@@ -203,8 +207,7 @@ def test_full_action_one_env_mujoco_step_and_update_are_finite() -> None:
             critic_obs_dim=130,
             priv_info_dim=29,
             action_dim=29,
-            nominal_initialization_checkpoint=ROOT_DIR
-            / "checkpoints/oracles/G1WalkFlat/model_5000.pt",
+            nominal_initialization_checkpoint=nominal_checkpoint,
             actor_hidden_dim=512,
             critic_hidden_dim=64,
             priv_info_embed_dim=16,

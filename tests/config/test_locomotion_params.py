@@ -271,12 +271,17 @@ def test_go2_joystick_rough_playback_model_uses_backend_scene(tmp_path):
     cfg.scene.terrain.generator.seed = 0
 
     env = Go2JoystickRoughEnv(cfg, num_envs=2, backend_type="mujoco")
+    artifacts_dir: Path | None = None
     try:
         playback_model = env.get_playback_model(0)
+        scene_artifacts = env.get_scene_artifacts()
         assert isinstance(playback_model, mujoco.MjModel)
         assert env._backend.terrain_origins is not None
-        assert (Path(env._backend.scene_artifacts_dir) / "hfields" / "hfield.png").is_file()
-        assert Path(env._backend.scene_visual_model_file).is_file()
+        assert scene_artifacts.artifacts_dir is not None
+        artifacts_dir = Path(scene_artifacts.artifacts_dir)
+        assert (artifacts_dir / "hfields" / "hfield.png").is_file()
+        assert scene_artifacts.visual_model_file is not None
+        assert Path(scene_artifacts.visual_model_file).is_file()
         assert mujoco.mj_name2id(playback_model, mujoco.mjtObj.mjOBJ_HFIELD, "terrain_hfield") >= 0
         assert mujoco.mj_name2id(playback_model, mujoco.mjtObj.mjOBJ_GEOM, "floor") >= 0
         assert mujoco.mj_name2id(playback_model, mujoco.mjtObj.mjOBJ_SENSOR, "FL_foot_contact") >= 0
@@ -290,6 +295,8 @@ def test_go2_joystick_rough_playback_model_uses_backend_scene(tmp_path):
         assert rendered_model.ngeom > playback_model.ngeom
     finally:
         env.close()
+    assert artifacts_dir is not None
+    assert not artifacts_dir.exists()
 
 
 def test_go2_joystick_flat_no_terrain_materialized():
@@ -305,9 +312,10 @@ def test_go2_joystick_flat_no_terrain_materialized():
     )
     env = Go2WalkTask(cfg, num_envs=4, backend_type="mujoco")
     try:
-        assert env._backend.scene_model_file == cfg.scene.model_file
+        scene_artifacts = env.get_scene_artifacts()
+        assert scene_artifacts.model_file == cfg.scene.model_file
         assert env._backend.terrain_origins is None
-        assert env._backend.scene_artifacts_dir is None
+        assert scene_artifacts.artifacts_dir is None
     finally:
         env.close()
 

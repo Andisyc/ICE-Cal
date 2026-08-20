@@ -15,8 +15,8 @@ this module:
 
 If you remove or rename this hook, ``make test-slow`` will fail with
 ``ValueError: Environment 'DummyFlatTest' is not registered.`` inside the
-collector subprocess. See ``docs/sphinx/source/{lang}/4-developer_guide/
-4-contributing.md`` ("Notes for ``make test-slow``") for the rationale.
+collector subprocess. Keep the registration and ``PYTHONPATH`` setup together
+when changing this fixture.
 """
 
 from __future__ import annotations

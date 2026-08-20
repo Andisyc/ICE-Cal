@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -18,13 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 from unilab.algos.torch.distill import load_fada_policy_checkpoint  # noqa: E402
-from unilab.algos.torch.fada_context.support_query import (  # noqa: E402
-    SupportQueryBatch,
-    SupportQueryContextConfig,
-)
-from unilab.algos.torch.fada_context.support_query_data import (  # noqa: E402
-    load_support_query_dataset,
-)
+from unilab.algos.torch.fada_context.support_query import SupportQueryContextConfig  # noqa: E402
 from unilab.algos.torch.fada_context.support_query_evaluation import (  # noqa: E402
     aggregate_support_query_closed_loop_reports,
     evaluate_online_support_closed_loop,
@@ -37,8 +29,7 @@ from unilab.algos.torch.fada_context.support_query_runtime import (  # noqa: E40
     sha256_file,
 )
 from unilab.algos.torch.fada_context.support_query_training import (  # noqa: E402
-    PreparedSupportQueryTraining,
-    prepare_support_query_training,
+    prepare_context_support_query_artifact,
 )
 
 
@@ -72,104 +63,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _split_identity_sha256(batch: SupportQueryBatch) -> str:
-    identity = (
-        torch.stack((batch.pair_id, batch.support_rollout_id, batch.query_rollout_id), dim=1)
-        .detach()
-        .cpu()
-    )
-    identity = identity.index_select(0, torch.argsort(identity[:, 0])).contiguous()
-    digest = hashlib.sha256()
-    digest.update(str(tuple(identity.shape)).encode("ascii"))
-    digest.update(identity.numpy().tobytes())
-    return digest.hexdigest()
-
-
-def _legacy_pair_split(
-    batch: SupportQueryBatch,
-    *,
-    validation_fraction: float,
-    seed: int,
-) -> tuple[SupportQueryBatch, SupportQueryBatch]:
-    validation_count = max(1, int(round(batch.batch_size * validation_fraction)))
-    if validation_count >= batch.batch_size:
-        raise ValueError("Support-Query dataset must contain at least two pairs")
-    order = torch.randperm(batch.batch_size, generator=torch.Generator().manual_seed(seed))
-    return (
-        batch.index_select(order[validation_count:]),
-        batch.index_select(order[:validation_count]),
-    )
-
-
-def _rollout_group_split(
-    batch: SupportQueryBatch,
-    *,
-    validation_fraction: float,
-    seed: int,
-) -> tuple[SupportQueryBatch, SupportQueryBatch]:
-    rollout_groups = (
-        torch.stack((batch.support_rollout_id, batch.query_rollout_id), dim=1).detach().cpu()
-    )
-    unique_groups, inverse = torch.unique(rollout_groups, dim=0, return_inverse=True)
-    group_count = int(unique_groups.shape[0])
-    validation_groups = max(1, int(round(group_count * validation_fraction)))
-    if group_count < 2 or validation_groups >= group_count:
-        raise ValueError("Support-Query rollout split requires at least two groups")
-    order = torch.randperm(group_count, generator=torch.Generator().manual_seed(seed))
-    validation_mask = torch.isin(inverse, order[:validation_groups])
-    train_indices = torch.nonzero(~validation_mask, as_tuple=False).flatten()
-    validation_indices = torch.nonzero(validation_mask, as_tuple=False).flatten()
-    return batch.index_select(train_indices), batch.index_select(validation_indices)
-
-
-def _checkpoint_payload(path: Path) -> dict[str, Any]:
-    payload = torch.load(path, map_location="cpu", weights_only=True)
-    if not isinstance(payload, dict):
-        raise ValueError("Context checkpoint must be a mapping")
-    return payload
-
-
-def _load_context_for_evaluation(
-    payload: Mapping[str, Any],
-    setup: PreparedSupportQueryTraining,
-    *,
-    healthy_sha: str,
-    dataset_sha: str,
-    train_split_sha: str,
-    validation_split_sha: str,
-    split_seed: int,
-) -> str:
-    schema = int(payload.get("schema_version", -1))
-    if schema not in (1, 2, 3):
-        raise ValueError(f"unsupported Context checkpoint schema: {schema}")
-    if payload.get("fada_architecture") != asdict(setup.policy.config):
-        raise ValueError("Context checkpoint FADA architecture mismatch")
-    if payload.get("context_config") != asdict(setup.policy.context_encoder.context_config):
-        raise ValueError("Context checkpoint architecture mismatch")
-    if payload.get("source_checkpoint_sha256") != healthy_sha:
-        raise ValueError("Context checkpoint healthy source identity mismatch")
-    if int(payload.get("split_seed", -1)) != split_seed:
-        raise ValueError("Context checkpoint split seed mismatch")
-    if schema in (2, 3):
-        expected = {
-            "dataset_sha256": dataset_sha,
-            "train_split_sha256": train_split_sha,
-            "validation_split_sha256": validation_split_sha,
-        }
-        for name, value in expected.items():
-            if payload.get(name) != value:
-                raise ValueError(f"Context checkpoint {name} mismatch")
-        identity_binding = "healthy_dataset_and_splits"
-    else:
-        identity_binding = "legacy_v1_source_checkpoint_only"
-    state = payload.get("context_state_dict")
-    if not isinstance(state, Mapping):
-        raise ValueError("Context checkpoint is missing context_state_dict")
-    setup.policy.context_encoder.load_state_dict(state, strict=True)
-    setup.policy.eval()
-    return identity_binding
-
-
 def main() -> int:
     args = _parse_args()
     if args.seeds is None:
@@ -181,46 +74,8 @@ def main() -> int:
     dataset_path = args.dataset.expanduser().resolve()
     context_checkpoint = args.context_checkpoint.expanduser().resolve()
     output_path = args.output.expanduser().resolve()
-    healthy_sha = sha256_file(healthy_checkpoint)
-    dataset_sha = sha256_file(dataset_path)
     loaded = load_fada_policy_checkpoint(healthy_checkpoint, device=args.device)
-    dataset, metadata = load_support_query_dataset(
-        dataset_path,
-        loaded.policy.config,
-        support_length=int(cfg.collection.support_length),
-        query_length=int(cfg.collection.query_length),
-        allow_legacy_single_anchor=True,
-    )
-    if metadata.get("source_checkpoint_sha256") != healthy_sha:
-        raise ValueError("Support dataset healthy checkpoint identity mismatch")
-    if float(metadata.get("fault_strength", -1.0)) != 0.7:
-        raise ValueError("Support dataset must use fixed left-knee strength 0.7")
-
-    checkpoint_payload = _checkpoint_payload(context_checkpoint)
-    checkpoint_schema = int(checkpoint_payload.get("schema_version", -1))
-    if checkpoint_schema == 1:
-        train, validation = _legacy_pair_split(
-            dataset,
-            validation_fraction=float(cfg.training.validation_fraction),
-            seed=int(cfg.seed),
-        )
-        split_contract = "legacy_pair_split"
-    elif checkpoint_schema in (2, 3):
-        train, validation = _rollout_group_split(
-            dataset,
-            validation_fraction=float(cfg.training.validation_fraction),
-            seed=int(cfg.seed),
-        )
-        split_contract = "rollout_group_split"
-    else:
-        raise ValueError(f"unsupported Context checkpoint schema: {checkpoint_schema}")
-    required_supports = args.num_envs * len(args.seeds)
-    if args.support_source == "dataset" and validation.batch_size < required_supports:
-        raise ValueError(
-            "not enough held-out validation Supports: "
-            f"required={required_supports} available={validation.batch_size}"
-        )
-    setup = prepare_support_query_training(
+    prepared = prepare_context_support_query_artifact(
         loaded.policy,
         SupportQueryContextConfig(
             support_length=int(cfg.collection.support_length),
@@ -228,20 +83,24 @@ def main() -> int:
             context_layers=int(cfg.context.num_layers),
             delta_scale=float(cfg.context.delta_scale),
         ),
-        learning_rate=float(cfg.context.learning_rate),
-    )
-    train_split_sha = _split_identity_sha256(train)
-    validation_split_sha = _split_identity_sha256(validation)
-    checkpoint_identity_binding = _load_context_for_evaluation(
-        checkpoint_payload,
-        setup,
-        healthy_sha=healthy_sha,
-        dataset_sha=dataset_sha,
-        train_split_sha=train_split_sha,
-        validation_split_sha=validation_split_sha,
+        source_checkpoint_path=healthy_checkpoint,
+        dataset_path=dataset_path,
+        context_checkpoint_path=context_checkpoint,
+        support_length=int(cfg.collection.support_length),
+        query_length=int(cfg.collection.query_length),
+        validation_fraction=float(cfg.training.validation_fraction),
         split_seed=int(cfg.seed),
     )
-
+    if float(prepared.metadata.get("fault_strength", -1.0)) != 0.7:
+        raise ValueError("Support dataset must use fixed left-knee strength 0.7")
+    validation = prepared.validation
+    policy = prepared.policy
+    required_supports = args.num_envs * len(args.seeds)
+    if args.support_source == "dataset" and validation.batch_size < required_supports:
+        raise ValueError(
+            "not enough held-out validation Supports: "
+            f"required={required_supports} available={validation.batch_size}"
+        )
     reports: list[dict[str, Any]] = []
     for index, seed in enumerate(args.seeds):
         support_batch = None
@@ -260,7 +119,7 @@ def main() -> int:
                 report = evaluate_online_support_closed_loop(
                     healthy_env,
                     fault_env,
-                    setup.policy,
+                    policy,
                     steps=args.steps,
                     device=args.device,
                 )
@@ -268,8 +127,9 @@ def main() -> int:
                 report = evaluate_support_query_closed_loop(
                     healthy_env,
                     fault_env,
-                    setup.policy,
+                    policy,
                     support_batch.support,
+                    support_command=support_batch.support_command,
                     steps=args.steps,
                     device=args.device,
                 )
@@ -285,19 +145,20 @@ def main() -> int:
 
     aggregate = aggregate_support_query_closed_loop_reports(reports)
     result = {
-        "schema": "unilab_fada_context_support_query_closed_loop_artifact_v1",
+        "schema": "unilab_fada_context_support_query_closed_loop_artifact_v2",
         "healthy_checkpoint": str(healthy_checkpoint),
-        "healthy_checkpoint_sha256": healthy_sha,
+        "healthy_checkpoint_sha256": prepared.source_checkpoint_sha256,
         "context_checkpoint": str(context_checkpoint),
         "context_checkpoint_sha256": sha256_file(context_checkpoint),
-        "context_checkpoint_step": int(checkpoint_payload["step"]),
+        "context_checkpoint_step": prepared.checkpoint_step,
         "dataset": str(dataset_path),
-        "dataset_sha256": dataset_sha,
-        "checkpoint_schema": checkpoint_schema,
-        "checkpoint_identity_binding": checkpoint_identity_binding,
-        "split_contract": split_contract,
-        "train_split_sha256": train_split_sha,
-        "validation_split_sha256": validation_split_sha,
+        "dataset_sha256": prepared.dataset_sha256,
+        "checkpoint_schema": prepared.checkpoint_schema,
+        "method_contract_id": prepared.method_contract_id,
+        "checkpoint_identity_binding": prepared.checkpoint_identity_binding,
+        "split_contract": prepared.split_contract,
+        "train_split_sha256": prepared.train_split_sha256,
+        "validation_split_sha256": prepared.validation_split_sha256,
         "evaluation_support_source": (
             "training_run_validation_split"
             if args.support_source == "dataset"

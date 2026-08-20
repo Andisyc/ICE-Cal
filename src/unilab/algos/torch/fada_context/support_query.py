@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import torch
 import torch.nn.functional as F
@@ -11,6 +12,8 @@ from unilab.algos.torch.distill.fada import (
     FADAInverseDynamicsModel,
     FADAPlanner,
 )
+
+FADA_CONTEXT_METHOD_CONTRACT_ID = "FADA-CONTEXT-METHOD-v006"
 
 
 def _finite(name: str, value: torch.Tensor) -> None:
@@ -114,7 +117,9 @@ class ContextQueryBatch:
     def validate(self, config: FADAArchitectureConfig) -> ContextQueryBatch:
         batch_size = self.batch_size
         if self.observation_history.ndim != 4:
-            raise ValueError("query observation_history must be rank-4 [pair, window, history, obs]")
+            raise ValueError(
+                "query observation_history must be rank-4 [pair, window, history, obs]"
+            )
         window_count = self.window_count
         expected = {
             "observation_history": (
@@ -294,7 +299,7 @@ class SupportQueryContextConfig:
 
 
 class FADASupportContextEncoder(nn.Module):
-    """Encode one full Support rollout into one condition-level IDM latent residual."""
+    """Fuse one complete Support with current histories into one IDM latent residual."""
 
     def __init__(
         self,
@@ -316,17 +321,103 @@ class FADASupportContextEncoder(nn.Module):
             num_layers=context_config.context_layers,
             batch_first=True,
         )
-        self.delta_head = nn.Linear(context_config.context_hidden_dim, fada_config.hidden_dim)
+        self.query_frame_projection = nn.Linear(
+            fada_config.obs_dim + fada_config.action_dim,
+            context_config.context_hidden_dim,
+        )
+        self.query_sequence_encoder = nn.GRU(
+            input_size=context_config.context_hidden_dim,
+            hidden_size=context_config.context_hidden_dim,
+            num_layers=context_config.context_layers,
+            batch_first=True,
+        )
+        self.delta_head = nn.Linear(
+            2 * context_config.context_hidden_dim,
+            fada_config.hidden_dim,
+        )
         nn.init.zeros_(self.delta_head.weight)
         nn.init.zeros_(self.delta_head.bias)
 
-    def forward(self, support: SupportContextBatch) -> torch.Tensor:
-        support.validate(self.fada_config, support_length=self.context_config.support_length)
+    def _validate_query_histories(
+        self,
+        support: SupportContextBatch,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+    ) -> None:
+        expected_observation_tail = (
+            self.fada_config.history_length,
+            self.fada_config.obs_dim,
+        )
+        expected_action_tail = (
+            self.fada_config.history_length,
+            self.fada_config.action_dim,
+        )
+        if observation_history.ndim != 3 or tuple(observation_history.shape[1:]) != (
+            expected_observation_tail
+        ):
+            raise ValueError(
+                "query observation_history shape mismatch: "
+                f"expected=[batch,{expected_observation_tail[0]},"
+                f"{expected_observation_tail[1]}] observed={tuple(observation_history.shape)}"
+            )
+        if action_history.ndim != 3 or tuple(action_history.shape[1:]) != expected_action_tail:
+            raise ValueError(
+                "query action_history shape mismatch: "
+                f"expected=[batch,{expected_action_tail[0]},{expected_action_tail[1]}] "
+                f"observed={tuple(action_history.shape)}"
+            )
+        if (
+            observation_history.shape[0] != support.batch_size
+            or action_history.shape[0] != support.batch_size
+        ):
+            raise ValueError("Support and Query history batch sizes must match")
+        devices = {
+            support.target_future.device,
+            observation_history.device,
+            action_history.device,
+        }
+        if len(devices) != 1:
+            raise ValueError("Support and Query histories must share one device")
+        dtypes = {
+            support.target_future.dtype,
+            observation_history.dtype,
+            action_history.dtype,
+        }
+        if len(dtypes) != 1:
+            raise ValueError("Support and Query histories must share one dtype")
+        _finite("query observation_history", observation_history)
+        _finite("query action_history", action_history)
+
+    def _encode_support(self, support: SupportContextBatch) -> torch.Tensor:
         target = support.target_future.flatten(start_dim=2)
         frames = torch.cat((target, support.realized_state, support.executed_action), dim=-1)
         encoded_frames = F.gelu(self.frame_projection(frames))
         _, hidden = self.sequence_encoder(encoded_frames)
-        return torch.tanh(self.delta_head(hidden[-1])) * self.context_config.delta_scale
+        return hidden[-1]
+
+    def _encode_query_history(
+        self,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+    ) -> torch.Tensor:
+        frames = torch.cat((observation_history, action_history), dim=-1)
+        encoded_frames = F.gelu(self.query_frame_projection(frames))
+        _, hidden = self.query_sequence_encoder(encoded_frames)
+        return hidden[-1]
+
+    def forward(
+        self,
+        support: SupportContextBatch,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+    ) -> torch.Tensor:
+        support.validate(self.fada_config, support_length=self.context_config.support_length)
+        self._validate_query_histories(support, observation_history, action_history)
+        support_summary = self._encode_support(support)
+        query_summary = self._encode_query_history(observation_history, action_history)
+        return self.context_config.delta_scale * torch.tanh(
+            self.delta_head(torch.cat((support_summary, query_summary), dim=-1))
+        )
 
 
 @dataclass(frozen=True)
@@ -338,9 +429,7 @@ class ContextActionOutput:
 
     @property
     def action(self) -> torch.Tensor:
-        if self.action_chunk.ndim == 4:
-            return self.action_chunk[:, :, 0]
-        return self.action_chunk[:, 0]
+        return self.action_chunk[..., 0, :]
 
 
 class FrozenIDMSupportQueryPolicy(nn.Module):
@@ -364,7 +453,7 @@ class FrozenIDMSupportQueryPolicy(nn.Module):
 
     @property
     def config(self) -> FADAArchitectureConfig:
-        return self.idm.config
+        return cast(FADAArchitectureConfig, self.idm.config)
 
     def train(self, mode: bool = True) -> FrozenIDMSupportQueryPolicy:
         super().train(mode)
@@ -377,35 +466,51 @@ class FrozenIDMSupportQueryPolicy(nn.Module):
             self.config,
             support_length=self.context_encoder.context_config.support_length,
         )
-        delta_z = self.context_encoder(batch.support)
         pairs = batch.batch_size
         windows = batch.query.window_count
-        query_latent_flat = self.idm.encode_latent(
-            batch.query.observation_history.flatten(0, 1),
-            batch.query.action_history.flatten(0, 1),
-            batch.query.realized_future.flatten(0, 1),
+        pair_indices, window_indices = torch.nonzero(
+            batch.query.valid_window_mask,
+            as_tuple=True,
         )
-        query_latent = query_latent_flat.unflatten(0, (pairs, windows))
-        repaired_latent = query_latent + delta_z[:, None, None, :]
-        action_chunk = self.idm.decode_latent(repaired_latent.flatten(0, 1)).unflatten(
-            0, (pairs, windows)
+        valid_support = batch.support.index_select(pair_indices)
+        valid_observation = batch.query.observation_history[pair_indices, window_indices]
+        valid_action_history = batch.query.action_history[pair_indices, window_indices]
+        valid_future = batch.query.realized_future[pair_indices, window_indices]
+        valid_delta_z = self.context_encoder(
+            valid_support,
+            valid_observation,
+            valid_action_history,
         )
+        _finite("Context delta_z", valid_delta_z)
+        valid_query_latent = self.idm.encode_latent(
+            valid_observation,
+            valid_action_history,
+            valid_future,
+        )
+        valid_repaired_latent = valid_query_latent + valid_delta_z[:, None, :]
+        valid_action_chunk = self.idm.decode_latent(valid_repaired_latent)
+
+        def scatter_valid(valid: torch.Tensor) -> torch.Tensor:
+            public = valid.new_zeros((pairs, windows, *valid.shape[1:]))
+            return public.index_put((pair_indices, window_indices), valid)
+
         return ContextActionOutput(
-            delta_z=delta_z,
-            query_latent=query_latent,
-            repaired_latent=repaired_latent,
-            action_chunk=action_chunk,
+            delta_z=scatter_valid(valid_delta_z),
+            query_latent=scatter_valid(valid_query_latent),
+            repaired_latent=scatter_valid(valid_repaired_latent),
+            action_chunk=scatter_valid(valid_action_chunk),
         )
 
     def act_with_context(
         self,
+        support: SupportContextBatch,
         observation_history: torch.Tensor,
         action_history: torch.Tensor,
         command: torch.Tensor,
-        delta_z: torch.Tensor,
     ) -> ContextActionOutput:
         planner_intent = self.planner(observation_history, command)
         latent = self.idm.encode_latent(observation_history, action_history, planner_intent)
+        delta_z = self.context_encoder(support, observation_history, action_history)
         expected_delta = (observation_history.shape[0], self.config.hidden_dim)
         if tuple(delta_z.shape) != expected_delta:
             raise ValueError(
@@ -421,6 +526,67 @@ class FrozenIDMSupportQueryPolicy(nn.Module):
         )
 
 
+class SupportBoundContextPolicy(nn.Module):
+    """Bind immutable complete Support and command provenance to playback calls."""
+
+    def __init__(
+        self,
+        policy: FrozenIDMSupportQueryPolicy,
+        support: SupportContextBatch,
+        support_command: torch.Tensor,
+    ) -> None:
+        super().__init__()
+        support.validate(
+            policy.config,
+            support_length=policy.context_encoder.context_config.support_length,
+        )
+        expected_command = (support.batch_size, policy.config.command_dim)
+        if tuple(support_command.shape) != expected_command:
+            raise ValueError(
+                "support_command shape mismatch: "
+                f"expected={expected_command} observed={tuple(support_command.shape)}"
+            )
+        if support_command.device != support.target_future.device:
+            raise ValueError("Support and support_command must share one device")
+        if support_command.dtype != support.target_future.dtype:
+            raise ValueError("Support and support_command must share one dtype")
+        _finite("support_command", support_command)
+        self.policy = policy
+        self.support = SupportContextBatch(*(value.detach().clone() for value in support.tensors()))
+        self.register_buffer("support_command", support_command.detach().clone())
+
+    @property
+    def config(self) -> FADAArchitectureConfig:
+        return self.policy.config
+
+    @torch.inference_mode()
+    def forward(
+        self,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+        command: torch.Tensor,
+    ) -> ContextActionOutput:
+        if tuple(command.shape) != tuple(self.support_command.shape):
+            raise ValueError(
+                "current command shape does not match Support command provenance: "
+                f"expected={tuple(self.support_command.shape)} observed={tuple(command.shape)}"
+            )
+        if (
+            command.device != self.support_command.device
+            or command.dtype != self.support_command.dtype
+        ):
+            raise ValueError("current command must share Support command device and dtype")
+        _finite("current command", command)
+        if not torch.equal(command, self.support_command):
+            raise ValueError("current command does not match Support command provenance")
+        return self.policy.act_with_context(
+            self.support,
+            observation_history,
+            action_history,
+            command,
+        )
+
+
 def context_first_action_loss(
     policy: FrozenIDMSupportQueryPolicy,
     batch: SupportQueryBatch,
@@ -432,4 +598,5 @@ def context_first_action_loss(
         reduction="none",
     ).mean(dim=-1)
     mask = batch.query.valid_window_mask.to(per_window.dtype)
-    return torch.sum(per_window * mask) / torch.sum(mask)
+    per_pair = torch.sum(per_window * mask, dim=1) / torch.sum(mask, dim=1)
+    return torch.mean(per_pair)

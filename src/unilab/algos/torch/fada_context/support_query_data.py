@@ -20,9 +20,11 @@ SUPPORT_QUERY_DATASET_SCHEMA_VERSION = 2
 def support_query_split_identity_sha256(batch: SupportQueryBatch) -> str:
     """Return an order-independent digest of exact pair and rollout membership."""
 
-    identity = torch.stack(
-        (batch.pair_id, batch.support_rollout_id, batch.query_rollout_id), dim=1
-    ).detach().cpu()
+    identity = (
+        torch.stack((batch.pair_id, batch.support_rollout_id, batch.query_rollout_id), dim=1)
+        .detach()
+        .cpu()
+    )
     identity = identity.index_select(0, torch.argsort(identity[:, 0])).contiguous()
     digest = hashlib.sha256()
     digest.update(str(tuple(identity.shape)).encode("ascii"))
@@ -40,9 +42,9 @@ def split_support_query_by_rollout(
 
     if not 0.0 < validation_fraction < 0.5:
         raise ValueError("validation_fraction must be in (0, 0.5)")
-    rollout_groups = torch.stack(
-        (batch.support_rollout_id, batch.query_rollout_id), dim=1
-    ).detach().cpu()
+    rollout_groups = (
+        torch.stack((batch.support_rollout_id, batch.query_rollout_id), dim=1).detach().cpu()
+    )
     unique_groups, inverse = torch.unique(rollout_groups, dim=0, return_inverse=True)
     group_count = int(unique_groups.shape[0])
     if group_count < 2:
@@ -53,11 +55,11 @@ def split_support_query_by_rollout(
     order = torch.randperm(group_count, generator=torch.Generator().manual_seed(seed))
     validation_group_ids = order[:validation_groups]
     validation_mask = torch.isin(inverse, validation_group_ids)
-    train_indices = torch.nonzero(~validation_mask, as_tuple=False).flatten().to(
-        batch.pair_id.device
+    train_indices = (
+        torch.nonzero(~validation_mask, as_tuple=False).flatten().to(batch.pair_id.device)
     )
-    validation_indices = torch.nonzero(validation_mask, as_tuple=False).flatten().to(
-        batch.pair_id.device
+    validation_indices = (
+        torch.nonzero(validation_mask, as_tuple=False).flatten().to(batch.pair_id.device)
     )
     return batch.index_select(train_indices), batch.index_select(validation_indices)
 
@@ -85,44 +87,7 @@ def _tensor_payload(batch: SupportQueryBatch) -> dict[str, torch.Tensor]:
 def _batch_from_payload(
     payload: Mapping[str, Any],
     config: FADAArchitectureConfig,
-    *,
-    legacy_single_anchor: bool = False,
 ) -> SupportQueryBatch:
-    if legacy_single_anchor:
-        executed_chunk = payload.get("query_executed_action_chunk")
-        if not isinstance(executed_chunk, torch.Tensor):
-            raise ValueError("legacy Support-Query dataset is missing executed action chunk")
-        pair_count = int(executed_chunk.shape[0])
-        window_anchor = torch.full(
-            (pair_count, 1),
-            config.history_length - 1,
-            dtype=torch.int64,
-            device=executed_chunk.device,
-        )
-        valid_window_mask = torch.ones(
-            (pair_count, 1), dtype=torch.bool, device=executed_chunk.device
-        )
-        return SupportQueryBatch(
-            support=SupportContextBatch(
-                target_future=payload["support_target_future"],
-                realized_state=payload["support_realized_state"],
-                executed_action=payload["support_executed_action"],
-            ),
-            query=ContextQueryBatch(
-                observation_history=payload["query_observation_history"].unsqueeze(1),
-                action_history=payload["query_action_history"].unsqueeze(1),
-                command=payload["query_command"].unsqueeze(1),
-                planner_intent=payload["query_planner_intent"].unsqueeze(1),
-                realized_future=payload["query_realized_future"].unsqueeze(1),
-                executed_action=executed_chunk[:, 0].unsqueeze(1),
-                window_anchor=window_anchor,
-                valid_window_mask=valid_window_mask,
-            ),
-            support_command=payload["support_command"],
-            pair_id=payload["pair_id"],
-            support_rollout_id=payload["support_rollout_id"],
-            query_rollout_id=payload["query_rollout_id"],
-        )
     names = (
         "support_target_future",
         "support_realized_state",
@@ -212,27 +177,23 @@ def load_support_query_dataset(
     support_length: int,
     query_length: int,
     map_location: str | torch.device = "cpu",
-    allow_legacy_single_anchor: bool = False,
 ) -> tuple[SupportQueryBatch, Mapping[str, Any]]:
     payload = torch.load(Path(path), map_location=map_location, weights_only=True)
     if not isinstance(payload, dict):
         raise ValueError("Support-Query dataset must be a mapping")
     schema = int(payload.get("schema_version", -1))
-    legacy_single_anchor = schema == 1 and allow_legacy_single_anchor
-    if schema != SUPPORT_QUERY_DATASET_SCHEMA_VERSION and not legacy_single_anchor:
+    if schema != SUPPORT_QUERY_DATASET_SCHEMA_VERSION:
         raise ValueError("unsupported Support-Query dataset schema")
     if payload.get("architecture") != asdict(config):
         raise ValueError("Support-Query dataset architecture mismatch")
     if payload.get("support_length") != int(support_length):
         raise ValueError("Support-Query dataset support length mismatch")
-    if not legacy_single_anchor and payload.get("query_length") != int(query_length):
+    if payload.get("query_length") != int(query_length):
         raise ValueError("Support-Query dataset Query length mismatch")
     metadata = payload.get("metadata")
     if not isinstance(metadata, Mapping):
         raise ValueError("Support-Query dataset metadata must be a mapping")
-    batch = _batch_from_payload(
-        payload, config, legacy_single_anchor=legacy_single_anchor
-    ).validate(config, support_length=support_length)
+    batch = _batch_from_payload(payload, config).validate(config, support_length=support_length)
     if torch.unique(batch.pair_id).numel() != batch.pair_id.numel():
         raise ValueError("sealed Support-Query dataset pair_id values must be unique")
     return batch, metadata

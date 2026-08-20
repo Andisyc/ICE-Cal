@@ -74,7 +74,9 @@ def _done(state: Any, rows: int) -> np.ndarray:
     for name in ("terminated", "truncated"):
         value = np.asarray(getattr(state, name), dtype=np.bool_).reshape(-1)
         if value.shape != result.shape:
-            raise ValueError(f"{name} shape mismatch: expected={result.shape} observed={value.shape}")
+            raise ValueError(
+                f"{name} shape mismatch: expected={result.shape} observed={value.shape}"
+            )
         result |= value
     return result
 
@@ -175,25 +177,23 @@ def _query_windows(
     )
     return ContextQueryBatch(
         observation_history=torch.from_numpy(
-            np.stack(
-                [[record.observation[row] for record in history] for history in histories]
-            )[None]
+            np.stack([[record.observation[row] for record in history] for history in histories])[
+                None
+            ]
         ),
         action_history=torch.from_numpy(
             np.stack(
                 [[record.previous_action[row] for record in history] for history in histories]
             )[None]
         ),
-        command=torch.from_numpy(
-            np.stack([future[0].command[row] for future in futures])[None]
-        ),
+        command=torch.from_numpy(np.stack([future[0].command[row] for future in futures])[None]),
         planner_intent=torch.from_numpy(
             np.stack([future[0].planner_intent[row] for future in futures])[None]
         ),
         realized_future=torch.from_numpy(
-            np.stack(
-                [[record.next_observation[row] for record in future] for future in futures]
-            )[None]
+            np.stack([[record.next_observation[row] for record in future] for future in futures])[
+                None
+            ]
         ),
         executed_action=torch.from_numpy(
             np.stack([future[0].executed_action[row] for future in futures])[None]
@@ -237,10 +237,7 @@ def _concat_query(rows: Sequence[ContextQueryBatch]) -> ContextQueryBatch:
         "valid_window_mask",
     )
     return ContextQueryBatch(
-        **{
-            name: torch.cat([getattr(row, name) for row in rows], dim=0)
-            for name in names
-        }
+        **{name: torch.cat([getattr(row, name) for row in rows], dim=0) for name in names}
     )
 
 

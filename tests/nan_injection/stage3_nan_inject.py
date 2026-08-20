@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT_DIR / "src"))
 
 import torch
 
-from unilab.utils.nan_guard import NanGuardCfg
+from unilab.base.nan_guard import NanGuardCfg
 
 # ---------------------------------------------------------------------------
 # Fake classes (copied from tests/algos/*.py to keep stage3 self-contained)

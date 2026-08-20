@@ -37,6 +37,7 @@ from ..base import (
     BackendHeightScanner,
     BackendPlayCapabilities,
     BackendPlayRenderPlan,
+    BackendSceneArtifacts,
     SimBackend,
     normalize_play_render_mode,
 )
@@ -281,9 +282,11 @@ class MuJoCoBackend(SimBackend):
         post_step_forward_sensor: bool = False,
     ):
         scene_context = _build_mujoco_scene_context(scene)
-        self.scene_model_file = scene_context.model_file
-        self.scene_visual_model_file = scene_context.visual_model_file
-        self.scene_artifacts_dir = scene_context.artifacts_dir
+        self._scene_artifacts = BackendSceneArtifacts(
+            model_file=scene_context.model_file,
+            visual_model_file=scene_context.visual_model_file,
+            artifacts_dir=scene_context.artifacts_dir,
+        )
         self.terrain_origins = scene_context.terrain_origins
         self.terrain_surface_sampler = scene_context.terrain_surface_sampler
         self._scene_cleanup_handle = scene_context.cleanup_handle
@@ -401,6 +404,10 @@ class MuJoCoBackend(SimBackend):
             self._tracked_quat_b_all = _get_sensor_view("track_quat_b", 4)
             self._tracked_linvel_b_all = _get_sensor_view("track_linvel_b", 3)
             self._tracked_angvel_b_all = _get_sensor_view("track_angvel_b", 3)
+
+    def get_scene_artifacts(self) -> BackendSceneArtifacts:
+        """Return source and materialized MuJoCo scene paths."""
+        return self._scene_artifacts
 
     def _load_base_model(self) -> mujoco.MjModel:
         if isinstance(self._model_file, mujoco.MjModel):

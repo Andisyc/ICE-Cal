@@ -121,8 +121,7 @@ def _configured_model_file(env: Any) -> str | None:
 
 
 def _visual_model_file(env: Any) -> str | None:
-    backend = getattr(env, "_backend", None)
-    backend_visual_model_file = getattr(backend, "scene_visual_model_file", None)
+    backend_visual_model_file = env.get_scene_artifacts().visual_model_file
     if backend_visual_model_file:
         return str(backend_visual_model_file)
     return _configured_model_file(env)

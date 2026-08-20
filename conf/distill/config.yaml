@@ -2,6 +2,7 @@ defaults:
   - _self_
   - task: g1_walk_height/mujoco
   - optional workflow: null
+  - optional calibration_playback: null
 
 algo:
   algo_log_name: distill

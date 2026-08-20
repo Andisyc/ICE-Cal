@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import torch
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
@@ -19,13 +17,11 @@ from unilab.algos.torch.distill import load_fada_policy_checkpoint  # noqa: E402
 from unilab.algos.torch.fada_context import (  # noqa: E402
     SupportQueryContextConfig,
     collect_fixed_fault_support_query,
-    context_first_action_loss,
     load_support_query_config,
     load_support_query_dataset,
-    parameter_snapshot,
-    parameters_equal,
-    prepare_support_query_training,
+    preflight_context_support_query_artifact,
     resolve_repo_path,
+    run_support_query_preflight,
     save_support_query_dataset,
     sha256_file,
 )
@@ -42,8 +38,20 @@ def _parse_args() -> argparse.Namespace:
         default=ROOT_DIR / "conf" / "fada_context" / "support_query_left_knee_070.yaml",
     )
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--artifact-admission", action="store_true")
+    parser.add_argument("--dataset", type=Path, default=None)
+    parser.add_argument("--context-checkpoint", type=Path, default=None)
     parser.add_argument("overrides", nargs="*")
     return parser.parse_args()
+
+
+def _context_config(cfg: Any) -> SupportQueryContextConfig:
+    return SupportQueryContextConfig(
+        support_length=int(cfg.collection.support_length),
+        context_hidden_dim=int(cfg.context.hidden_dim),
+        context_layers=int(cfg.context.num_layers),
+        delta_scale=float(cfg.context.delta_scale),
+    )
 
 
 def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
@@ -54,6 +62,50 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
         raise FileNotFoundError(f"healthy FADA checkpoint not found: {checkpoint}")
     checkpoint_sha = sha256_file(checkpoint)
     loaded = load_fada_policy_checkpoint(checkpoint, device=str(cfg.device))
+    artifact_admission = bool(getattr(args, "artifact_admission", False))
+    dataset_arg = getattr(args, "dataset", None)
+    context_checkpoint_arg = getattr(args, "context_checkpoint", None)
+    if artifact_admission:
+        if dataset_arg is None or context_checkpoint_arg is None:
+            raise ValueError("artifact admission requires --dataset and --context-checkpoint")
+        dataset_path = resolve_repo_path(ROOT_DIR, str(dataset_arg))
+        context_checkpoint_path = resolve_repo_path(ROOT_DIR, str(context_checkpoint_arg))
+        admitted = preflight_context_support_query_artifact(
+            loaded.policy,
+            _context_config(cfg),
+            source_checkpoint_path=checkpoint,
+            dataset_path=dataset_path,
+            context_checkpoint_path=context_checkpoint_path,
+            support_length=int(cfg.collection.support_length),
+            query_length=int(cfg.collection.query_length),
+            validation_fraction=float(cfg.training.validation_fraction),
+            split_seed=int(cfg.seed),
+            map_location=str(cfg.device),
+        )
+        return {
+            "schema": "unilab_fada_context_support_query_artifact_admission_v1",
+            "mode": "artifact_admission",
+            "status": "passed",
+            "method_contract_id": admitted.method_contract_id,
+            "checkpoint_schema": admitted.checkpoint_schema,
+            "checkpoint_step": admitted.checkpoint_step,
+            "training_started": False,
+            "optimizer_steps": 0,
+            "source_checkpoint": str(checkpoint),
+            "source_checkpoint_sha256": checkpoint_sha,
+            "dataset": str(dataset_path),
+            "context_checkpoint": str(context_checkpoint_path),
+            "query_provenance": {
+                "pair_ids": list(admitted.pair_ids),
+                "support_rollout_ids": list(admitted.support_rollout_ids),
+                "query_rollout_ids": list(admitted.query_rollout_ids),
+                "current_history_conditioned": True,
+            },
+            "collection": {"window_count": admitted.window_count},
+            "tensors": {"delta_z": list(admitted.delta_z_shape)},
+        }
+    if dataset_arg is not None or context_checkpoint_arg is not None:
+        raise ValueError("--dataset and --context-checkpoint require --artifact-admission")
     collected = collect_fixed_fault_support_query(ROOT_DIR, cfg, loaded.policy)
     artifact = resolve_repo_path(ROOT_DIR, str(cfg.collection.artifact_path))
     metadata = {
@@ -80,48 +132,17 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
         query_length=int(cfg.collection.query_length),
         map_location=str(cfg.device),
     )
-    setup = prepare_support_query_training(
+    result = run_support_query_preflight(
         loaded.policy,
-        SupportQueryContextConfig(
-            support_length=int(cfg.collection.support_length),
-            context_hidden_dim=int(cfg.context.hidden_dim),
-            context_layers=int(cfg.context.num_layers),
-            delta_scale=float(cfg.context.delta_scale),
-        ),
+        batch,
+        _context_config(cfg),
         learning_rate=float(cfg.context.learning_rate),
+        minimum_zero_context_mse=float(cfg.training.minimum_zero_context_mse),
     )
-    planner_before = parameter_snapshot(setup.policy.planner)
-    idm_before = parameter_snapshot(setup.policy.idm)
-    loss = context_first_action_loss(setup.policy, batch)
-    zero_context_mse = float(loss.detach())
-    if not torch.isfinite(loss):
-        raise ValueError("zero-Context Query action loss must be finite")
-    if zero_context_mse <= float(cfg.training.minimum_zero_context_mse):
-        raise ValueError(
-            "zero-Context Query action loss is too small to establish supervision signal: "
-            f"observed={zero_context_mse} threshold={cfg.training.minimum_zero_context_mse}"
-        )
-    loss.backward()
-    gradients = [
-        parameter.grad
-        for parameter in setup.policy.context_encoder.parameters()
-        if parameter.grad is not None
-    ]
-    context_grad_norm = float(
-        torch.sqrt(sum(torch.sum(gradient.detach() ** 2) for gradient in gradients))
-    ) if gradients else 0.0
-    if not torch.isfinite(torch.tensor(context_grad_norm)) or context_grad_norm <= 0.0:
-        raise ValueError("Context gradient norm must be finite and positive")
-    if not parameters_equal(setup.policy.planner, planner_before):
-        raise RuntimeError("Planner changed during preflight backward")
-    if not parameters_equal(setup.policy.idm, idm_before):
-        raise RuntimeError("IDM changed during preflight backward")
-    if any(parameter.grad is not None for parameter in setup.policy.planner.parameters()):
-        raise RuntimeError("Planner received gradients during Context backward")
-    if any(parameter.grad is not None for parameter in setup.policy.idm.parameters()):
-        raise RuntimeError("IDM received gradients during Context backward")
     return {
-        "schema": "unilab_fada_context_support_query_preflight_v1",
+        "schema": "unilab_fada_context_support_query_preflight_v3",
+        "mode": "collection_preflight",
+        "method_contract_id": result.method_contract_id,
         "status": "passed",
         "training_started": False,
         "optimizer_steps": 0,
@@ -129,6 +150,12 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
         "source_checkpoint_sha256": checkpoint_sha,
         "task_config": str(cfg.task_config),
         "fault": {"joint": "left_knee", "index": 3, "strength": 0.7},
+        "query_provenance": {
+            "pair_ids": batch.pair_id.tolist(),
+            "support_rollout_ids": batch.support_rollout_id.tolist(),
+            "query_rollout_ids": batch.query_rollout_id.tolist(),
+            "current_history_conditioned": True,
+        },
         "collection": {
             "artifact": str(artifact),
             "accepted_pairs": collected.accepted_pairs,
@@ -153,14 +180,14 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "query_executed_action": list(batch.query.executed_action.shape),
             "query_window_anchor": list(batch.query.window_anchor.shape),
             "query_valid_window_mask": list(batch.query.valid_window_mask.shape),
-            "delta_z": [batch.batch_size, loaded.policy.config.hidden_dim],
+            "delta_z": list(result.delta_z_shape),
         },
         "supervision": {
-            "zero_context_first_action_mse": zero_context_mse,
-            "minimum_required_mse": float(cfg.training.minimum_zero_context_mse),
-            "context_grad_norm": context_grad_norm,
-            "planner_frozen": True,
-            "idm_frozen": True,
+            "zero_context_first_action_mse": result.zero_context_first_action_mse,
+            "minimum_required_mse": result.minimum_required_mse,
+            "context_grad_norm": result.context_grad_norm,
+            "planner_frozen": result.planner_frozen,
+            "idm_frozen": result.idm_frozen,
         },
     }
 

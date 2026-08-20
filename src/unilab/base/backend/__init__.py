@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from unilab.base.scene import SceneCfg
 
-from .base import SimBackend
+from .base import BackendSceneArtifacts, SimBackend
 from .motrix.scene import (
     add_motrix_tracking_frame_sensors,
     materialize_motrix_hfield_attached_scene,
@@ -93,6 +93,7 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "BackendSceneArtifacts",
     "SimBackend",
     "MuJoCoBackend",
     "MotrixBackend",

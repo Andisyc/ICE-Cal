@@ -1,17 +1,38 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
 import torch
 
-from .fada import FADAPlannerIDMPolicy
+from .fada import FADAArchitectureConfig
+
+
+class FADAPlaybackActionOutput(Protocol):
+    """Action-bearing output consumed by receding-horizon playback."""
+
+    @property
+    def action(self) -> torch.Tensor: ...
+
+
+class FADAPlaybackPolicy(Protocol):
+    """Three-input healthy/Context policy boundary used by playback."""
+
+    @property
+    def config(self) -> FADAArchitectureConfig: ...
+
+    def __call__(
+        self,
+        observation_history: torch.Tensor,
+        action_history: torch.Tensor,
+        command: torch.Tensor,
+    ) -> FADAPlaybackActionOutput: ...
 
 
 class FADAPlaybackController:
     """Own FADA execution histories and emit one receding-horizon action per query."""
 
-    def __init__(self, policy: FADAPlannerIDMPolicy, *, device: str | torch.device) -> None:
+    def __init__(self, policy: FADAPlaybackPolicy, *, device: str | torch.device) -> None:
         self.policy = policy
         self.config = policy.config
         self.device = torch.device(device)

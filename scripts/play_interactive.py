@@ -1027,8 +1027,7 @@ def _load_resolved_visual_viewer_model(env: Any):
 def _load_viewer_model(env: Any, *, use_env_visual_model: bool):
     import mujoco
 
-    backend = getattr(env, "_backend", None)
-    backend_visual_model_file = getattr(backend, "scene_visual_model_file", None)
+    backend_visual_model_file = env.get_scene_artifacts().visual_model_file
     if backend_visual_model_file:
         resolved = _load_resolved_visual_viewer_model(env)
         if resolved is not None:

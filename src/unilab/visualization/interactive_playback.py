@@ -411,8 +411,20 @@ class FADAPlaybackSession(RslRlPlaybackSession):
     """Stateful Planner-IDM playback session with episode-aligned histories."""
 
     def __init__(self, *, controller: Any | None, **kwargs: Any) -> None:
+        self.controller = None
+        super().__init__(policy=None, **kwargs)
+        if controller is not None:
+            self.bind_controller(controller)
+
+    def bind_controller(self, controller: Any) -> None:
+        """Bind the sole FADA controller through the public playback seam."""
+
+        if self.action_mode != "policy":
+            raise ValueError("FADA controller binding requires interactive.action_mode=policy")
+        if controller is None:
+            raise ValueError("FADA controller binding requires a controller")
         self.controller = controller
-        super().__init__(policy=self._fada_policy if controller is not None else None, **kwargs)
+        self.policy = self._fada_policy
 
     def reset(self) -> Any:
         # B1: 环境 reset 与 FADA history reset 共享一个 lifecycle boundary.

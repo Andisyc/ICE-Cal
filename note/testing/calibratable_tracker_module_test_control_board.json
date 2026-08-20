@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "design_identity": "ICE-Cal / ICA-DP-01..10 / FADA-CONTEXT-METHOD-v007 + FADA-CONTEXT-TRAIN-v006",
+  "checkout_identity": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061 + content-sha256:2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
+  "status": "MODULE-CORRECT",
+  "owners": 15,
+  "module_tests": 42,
+  "affected_tests": 211,
+  "manifest": "note/testing/module_test_manifest.json",
+  "evidence": "note/testing/calibratable_tracker_module_test_evidence.json",
+  "final_review": "note/fada/reviews/2026-08-20-calibratable-tracker-final-gate.json",
+  "formal_runtime": "NOT-RUN",
+  "policy_quality": "NOT-CLAIMED"
+}

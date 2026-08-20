@@ -9,7 +9,7 @@ const atlasRoot = path.resolve(__dirname, "../..");
 const repoRoot = path.resolve(atlasRoot, "../..");
 const vscodeCli = process.env.VSCODE_CLI_PATH
   || "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code";
-const port = Number(process.env.PORT || 8766);
+const port = Number(process.env.PORT || 8767);
 const clients = new Set();
 
 const mimeTypes = new Map([
@@ -45,15 +45,20 @@ function watchDataFiles() {
 
 function safeResolve(urlPath) {
   const cleanPath = decodeURIComponent(urlPath.split("?")[0]);
-  const relativePath = cleanPath === "/" ? "index.html" : cleanPath.slice(1);
-  const resolved = path.resolve(atlasRoot, relativePath);
-  if (!resolved.startsWith(atlasRoot)) return null;
-  return resolved;
+ const relativePath = cleanPath === "/" ? "index.html" : cleanPath.slice(1);
+ const resolved = path.resolve(atlasRoot, relativePath);
+ if (resolved !== atlasRoot && !resolved.startsWith(`${atlasRoot}${path.sep}`)) return null;
+ return resolved;
 }
 
 const server = http.createServer((req, res) => {
-  const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
-  if (requestUrl.pathname === "/open-source") {
+ const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
+ if (requestUrl.pathname === "/healthz") {
+  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify({ service: "ice-cal-femr-context-atlas" }));
+  return;
+ }
+ if (requestUrl.pathname === "/open-source") {
     const relativePath = requestUrl.searchParams.get("path") || "";
     const line = Number.parseInt(requestUrl.searchParams.get("line") || "1", 10);
     const absolutePath = path.resolve(repoRoot, relativePath);
@@ -84,19 +89,27 @@ const server = http.createServer((req, res) => {
       res.end(`VS Code CLI not found: ${vscodeCli}`);
       return;
     }
-    const opener = spawn(vscodeCli, ["--goto", gotoTarget], {
-      detached: true,
+    const opener = spawn(vscodeCli, ["--reuse-window", "--goto", gotoTarget], {
       stdio: "ignore",
     });
     opener.once("error", (error) => {
       console.error(`[Atlas Source Link] launch failed: ${error.message}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(`VS Code CLI launch failed: ${error.message}`);
+      }
     });
     opener.once("exit", (code) => {
       console.log(`[Atlas Source Link] VS Code CLI exit=${code}`);
+      if (res.headersSent) return;
+      if (code === 0) {
+        res.writeHead(204, { "Cache-Control": "no-store" });
+        res.end();
+      } else {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(`VS Code CLI exited with code ${code}`);
+      }
     });
-    opener.unref();
-    res.writeHead(204, { "Cache-Control": "no-store" });
-    res.end();
     return;
   }
   if (req.url === "/events") {
@@ -135,12 +148,8 @@ const server = http.createServer((req, res) => {
 watchDataFiles();
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`UniLab architecture atlas: http://127.0.0.1:${port}/`);
-console.log(`01 UniLab runtime: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json`);
-console.log(`02 Method-to-code: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_distillation_method_to_code.data.json`);
-console.log(`03 Concept figure: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json`);
-console.log(`07 FADA distillation: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/07_fada_planner_idm_distillation.data.json`);
-console.log(`09 Current Context calibration: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/09_trajectory_conditioned_execution_alignment.data.json`);
-console.log(`10 Current Context Encoder training: http://127.0.0.1:${port}/auxiliary/atlas_app/architecture_atlas.html?data=../../concept/10_in_context_execution_calibration_design_inspector.data.json`);
-  console.log(`Watching data folders: architecture/, runtime/, concept/`);
+  console.log(`ICE-Cal FEMR context atlas: http://127.0.0.1:${port}/`);
+  console.log(`08 In-Context Execution Calibration: http://127.0.0.1:${port}/08_in_context_execution_calibration.html`);
+  console.log(`09 Design Inspector: http://127.0.0.1:${port}/09_in_context_execution_calibration_design_inspector.html`);
+  console.log(`Watching data folder: concept/`);
 });

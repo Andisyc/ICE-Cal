@@ -73,7 +73,7 @@ def build_appo_runner_kwargs(
 
     nan_guard_cfg = getattr(cfg.training, "nan_guard", None)
     if nan_guard_cfg is not None and getattr(nan_guard_cfg, "enabled", False):
-        from unilab.utils.nan_guard import NanGuardCfg
+        from unilab.base.nan_guard import NanGuardCfg
 
         runner_kwargs["nan_guard_cfg"] = NanGuardCfg(
             enabled=True,

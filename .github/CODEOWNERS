@@ -14,5 +14,5 @@
 # Project process and docs
 /README.md @TATP-233
 /CONTRIBUTING.md @TATP-233
-/docs/ @TATP-233
+/note/ @TATP-233
 /.github/ @TATP-233

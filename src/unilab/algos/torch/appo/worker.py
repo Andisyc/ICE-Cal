@@ -142,7 +142,7 @@ def appo_collector_fn(
     )
 
     if nan_guard_cfg is not None and nan_guard_cfg.enabled:
-        from unilab.utils.nan_guard import NanGuard
+        from unilab.base.nan_guard import NanGuard
 
         env.set_nan_guard(
             NanGuard(

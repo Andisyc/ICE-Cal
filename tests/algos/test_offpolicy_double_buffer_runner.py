@@ -1018,7 +1018,7 @@ def test_double_buffer_runner_passes_nan_guard_cfg_to_collector(
 
     import unilab.algos.torch.offpolicy.double_buffer_runner as db_mod
     import unilab.algos.torch.offpolicy.runner as runner_mod
-    from unilab.utils.nan_guard import NanGuardCfg
+    from unilab.base.nan_guard import NanGuardCfg
 
     class _FakeActor:
         def state_dict(self):

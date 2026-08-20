@@ -1,0 +1,15 @@
+catalog_version: gain-delay-offset-v1
+axis_order: [gain, delay, offset]
+axes:
+  - name: gain
+    normalized_range: [-1.0, 1.0]
+    units: dimensionless
+    injection: action execution gain
+  - name: delay
+    normalized_range: [-1.0, 1.0]
+    units: control steps
+    injection: action execution delay
+  - name: offset
+    normalized_range: [-1.0, 1.0]
+    units: action units
+    injection: action execution offset

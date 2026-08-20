@@ -1,0 +1,9 @@
+# @package _global_
+calibration_playback:
+  source_checkpoint: logs/fada/planner_idm.pt
+  artifact: artifacts/fada_calibration/calibration_artifact.pt
+  axis_catalog_version: gain-delay-offset-v1
+  jump_threshold: [0.25, 0.25, 0.25]
+
+interactive:
+  action_mode: policy

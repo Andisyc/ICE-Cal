@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "scope": "v007/v006 calibratable Tracker module alignment",
+  "design_identity": "ICE-Cal / ICA-DP-01..10 / FADA-CONTEXT-METHOD-v007 + FADA-CONTEXT-TRAIN-v006",
+  "checkout_identity": "codex/in-context-execution-calibration@5949136e43d386a94642a20272e36bd58a53b061",
+  "content_identity": {
+    "algorithm": "sha256(path\\0file_sha256\\0 ...)",
+    "sha256": "2f31fc8703d560c92054bb89803283715188356cc175e64685797500d197dcd9",
+    "files": 18
+  },
+  "affected_suite": {
+    "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+    "exit_code": 0,
+    "test_count": 42,
+    "normalized_stdout_sha256": "a999fb85a52abc1f74bd6a09a59f2706d39c85dba484bef5c3ab616371cd6618",
+    "result": "42 passed"
+  },
+  "static_checks": {
+    "ruff": "passed",
+    "ruff_format": "passed",
+    "mypy": "passed"
+  },
+  "formal_handoff": {
+    "status": "NOT-RUN",
+    "reason": "Module evidence is offline unit/owner evidence; simulator, long training, live playback, and deployment authorization remain separate gates."
+  },
+  "policy_quality": "NOT-CLAIMED"
+}

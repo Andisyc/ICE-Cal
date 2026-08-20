@@ -191,8 +191,8 @@ class SharpaInhandRotationDRProvider(DomainRandomizationProvider):
                 f"Missing Sharpa grasp cache file(s): {missing}\n"
                 "Generate them with:\n"
                 "  bash scripts/sharpa_collect_grasps.sh 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5 1.6\n"
-                "See docs/sphinx/source/zh_CN/user_guide/D-tasks/04-sharpa-inhand.md"
-            )
+                "See the upstream UniLab Sharpa in-hand task documentation."
+)
 
         env._grasp_cache = tuple(grasp_caches)
         return cast(tuple[np.ndarray, ...], env._grasp_cache)

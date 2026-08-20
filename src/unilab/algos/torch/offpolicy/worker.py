@@ -351,7 +351,7 @@ def _run_collector(
         env_name, num_envs=num_envs, sim_backend=sim_backend, env_cfg_override=env_cfg_override
     )
     if nan_guard_cfg is not None and nan_guard_cfg.enabled:
-        from unilab.utils.nan_guard import NanGuard
+        from unilab.base.nan_guard import NanGuard
 
         env.set_nan_guard(
             NanGuard(

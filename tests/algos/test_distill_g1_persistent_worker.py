@@ -148,6 +148,53 @@ def _collector_performance_metadata(
     }
 
 
+def test_persistent_walk_to_stop_matches_legacy_exact_two_role_contract(
+    tmp_path: Path,
+) -> None:
+    worker = object.__new__(PersistentG1DistillationWorker)
+    checkpoint = tmp_path / "teacher.pt"
+    worker.role_cfgs = {
+        "walk": OmegaConf.create(
+            _role_cfg(
+                task_name="G1WalkFlat",
+                checkpoint=checkpoint,
+                command_filter="active",
+            )
+        ),
+        "stand": OmegaConf.create(
+            _role_cfg(
+                task_name="G1StandStill",
+                checkpoint=checkpoint,
+                command_filter="inactive",
+            )
+        ),
+        "aux": OmegaConf.create(
+            _role_cfg(
+                task_name="Auxiliary",
+                checkpoint=checkpoint,
+                command_filter="none",
+            )
+        ),
+    }
+    worker._identity_by_role = {"walk": object(), "stand": object(), "aux": object()}
+
+    class _ResourcesMustNotBeTouched:
+        def acquire(self, _identity):
+            pytest.fail("invalid walk_to_stop contract reached resource acquisition")
+
+    worker.resources = _ResourcesMustNotBeTouched()
+
+    with pytest.raises(ValueError, match="exactly two source roles"):
+        worker._collect_transition(
+            _request(tmp_path, "walk_to_stop", 1),
+            {
+                "name": "walk_to_stop",
+                "kind": "transition",
+                "source_roles": ["walk", "stand", "aux"],
+            },
+        )
+
+
 def test_persistent_runtime_builder_forwards_transition_grid(monkeypatch) -> None:
     import unilab.algos.torch.distill.g1_persistent_worker as worker_module
 

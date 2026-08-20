@@ -1,27 +1,26 @@
-# FADA Workflow
+# FADA research registry
 
-Default recall order:
+This directory records the ICE-Cal/FADA axis-bank calibratable-Tracker design, its Contracts,
+engineering transition, and the superseded Support–Query implementation lineage.
 
-1. `contracts/README.md`
-2. active method and training contracts
-3. `../architecture/concept/04_fada_method_discussion.data.json`
-4. `../architecture/concept/06_fada_design_detail_discussion.data.json`
-5. current plan/checklist only when continuing active work
+## Current semantic boundary
 
-The active Context authority is `FADA-CONTEXT-METHOD-v005` with
-`FADA-CONTEXT-TRAIN-v004`. It defines the fixed-left-knee-`0.7` multi-sliding-window Support-Query
-route accepted in Architecture 09 and Design Inspector 10. The former differentiable-dynamics route
-and the implemented single-anchor route remain history. The single-anchor checkpoint worsened all
-seven healthy-trajectory distance metrics with both stored and online Support.
+Active `FADA-CONTEXT-METHOD-v007` and `FADA-CONTEXT-TRAIN-v006` define a frozen Planner and Tracker,
+an axis direction bank, a 30-frame State/Action coefficient encoder, and serial S1/S2/S3 training.
+Deployment composes `z + Σ σ_i(c_i)Δz_i`, decodes six Actions, and executes only Action zero.
 
-The current visual authorities are
-`architecture/architecture/09_trajectory_conditioned_execution_alignment.data.json` for the overall
-method and `architecture/concept/10_in_context_execution_calibration_design_inspector.data.json` for
-Context training. The accepted design uses one independent fault Support to produce a fixed
-`delta_z`; a complete no-Context fault Label Query supplies multiple causal first-action windows;
-and a separate calibrated re-execution stage tests closed-loop trajectory quality.
+The v007/v006 route is implemented offline with fresh module admission and maintainability review.
+Formal official-route execution, simulator/training evidence, and policy quality have not run. The
+former v006/v005 receipts remain historical and are invalid evidence for this design.
 
-The Phase-1 privileged-teacher runners and checkpoints are historical negative evidence and no
-longer define the active Context route. Pair-window data, collection, masked first-action loss,
-schema-v2 persistence, schema-v3 checkpoints, and evaluation compatibility are implemented. The
-bounded no-optimizer MuJoCo preflight passed; formal multi-window training has not started.
+## Recall order
+
+1. `../README.md` and `../governance.json`
+2. `../architecture/08_in_context_execution_calibration.html`
+3. `../architecture/09_in_context_execution_calibration_design_inspector.html`
+4. `contracts/README.md` for active semantic authority
+5. `plans/2026-08-19-calibratable-tracker-three-stage.md`, `../testing/module_test_cards.md`, and
+   `task_canvas.md` for the engineering transition
+
+Historical failed routes and old receipts are evidence, not policy-quality proof and not authority
+to revive a superseded design.

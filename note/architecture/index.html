@@ -1,115 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UniLab Human Control Atlas</title>
+  <title>FEMR In-Context Execution Calibration</title>
   <style>
-    body {
-      margin: 0;
-      padding: 42px;
-      background: #fbfaf4;
-      color: #1f2933;
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: 34px;
-      letter-spacing: 0;
-    }
-
-    p {
-      color: #5d6976;
-      max-width: 780px;
-      line-height: 1.6;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 18px;
-      max-width: 1120px;
-      margin-top: 28px;
-    }
-
-    a {
-      display: block;
-      min-height: 138px;
-      padding: 22px;
-      color: inherit;
-      text-decoration: none;
-      background: #fffdf6;
-      border: 1px solid #d9d2c3;
-      border-radius: 8px;
-      box-shadow: 0 10px 24px rgba(31, 41, 51, 0.06);
-    }
-
-    a strong {
-      display: block;
-      margin-bottom: 12px;
-      font-size: 20px;
-    }
-
-    a span {
-      color: #5d6976;
-      line-height: 1.5;
-    }
+    body { max-width: 900px; margin: 60px auto; padding: 0 24px; color: #1f2933; background: #fbfaf4; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    h1 { font-size: 28px; }
+    .grid { display: grid; gap: 18px; margin-top: 32px; }
+    a { display: block; padding: 24px; border: 1px solid #d9d2c3; border-radius: 12px; color: inherit; background: #fffdf6; text-decoration: none; }
+    a:hover { border-color: #8b7355; transform: translateY(-1px); }
+    strong { display: block; margin-bottom: 8px; font-size: 19px; }
+    p { color: #5d6976; line-height: 1.6; }
   </style>
 </head>
 <body>
-  <h1>UniLab Human Control Atlas</h1>
-  <p>
-    三张活动地图保持原有顺序；FADA 地图位于下方讨论区，在方法与模块边界确认前不进入 active map。
-  </p>
+  <h1>FEMR In-Context Execution Calibration</h1>
+  <p>从 FEMR Architecture 迁移的两份独立本地页面。页面数据、共享渲染器、布局模块、Rough.js、KaTeX 与字体均保存在本目录。</p>
   <section class="grid">
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../runtime/01_unilab_runtime_atlas.data.json">
-      <strong>01 UniLab Runtime Atlas</strong>
-      <span>按正式运行顺序阅读 CLI、Hydra、registry、backend、task env、collector、learner、run identity 与 playback。</span>
+    <a href="./08_in_context_execution_calibration.html">
+      <strong>08 In-Context Execution Calibration</strong>
+      <span>Trajectory-conditioned execution calibration concept figure.</span>
     </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/02_g1_distillation_method_to_code.data.json">
-      <strong>02 Method-to-Code Atlas</strong>
-      <span>按运行顺序阅读真实 owner、职责、禁区、测试和源码行；蓝色源码项可直接跳转。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/03_g1_multiteacher_distillation_method.data.json">
-      <strong>03 Concept Figure</strong>
-      <span>站立、行走和未来高度教师如何通过 command intent、role data、MoE 与 DAgger 汇入一个部署策略。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/04_fada_method_discussion.data.json">
-      <strong>04 Oracle → IDM → Planner Distillation</strong>
-      <span>已训练 Oracle 接收 command 产生 trajectory；state/action 先蒸馏 IDM，再冻结 IDM 用同一 oracle action 蒸馏 Planner。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/05_fada_planner_tracker_modules.data.json">
-      <strong>05 Planner–IDM Construction</strong>
-      <span>只展示 Planner 与 IDM 的 token、Transformer、future/action heads，以及 source-training loss 和梯度边界。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/06_fada_design_detail_discussion.data.json">
-      <strong>06 Planner–IDM Design Discussion</strong>
-      <span>展示完整 command、Oracle bootstrap、realized causal windows、same-state Oracle relabel，以及 UniLab 的 IDM/Planner 两阶段更新。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/07_fada_planner_idm_distillation.data.json">
-      <strong>07 规划器–IDM 蒸馏架构</strong>
-      <span>按 03 的主链与反馈环，展示当前 v005 指令、Oracle 监督、训练窗口、规划器、逆动力学模型、机器人执行与分场景 DAgger。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../architecture/09_trajectory_conditioned_execution_alignment.data.json">
-      <strong>09 当前：Context-Conditioned Tracker Calibration</strong>
-      <span>总体思路：失败轨迹输入 Context，产生 Δz 并加到 Tracker Encoder 输出 z；Context Encoder 的训练方法见 10。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/10_in_context_execution_calibration_design_inspector.data.json">
-      <strong>10 当前训练：Context Encoder Support–Query Learning</strong>
-      <span>09 总体思路的训练方法：Support 识别故障并产生 Δz，独立 Query 的因果 Executed Action 监督 Context Encoder。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/11_fada_context_calibration_design.data.json">
-      <strong>11 历史备选：Tracking-Expert Action Supervision</strong>
-      <span>依赖故障 tracking expert 的直接动作监督方案，仅保留用于方法演化追溯。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/12_fada_context_search_distillation_proposal.data.json">
-      <strong>12 已否决：Search-and-Distill Context Training</strong>
-      <span>已拒绝：free delta_z 不作为可靠训练真值；保留用于记录讨论和相关工作。</span>
-    </a>
-    <a href="./auxiliary/atlas_app/architecture_atlas.html?data=../../concept/13_fada_context_differentiable_trajectory.data.json">
-      <strong>13 已否决：Differentiable-Trajectory Context</strong>
-      <span>正式实验 10/10 真实 MuJoCo 门控失败；保留方法结构和负结果证据。</span>
+    <a href="./09_in_context_execution_calibration_design_inspector.html">
+      <strong>09 In-Context Execution Calibration Design Inspector</strong>
+      <span>Candidate design inspector and shared calibration transaction.</span>
     </a>
   </section>
 </body>

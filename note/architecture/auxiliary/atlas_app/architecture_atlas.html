@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UniLab Architecture Atlas</title>
+  <title>MOSAIC Architecture Atlas</title>
   <link rel="stylesheet" href="./node_modules/katex/dist/katex.min.css" />
+  <script>
+    // Source links require the local Atlas server; direct file opens must join
+    // the same HTTP origin before rendering any repository-reading card.
+    if (window.location.protocol === "file:") {
+      const atlasUrl = new URL("http://127.0.0.1:8767/auxiliary/atlas_app/architecture_atlas.html");
+      atlasUrl.search = window.location.search;
+      atlasUrl.hash = window.location.hash;
+      window.location.replace(atlasUrl.href);
+    }
+  </script>
   <style>
     :root {
       --ink: #1f2933;
@@ -25,6 +35,74 @@
       -webkit-font-smoothing: antialiased;
       text-rendering: geometricPrecision;
       letter-spacing: 0;
+    }
+
+    .atlas-equation {
+      align-items: center;
+      box-sizing: border-box;
+      color: #243140;
+      display: flex;
+      height: 100%;
+      overflow: visible;
+      width: 100%;
+    }
+
+    .atlas-equation .katex-display {
+      margin: 0;
+      text-align: left;
+    }
+
+    .atlas-equation-fallback {
+      color: #9b3f32;
+      font-family: var(--font-code);
+      font-size: 15px;
+      white-space: nowrap;
+    }
+
+    .atlas-detail-table {
+      border-collapse: collapse;
+      color: #34414e;
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.35;
+      table-layout: fixed;
+      width: 100%;
+    }
+
+    .atlas-detail-table th,
+    .atlas-detail-table td {
+      border: 1px solid rgba(86, 99, 112, 0.24);
+      box-sizing: border-box;
+      padding: 9px 12px;
+      text-align: left;
+      vertical-align: middle;
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .atlas-detail-table th {
+      background: rgba(255, 255, 255, 0.76);
+      color: #26313d;
+      font-weight: 720;
+    }
+
+    .atlas-detail-table tbody tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.42);
+    }
+
+    .atlas-detail-table th:first-child,
+    .atlas-detail-table td:first-child {
+      width: 21%;
+    }
+
+    .atlas-detail-table th:nth-child(2),
+    .atlas-detail-table td:nth-child(2) {
+      width: 59%;
+    }
+
+    .atlas-detail-table th:last-child,
+    .atlas-detail-table td:last-child {
+      width: 20%;
     }
 
     header {
@@ -149,20 +227,6 @@
     }
 
     @media (max-width: 1040px) {
-      header {
-        align-items: stretch;
-        flex-direction: column;
-      }
-
-      h1 {
-        overflow-wrap: anywhere;
-      }
-
-      .toolbar {
-        flex-wrap: wrap;
-        white-space: normal;
-      }
-
       main {
         grid-template-columns: 1fr;
         height: auto;
@@ -178,7 +242,7 @@
 </head>
 <body>
   <header>
-  <h1 id="page-title">UniLab Architecture Atlas</h1>
+    <h1 id="page-title">MOSAIC Architecture Atlas</h1>
     <div class="toolbar">
       <span class="status" id="status">loading</span>
       <button id="toggle-editor">Show Editor</button>
@@ -197,15 +261,19 @@
       <textarea id="source" spellcheck="false"></textarea>
     </aside>
     <section class="stage" id="stage">
-    <svg id="diagram" viewBox="0 0 1520 980" role="img" aria-label="UniLab architecture atlas"></svg>
+      <svg id="diagram" viewBox="0 0 1520 980" role="img" aria-label="MOSAIC architecture atlas"></svg>
     </section>
   </main>
+
   <script type="module">
     import rough from "./node_modules/roughjs/bundled/rough.esm.js";
     import katex from "./node_modules/katex/dist/katex.mjs";
+    import { renderModuleInspector } from "./layouts/module_inspector.js";
+    import { renderCodeQualityEvidenceAtlas } from "./layouts/code_quality_evidence.js";
 
     const params = new URLSearchParams(window.location.search);
-    const dataUrl = params.get("data") || "../../concept/03_g1_multiteacher_distillation_method.data.json";
+    const dataUrl = params.get("data") || "../../concept/03_frontres_concept_tabs.data.json";
+    const viewMode = params.get("view") || "";
     const source = document.getElementById("source");
     const status = document.getElementById("status");
     const svg = document.getElementById("diagram");
@@ -305,6 +373,68 @@
       return el;
     }
 
+    function addLatex(latex, x, y, width, options = {}) {
+      const height = options.height || 42;
+      const foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+      foreignObject.setAttribute("x", x);
+      foreignObject.setAttribute("y", y);
+      foreignObject.setAttribute("width", width);
+      foreignObject.setAttribute("height", height);
+
+      const container = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      container.setAttribute("class", "atlas-equation");
+      container.style.fontSize = `${options.size || 18}px`;
+      try {
+        katex.render(latex, container, {
+          displayMode: true,
+          strict: false,
+          throwOnError: true,
+        });
+      } catch (error) {
+        console.error(`[Atlas LaTeX] ${error.message}`, { latex });
+        container.setAttribute("class", "atlas-equation atlas-equation-fallback");
+        container.textContent = latex;
+      }
+      foreignObject.appendChild(container);
+      svg.appendChild(foreignObject);
+      return foreignObject;
+    }
+
+    function addDetailTable(tableData, x, y, width, height) {
+      const foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+      foreignObject.setAttribute("x", x);
+      foreignObject.setAttribute("y", y);
+      foreignObject.setAttribute("width", width);
+      foreignObject.setAttribute("height", height);
+
+      const table = document.createElementNS("http://www.w3.org/1999/xhtml", "table");
+      table.setAttribute("class", "atlas-detail-table");
+      const head = document.createElementNS("http://www.w3.org/1999/xhtml", "thead");
+      const headRow = document.createElementNS("http://www.w3.org/1999/xhtml", "tr");
+      (tableData.columns || []).forEach((label) => {
+        const cell = document.createElementNS("http://www.w3.org/1999/xhtml", "th");
+        cell.textContent = label;
+        headRow.appendChild(cell);
+      });
+      head.appendChild(headRow);
+      table.appendChild(head);
+
+      const body = document.createElementNS("http://www.w3.org/1999/xhtml", "tbody");
+      (tableData.rows || []).forEach((row) => {
+        const rowElement = document.createElementNS("http://www.w3.org/1999/xhtml", "tr");
+        row.forEach((value) => {
+          const cell = document.createElementNS("http://www.w3.org/1999/xhtml", "td");
+          cell.textContent = value;
+          rowElement.appendChild(cell);
+        });
+        body.appendChild(rowElement);
+      });
+      table.appendChild(body);
+      foreignObject.appendChild(table);
+      svg.appendChild(foreignObject);
+      return foreignObject;
+    }
+
     function textUnits(text) {
       return Array.from(String(text || "")).reduce((sum, ch) => (
         sum + (/[\u3400-\u9fff\uff00-\uffef]/.test(ch) ? 1.85 : 1)
@@ -372,6 +502,7 @@
           code: options.code,
           display: options.display,
           family: options.family,
+          anchor: options.anchor,
         });
       });
       return rendered.length;
@@ -479,7 +610,7 @@
       const width = 1480;
       const height = 1080;
       setCanvas(width, height);
-      const rc = drawHeader(data, data.subtitle || "按列阅读：真实问题 -> 概念变量 -> 工程承载。颜色和 ID 与其他图保持一致。", width);
+      const rc = drawHeader(data, "按列阅读：真实问题 -> 概念变量 -> 工程承载。颜色和 ID 与其他图保持一致。", width);
       const cols = [
         { x: 70, y: 150, w: 380 },
         { x: 550, y: 150, w: 380 },
@@ -574,247 +705,6 @@
       });
     }
 
-    function renderInspector(data) {
-      const cards = Array.isArray(data.cards) ? data.cards : [];
-      const steps = Array.isArray(data.transaction?.steps) ? data.transaction.steps : [];
-      const width = 1680;
-      const left = 44;
-      const contentWidth = width - left * 2;
-      const rc = rough.svg(svg);
-      if (!cards.length || !steps.length) {
-        setCanvas(width, 1040);
-        drawHeader(data, data.subtitle, width);
-        addText("Design Inspector 数据为空", left, 188, { size: 20, weight: 720, fill: "#9b3f32" });
-        return;
-      }
-
-      if (!activeInspectorCardId || !cards.some((card) => card.designId === activeInspectorCardId)) {
-        activeInspectorCardId = cards[0].designId;
-      }
-      const activeCard = cards.find((card) => card.designId === activeInspectorCardId) || cards[0];
-      const highlightSteps = new Set(activeCard.highlightSteps || []);
-      const activeColor = activeCard.color || "#64748b";
-
-      const selectorTop = 130;
-      const selectorColumns = 5;
-      const selectorRows = Math.ceil(cards.length / selectorColumns);
-      const selectorGap = 14;
-      const selectorWidth = (contentWidth - selectorGap * (selectorColumns - 1)) / selectorColumns;
-      const selectorHeight = 68;
-      const transactionTop = selectorTop + selectorRows * (selectorHeight + 12) + 24;
-      const detailTop = transactionTop + 360;
-      const detailRows = Array.isArray(activeCard.details) ? activeCard.details : [];
-      const detailTextWidth = Math.min(contentWidth - 88, 1160);
-      const detailHeaderHeight = activeCard.responsibility ? 104 : 64;
-      const detailFormulaLines = (detail) => {
-        const row = typeof detail === "string" ? {} : detail;
-        if (Array.isArray(row?.latex)) return row.latex.filter(Boolean).map(String);
-        return row?.latex ? [String(row.latex)] : [];
-      };
-      const detailRowHeightFor = (detail) => {
-        const row = typeof detail === "string" ? { text: detail } : detail;
-        const headingHeight = row?.heading ? 27 : 0;
-        const textLines = measuredLineCount(row?.text || "", detailTextWidth, { charWidth: 7.4 });
-        const formulaLines = detailFormulaLines(detail);
-        const formulaHeight = formulaLines.length ? 14 + formulaLines.length * 27 : 0;
-        return 34 + headingHeight + Math.max(1, textLines) * 20 + formulaHeight;
-      };
-      const detailHeight = detailHeaderHeight + detailRows.reduce(
-        (sum, detail) => sum + detailRowHeightFor(detail),
-        0,
-      );
-      const height = Math.max(1040, detailTop + detailHeight + 54);
-
-      setCanvas(width, height);
-      drawHeader(data, data.subtitle, width);
-
-      cards.forEach((card, index) => {
-        const column = index % selectorColumns;
-        const row = Math.floor(index / selectorColumns);
-        const x = left + column * (selectorWidth + selectorGap);
-        const y = selectorTop + row * (selectorHeight + 12);
-        const selected = card.designId === activeCard.designId;
-        const color = card.color || "#64748b";
-        drawCard(rc, x, y, selectorWidth, selectorHeight, color, {
-          stroke: selected ? color : colorWithAlpha(color, 0.5),
-          strokeWidth: selected ? 2.3 : 0.9,
-          roughness: selected ? 1.0 : 0.45,
-          bowing: 0.3,
-          fill: selected ? colorWithAlpha(color, 0.18) : "rgba(255,255,255,0.68)",
-        });
-        addText(`${card.designId} / ${card.blockId}`, x + 13, y + 20, {
-          size: 10.8, weight: 700, code: true, fill: color,
-        });
-        wrapText(card.title, x + 13, y + 44, selectorWidth - 26, {
-          size: 16.5, lineHeight: 19, charWidth: 8.0, maxLines: 1, weight: 760, fill: "#26313d",
-        });
-
-        const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        hit.setAttribute("x", x);
-        hit.setAttribute("y", y);
-        hit.setAttribute("width", selectorWidth);
-        hit.setAttribute("height", selectorHeight);
-        hit.setAttribute("fill", "transparent");
-        hit.setAttribute("pointer-events", "all");
-        hit.setAttribute("role", "button");
-        hit.setAttribute("tabindex", "0");
-        hit.setAttribute("aria-label", `查看 ${card.title} 的设计细节`);
-        hit.style.cursor = "pointer";
-        const selectCard = (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          activeInspectorCardId = card.designId;
-          render(data);
-        };
-        hit.addEventListener("mousedown", (event) => event.stopPropagation());
-        hit.addEventListener("click", selectCard);
-        hit.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") selectCard(event);
-        });
-        svg.appendChild(hit);
-      });
-
-      const phaseTitles = data.transaction?.phaseTitles || {};
-      const phaseDefinitions = [
-        { id: "pre", title: phaseTitles.pre || "进入训练", y: transactionTop },
-        { id: "collection", title: phaseTitles.collection || "收集 Oracle 证据", y: transactionTop + 144 },
-        { id: "update", title: phaseTitles.update || "蒸馏更新", y: transactionTop + 258 },
-      ];
-      const phaseLabelWidth = 126;
-      const stepGap = 13;
-      const stepHeight = 76;
-      const drawPhase = (phase) => {
-        const phaseSteps = steps.filter((step) => step.phase === phase.id);
-        const startX = left + phaseLabelWidth;
-        const availableWidth = contentWidth - phaseLabelWidth;
-        const stepWidth = Math.min(248, (availableWidth - stepGap * Math.max(0, phaseSteps.length - 1)) / Math.max(1, phaseSteps.length));
-        addText(phase.title, left, phase.y + 36, {
-          size: 15, weight: 760, display: true, fill: "#485563",
-        });
-        phaseSteps.forEach((step, index) => {
-          const globalIndex = steps.findIndex((item) => item.id === step.id) + 1;
-          const x = startX + index * (stepWidth + stepGap);
-          const selected = highlightSteps.has(step.id);
-          const stroke = selected ? activeColor : "#aeb7c1";
-          drawCard(rc, x, phase.y, stepWidth, stepHeight, stroke, {
-            stroke,
-            strokeWidth: selected ? 2.2 : 0.85,
-            roughness: selected ? 0.95 : 0.35,
-            bowing: 0.28,
-            fill: selected ? colorWithAlpha(activeColor, 0.18) : "rgba(247,248,249,0.82)",
-          });
-          addText(String(globalIndex).padStart(2, "0"), x + 12, phase.y + 18, {
-            size: 10.5, weight: 760, code: true, fill: selected ? activeColor : "#8d98a4",
-          });
-          wrapText(step.label, x + 12, phase.y + 41, stepWidth - 24, {
-            size: 14, lineHeight: 16, charWidth: 7.0, maxLines: 2,
-            weight: selected ? 760 : 600, fill: selected ? "#26313d" : "#626e7a",
-          });
-          const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-          hit.setAttribute("x", x);
-          hit.setAttribute("y", phase.y);
-          hit.setAttribute("width", stepWidth);
-          hit.setAttribute("height", stepHeight);
-          hit.setAttribute("fill", "transparent");
-          hit.setAttribute("pointer-events", "all");
-          const tooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
-          tooltip.textContent = step.detail || step.label;
-          hit.appendChild(tooltip);
-          svg.appendChild(hit);
-          if (index < phaseSteps.length - 1) {
-            addText("→", x + stepWidth + 1, phase.y + 44, { size: 15, weight: 700, fill: "#89939e" });
-          }
-        });
-      };
-      phaseDefinitions.forEach(drawPhase);
-      addText("↓", width - 72, phaseDefinitions[0].y + 99, { size: 18, weight: 760, fill: "#89939e" });
-      addText("↓", width - 72, phaseDefinitions[1].y + 99, { size: 18, weight: 760, fill: "#89939e" });
-
-      svg.appendChild(rc.rectangle(left, detailTop, contentWidth, detailHeight, {
-        stroke: activeColor,
-        strokeWidth: 1.2,
-        roughness: 0.5,
-        bowing: 0.25,
-        fill: colorWithAlpha(activeColor, 0.075),
-        fillStyle: "solid",
-      }));
-      addText(activeCard.title, left + 22, detailTop + 34, {
-        size: 20, weight: 780, display: true, fill: activeColor,
-      });
-      if (activeCard.responsibility) {
-        wrapText(activeCard.responsibility, left + 22, detailTop + 64, contentWidth - 44, {
-          size: 14.5, lineHeight: 19, charWidth: 7.1, maxLines: 2, weight: 570, fill: "#4f5b67",
-        });
-      }
-      let detailOffset = 0;
-      detailRows.forEach((detail, index) => {
-        const row = typeof detail === "string" ? { text: detail } : detail;
-        const rowTop = detailTop + detailHeaderHeight + detailOffset;
-        const rowHeight = detailRowHeightFor(detail);
-        const rowY = rowTop + 20;
-        addText(String(index + 1), left + 22, rowY, {
-          size: 11.5, weight: 760, code: true, fill: activeColor,
-        });
-        let bodyY = rowY;
-        if (row.heading) {
-          addText(row.heading, left + 64, rowY, {
-            size: 17, weight: 760, display: true, fill: "#26313d",
-          });
-          bodyY += 27;
-        }
-        const bodyLines = wrapText(row.text || "", left + 64, bodyY, detailTextWidth, {
-          size: 15.5, lineHeight: 20, charWidth: 7.4, weight: 570, fill: "#34414e",
-        });
-        const formulaLines = detailFormulaLines(detail);
-        if (formulaLines.length) {
-          const formulaTop = bodyY + Math.max(1, bodyLines) * 20 + 9;
-          formulaLines.forEach((formula, formulaIndex) => {
-            const formulaY = formulaTop + formulaIndex * 27;
-            const formulaBackground = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            formulaBackground.setAttribute("x", left + 60);
-            formulaBackground.setAttribute("y", formulaY - 17);
-            formulaBackground.setAttribute("width", Math.min(detailTextWidth + 8, Math.max(280, formula.length * 8.2 + 24)));
-            formulaBackground.setAttribute("height", 24);
-            formulaBackground.setAttribute("rx", 4);
-            formulaBackground.setAttribute("fill", colorWithAlpha(activeColor, 0.09));
-            formulaBackground.setAttribute("stroke", colorWithAlpha(activeColor, 0.2));
-            formulaBackground.setAttribute("stroke-width", 0.7);
-            svg.appendChild(formulaBackground);
-            const formulaObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-            formulaObject.setAttribute("x", left + 70);
-            formulaObject.setAttribute("y", formulaY - 18);
-            formulaObject.setAttribute("width", detailTextWidth - 12);
-            formulaObject.setAttribute("height", 28);
-            const formulaContainer = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-            formulaContainer.style.cssText = `height:28px;display:flex;align-items:center;color:${activeColor};font-size:15px;overflow:visible;`;
-            katex.render(formula, formulaContainer, {
-              throwOnError: false,
-              displayMode: false,
-              output: "html",
-              strict: "ignore",
-            });
-            formulaObject.appendChild(formulaContainer);
-            svg.appendChild(formulaObject);
-          });
-        }
-        if (index < detailRows.length - 1) {
-          const separator = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          separator.setAttribute("x1", left + 20);
-          separator.setAttribute("x2", left + contentWidth - 20);
-          separator.setAttribute("y1", rowTop + rowHeight);
-          separator.setAttribute("y2", rowTop + rowHeight);
-          separator.setAttribute("stroke", colorWithAlpha(activeColor, 0.22));
-          separator.setAttribute("stroke-width", "1");
-          svg.appendChild(separator);
-        }
-        detailOffset += rowHeight;
-      });
-
-      addText(data.footerText || "选择上方设计点；中间主链保持不变；下方只展示该设计点的原子决定。", left, height - 24, {
-        size: 13, weight: 620, fill: "#687481",
-      });
-    }
-
     function renderRepoTree(data) {
       const files = data.files || [];
       const fileW = 440;
@@ -858,7 +748,7 @@
         strokeWidth: 2.2,
         roughness: 1.1,
       }));
-      addText(data.root || "UniLab", rootX - 8, 134, { size: 15, weight: 800, fill: "#5d6976" });
+      addText(data.root || "MOSAIC", rootX - 8, 134, { size: 15, weight: 800, fill: "#5d6976" });
 
       files.forEach((file, idx) => {
         const h = fileHeights[idx];
@@ -1098,19 +988,23 @@
       drawLegend(data, 1520, 150);
     }
 
-    function methodAnchor(node, anchor) {
+    function methodAnchor(node, anchor, offset = 0) {
       const cx = node.x + node.w / 2;
       const cy = node.y + node.h / 2;
-      if (anchor === "left") return [node.x, cy];
-      if (anchor === "right") return [node.x + node.w, cy];
-      if (anchor === "top") return [cx, node.y];
-      if (anchor === "bottom") return [cx, node.y + node.h];
+      const delta = Number.isFinite(Number(offset)) ? Number(offset) : 0;
+      if (anchor === "left") return [node.x, cy + delta];
+      if (anchor === "right") return [node.x + node.w, cy + delta];
+      if (anchor === "top") return [cx + delta, node.y];
+      if (anchor === "bottom") return [cx + delta, node.y + node.h];
       return [cx, cy];
     }
 
     function methodEdgeAnchors(from, to, edge) {
       if (edge.fromAnchor || edge.toAnchor) {
-        return [methodAnchor(from, edge.fromAnchor || "right"), methodAnchor(to, edge.toAnchor || "left")];
+        return [
+          methodAnchor(from, edge.fromAnchor || "right", edge.fromOffset),
+          methodAnchor(to, edge.toAnchor || "left", edge.toOffset),
+        ];
       }
       const dx = (to.x + to.w / 2) - (from.x + from.w / 2);
       const dy = (to.y + to.h / 2) - (from.y + from.h / 2);
@@ -1155,7 +1049,7 @@
     function drawMethodNode(rc, data, node) {
       const color = conceptColor(data, node.concept, node.color || "#6688aa");
       const compact = node.h < 140;
-      const shape = rc.rectangle(node.x, node.y, node.w, node.h, {
+      const shapeOptions = {
         stroke: color,
         strokeWidth: node.kind === "external" ? 1.4 : 1.8,
         strokeLineDash: node.kind === "external" ? [7, 5] : undefined,
@@ -1163,29 +1057,96 @@
         bowing: 0.7,
         fill: colorWithAlpha(color, node.kind === "external" ? 0.025 : compact ? 0.08 : 0.12),
         fillStyle: "solid",
-      });
+      };
+      const inset = Math.min(
+        Number.isFinite(Number(node.shapeInset)) ? Number(node.shapeInset) : 42,
+        node.w * 0.3,
+        node.h * 0.35,
+      );
+      let shape;
+      if (node.shape === "encoder") {
+        shape = rc.polygon([
+          [node.x, node.y],
+          [node.x + node.w, node.y + inset],
+          [node.x + node.w, node.y + node.h - inset],
+          [node.x, node.y + node.h],
+        ], shapeOptions);
+      } else if (node.shape === "decoder") {
+        shape = rc.polygon([
+          [node.x, node.y + inset],
+          [node.x + node.w, node.y],
+          [node.x + node.w, node.y + node.h],
+          [node.x, node.y + node.h - inset],
+        ], shapeOptions);
+      } else if (node.shape === "context_encoder") {
+        shape = rc.polygon([
+          [node.x, node.y],
+          [node.x + node.w, node.y],
+          [node.x + node.w - inset, node.y + node.h],
+          [node.x + inset, node.y + node.h],
+        ], shapeOptions);
+      } else {
+        shape = rc.rectangle(node.x, node.y, node.w, node.h, shapeOptions);
+      }
       const tooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
       const codeRefs = (node.codeRefs || []).join("\n");
       tooltip.textContent = `${node.id} ${node.title}\n${node.summary || ""}${codeRefs ? `\n\nCode:\n${codeRefs}` : ""}`;
       shape.appendChild(tooltip);
       svg.appendChild(shape);
 
-      const titleLines = wrapText(node.title, node.x + 16, node.y + 31, node.w - 32, {
-        size: compact ? 16 : 17,
-        lineHeight: 19,
-        charWidth: 8,
+      if (node.frozen) {
+        const badgeX = node.x + node.w - (node.shape === "encoder" ? 10 : 14);
+        const badgeY = node.y + (node.shape === "encoder" ? inset + 16 : 18);
+        addText("❄", badgeX, badgeY, {
+          fill: "#2563eb",
+          size: 15,
+          weight: 700,
+          anchor: "middle",
+        });
+      }
+
+      const centeredTrackerText = node.shape === "encoder" || node.shape === "decoder";
+      if (centeredTrackerText) {
+        const centerX = node.x + node.w / 2;
+        const centerY = node.y + node.h / 2;
+        wrapText(node.title, centerX, centerY - 12, node.w - 90, {
+          size: 14,
+          lineHeight: 16,
+          charWidth: 7,
+          maxLines: 2,
+          weight: 900,
+          fill: "#27313d",
+          anchor: "middle",
+        });
+        wrapText(node.summary || "", centerX, centerY + 20, node.w - 74, {
+          size: 11,
+          lineHeight: 15,
+          charWidth: 5.8,
+          maxLines: 3,
+          weight: 550,
+          fill: "#4d5966",
+          anchor: "middle",
+        });
+        return;
+      }
+
+      const textInset = node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
+      const titleLines = wrapText(node.title, node.x + textInset, node.y + 31, node.w - textInset * 2, {
+        size: compact ? 13 : 14,
+        lineHeight: 16,
+        charWidth: 7,
         maxLines: 2,
         weight: 900,
         fill: "#27313d",
       });
-      const summaryLineHeight = compact ? 16 : 17;
-      const summaryY = node.y + 62 + Math.max(0, titleLines - 1) * 19;
+      const summaryLineHeight = compact ? 13 : 15;
+      const summaryY = node.y + 60 + Math.max(0, titleLines - 1) * 16;
       const summaryBottom = node.y + node.h - 14;
       const summaryMaxLines = Math.max(1, Math.floor((summaryBottom - summaryY) / summaryLineHeight));
-      wrapText(node.summary || "", node.x + 16, summaryY, node.w - 32, {
-        size: compact ? 12 : 13,
+      wrapText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
+        size: node.summarySize || (compact ? 10 : 11),
         lineHeight: summaryLineHeight,
-        charWidth: compact ? 6.2 : 6.6,
+        charWidth: compact ? 5.4 : 5.8,
         maxLines: summaryMaxLines,
         weight: 550,
         fill: "#4d5966",
@@ -1198,6 +1159,34 @@
       setCanvas(width, height);
       const rc = rough.svg(svg);
       const nodes = new Map((data.nodes || []).map((node) => [node.id, node]));
+
+      const layerDividers = data.layerDividers || (data.layerDivider ? [data.layerDivider] : []);
+      layerDividers.forEach((divider) => {
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", divider.x1 ?? 40);
+        line.setAttribute("x2", divider.x2 ?? width - 40);
+        line.setAttribute("y1", divider.y);
+        line.setAttribute("y2", divider.y);
+        line.setAttribute("stroke", divider.stroke || "#8b8174");
+        line.setAttribute("stroke-width", divider.strokeWidth || 1.5);
+        line.setAttribute("stroke-dasharray", divider.dashArray || "12 10");
+        line.setAttribute("opacity", divider.opacity || 0.72);
+        svg.appendChild(line);
+        if (divider.topLabel) {
+          addText(divider.topLabel, (divider.x1 ?? 40) + 8, divider.y - 14, {
+            size: 13,
+            weight: 760,
+            fill: "#5f584f",
+          });
+        }
+        if (divider.bottomLabel) {
+          addText(divider.bottomLabel, (divider.x1 ?? 40) + 8, divider.y + 27, {
+            size: 13,
+            weight: 760,
+            fill: "#5f584f",
+          });
+        }
+      });
 
       const edgeLabels = [];
       (data.edges || []).forEach((edge) => {
@@ -1215,14 +1204,18 @@
           strokeLineDash: edge.kind === "evidence" ? [7, 5] : undefined,
         }));
         drawMethodArrowHead(points, color);
-        if (edge.label) {
+        if (edge.label || edge.labelLines?.length) {
           const midpoint = methodLongestSegmentMidpoint(points);
           edgeLabels.push({
             ...midpoint,
-            x: (edge.labelX ?? midpoint.x) + (edge.labelDx ?? 0),
-            y: (edge.labelY ?? midpoint.y) + (edge.labelDy ?? -8),
+            x: edge.labelX ?? midpoint.x,
+            y: edge.labelY ?? midpoint.y,
             text: edge.label,
+            lines: edge.labelLines?.length ? edge.labelLines : [edge.label],
+            anchor: edge.labelAnchor || "middle",
+            lineHeight: edge.labelLineHeight || (edge.labelSize || 11) + 4,
             color,
+            size: edge.labelSize || 11,
           });
         }
       });
@@ -1230,16 +1223,19 @@
       (data.nodes || []).forEach((node) => drawMethodNode(rc, data, node));
 
       edgeLabels.forEach((label) => {
-        const text = addText(label.text, label.x, label.y, {
-          size: 11,
-          weight: 750,
-          fill: label.color,
-          anchor: "middle",
+        const firstY = label.y - 8 - ((label.lines.length - 1) * label.lineHeight) / 2;
+        label.lines.forEach((line, index) => {
+          const text = addText(line, label.x, firstY + index * label.lineHeight, {
+            size: label.size,
+            weight: 750,
+            fill: label.color,
+            anchor: label.anchor,
+          });
+          text.setAttribute("paint-order", "stroke");
+          text.setAttribute("stroke", "#fffdf6");
+          text.setAttribute("stroke-width", "5");
+          text.setAttribute("stroke-linejoin", "round");
         });
-        text.setAttribute("paint-order", "stroke");
-        text.setAttribute("stroke", "#fffdf6");
-        text.setAttribute("stroke-width", "5");
-        text.setAttribute("stroke-linejoin", "round");
       });
 
     }
@@ -1292,50 +1288,6 @@
 
     function readingList(items) {
       return (items || []).filter(Boolean).map((item, index) => `${index + 1}. ${item}`).join("\n");
-    }
-
-    function sourceHref(file) {
-      if (!file || !file.path || !Number.isInteger(file.sourceLine) || file.sourceLine < 1) return null;
-      return `/open-source?path=${encodeURIComponent(file.path)}&line=${file.sourceLine}`;
-    }
-
-    function addSourceTextLink(label, x, y, width, file) {
-      const href = sourceHref(file);
-      if (!href) {
-        return addText(label, x, y, { size: 14, weight: 500, code: true, fill: "#3f4a55" });
-      }
-      const anchor = document.createElementNS("http://www.w3.org/2000/svg", "a");
-      anchor.setAttribute("href", href);
-      anchor.dataset.sourceLink = "true";
-      const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      hitArea.setAttribute("x", x - 4);
-      hitArea.setAttribute("y", y - 18);
-      hitArea.setAttribute("width", width);
-      hitArea.setAttribute("height", 24);
-      hitArea.setAttribute("fill", "transparent");
-      hitArea.setAttribute("pointer-events", "all");
-      hitArea.style.cursor = "pointer";
-      const textEl = addText(label, x, y, { size: 14, weight: 500, code: true, fill: "#0b63b6" });
-      svg.removeChild(textEl);
-      const titleEl = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      titleEl.textContent = `打开源码 ${file.path}:${file.sourceLine}`;
-      anchor.appendChild(titleEl);
-      anchor.appendChild(hitArea);
-      anchor.appendChild(textEl);
-      anchor.addEventListener("mousedown", (event) => event.stopPropagation());
-      anchor.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setStatus(`opening ${file.path}:${file.sourceLine}`);
-        fetch(href, { method: "POST" })
-          .then((response) => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            setStatus(`opened ${file.path}:${file.sourceLine}`);
-          })
-          .catch((error) => setStatus(`source link failed: ${error.message}`));
-      });
-      svg.appendChild(anchor);
-      return textEl;
     }
 
     function drawCenteredCluster(rc, x, y, w, items, color) {
@@ -1402,6 +1354,264 @@
       return box;
     }
 
+    function renderInspector(data) {
+      const moduleCards = Array.isArray(data.cards) ? data.cards : [];
+      const stageCards = Array.isArray(data.stageCards) ? data.stageCards : [];
+      const cards = [...stageCards, ...moduleCards];
+      const defaultSteps = Array.isArray(data.transaction?.steps) ? data.transaction.steps : [];
+      const width = 1680;
+      const left = 44;
+      const contentWidth = width - left * 2;
+      const rc = rough.svg(svg);
+      if (!cards.length || !defaultSteps.length) {
+        setCanvas(width, 1040);
+        drawHeader(data, data.subtitle, width);
+        addText(`${data.spineName || "Inspector"} 数据为空`, left, 188, { size: 20, weight: 720, fill: "#9b3f32" });
+        return;
+      }
+      if (!activeInspectorCardId || !cards.some((card) => card.designId === activeInspectorCardId)) {
+        activeInspectorCardId = cards[0].designId;
+      }
+      const activeCard = cards.find((card) => card.designId === activeInspectorCardId) || cards[0];
+      const inspectorTransaction = activeCard.transaction || data.transaction || {};
+      const steps = Array.isArray(inspectorTransaction.steps) ? inspectorTransaction.steps : defaultSteps;
+      const highlightSteps = new Set(activeCard.highlightSteps || []);
+      const activeColor = activeCard.color || "#64748b";
+
+      const selectorTop = 130;
+      const selectorColumns = 5;
+      const selectorRows = Math.ceil(cards.length / selectorColumns);
+      const selectorGap = 14;
+      const selectorWidth = (contentWidth - selectorGap * (selectorColumns - 1)) / selectorColumns;
+      const selectorHeight = 68;
+      const transactionTop = selectorTop + selectorRows * (selectorHeight + 12) + 24;
+      const detailRows = Array.isArray(activeCard.details) ? activeCard.details : [];
+      const showsExecution = data.layout === "module_test_inspector";
+      const executionLabels = { passed: "已通过", partial: "部分覆盖", blocked: "阻塞", ready: "当前阶段" };
+      const executionColors = { passed: "#26734d", partial: "#9a6718", blocked: "#a33f32" };
+      const executionLabel = executionLabels[activeCard.executionStatus] || "尚未执行";
+      const executionColor = executionColors[activeCard.executionStatus] || "#66717c";
+      const executionPrefix = activeCard.cardKind === "stage-reading" ? "阶段状态" : "测试结果";
+      const detailHeaderHeight = showsExecution ? 116 : 64;
+      const detailTextWidth = Math.min(contentWidth - 88, 1120);
+      const detailTextOptions = { charWidth: 7.4 };
+    const detailFormulaHeight = 76;
+      const detailFormulaGap = 4;
+      const detailTableFor = (row) => (
+        row?.table && Array.isArray(row.table.columns) && Array.isArray(row.table.rows)
+          ? row.table
+          : null
+      );
+      const detailTableHeightFor = (table) => table ? 48 + table.rows.length * 58 : 0;
+      const detailFormulasFor = (row) => {
+        if (Array.isArray(row?.latex)) return row.latex.filter((formula) => typeof formula === "string" && formula.trim());
+        if (typeof row?.latex === "string" && row.latex.trim()) return [row.latex];
+        return [];
+      };
+      const detailRowHeightFor = (detail) => {
+        const row = typeof detail === "string" ? { text: detail } : detail;
+        const textLines = measuredLineCount(row?.text || "", detailTextWidth, detailTextOptions);
+        const table = detailTableFor(row);
+        const formulas = detailFormulasFor(row);
+        const headingHeight = row?.heading ? 25 : 0;
+        const tableHeight = table ? 12 + detailTableHeightFor(table) : 0;
+        const formulaHeight = formulas.length
+          ? 10 + formulas.length * detailFormulaHeight + (formulas.length - 1) * detailFormulaGap
+          : 0;
+        return 32 + headingHeight + textLines * 20 + tableHeight + formulaHeight;
+      };
+      const detailTop = transactionTop + 360;
+      const detailHeight = detailHeaderHeight + detailRows.reduce(
+        (sum, detail) => sum + detailRowHeightFor(detail),
+        0,
+      );
+      const height = Math.max(1040, detailTop + detailHeight + 54);
+
+      setCanvas(width, height);
+      drawHeader(data, data.subtitle, width);
+
+      cards.forEach((card, index) => {
+        const column = index % selectorColumns;
+        const row = Math.floor(index / selectorColumns);
+        const x = left + column * (selectorWidth + selectorGap);
+        const y = selectorTop + row * (selectorHeight + 12);
+        const selected = card.designId === activeCard.designId;
+        const color = card.color || "#64748b";
+        drawCard(rc, x, y, selectorWidth, selectorHeight, color, {
+          stroke: selected ? color : colorWithAlpha(color, 0.5),
+          strokeWidth: selected ? 2.3 : 0.9,
+          roughness: selected ? 1.0 : 0.45,
+          bowing: 0.3,
+          fill: selected ? colorWithAlpha(color, 0.18) : "rgba(255,255,255,0.68)",
+        });
+        addText(`${card.designId} / ${card.blockId}`, x + 13, y + 20, {
+          size: 10.8, weight: 700, code: true, fill: color,
+        });
+        wrapText(card.title, x + 13, y + 44, selectorWidth - 26, {
+          size: 16.5, lineHeight: 19, charWidth: 8.0, maxLines: 1, weight: 760, fill: "#26313d",
+        });
+
+        const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        hit.setAttribute("x", x);
+        hit.setAttribute("y", y);
+        hit.setAttribute("width", selectorWidth);
+        hit.setAttribute("height", selectorHeight);
+        hit.setAttribute("fill", "transparent");
+        hit.setAttribute("pointer-events", "all");
+        hit.setAttribute("role", "button");
+        hit.setAttribute("data-inspector-kind", card.cardKind || "module-test");
+        hit.setAttribute("tabindex", "0");
+        hit.setAttribute("aria-label", `查看 ${card.title} 的 Inspector 卡片`);
+        hit.style.cursor = "pointer";
+        const selectCard = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          activeInspectorCardId = card.designId;
+          render(data);
+        };
+        hit.addEventListener("mousedown", (event) => event.stopPropagation());
+        hit.addEventListener("click", selectCard);
+        hit.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") selectCard(event);
+        });
+        svg.appendChild(hit);
+      });
+
+      const phaseTitles = inspectorTransaction.phaseTitles || {};
+      const phaseDefinitions = [
+        { id: "pre", title: phaseTitles.pre || "进入 Transaction", y: transactionTop },
+        { id: "collection", title: phaseTitles.collection || "收集与执行", y: transactionTop + 144 },
+        { id: "update", title: phaseTitles.update || "提交与更新", y: transactionTop + 258 },
+      ];
+      const phaseLabelWidth = 126;
+      const stepGap = 13;
+      const stepHeight = 76;
+
+      const drawPhase = (phase) => {
+        const phaseSteps = steps.filter((step) => step.phase === phase.id);
+        const startX = left + phaseLabelWidth;
+        const availableWidth = contentWidth - phaseLabelWidth;
+        const stepWidth = Math.min(248, (availableWidth - stepGap * (phaseSteps.length - 1)) / phaseSteps.length);
+        addText(phase.title, left, phase.y + 36, {
+          size: 15, weight: 760, display: true, fill: "#485563",
+        });
+        phaseSteps.forEach((step, index) => {
+          const globalIndex = steps.findIndex((item) => item.id === step.id) + 1;
+          const x = startX + index * (stepWidth + stepGap);
+          const selected = highlightSteps.has(step.id);
+          const stroke = selected ? activeColor : "#aeb7c1";
+          drawCard(rc, x, phase.y, stepWidth, stepHeight, stroke, {
+            stroke,
+            strokeWidth: selected ? 2.2 : 0.85,
+            roughness: selected ? 0.95 : 0.35,
+            bowing: 0.28,
+            fill: selected ? colorWithAlpha(activeColor, 0.18) : "rgba(247,248,249,0.82)",
+          });
+          addText(String(globalIndex).padStart(2, "0"), x + 12, phase.y + 18, {
+            size: 10.5, weight: 760, code: true, fill: selected ? activeColor : "#8d98a4",
+          });
+          wrapText(step.label, x + 12, phase.y + 41, stepWidth - 24, {
+            size: phaseSteps.length >= 7 ? 12.9 : 14.0,
+            lineHeight: 16,
+            charWidth: phaseSteps.length >= 7 ? 6.5 : 7.0,
+            maxLines: 2,
+            weight: selected ? 760 : 600,
+            fill: selected ? "#26313d" : "#626e7a",
+          });
+          const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hit.setAttribute("x", x);
+          hit.setAttribute("y", phase.y);
+          hit.setAttribute("width", stepWidth);
+          hit.setAttribute("height", stepHeight);
+          hit.setAttribute("fill", "transparent");
+          hit.setAttribute("pointer-events", "all");
+          const tooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          tooltip.textContent = step.detail;
+          hit.appendChild(tooltip);
+          svg.appendChild(hit);
+          if (index < phaseSteps.length - 1) {
+            addText("→", x + stepWidth + 1, phase.y + 44, {
+              size: 15, weight: 700, fill: "#89939e",
+            });
+          }
+        });
+      };
+      phaseDefinitions.forEach(drawPhase);
+      addText("↓", width - 72, phaseDefinitions[0].y + 99, { size: 18, weight: 760, fill: "#89939e" });
+      addText("↓", width - 72, phaseDefinitions[1].y + 99, { size: 18, weight: 760, fill: "#89939e" });
+
+      svg.appendChild(rc.rectangle(left, detailTop, contentWidth, detailHeight, {
+        stroke: activeColor,
+        strokeWidth: 1.2,
+        roughness: 0.5,
+        bowing: 0.25,
+        fill: colorWithAlpha(activeColor, 0.075),
+        fillStyle: "solid",
+      }));
+      addText(activeCard.title, left + 22, detailTop + 34, {
+        size: 20, weight: 780, display: true, fill: activeColor,
+      });
+      if (showsExecution) {
+        addText(`${executionPrefix}：${executionLabel}`, left + 22, detailTop + 62, {
+          size: 14.5, weight: 760, display: true, fill: executionColor,
+        });
+        wrapText(activeCard.executionSummary || "尚无执行记录。", left + 22, detailTop + 88, contentWidth - 44, {
+          size: 13.5, lineHeight: 18, charWidth: 7.0, maxLines: 2, weight: 560, fill: "#4f5b67",
+        });
+      }
+      let detailOffset = 0;
+      detailRows.forEach((detail, index) => {
+        const row = typeof detail === "string" ? { text: detail } : detail;
+        const rowTop = detailTop + detailHeaderHeight + detailOffset;
+        const rowHeight = detailRowHeightFor(detail);
+        const rowY = rowTop + 20;
+        addText(String(index + 1), left + 22, rowY, {
+          size: 11.5, weight: 760, code: true, fill: activeColor,
+        });
+        let bodyY = rowY;
+        if (row.heading) {
+          addText(row.heading, left + 64, rowY, {
+            size: 17, weight: 760, display: true, fill: "#26313d",
+          });
+          bodyY += 27;
+        }
+        const textLines = wrapText(row.text, left + 64, bodyY, detailTextWidth, {
+          size: 15.5, lineHeight: 20, charWidth: 7.4, weight: 570, fill: "#34414e",
+        });
+        const table = detailTableFor(row);
+        let contentY = bodyY + textLines * 20 + 6;
+        if (table) {
+          const tableHeight = detailTableHeightFor(table);
+          addDetailTable(table, left + 64, contentY + 6, detailTextWidth, tableHeight);
+          contentY += tableHeight + 12;
+        }
+        const formulas = detailFormulasFor(row);
+        let formulaY = contentY;
+        formulas.forEach((formula) => {
+          addLatex(formula, left + 64, formulaY, detailTextWidth, {
+            height: detailFormulaHeight,
+            size: 18,
+          });
+          formulaY += detailFormulaHeight + detailFormulaGap;
+        });
+        if (index < detailRows.length - 1) {
+          const separator = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          separator.setAttribute("x1", left + 20);
+          separator.setAttribute("x2", left + contentWidth - 20);
+          separator.setAttribute("y1", rowTop + rowHeight);
+          separator.setAttribute("y2", rowTop + rowHeight);
+          separator.setAttribute("stroke", colorWithAlpha(activeColor, 0.22));
+          separator.setAttribute("stroke-width", "1");
+          svg.appendChild(separator);
+        }
+        detailOffset += rowHeight;
+      });
+
+      addText(activeCard.footerText || data.footerText || "按钮选择设计点；中间链路显示作用位置；下方阅读卡列出细节设计决定。", left, height - 24, {
+        size: 13, weight: 620, fill: "#687481",
+      });
+    }
+
     function renderRepositoryReadingAtlas(data) {
       const systems = data.systems || [];
       const columnWidth = 840;
@@ -1429,6 +1639,47 @@
       const height = supportTop + maxSupportHeight + 100;
       setCanvas(width, height);
       const rc = rough.svg(svg);
+
+      const attachSourceLink = (href, label, x, y, width, height, indicator) => {
+        if (!href) return;
+        const sourceLink = document.createElementNS("http://www.w3.org/2000/svg", "a");
+        sourceLink.setAttribute("href", href);
+        sourceLink.dataset.sourceLink = "true";
+        sourceLink.addEventListener("mousedown", (event) => event.stopPropagation());
+        sourceLink.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (indicator) indicator.textContent = "…";
+          fetch(href, { method: "POST" })
+            .then((response) => {
+              if (!response.ok) throw new Error(`HTTP ${response.status}`);
+              if (indicator) {
+                indicator.textContent = "✓";
+                indicator.setAttribute("fill", "#287a45");
+              }
+            })
+            .catch((error) => {
+              if (indicator) {
+                indicator.textContent = "!";
+                indicator.setAttribute("fill", "#b42318");
+              }
+              console.error("Failed to open source location", error);
+            });
+        });
+        const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        hitArea.setAttribute("x", x);
+        hitArea.setAttribute("y", y);
+        hitArea.setAttribute("width", width);
+        hitArea.setAttribute("height", height);
+        hitArea.setAttribute("fill", "transparent");
+        hitArea.setAttribute("pointer-events", "all");
+        hitArea.style.cursor = "pointer";
+        const linkTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        linkTitle.textContent = `打开源码 ${label}`;
+        sourceLink.appendChild(linkTitle);
+        sourceLink.appendChild(hitArea);
+        svg.appendChild(sourceLink);
+      };
 
       wrapText(data.subtitle || "", left, 62, width - left * 2, {
         size: 15,
@@ -1477,6 +1728,23 @@
 
           const files = module.files || [];
           const shortPath = (value) => String(value || "").replace(/\/$/, "").split("/").pop();
+          const sourceHrefFor = (file) => {
+            if (file.sourceHref) return file.sourceHref;
+            if (!file.path || String(file.path).endsWith("/") || String(file.path).includes("*")) return "";
+            const sourcePath = String(file.path).split("::")[0].trim();
+            return `/open-source?path=${encodeURIComponent(sourcePath)}&line=${file.sourceLine || 1}`;
+          };
+          const sourceFileForOwner = (owner) => {
+            const ownerText = String(owner || "");
+            const pathMatch = files.find((file) => ownerText.includes(shortPath(file.path)));
+            if (pathMatch) return pathMatch;
+            const functionMatch = files.find((file) => (file.functions || []).some((fn) => {
+              const symbol = String(fn).match(/([A-Za-z_]\w*)\s*\(/)?.[1];
+              return symbol && ownerText.includes(symbol);
+            }));
+            if (functionMatch) return functionMatch;
+            return files.length === 1 ? files[0] : null;
+          };
           const functionItems = [];
           files.forEach((file) => {
             (file.functions || []).forEach((fn) => functionItems.push(`${fn}  <-  ${shortPath(file.path)}`));
@@ -1489,17 +1757,29 @@
           const halfWidth = (contentWidth - halfGap) / 2;
           const columnStartY = cursorY;
           addText("先读", contentX, cursorY, { size: 15, weight: 600, fill: color });
-          const visibleFiles = files.slice(0, 6);
-          visibleFiles.forEach((file, fileIndex) => {
-            addSourceTextLink(
-              `${fileIndex + 1}. ${shortPath(file.path)}`,
-              contentX,
-              cursorY + 24 + fileIndex * 22,
-              halfWidth,
-              file,
-            );
+          let readLineCount = 0;
+          files.slice(0, 6).forEach((file, fileIndex) => {
+            const href = sourceHrefFor(file);
+            const rowY = cursorY + 24 + readLineCount * 22;
+            const label = `${fileIndex + 1}. ${shortPath(file.path)}`;
+            const usedLines = wrapText(label, contentX, rowY, halfWidth - 24, {
+              size: 14,
+              lineHeight: 22,
+              charWidth: 7.2,
+              maxLines: 2,
+              weight: 500,
+              code: true,
+              fill: href ? "#0b63b6" : "#3f4a55",
+            });
+            if (href) {
+              const indicator = addText("↗", contentX + halfWidth - 8, rowY, {
+                size: 15, weight: 700, anchor: "end", fill: "#0b63b6",
+              });
+              attachSourceLink(href, `${file.path}:${file.sourceLine || 1}`, contentX - 4, rowY - 17, halfWidth, Math.max(1, usedLines) * 22, indicator);
+            }
+            readLineCount += Math.max(1, usedLines);
           });
-          const readHeight = 36 + Math.max(1, visibleFiles.length) * 22;
+          const readHeight = 36 + readLineCount * 22;
           cursorY = columnStartY;
           const functionHeight = section("重点函数", readingList(functionItems), contentX + halfWidth + halfGap, halfWidth, 6, true);
           cursorY = columnStartY + Math.max(readHeight, functionHeight) + 8;
@@ -1533,6 +1813,8 @@
           (module.mainRoute || []).forEach((step, stepIndex) => {
             const route = parseRoute(step, (module.mainRouteTitles || [])[stepIndex]);
             const probeStep = (module.probeSteps || [])[stepIndex] || {};
+            const routeSourceFile = isRuntimeProbe ? null : sourceFileForOwner(route.owner);
+            const routeSourceHref = routeSourceFile ? sourceHrefFor(routeSourceFile) : "";
             if (stepIndex > 0) addText("↓", contentX + 22, cursorY - 7, { size: 18, weight: 500, fill: color });
             const routeY = cursorY + (stepIndex > 0 ? 5 : 0);
             const routeBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1556,8 +1838,22 @@
             }
             wrapText(isRuntimeProbe ? (probeStep.whyHere || "PENDING") : route.owner, contentX + (isRuntimeProbe ? 112 : 16), routeY + 47, contentWidth - (isRuntimeProbe ? 128 : 32), {
               size: 14, lineHeight: 18, charWidth: 7.2, maxLines: 2,
-              weight: 500, code: !isRuntimeProbe, fill: "#485563",
+              weight: 500, code: !isRuntimeProbe, fill: routeSourceHref ? "#0b63b6" : "#485563",
             });
+            if (routeSourceHref) {
+              const routeSourceArrow = addText("↗", contentX + contentWidth - 16, routeY + 47, {
+                size: 15, weight: 700, anchor: "end", fill: "#0b63b6",
+              });
+              attachSourceLink(
+                routeSourceHref,
+                `${route.owner} -> ${routeSourceFile.path}:${routeSourceFile.sourceLine || 1}`,
+                contentX + 8,
+                routeY + 29,
+                contentWidth - 16,
+                44,
+                routeSourceArrow,
+              );
+            }
             const routeColumnWidth = (contentWidth - 24) / 2;
             const boundaryY = routeY + (isRuntimeProbe ? 112 : 96);
             addText(isRuntimeProbe ? "插桩位置" : "input", contentX + 16, boundaryY, { size: 13, weight: 600, code: true, fill: color });
@@ -1569,41 +1865,15 @@
               const sourceArrow = addText("↗", contentX + routeColumnWidth - 16, boundaryY, {
                 size: 15, weight: 700, fill: "#0b63b6",
               });
-              const sourceLink = document.createElementNS("http://www.w3.org/2000/svg", "a");
-              sourceLink.setAttribute("href", probeStep.sourceHref);
-              sourceLink.dataset.sourceLink = "true";
-              sourceLink.addEventListener("mousedown", (event) => {
-                event.stopPropagation();
-              });
-              sourceLink.addEventListener("click", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                sourceArrow.textContent = "…";
-                fetch(probeStep.sourceHref, { method: "POST" })
-                  .then((response) => {
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    sourceArrow.textContent = "✓";
-                    sourceArrow.setAttribute("fill", "#287a45");
-                  })
-                  .catch((error) => {
-                    sourceArrow.textContent = "!";
-                    sourceArrow.setAttribute("fill", "#b42318");
-                    console.error("Failed to open source location", error);
-                  });
-              });
-              const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-              hitArea.setAttribute("x", contentX + 8);
-              hitArea.setAttribute("y", boundaryY - 18);
-              hitArea.setAttribute("width", routeColumnWidth - 8);
-              hitArea.setAttribute("height", 44);
-              hitArea.setAttribute("fill", "transparent");
-              hitArea.setAttribute("pointer-events", "all");
-              hitArea.style.cursor = "pointer";
-              const linkTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
-              linkTitle.textContent = `打开源码 ${probeStep.location}`;
-              sourceLink.appendChild(linkTitle);
-              sourceLink.appendChild(hitArea);
-              svg.appendChild(sourceLink);
+              attachSourceLink(
+                probeStep.sourceHref,
+                probeStep.location,
+                contentX + 8,
+                boundaryY - 18,
+                routeColumnWidth - 8,
+                44,
+                sourceArrow,
+              );
             }
             const outputX = contentX + routeColumnWidth + 24;
             addText(isRuntimeProbe ? "截获对象" : "output", outputX, boundaryY, { size: 13, weight: 600, code: true, fill: color });
@@ -1648,11 +1918,35 @@
 
     function render(data) {
       clearSvg();
-      title.textContent = data.title || "UniLab Architecture Atlas";
+      const moduleInspectorActive = Boolean(data.moduleInspector) && viewMode !== "repository_reading";
+      title.textContent = moduleInspectorActive
+        ? data.moduleInspector?.title || data.title || "MOSAIC Architecture Atlas"
+        : data.title || "MOSAIC Architecture Atlas";
       const layout = data.layout || "tabs";
-      if (layout === "repo_tree") {
+      if (layout === "code_quality_evidence_atlas") {
+        renderCodeQualityEvidenceAtlas(data, {
+          svg,
+          rough,
+          setCanvas,
+          addText,
+          wrapText,
+          measuredLineCount,
+          colorWithAlpha,
+          rerender: () => render(data),
+        });
+      } else if (moduleInspectorActive) {
+        renderModuleInspector(data, {
+          svg,
+          rough,
+          setCanvas,
+          addText,
+          wrapText,
+          colorWithAlpha,
+          rerender: () => render(data),
+        });
+      } else if (layout === "repo_tree") {
         renderRepoTree(data);
-      } else if (layout === "design_transaction_inspector") {
+      } else if (layout === "design_transaction_inspector" || layout === "module_test_inspector") {
         renderInspector(data);
       } else if (layout === "repository_reading_atlas") {
         renderRepositoryReadingAtlas(data);
@@ -1663,9 +1957,15 @@
       } else {
         renderTabs(data);
       }
-      if ((layout === "repository_reading_atlas" || layout === "design_transaction_inspector") && autoFitWidth) {
+      if (moduleInspectorActive && autoFitWidth) {
+        requestAnimationFrame(() => {
+          fitWidth();
+          stage.scrollLeft = 0;
+          stage.scrollTop = 0;
+        });
+      } else if ((layout === "repository_reading_atlas" || layout === "design_transaction_inspector" || layout === "module_test_inspector") && autoFitWidth) {
         autoFitWidth = false;
-        zoom = clampZoom(data.defaultZoom || (layout === "design_transaction_inspector" ? 0.8 : 0.65));
+        zoom = clampZoom(data.defaultZoom || ((layout === "design_transaction_inspector" || layout === "module_test_inspector") ? 0.8 : 0.65));
         requestAnimationFrame(() => {
           applyZoom();
           stage.scrollLeft = 0;
@@ -1688,7 +1988,9 @@
       source.value = serialized;
       render(data);
       setStatus(`loaded ${new Date().toLocaleTimeString()}`);
-      hint.innerHTML = `Edit <code>${dataUrl.replace("./", "")}</code> in VSCode. Hide this editor for full-width review. Drag the canvas to pan; use zoom controls or trackpad scroll for large maps.`;
+      hint.innerHTML = data.moduleInspector && viewMode !== "repository_reading"
+        ? `Module Inspector reads one owner registry from <code>${dataUrl.replace("./", "")}</code>. Select a module to highlight its Training Main Loop stage and inspect its function chain.`
+        : `Edit <code>${dataUrl.replace("./", "")}</code> in VSCode. Hide this editor for full-width review. Drag the canvas to pan; use zoom controls or trackpad scroll for large maps.`;
     }
 
     function renderEditor() {
@@ -1772,7 +2074,7 @@
     }, 1500);
 
     loadFromFile(true).catch((error) => {
-      source.value = JSON.stringify({ title: "UniLab Architecture Atlas", layout: "repo_tree", files: [] }, null, 2);
+      source.value = JSON.stringify({ title: "MOSAIC Architecture Atlas", layout: "repo_tree", files: [] }, null, 2);
       renderEditor();
       setStatus(`open through serve_architecture.mjs: ${error.message}`);
     });

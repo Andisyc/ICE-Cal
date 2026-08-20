@@ -69,6 +69,7 @@ from unilab.algos.torch.distill import (
     make_fake_distillation_dataset,
     required_balanced_replay_updates,
     resolve_command_intent_rollout_policies,
+    resolve_walk_to_stop_role_pair,
     run_bootstrap_workflow,
     run_iterative_dagger_updates,
     run_multirole_dagger_workflow,
@@ -2017,38 +2018,25 @@ def run_single_entry_workflow(
             )
         if scenario.name != "walk_to_stop":
             raise ValueError(f"unsupported transition workflow scenario: {scenario.name!r}")
-        scenario_role_cfgs = {
-            role: role_cfgs[role] for role in scenario.source_roles if role in role_cfgs
-        }
-        if len(scenario_role_cfgs) != 2:
-            raise ValueError("walk_to_stop scenario requires exactly two configured source roles")
-        roles_by_filter: dict[str, list[str]] = {"active": [], "inactive": []}
-        for role, role_cfg in scenario_role_cfgs.items():
-            command_filter = str(role_cfg.training.collect_command_sample_filter)
-            if command_filter in roles_by_filter:
-                roles_by_filter[command_filter].append(role)
-        if any(len(roles) != 1 for roles in roles_by_filter.values()):
-            raise ValueError(
-                "walk_to_stop scenario requires one active Walk role and one inactive "
-                f"Stand role, got {roles_by_filter}"
-            )
-        walk_role = roles_by_filter["active"][0]
-        stand_role = roles_by_filter["inactive"][0]
+        role_pair = resolve_walk_to_stop_role_pair(
+            source_roles=scenario.source_roles,
+            command_sample_filters={
+                role: str(role_cfgs[role].training.collect_command_sample_filter)
+                for role in scenario.source_roles
+                if role in role_cfgs
+            },
+            target_height_info_keys={
+                role: OmegaConf.select(role_cfgs[role], "training.collect_target_height_info_key")
+                for role in scenario.source_roles
+                if role in role_cfgs
+            },
+        )
+        walk_role = role_pair.walking_role
+        stand_role = role_pair.standing_role
         request_start = float(performance_clock())
         device = _distill_device(cfg)
         walk_cfg = role_cfgs[walk_role]
         stand_cfg = role_cfgs[stand_role]
-        walk_target_height_info_key = OmegaConf.select(
-            walk_cfg, "training.collect_target_height_info_key"
-        )
-        stand_target_height_info_key = OmegaConf.select(
-            stand_cfg, "training.collect_target_height_info_key"
-        )
-        if walk_target_height_info_key != stand_target_height_info_key:
-            raise ValueError(
-                "transition roles must agree on collect_target_height_info_key: "
-                f"walk={walk_target_height_info_key!r} stand={stand_target_height_info_key!r}"
-            )
         loaded_student = load_distillation_student_policy(checkpoint_path, device=device)
         student = loaded_student.policy
         rollout_policy: torch.nn.Module | None = student
@@ -2171,7 +2159,7 @@ def run_single_entry_workflow(
                     "training.collect_student_drop_index",
                 ),
                 command_info_key=str(walk_cfg.training.collect_command_info_key),
-                target_height_info_key=walk_target_height_info_key,
+                target_height_info_key=role_pair.target_height_info_key,
                 walking_role_label=walk_role,
                 standing_role_label=stand_role,
                 scenario_label=scenario.name,

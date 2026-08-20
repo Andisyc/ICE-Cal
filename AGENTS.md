@@ -1,4 +1,4 @@
-# UniLab Agent Principles
+# ICE-Cal Agent Principles (UniLab-derived runtime)
 
 **Always use `uv run`, not python**.
 
@@ -93,7 +93,8 @@ gh pr create --title "fix: xxx" --body "Fixes #174" --base main
 
 ## Context
 
-- 架构标准与验证详情：[docs/sphinx/source/zh_CN/4-developer_guide/0-index.md](docs/sphinx/source/zh_CN/4-developer_guide/0-index.md)
-- 协作流程与 PR 规范：[docs/sphinx/source/zh_CN/4-developer_guide/5-contributing_workflow.md](docs/sphinx/source/zh_CN/4-developer_guide/5-contributing_workflow.md)
+- ICE-Cal 文档与当前治理状态：[note/README.md](note/README.md)
+- Concept Figure 与 Design Inspector：[note/architecture/README.md](note/architecture/README.md)
+- 当前实现 Contract、证据与历史：[note/fada/README.md](note/fada/README.md)
 - 开发者入口（环境、命令、提交规范）：[CONTRIBUTING.md](CONTRIBUTING.md)
-- 文档本地构建与发布到 UniLab-doc：[docs/sphinx/README.md#本地发布到-unilab-doc](docs/sphinx/README.md#本地发布到-unilab-doc)
+- 通用 UniLab 框架文档不在本仓库维护；需要时查阅上游仓库。

@@ -20,8 +20,8 @@ import gymnasium as gym
 import numpy as np
 
 from unilab.base.base import EnvCfg
+from unilab.base.nan_guard import NanGuard, NanGuardCfg
 from unilab.base.np_env import NpEnv, NpEnvState
-from unilab.utils.nan_guard import NanGuard, NanGuardCfg
 
 
 @dataclass

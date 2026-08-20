@@ -25,6 +25,18 @@ class BackendPlayCapabilities:
     supports_native_video_capture: bool = False
 
 
+@dataclass(frozen=True)
+class BackendSceneArtifacts:
+    """Cold-path scene files materialized and owned by a simulation backend.
+
+    Temporary paths are valid only until ``cleanup_scene_assets()`` is called.
+    """
+
+    model_file: str | None = None
+    visual_model_file: str | None = None
+    artifacts_dir: str | None = None
+
+
 class BackendHeightScanner(abc.ABC):
     """Backend-owned height-field scanner created on the env init path."""
 
@@ -203,6 +215,10 @@ class SimBackend(abc.ABC):
     def get_motion_body_ids(self, names: Sequence[str]) -> np.ndarray:
         """Resolve MuJoCo-style body IDs used by motion datasets."""
         raise NotImplementedError(f"{self.__class__.__name__} does not expose motion body ids")
+
+    def get_scene_artifacts(self) -> BackendSceneArtifacts:
+        """Return backend-owned cold-path scene files, if any."""
+        return BackendSceneArtifacts()
 
     def cleanup_scene_assets(self) -> None:
         """Release cold-path scene artifacts owned by the backend."""

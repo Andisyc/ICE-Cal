@@ -34,6 +34,7 @@ from ..base import (
     BackendHeightScanner,
     BackendPlayCapabilities,
     BackendPlayRenderPlan,
+    BackendSceneArtifacts,
     SimBackend,
     normalize_play_render_mode,
 )
@@ -152,7 +153,7 @@ class MotrixBackend(SimBackend):
             base_name=base_name,
         )
         self._scene = scene
-        self.scene_artifacts_dir = None
+        self._scene_artifacts = BackendSceneArtifacts(model_file=scene.model_file)
         self.terrain_origins = scene_context.terrain_origins
         self.terrain_surface_sampler = scene_context.terrain_surface_sampler
         self._scene_cleanup_handle = scene_context.cleanup_handle
@@ -290,6 +291,10 @@ class MotrixBackend(SimBackend):
         self._link_velocities: np.ndarray | None = None
         self._link_velocity_cache_valid = False
         self._refresh_link_pose_cache()
+
+    def get_scene_artifacts(self) -> BackendSceneArtifacts:
+        """Return the source scene path; Motrix materializes its model in memory."""
+        return self._scene_artifacts
 
     def get_motion_body_ids(self, names: Sequence[str]) -> np.ndarray:
         ids: list[int] = []

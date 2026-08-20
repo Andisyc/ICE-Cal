@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ICE-Cal | Related Work Spectrum</title>
+  <style>
+    :root {
+      --ink: #eef3f7;
+      --muted: #8d9aa6;
+      --bg: #091016;
+      --panel: #101a21;
+      --line: rgba(201, 224, 236, .16);
+      --cyan: #65e5e8;
+      --orange: #ff9d59;
+      --violet: #ae9cff;
+      --green: #9be27f;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; }
+    body { margin: 0; min-width: 320px; background: radial-gradient(circle at 70% 4%, rgba(101,229,232,.10), transparent 26rem), var(--bg); }
+    a { color: inherit; }
+    .wrap { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
+    header { padding: 58px 0 28px; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--cyan); font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { max-width: 780px; margin: 18px 0 14px; font-size: clamp(42px, 7vw, 88px); line-height: .95; letter-spacing: -.055em; }
+    .lead { max-width: 720px; color: #b9c6ce; font-size: 18px; line-height: 1.65; margin: 0; }
+    .hero-note { margin-top: 28px; color: var(--orange); font: 600 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    main { padding: 34px 0 74px; }
+    .section-label { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; margin-bottom: 18px; }
+    h2 { margin: 0; font-size: 16px; letter-spacing: .04em; }
+    .hint { color: var(--muted); font-size: 13px; }
+    .spectrum-shell { position: relative; padding: 28px 0 20px; overflow: hidden; }
+    .spectrum-line { position: relative; height: 6px; border-radius: 99px; background: linear-gradient(90deg, var(--violet), var(--cyan) 48%, var(--orange)); box-shadow: 0 0 24px rgba(101,229,232,.24); }
+    .spectrum-line::before, .spectrum-line::after { content: ""; position: absolute; top: -7px; width: 20px; height: 20px; border: 2px solid var(--ink); border-radius: 50%; background: var(--bg); }
+    .spectrum-line::before { left: -1px; } .spectrum-line::after { right: -1px; }
+    .axis-labels { display: flex; justify-content: space-between; gap: 18px; margin-top: 15px; color: var(--muted); font-size: 13px; }
+    .axis-labels strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 15px; }
+    .axis-labels span:last-child { text-align: right; }
+    .rail { position: relative; min-height: 410px; margin-top: 20px; border: 1px solid var(--line); border-radius: 4px; background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 80%); }
+    .rail::before, .rail::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+    .rail::before { left: 33.33%; } .rail::after { left: 66.66%; }
+    .zone { position: absolute; top: 0; bottom: 0; width: 33.33%; padding: 17px; pointer-events: none; }
+    .zone:nth-child(1) { left: 0; } .zone:nth-child(2) { left: 33.33%; } .zone:nth-child(3) { left: 66.66%; }
+    .zone h3 { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+    .zone p { max-width: 180px; margin: 7px 0 0; color: #65737d; font-size: 12px; line-height: 1.45; }
+    .paper { position: absolute; width: max-content; max-width: 190px; padding: 9px 11px 10px; border: 1px solid currentColor; border-radius: 3px; background: #111d25; color: var(--ink); text-align: left; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+    .paper:hover, .paper:focus-visible { z-index: 5; transform: translateY(-5px) scale(1.04); background: #1a2a34; box-shadow: 0 12px 30px rgba(0,0,0,.35); outline: none; }
+    .paper b { display: block; font-size: 14px; line-height: 1.2; }
+    .paper small { display: block; margin-top: 5px; color: #aab8c0; font-size: 11px; line-height: 1.35; white-space: normal; }
+    .sim { color: var(--violet); } .cal { color: var(--cyan); } .real { color: var(--orange); }
+    .p1 { left: 6%; top: 132px; } .p2 { left: 22%; top: 228px; } .p3 { left: 37%; top: 115px; } .p4 { left: 51%; top: 260px; } .p5 { left: 65%; top: 120px; } .p6 { left: 78%; top: 245px; }
+    .marker { position: absolute; top: 74px; left: 58%; width: 1px; height: 300px; border-left: 1px dashed rgba(101,229,232,.65); pointer-events: none; }
+    .marker span { position: absolute; top: -31px; left: 9px; width: 160px; color: var(--cyan); font: 700 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 18px; color: var(--muted); font-size: 12px; }
+    .legend i { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; }
+    .table-section { margin-top: 58px; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: rgba(16,26,33,.78); }
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 15px 16px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; line-height: 1.5; overflow-wrap: anywhere; word-break: normal; }
+    th:nth-child(1) { width: 18%; } th:nth-child(2) { width: 11%; } th:nth-child(3) { width: 20%; } th:nth-child(4) { width: 22%; } th:nth-child(5) { width: 29%; }
+    th { color: var(--cyan); font: 700 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; background: rgba(101,229,232,.05); }
+    td { color: #b8c5cc; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { color: var(--ink); font-weight: 700; white-space: normal; }
+    .tag { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 99px; font-size: 11px; white-space: nowrap; }
+    .tag.sim { color: var(--violet); } .tag.cal { color: var(--cyan); } .tag.real { color: var(--orange); }
+    footer { padding: 20px 0 34px; color: #61707a; border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    dialog { width: min(460px, calc(100% - 32px)); border: 1px solid var(--cyan); border-radius: 4px; padding: 0; color: var(--ink); background: #111d25; box-shadow: 0 24px 80px rgba(0,0,0,.55); }
+    dialog::backdrop { background: rgba(1,6,9,.72); backdrop-filter: blur(4px); }
+    .dialog-inner { padding: 23px; } .dialog-inner h3 { margin: 0 0 12px; font-size: 23px; } .dialog-inner p { color: #b9c6ce; line-height: 1.65; } .close { border: 1px solid var(--line); padding: 8px 12px; color: var(--ink); background: transparent; cursor: pointer; }
+    @media (max-width: 760px) { .wrap { width: min(100% - 28px, 620px); } header { padding-top: 36px; } .lead { font-size: 16px; } .rail { min-height: 620px; } .zone { width: 100%; left: 0 !important; height: 33.33%; border-bottom: 1px solid var(--line); } .zone:nth-child(1) { top: 0; } .zone:nth-child(2) { top: 33.33%; } .zone:nth-child(3) { top: 66.66%; border-bottom: 0; } .rail::before, .rail::after { display: none; } .paper { max-width: 150px; } .p1 { left: 10%; top: 120px; } .p2 { left: 52%; top: 190px; } .p3 { left: 12%; top: 285px; } .p4 { left: 53%; top: 350px; } .p5 { left: 10%; top: 465px; } .p6 { left: 53%; top: 530px; } .marker { display: none; } .axis-labels { font-size: 11px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="eyebrow">ICE-CAL / RELATED WORK 01</div>
+      <h1>真机到底参与了多少？</h1>
+      <p class="lead">不是看论文有没有上真机。要看真机跑出来的数据，后来有没有回来改变模型。</p>
+      <div class="hero-note">← 仿真里准备好　　真机数据开始回流 →</div>
+    </div>
+  </header>
+  <main class="wrap">
+    <section aria-labelledby="spectrum-title">
+      <div class="section-label"><h2 id="spectrum-title">Related Work 光谱</h2><span class="hint">点击论文标签，看它在做什么</span></div>
+      <div class="spectrum-shell">
+        <div class="spectrum-line" aria-hidden="true"></div>
+        <div class="axis-labels"><span><strong>真机只做评估</strong>模型已经训练完</span><span><strong>真机参与更新</strong>数据回来改模型</span></div>
+        <div class="rail" aria-label="真机数据参与程度光谱">
+          <div class="zone"><h3>SIM-ONLY TRAINING</h3><p>仿真中做域随机化、扰动或多 simulator 训练。</p></div>
+          <div class="zone"><h3>LOCAL CALIBRATION</h3><p>真机数据回来，只修一个模块或一小段映射。</p></div>
+          <div class="zone"><h3>POLICY FINE-TUNING</h3><p>真机 reward 或纠正继续改变整体策略。</p></div>
+          <button class="paper sim p1" data-title="RMA" data-detail="仿真域随机化训练 adaptation module。真机零样本部署，不回收真机数据。"><b>RMA</b><small>仿真适应<br>真机零样本</small></button>
+          <button class="paper sim p2" data-title="SplitAdapter" data-detail="仿真中学习 load/context encoder 和 factorized adapter。真机只做测试。"><b>SplitAdapter</b><small>load-aware<br>仿真训练</small></button>
+          <button class="paper cal p3" data-title="FADA" data-detail="用少量目标域 observation-action rollout 监督微调 IDM 内的 LoRA，Planner 保持冻结。"><b>FADA</b><small>少量真机 rollout<br>只改 IDM</small></button>
+          <button class="paper cal p4" data-title="ASAP" data-detail="用真机轨迹学习 residual dynamics/action model，再回到校准后的仿真继续训练。"><b>ASAP</b><small>真机轨迹<br>residual 校准</small></button>
+          <button class="paper real p5" data-title="RTR / SLowRL" data-detail="真机 reward 进入 PPO，更新 latent、Critic 或策略 LoRA。属于真机强化学习。"><b>RTR · SLowRL</b><small>真机 reward<br>继续 RL</small></button>
+          <button class="paper real p6" data-title="Keep on Learning" data-detail="直接用真机交互 reward 持续更新完整 locomotion policy。"><b>Keep on Learning</b><small>真机交互<br>更新完整策略</small></button>
+          <div class="marker"><span>ICE-Cal 应该回答：<br>我们修的是哪一段？</span></div>
+        </div>
+        <div class="legend"><span><i style="background:var(--violet)"></i>只在仿真中学习</span><span><i style="background:var(--cyan)"></i>真机局部校准</span><span><i style="background:var(--orange)"></i>真机继续训练策略</span></div>
+      </div>
+    </section>
+    <section class="table-section" aria-labelledby="table-title">
+      <div class="section-label"><h2 id="table-title">完整论文表格</h2><span class="hint">按“真机数据如何影响最终策略”整理</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>方法</th><th>真机更新？</th><th>真机信号</th><th>更新对象</th><th>更新路径</th></tr></thead>
+        <tbody>
+          <tr><td>RMA</td><td><span class="tag sim">否</span></td><td>无</td><td>base policy + adaptation module 在仿真训练</td><td>仿真训练 → 真机零样本评估</td></tr>
+          <tr><td>SplitAdapter</td><td><span class="tag sim">否</span></td><td>无</td><td>load/context encoder + factorized adapter</td><td>仿真训练 → G1 真机测试</td></tr>
+          <tr><td>PolySim</td><td><span class="tag sim">否</span></td><td>无</td><td>多 simulator dynamics randomization</td><td>仿真训练 → 真机零样本部署</td></tr>
+          <tr><td>FADA</td><td><span class="tag cal">是</span></td><td>少量 observation-action rollout</td><td>IDM 内 LoRA</td><td>真机采样 → 局部执行映射校准 → 部署</td></tr>
+          <tr><td>ASAP</td><td><span class="tag cal">是</span></td><td>真机轨迹</td><td>residual dynamics/action model</td><td>真机采样 → 校准局部模型 → 回仿真微调 → 部署</td></tr>
+          <tr><td>SPI-Active</td><td><span class="tag cal">是</span></td><td>主动采集真机轨迹</td><td>simulator / physical parameters</td><td>真机辨识 → 更新物理参数 → 再训练或部署</td></tr>
+          <tr><td>HALO</td><td><span class="tag cal">是</span></td><td>真机输入输出轨迹</td><td>nominal robot model + payload 参数</td><td>真机辨识 → 更新模型参数 → 部署</td></tr>
+          <tr><td>TRANSIC</td><td><span class="tag real">是</span></td><td>人工 correction action</td><td>residual policy</td><td>真机纠正 → 更新 residual policy → 部署</td></tr>
+          <tr><td>RTR</td><td><span class="tag real">是</span></td><td>真机速度跟踪 reward</td><td>dynamics latent + Critic</td><td>真机 reward → PPO → 真机继续训练</td></tr>
+          <tr><td>SLowRL</td><td><span class="tag real">是</span></td><td>真机 reward</td><td>Actor / Critic 的 rank-1 LoRA</td><td>真机 reward → PPO → 策略继续更新</td></tr>
+          <tr><td>Keep on Learning</td><td><span class="tag real">是</span></td><td>真机交互 reward</td><td>完整 locomotion policy</td><td>真机交互 → 持续 RL → 策略持续更新</td></tr>
+          <tr><td>Sim-and-Real Co-Training</td><td><span class="tag real">是</span></td><td>真实数据 + 仿真数据</td><td>整体策略</td><td>混合数据 → 联合训练 → 部署</td></tr>
+          <tr><td>Actuator Reality Shaping</td><td><span class="tag cal">是</span></td><td>硬件响应测量</td><td>真实执行器控制接口</td><td>硬件侧校准；不做任务策略梯度更新</td></tr>
+          <tr><td>ReactiveBFM</td><td><span class="tag sim">否</span></td><td>真机用于验证</td><td>闭环 motion generation + replanning</td><td>仿真训练 → G1 真机验证</td></tr>
+          <tr><td>Joint Torque Perturbation</td><td><span class="tag sim">否</span></td><td>仿真中的状态相关力矩扰动</td><td>训练期 locomotion policy</td><td>仿真鲁棒化 → 真机验证</td></tr>
+          <tr><td>ADAPT</td><td><span class="tag sim">否</span></td><td>解析 disturbance observer</td><td>disturbance-aware policy</td><td>仿真训练 → 真机执行与评估</td></tr>
+          <tr><td>Mind Your Steps</td><td><span class="tag sim">否</span></td><td>仿真 foothold tracking 反馈</td><td>3D foothold tracking policy</td><td>仿真训练 → 真机落脚精度验证</td></tr>
+          <tr><td>Motion Generation + Motion Tracking</td><td><span class="tag sim">否</span></td><td>仿真闭环反馈</td><td>generator + tracker</td><td>仿真闭环训练 → 真机评估</td></tr>
+          <tr><td>RLPF</td><td><span class="tag sim">否</span></td><td>仿真 physics feedback</td><td>motion generator</td><td>仿真微调 → 真机部署</td></tr>
+          <tr><td>REFINE-DP</td><td><span class="tag sim">否</span></td><td>仿真 RL reward</td><td>Planner + 低层 Controller</td><td>仿真联合微调 → 真机评估</td></tr>
+          <tr><td>HERO</td><td><span class="tag sim">否</span></td><td>仿真 tracking feedback</td><td>EE tracker + replanning</td><td>仿真训练 → 真机末端精度评估</td></tr>
+          <tr><td>RGB</td><td><span class="tag sim">否</span></td><td>公开证据主要为 MuJoCo</td><td>RL-guided MPPI</td><td>仿真在线修正；真机证据待核实</td></tr>
+          <tr><td>PhyGile</td><td><span class="tag sim">否</span></td><td>仿真 tracking feedback</td><td>motion generation + GMT</td><td>仿真训练 → 执行能力验证</td></tr>
+          <tr><td>HALOMI</td><td><span class="tag sim">否</span></td><td>人类示教；真机不做目标域更新</td><td>controller-aware reference adaptation</td><td>训练完成 → 真机部署</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+  </main>
+  <footer><div class="wrap">ICE-Cal · Related Work / Part 01 · 分类依据：真机数据是否进入参数或模型更新</div></footer>
+  <dialog id="paper-dialog"><div class="dialog-inner"><h3 id="dialog-title"></h3><p id="dialog-detail"></p><button class="close" id="dialog-close">关掉</button></div></dialog>
+  <script>
+    const dialog = document.getElementById('paper-dialog');
+    const title = document.getElementById('dialog-title');
+    const detail = document.getElementById('dialog-detail');
+    document.querySelectorAll('.paper').forEach((paper) => paper.addEventListener('click', () => {
+      title.textContent = paper.dataset.title;
+      detail.textContent = paper.dataset.detail;
+      dialog.showModal();
+    }));
+    document.getElementById('dialog-close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+  </script>
+</body>
+</html>
