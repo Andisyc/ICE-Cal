@@ -1,19 +1,34 @@
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 from scripts import play_fada_calibration_viser as playback_cli
 
+from unilab.algos.torch.fada_context.calibration_collection import (
+    canonicalize_resolved_task_backend_payload,
+    load_gain_calibration_protocol,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _collection_cli():
+    try:
+        return importlib.import_module("scripts.collect_fada_calibration_rollouts")
+    except ModuleNotFoundError:
+        pytest.fail("official gain calibration collection entrypoint is missing")
 
 
 def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
     for script in (
+        "collect_fada_calibration_rollouts.py",
         "prepare_fada_calibration_dataset.py",
         "prepare_fada_calibration_scale_evidence.py",
         "train_fada_calibration.py",
@@ -31,6 +46,16 @@ def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
             text=True,
         )
         assert result.returncode == 0, result.stderr
+        if script == "collect_fada_calibration_rollouts.py":
+            for flag in (
+                "--source-checkpoint",
+                "--expected-source-sha256",
+                "--protocol",
+                "--output",
+                "--device",
+            ):
+                assert flag in result.stdout
+            assert "--gain" not in result.stdout
         if script == "train_fada_calibration.py":
             assert "--scale-evidence" in result.stdout
             assert "--scale-readings" not in result.stdout
@@ -62,6 +87,35 @@ def test_calibration_playback_preset_enables_policy_consumption() -> None:
         )
     assert cfg.interactive.action_mode == "policy"
     assert list(cfg.calibration_playback.jump_threshold) == [0.25, 0.25, 0.25]
+
+
+def test_gain_collection_protocol_and_base_override_are_config_owned() -> None:
+    collection_cli = _collection_cli()
+    protocol, protocol_bytes, digest = load_gain_calibration_protocol(
+        ROOT / "conf/fada_context/calibration_collection/gain_smoke_v1.yaml"
+    )
+    assert [(point.c_true, point.gain) for point in protocol.points] == [
+        (-1.0, 0.8),
+        (0.0, 1.0),
+        (1.0, 1.2),
+    ]
+    assert (
+        protocol_bytes
+        == (ROOT / "conf/fada_context/calibration_collection/gain_smoke_v1.yaml").read_bytes()
+    )
+    assert len(digest) == 64
+    cfg = collection_cli._compose_task(protocol)
+    override = collection_cli._base_env_override(cfg, protocol)
+    assert override["commands"]["vel_limit"] == [
+        [0.4, 0.0, 0.0],
+        [0.4, 0.0, 0.0],
+    ]
+    assert "action_execution_fault" not in override
+    payload, payload_digest = canonicalize_resolved_task_backend_payload(cfg, override)
+    assert payload["resolved_distill_config"]["training"]["task_name"] == "G1WalkFlat"
+    assert len(payload_digest) == 64
+    faulted = collection_cli._faulted_env_override(override, gain=0.8)
+    assert faulted["action_execution_fault"] == {"mode": "gain", "gain": 0.8}
 
 
 def test_playback_factory_binds_calibrated_controller(monkeypatch) -> None:

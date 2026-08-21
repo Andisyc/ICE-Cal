@@ -27,6 +27,10 @@
       letter-spacing: 0;
     }
 
+    .stage-tabs { display: flex; gap: 8px; padding: 12px 20px 0; background: var(--paper); }
+    .stage-tab { border: 1px solid var(--line); border-radius: 8px 8px 0 0; background: var(--panel); color: var(--muted); padding: 10px 18px; font: 700 14px var(--font-body); cursor: pointer; }
+    .stage-tab.active { color: var(--ink); background: #fff; border-color: #8b8174; box-shadow: 0 -2px 0 #2563eb inset; }
+
     .atlas-equation {
       align-items: center;
       box-sizing: border-box;
@@ -245,6 +249,7 @@
       <button id="render">Render Editor</button>
     </div>
   </header>
+  <nav id="stage-tabs" class="stage-tabs" aria-label="Calibration stages"></nav>
   <main id="layout" class="editor-hidden">
     <aside>
       <div class="hint" id="hint"></div>
@@ -330,61 +335,70 @@
   "nodes": [
     {
       "id": "ICA4-S1-DATA",
-      "title": "Sim Rollout + Analytic Label",
-      "summary": "单轴失真（增益 / 延迟 / 摩擦）下 rollout；α_true 已知 → 公式算正确动作 a*；不经网络、不经 RL",
+      "title": "Input · Known Fault",
+      "summary": "Input：故障轴 i + 真实强度 c_true\nOutput：history + 解析目标 a*",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-SUPPORT",
       "kind": "external",
-      "x": 40,
-      "y": 110,
+      "x": 80,
+      "y": 285,
       "w": 240,
-      "h": 120
+      "h": 150
     },
     {
       "id": "ICA4-S1-ENC",
       "title": "Frozen Tracker Encoder",
       "frozen": true,
-      "summary": "30 帧 History + 6 帧 Motion → z",
+      "summary": "Input：history + 6 帧 Motion\nOutput：z",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
       "shape": "encoder",
       "shapeInset": 48,
-      "x": 330,
-      "y": 110,
-      "w": 220,
-      "h": 120
+      "x": 390,
+      "y": 270,
+      "w": 300,
+      "h": 180
     },
     {
       "id": "ICA4-S1-ADD",
       "title": "Latent Add",
-      "summary": "z + c_true·Δz",
-      "summarySize": 14,
+      "summary": "Input：z + c_true·Δzᵢ\nOutput：z̄",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
-      "x": 600,
-      "y": 130,
-      "w": 90,
-      "h": 80
+      "x": 760,
+      "y": 285,
+      "w": 240,
+      "h": 150
     },
     {
       "id": "ICA4-S1-DEC",
       "title": "Frozen Tracker Decoder",
       "frozen": true,
-      "summary": "→ 6 步 Action，首步为 â",
+      "summary": "Input：z̄\nOutput：6 步 Action · â",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
       "shape": "decoder",
       "shapeInset": 48,
-      "x": 740,
-      "y": 110,
-      "w": 220,
-      "h": 120
+      "x": 1070,
+      "y": 270,
+      "w": 300,
+      "h": 180
     },
     {
       "id": "ICA4-S1-LOSS",
-      "title": "Loss → 方向 Δz",
-      "summary": "‖â−a*‖² 梯度只进方向 Δz；学成即冻结为架构常量 ❄",
+      "title": "Direction Loss",
+      "summary": "Input：â + a*\nLoss：‖â − a*‖²\nOutput：gradient → Δzᵢ",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-LEARNING",
-      "x": 1010,
-      "y": 110,
-      "w": 290,
-      "h": 120
+      "x": 1440,
+      "y": 275,
+      "w": 240,
+      "h": 170
     },
     {
       "id": "ICA4-S2-DATA",
@@ -607,73 +621,75 @@
     {
       "from": "ICA4-S1-DATA",
       "to": "ICA4-S1-ENC",
-      "label": "history · motion",
-      "labelSize": 13,
+      "label": "history",
+      "labelLines": ["history", "30 帧 State/Action 历史"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 350,
+      "labelY": 245,
       "concept": "C-ICA3-SUPPORT"
     },
     {
       "from": "ICA4-S1-ENC",
       "to": "ICA4-S1-ADD",
       "label": "z",
-      "labelSize": 15,
+      "labelLines": ["z", "标称 latent"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 690,
+      "labelY": 245,
       "concept": "C-ICA3-TRACKER"
     },
     {
       "from": "ICA4-S1-ADD",
       "to": "ICA4-S1-DEC",
-      "label": "z+c_true·Δz",
-      "labelSize": 12,
+      "label": "z̄",
+      "labelLines": ["z̄", "补偿后的 latent"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 1030,
+      "labelY": 245,
       "concept": "C-ICA3-TRACKER"
     },
     {
       "from": "ICA4-S1-DEC",
       "to": "ICA4-S1-LOSS",
       "label": "â",
-      "labelSize": 14,
+      "labelLines": ["â", "预测动作"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 1370,
+      "labelY": 245,
       "concept": "C-ICA3-LEARNING"
     },
     {
       "from": "ICA4-S1-DATA",
       "to": "ICA4-S1-LOSS",
       "label": "a*",
-      "labelSize": 14,
+      "labelLines": ["a*", "解析目标动作"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
       "concept": "C-ICA3-LABEL",
       "fromAnchor": "bottom",
       "toAnchor": "bottom",
-      "via": [
-        [
-          160,
-          262
-        ],
-        [
-          1155,
-          262
-        ]
-      ],
-      "labelX": 600,
-      "labelY": 258
+      "via": [[180, 530], [1540, 530]],
+      "labelX": 860,
+      "labelY": 570
     },
     {
       "from": "ICA4-S1-LOSS",
       "to": "ICA4-S1-ADD",
-      "label": "Δz 写回 · 学成冻结",
-      "labelSize": 13,
+      "label": "Δzᵢ",
+      "labelLines": ["Δzᵢ", "待学习补偿方向 · 只更新此参数"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
       "concept": "C-ICA3-LEARNING",
       "kind": "feedback",
       "fromAnchor": "top",
       "toAnchor": "top",
-      "via": [
-        [
-          1155,
-          90
-        ],
-        [
-          645,
-          90
-        ]
-      ],
-      "labelX": 880,
-      "labelY": 86
+      "via": [[1540, 190], [860, 190]],
+      "labelX": 1200,
+      "labelY": 158
     },
     {
       "from": "ICA4-S2-DATA",
@@ -1615,6 +1631,7 @@
     }
 
     function drawMethodNode(rc, data, node) {
+      const textScale = node.viewScale || data.viewScale || 1;
       const color = conceptColor(data, node.concept, node.color || "#6688aa");
       const compact = node.h < 140;
       const shapeOptions = {
@@ -1667,7 +1684,7 @@
         const badgeY = node.y + (node.shape === "encoder" ? inset + 16 : 18);
         addText("❄", badgeX, badgeY, {
           fill: "#2563eb",
-          size: 15,
+          size: 15 * textScale,
           weight: 700,
           anchor: "middle",
         });
@@ -1678,18 +1695,18 @@
         const centerX = node.x + node.w / 2;
         const centerY = node.y + node.h / 2;
         wrapText(node.title, centerX, centerY - 12, node.w - 90, {
-          size: 14,
-          lineHeight: 16,
-          charWidth: 7,
+          size: 14 * textScale,
+          lineHeight: 16 * textScale,
+          charWidth: 7 * textScale,
           maxLines: 2,
           weight: 900,
           fill: "#27313d",
           anchor: "middle",
         });
         wrapText(node.summary || "", centerX, centerY + 20, node.w - 74, {
-          size: 11,
-          lineHeight: 15,
-          charWidth: 5.8,
+          size: 11 * textScale,
+          lineHeight: 15 * textScale,
+          charWidth: 5.8 * textScale,
           maxLines: 3,
           weight: 550,
           fill: "#4d5966",
@@ -1698,23 +1715,23 @@
         return;
       }
 
-      const textInset = node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
-      const titleLines = wrapText(node.title, node.x + textInset, node.y + 31, node.w - textInset * 2, {
-        size: compact ? 13 : 14,
-        lineHeight: 16,
-        charWidth: 7,
+      const textInset = node.id.endsWith("-LOSS") || node.id.endsWith("-PROOF") ? 24 * textScale : node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
+      const titleLines = wrapText(node.title, node.x + textInset, node.y + 36 * textScale, node.w - textInset * 2, {
+        size: (compact ? 13 : 14) * textScale,
+        lineHeight: 16 * textScale,
+        charWidth: 7 * textScale,
         maxLines: 2,
         weight: 900,
         fill: "#27313d",
       });
-      const summaryLineHeight = compact ? 13 : 15;
-      const summaryY = node.y + 60 + Math.max(0, titleLines - 1) * 16;
-      const summaryBottom = node.y + node.h - 14;
+      const summaryLineHeight = (node.summaryLineHeight || (compact ? 13 : 15)) * textScale;
+      const summaryY = node.y + 68 * textScale + Math.max(0, titleLines - 1) * 19 * textScale;
+      const summaryBottom = node.y + node.h - 18 * textScale;
       const summaryMaxLines = Math.max(1, Math.floor((summaryBottom - summaryY) / summaryLineHeight));
-      wrapText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
-        size: node.summarySize || (compact ? 10 : 11),
+      wrapMultilineText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
+        size: (node.summarySize || (compact ? 10 : 11)) * textScale,
         lineHeight: summaryLineHeight,
-        charWidth: compact ? 5.4 : 5.8,
+        charWidth: (compact ? 5.4 : 5.8) * textScale,
         maxLines: summaryMaxLines,
         weight: 550,
         fill: "#4d5966",
@@ -2484,8 +2501,88 @@
       });
     }
 
+    let activeStageIndex = 0;
+    function splitLegacyStages(data) {
+      if (Array.isArray(data.stages)) return data.stages;
+      const groups = [
+        ["Stage 1 · Direction", "ICA4-S1-"],
+        ["Stage 2 · Coefficient", "ICA4-S2-"],
+        ["Stage 3 · Scale & Proof", "ICA4-S3-"],
+        ["部署 · Unseen Conditions", "ICA4-D-"]
+      ];
+      return groups.map(([title, prefix]) => {
+        const sourceNodes = (data.nodes || []).filter((node) => node.id.startsWith(prefix));
+        const minX = Math.min(...sourceNodes.map((node) => node.x));
+        const minY = Math.min(...sourceNodes.map((node) => node.y));
+        const maxX = Math.max(...sourceNodes.map((node) => node.x + node.w));
+        const maxY = Math.max(...sourceNodes.map((node) => node.y + node.h));
+        const sourceWidth = Math.max(1, maxX - minX);
+        const sourceHeight = Math.max(1, maxY - minY);
+        const figureWidth = 1920;
+        const figureHeight = 920;
+        const scaleCap = prefix === "ICA4-S1-" ? 1 : 1.35;
+        const scale = Math.min(scaleCap, (figureWidth - 180) / sourceWidth, (figureHeight - 220) / sourceHeight);
+        const targetWidth = sourceWidth * scale;
+        const targetHeight = sourceHeight * scale;
+        const offsetX = (figureWidth - targetWidth) / 2 - minX * scale;
+        const offsetY = (figureHeight - targetHeight) / 2 - minY * scale;
+        const nodes = sourceNodes.map((node) => ({
+          ...node,
+          x: node.x * scale + offsetX,
+          y: node.y * scale + offsetY,
+          w: node.w * scale,
+          h: node.h * scale,
+          summarySize: node.summarySize,
+          shapeInset: node.shapeInset ? node.shapeInset * scale : node.shapeInset,
+          viewScale: scale,
+        }));
+        const ids = new Set(nodes.map((node) => node.id));
+        return {
+          ...data,
+          title,
+          figureWidth,
+          figureHeight,
+          layerDividers: [],
+          nodes,
+          viewScale: scale,
+          edges: (data.edges || []).filter((edge) => ids.has(edge.from) && ids.has(edge.to)).map((edge) => ({
+            ...edge,
+            via: (edge.via || []).map(([x, y]) => [x * scale + offsetX, y * scale + offsetY]),
+            labelX: edge.labelX == null ? edge.labelX : edge.labelX * scale + offsetX,
+            labelY: edge.labelY == null ? edge.labelY : edge.labelY * scale + offsetY,
+            labelSize: edge.labelSize ? edge.labelSize * scale : Math.max(13, 11 * scale),
+          })),
+        };
+      });
+    }
+
+    function renderStageTabs(data) {
+      const tabs = document.getElementById("stage-tabs");
+      if (!tabs) return;
+      const stages = splitLegacyStages(data);
+      tabs.replaceChildren();
+      stages.forEach((stageData, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `stage-tab${index === activeStageIndex ? " active" : ""}`;
+        button.textContent = stageData.title;
+        button.addEventListener("click", () => {
+          activeStageIndex = index;
+          zoom = 1;
+          autoFitWidth = true;
+          stage.scrollLeft = 0;
+          stage.scrollTop = 0;
+          render(data);
+        });
+        tabs.appendChild(button);
+      });
+    }
+
     function render(data) {
       clearSvg();
+      const stages = splitLegacyStages(data);
+      renderStageTabs(data);
+      data = stages[activeStageIndex] || stages[0];
       const moduleInspectorActive = Boolean(data.moduleInspector) && viewMode !== "repository_reading";
       title.textContent = moduleInspectorActive
         ? data.moduleInspector?.title || data.title || "MOSAIC Architecture Atlas"

@@ -70,61 +70,70 @@
   "nodes": [
     {
       "id": "ICA4-S1-DATA",
-      "title": "Sim Rollout + Analytic Label",
-      "summary": "单轴失真（增益 / 延迟 / 摩擦）下 rollout；α_true 已知 → 公式算正确动作 a*；不经网络、不经 RL",
+      "title": "Input · Known Fault",
+      "summary": "Input：故障轴 i + 真实强度 c_true\nOutput：history + 解析目标 a*",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-SUPPORT",
       "kind": "external",
-      "x": 40,
-      "y": 110,
+      "x": 80,
+      "y": 285,
       "w": 240,
-      "h": 120
+      "h": 150
     },
     {
       "id": "ICA4-S1-ENC",
       "title": "Frozen Tracker Encoder",
       "frozen": true,
-      "summary": "30 帧 History + 6 帧 Motion → z",
+      "summary": "Input：history + 6 帧 Motion\nOutput：z",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
       "shape": "encoder",
       "shapeInset": 48,
-      "x": 330,
-      "y": 110,
-      "w": 220,
-      "h": 120
+      "x": 390,
+      "y": 270,
+      "w": 300,
+      "h": 180
     },
     {
       "id": "ICA4-S1-ADD",
       "title": "Latent Add",
-      "summary": "z + c_true·Δz",
-      "summarySize": 14,
+      "summary": "Input：z + c_true·Δzᵢ\nOutput：z̄",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
-      "x": 600,
-      "y": 130,
-      "w": 90,
-      "h": 80
+      "x": 760,
+      "y": 285,
+      "w": 240,
+      "h": 150
     },
     {
       "id": "ICA4-S1-DEC",
       "title": "Frozen Tracker Decoder",
       "frozen": true,
-      "summary": "→ 6 步 Action，首步为 â",
+      "summary": "Input：z̄\nOutput：6 步 Action · â",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-TRACKER",
       "shape": "decoder",
       "shapeInset": 48,
-      "x": 740,
-      "y": 110,
-      "w": 220,
-      "h": 120
+      "x": 1070,
+      "y": 270,
+      "w": 300,
+      "h": 180
     },
     {
       "id": "ICA4-S1-LOSS",
-      "title": "Loss → 方向 Δz",
-      "summary": "‖â−a*‖² 梯度只进方向 Δz；学成即冻结为架构常量 ❄",
+      "title": "Direction Loss",
+      "summary": "Input：â + a*\nLoss：‖â − a*‖²\nOutput：gradient → Δzᵢ",
+      "summarySize": 15,
+      "summaryLineHeight": 24,
       "concept": "C-ICA3-LEARNING",
-      "x": 1010,
-      "y": 110,
-      "w": 290,
-      "h": 120
+      "x": 1440,
+      "y": 275,
+      "w": 240,
+      "h": 170
     },
     {
       "id": "ICA4-S2-DATA",
@@ -347,73 +356,75 @@
     {
       "from": "ICA4-S1-DATA",
       "to": "ICA4-S1-ENC",
-      "label": "history · motion",
-      "labelSize": 13,
+      "label": "history",
+      "labelLines": ["history", "30 帧 State/Action 历史"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 350,
+      "labelY": 245,
       "concept": "C-ICA3-SUPPORT"
     },
     {
       "from": "ICA4-S1-ENC",
       "to": "ICA4-S1-ADD",
       "label": "z",
-      "labelSize": 15,
+      "labelLines": ["z", "标称 latent"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 690,
+      "labelY": 245,
       "concept": "C-ICA3-TRACKER"
     },
     {
       "from": "ICA4-S1-ADD",
       "to": "ICA4-S1-DEC",
-      "label": "z+c_true·Δz",
-      "labelSize": 12,
+      "label": "z̄",
+      "labelLines": ["z̄", "补偿后的 latent"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 1030,
+      "labelY": 245,
       "concept": "C-ICA3-TRACKER"
     },
     {
       "from": "ICA4-S1-DEC",
       "to": "ICA4-S1-LOSS",
       "label": "â",
-      "labelSize": 14,
+      "labelLines": ["â", "预测动作"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
+      "labelX": 1370,
+      "labelY": 245,
       "concept": "C-ICA3-LEARNING"
     },
     {
       "from": "ICA4-S1-DATA",
       "to": "ICA4-S1-LOSS",
       "label": "a*",
-      "labelSize": 14,
+      "labelLines": ["a*", "解析目标动作"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
       "concept": "C-ICA3-LABEL",
       "fromAnchor": "bottom",
       "toAnchor": "bottom",
-      "via": [
-        [
-          160,
-          262
-        ],
-        [
-          1155,
-          262
-        ]
-      ],
-      "labelX": 600,
-      "labelY": 258
+      "via": [[180, 530], [1540, 530]],
+      "labelX": 860,
+      "labelY": 570
     },
     {
       "from": "ICA4-S1-LOSS",
       "to": "ICA4-S1-ADD",
-      "label": "Δz 写回 · 学成冻结",
-      "labelSize": 13,
+      "label": "Δzᵢ",
+      "labelLines": ["Δzᵢ", "待学习补偿方向 · 只更新此参数"],
+      "labelSize": 16,
+      "labelLineHeight": 22,
       "concept": "C-ICA3-LEARNING",
       "kind": "feedback",
       "fromAnchor": "top",
       "toAnchor": "top",
-      "via": [
-        [
-          1155,
-          90
-        ],
-        [
-          645,
-          90
-        ]
-      ],
-      "labelX": 880,
-      "labelY": 86
+      "via": [[1540, 190], [860, 190]],
+      "labelX": 1200,
+      "labelY": 158
     },
     {
       "from": "ICA4-S2-DATA",

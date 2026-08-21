@@ -35,6 +35,10 @@ from unilab.envs.locomotion.common.domain_rand import DomainRandConfig
 from unilab.envs.locomotion.common.dr_provider import LocomotionDRProvider
 from unilab.envs.locomotion.common.rewards import RewardContext
 from unilab.envs.locomotion.g1.base import G1BaseCfg, G1BaseEnv
+from unilab.envs.locomotion.g1.calibration_fault import (
+    G1ActionExecutionFaultConfig,
+    apply_action_execution_fault,
+)
 
 
 @dataclass
@@ -478,6 +482,12 @@ class G1WalkEnvCfg(G1BaseCfg):
     forward_progress_termination: ForwardProgressTerminationConfig = field(
         default_factory=ForwardProgressTerminationConfig
     )
+    action_execution_fault: G1ActionExecutionFaultConfig | None = None
+
+    def validate(self) -> None:
+        super().validate()
+        if self.action_execution_fault is not None:
+            self.action_execution_fault.validate()
 
 
 class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
@@ -2151,7 +2161,13 @@ class G1WalkEnv(G1BaseEnv):
             gait_phase[:, 1] = (gait_phase[:, 1] + self._gait_phase_delta) % (2 * np.pi)
         state.info["gait_phase"] = gait_phase
 
-        exec_actions = self._actions_for_execution(actions, state.info)
+        authority_actions = self._actions_for_execution(actions, state.info)
+        state.info["authority_actions"] = authority_actions
+        exec_actions = apply_action_execution_fault(
+            authority_actions,
+            getattr(self._cfg, "action_execution_fault", None),
+            num_envs=self._num_envs,
+        )
         state.info["executed_actions"] = exec_actions
         ctrl: np.ndarray = (
             exec_actions * self._cfg.control_config.action_scale + self.default_angles

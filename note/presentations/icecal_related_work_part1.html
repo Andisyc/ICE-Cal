@@ -47,9 +47,10 @@
     .paper { position: absolute; width: max-content; max-width: 190px; padding: 9px 11px 10px; border: 1px solid currentColor; border-radius: 3px; background: #111d25; color: var(--ink); text-align: left; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
     .paper:hover, .paper:focus-visible { z-index: 5; transform: translateY(-5px) scale(1.04); background: #1a2a34; box-shadow: 0 12px 30px rgba(0,0,0,.35); outline: none; }
     .paper b { display: block; font-size: 14px; line-height: 1.2; }
+    .paper .yr { float: right; color: var(--muted); font-size: 10.5px; font-weight: 500; line-height: 1.2; }
     .paper small { display: block; margin-top: 5px; color: #aab8c0; font-size: 11px; line-height: 1.35; white-space: normal; }
     .sim { color: var(--violet); } .cal { color: var(--cyan); } .real { color: var(--orange); }
-    .p1 { left: 6%; top: 132px; } .p2 { left: 22%; top: 228px; } .p3 { left: 37%; top: 115px; } .p4 { left: 51%; top: 260px; } .p5 { left: 65%; top: 120px; } .p6 { left: 78%; top: 245px; }
+    .p1 { left: 6%; top: 132px; } .p2 { left: 22%; top: 228px; } .p3 { left: 37%; top: 115px; } .p4 { left: 51%; top: 260px; } .p5 { left: 64%; top: 115px; } .p6 { left: 77%; top: 250px; }
     .marker { position: absolute; top: 74px; left: 58%; width: 1px; height: 300px; border-left: 1px dashed rgba(101,229,232,.65); pointer-events: none; }
     .marker span { position: absolute; top: -31px; left: 9px; width: 160px; color: var(--cyan); font: 700 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 18px; color: var(--muted); font-size: 12px; }
@@ -76,9 +77,8 @@
   <header>
     <div class="wrap">
       <div class="eyebrow">ICE-CAL / RELATED WORK 01</div>
-      <h1>真机到底参与了多少？</h1>
-      <p class="lead">不是看论文有没有上真机。要看真机跑出来的数据，后来有没有回来改变模型。</p>
-      <div class="hero-note">← 仿真里准备好　　真机数据开始回流 →</div>
+      <h1>Sim → Real → Sim</h1>
+      <div class="hero-note">← 仿真训练　　真机微调 →</div>
     </div>
   </header>
   <main class="wrap">
@@ -91,13 +91,12 @@
           <div class="zone"><h3>SIM-ONLY TRAINING</h3><p>仿真中做域随机化、扰动或多 simulator 训练。</p></div>
           <div class="zone"><h3>LOCAL CALIBRATION</h3><p>真机数据回来，只修一个模块或一小段映射。</p></div>
           <div class="zone"><h3>POLICY FINE-TUNING</h3><p>真机 reward 或纠正继续改变整体策略。</p></div>
-          <button class="paper sim p1" data-title="RMA" data-detail="仿真域随机化训练 adaptation module。真机零样本部署，不回收真机数据。"><b>RMA</b><small>仿真适应<br>真机零样本</small></button>
-          <button class="paper sim p2" data-title="SplitAdapter" data-detail="仿真中学习 load/context encoder 和 factorized adapter。真机只做测试。"><b>SplitAdapter</b><small>load-aware<br>仿真训练</small></button>
-          <button class="paper cal p3" data-title="FADA" data-detail="用少量目标域 observation-action rollout 监督微调 IDM 内的 LoRA，Planner 保持冻结。"><b>FADA</b><small>少量真机 rollout<br>只改 IDM</small></button>
-          <button class="paper cal p4" data-title="ASAP" data-detail="用真机轨迹学习 residual dynamics/action model，再回到校准后的仿真继续训练。"><b>ASAP</b><small>真机轨迹<br>residual 校准</small></button>
-          <button class="paper real p5" data-title="RTR / SLowRL" data-detail="真机 reward 进入 PPO，更新 latent、Critic 或策略 LoRA。属于真机强化学习。"><b>RTR · SLowRL</b><small>真机 reward<br>继续 RL</small></button>
-          <button class="paper real p6" data-title="Keep on Learning" data-detail="直接用真机交互 reward 持续更新完整 locomotion policy。"><b>Keep on Learning</b><small>真机交互<br>更新完整策略</small></button>
-          <div class="marker"><span>ICE-Cal 应该回答：<br>我们修的是哪一段？</span></div>
+          <button class="paper sim p1" data-title="RMA (2021)" data-detail="仿真域随机化训练 adaptation module。真机零样本部署，不回收真机数据。"><b><span class="yr">2021</span>RMA</b><small>仿真适应<br>真机零样本</small></button>
+          <button class="paper sim p2" data-title="SplitAdapter (2026)" data-detail="仿真中学习 load/context encoder 和 factorized adapter。真机只做测试。"><b><span class="yr">2026</span>SplitAdapter</b><small>load-aware<br>仿真训练</small></button>
+          <button class="paper cal p3" data-title="FADA (2026)" data-detail="用少量目标域 observation-action rollout 监督微调 IDM 内的 LoRA，Planner 保持冻结。"><b><span class="yr">2026</span>FADA</b><small>少量真机 rollout<br>只改 IDM</small></button>
+          <button class="paper cal p4" data-title="ASAP (2025)" data-detail="用真机轨迹学 Delta Action Model，回仿真微调 base policy；部署时丢弃校准模型，只上整策略——真机回流了，但校准没留下接口。"><b><span class="yr">2025</span>ASAP</b><small>真机轨迹<br>校准模型被丢弃</small></button>
+          <button class="paper real p5" data-title="RTR (2025)" data-detail="Robot Trains Robot：真机 reward 驱动 PPO，自动化的真机策略适应与继续学习。"><b><span class="yr">2025</span>RTR</b><small>真机 reward<br>自动化继续 RL</small></button>
+          <button class="paper real p6" data-title="SLowRL (2026)" data-detail="Safe Low-rank RL：真机 reward 进入 PPO，只更新 Actor/Critic 的低秩 LoRA，参数高效地做真机微调。"><b><span class="yr">2026</span>SLowRL</b><small>真机 reward<br>低秩 LoRA 微调</small></button>
         </div>
         <div class="legend"><span><i style="background:var(--violet)"></i>只在仿真中学习</span><span><i style="background:var(--cyan)"></i>真机局部校准</span><span><i style="background:var(--orange)"></i>真机继续训练策略</span></div>
       </div>
@@ -111,13 +110,13 @@
           <tr><td>SplitAdapter</td><td><span class="tag sim">否</span></td><td>无</td><td>load/context encoder + factorized adapter</td><td>仿真训练 → G1 真机测试</td></tr>
           <tr><td>PolySim</td><td><span class="tag sim">否</span></td><td>无</td><td>多 simulator dynamics randomization</td><td>仿真训练 → 真机零样本部署</td></tr>
           <tr><td>FADA</td><td><span class="tag cal">是</span></td><td>少量 observation-action rollout</td><td>IDM 内 LoRA</td><td>真机采样 → 局部执行映射校准 → 部署</td></tr>
-          <tr><td>ASAP</td><td><span class="tag cal">是</span></td><td>真机轨迹</td><td>residual dynamics/action model</td><td>真机采样 → 校准局部模型 → 回仿真微调 → 部署</td></tr>
+          <tr><td>ASAP</td><td><span class="tag cal">是</span></td><td>真机轨迹</td><td>Delta Action Model（校准用）</td><td>真机采样 → 学校准模型 → 回仿真微调策略 → 丢弃校准模型，部署整策略</td></tr>
           <tr><td>SPI-Active</td><td><span class="tag cal">是</span></td><td>主动采集真机轨迹</td><td>simulator / physical parameters</td><td>真机辨识 → 更新物理参数 → 再训练或部署</td></tr>
           <tr><td>HALO</td><td><span class="tag cal">是</span></td><td>真机输入输出轨迹</td><td>nominal robot model + payload 参数</td><td>真机辨识 → 更新模型参数 → 部署</td></tr>
           <tr><td>TRANSIC</td><td><span class="tag real">是</span></td><td>人工 correction action</td><td>residual policy</td><td>真机纠正 → 更新 residual policy → 部署</td></tr>
           <tr><td>RTR</td><td><span class="tag real">是</span></td><td>真机速度跟踪 reward</td><td>dynamics latent + Critic</td><td>真机 reward → PPO → 真机继续训练</td></tr>
           <tr><td>SLowRL</td><td><span class="tag real">是</span></td><td>真机 reward</td><td>Actor / Critic 的 rank-1 LoRA</td><td>真机 reward → PPO → 策略继续更新</td></tr>
-          <tr><td>Keep on Learning</td><td><span class="tag real">是</span></td><td>真机交互 reward</td><td>完整 locomotion policy</td><td>真机交互 → 持续 RL → 策略持续更新</td></tr>
+
           <tr><td>Sim-and-Real Co-Training</td><td><span class="tag real">是</span></td><td>真实数据 + 仿真数据</td><td>整体策略</td><td>混合数据 → 联合训练 → 部署</td></tr>
           <tr><td>Actuator Reality Shaping</td><td><span class="tag cal">是</span></td><td>硬件响应测量</td><td>真实执行器控制接口</td><td>硬件侧校准；不做任务策略梯度更新</td></tr>
           <tr><td>ReactiveBFM</td><td><span class="tag sim">否</span></td><td>真机用于验证</td><td>闭环 motion generation + replanning</td><td>仿真训练 → G1 真机验证</td></tr>

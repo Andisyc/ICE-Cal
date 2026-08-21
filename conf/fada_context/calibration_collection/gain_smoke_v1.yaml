@@ -1,0 +1,16 @@
+version: gain-smoke-v1
+task_config: g1_walk_flat/mujoco
+task_name: G1WalkFlat
+sim_backend: mujoco
+observation_key: obs
+command_key: commands
+fixed_command: [0.4, 0.0, 0.0]
+points:
+  - {c_true: -1.0, gain: 0.8}
+  - {c_true: 0.0, gain: 1.0}
+  - {c_true: 1.0, gain: 1.2}
+splits:
+  - {name: train, split_id: 0, seed: 101}
+  - {name: validation, split_id: 1, seed: 201}
+accepted_rows_per_scenario: 32
+max_environment_steps_per_scenario: 512

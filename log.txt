@@ -1,46 +1,27 @@
+(base) chengyuxuan@ubuntu-msi:/ssd1/cyx/ICE-Cal$ uv run python scripts/train_fada_calibration_stage1.py \
+  --source-checkpoint SOURCE.pt \
+  --dataset DATASET.pt \
+  --output STAGE1.pt \
+  --stage1-steps 100 \
+  --learning-rate 3e-4
+Using CPython 3.10.12 interpreter at: /usr/bin/python3
+Creating virtual environment at: .venv
+      Built unilab @ file:///ssd1/cyx/ICE-Cal
+░░░░░░░░░░░░░░░░░░░░ [0/190] Installing wheels...                                                                                                                                                                                                               warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 190 packages in 3m 34s
 Traceback (most recent call last):
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2395, in <module>
-    _run_main_with_native_fail_stop()
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2385, in _run_main_with_native_fail_stop
-    main()
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/main.py", line 94, in decorated_main
-    _run_hydra(
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
-    _run_app(
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 457, in _run_app
-    run_and_report(
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 223, in run_and_report
-    raise ex
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
-    return func()
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
-    lambda: hydra.run(
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/_internal/hydra.py", line 132, in run
-    _ = ret.return_value
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 260, in return_value
-    raise self._return_value
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 186, in run_job
-    ret.return_value = task_function(task_cfg)
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2278, in main
-    print(_format_cli_result(run_single_entry_workflow(cfg)))
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2201, in run_single_entry_workflow
-    dagger_result = run_multirole_dagger_workflow(
-  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/workflow.py", line 1074, in run_multirole_dagger_workflow
-    raw_update_result = update_student(aggregate_path, current_checkpoint, output_checkpoint)
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 2141, in update_dagger_student
-    result = run_offline_dataset_update(
-  File "/ssd1/cyx/UniLab/scripts/train_distill.py", line 817, in run_offline_dataset_update
-    result = run_offline_distillation_updates(
-  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/offline.py", line 633, in run_offline_distillation_updates
-    stats = trainer.update(batch, performance=performance)
-  File "/ssd1/cyx/UniLab/src/unilab/algos/torch/distill/trainer.py", line 735, in update
-    self.student.train()
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2855, in train
-    module.train(mode)
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2855, in train
-    module.train(mode)
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2853, in train
-    self.training = mode
-  File "/ssd1/cyx/UniLab/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1966, in __setattr__
-    elif params is not None and name in params:
-TypeError: argument of type '_ParameterMeta' is not iterable
+  File "/ssd1/cyx/ICE-Cal/scripts/train_fada_calibration_stage1.py", line 71, in <module>
+    raise SystemExit(main())
+  File "/ssd1/cyx/ICE-Cal/scripts/train_fada_calibration_stage1.py", line 42, in main
+    loaded = load_fada_policy_checkpoint(args.source_checkpoint, device="cpu")
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_training.py", line 660, in load_fada_policy_checkpoint
+    payload = torch.load(Path(path), map_location=device, weights_only=True)
+  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/torch/serialization.py", line 1479, in load
+    with _open_file_like(f, "rb") as opened_file:
+  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/torch/serialization.py", line 759, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/torch/serialization.py", line 740, in __init__
+    super().__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'SOURCE.pt'
