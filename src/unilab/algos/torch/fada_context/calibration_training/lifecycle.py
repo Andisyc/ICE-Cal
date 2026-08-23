@@ -8,6 +8,10 @@ import torch
 from unilab.algos.torch.distill.fada import FADAPlannerIDMPolicy
 from unilab.algos.torch.fada_context.calibration import CalibrationRolloutBatch
 
+_SOURCE_PROJECTION_RTOL = 1.0e-4
+_PLANNER_PROJECTION_ATOL = 1.0e-3
+_ACTION_PROJECTION_ATOL = 1.0e-4
+
 
 def _validate_stage_batch(
     policy: FADAPlannerIDMPolicy, batch: CalibrationRolloutBatch, axis_count: int
@@ -32,15 +36,15 @@ def validate_calibration_source_projection(
     if not torch.allclose(
         predicted_future,
         batch.planner_intent.to(predicted_future),
-        rtol=1e-5,
-        atol=1e-6,
+        rtol=_SOURCE_PROJECTION_RTOL,
+        atol=_PLANNER_PROJECTION_ATOL,
     ):
         raise ValueError("dataset Planner Intent does not match the source policy")
     if not torch.allclose(
         nominal_actions,
         batch.nominal_action_chunk.to(nominal_actions),
-        rtol=1e-5,
-        atol=1e-6,
+        rtol=_SOURCE_PROJECTION_RTOL,
+        atol=_ACTION_PROJECTION_ATOL,
     ):
         raise ValueError("dataset nominal Action does not match the source Tracker")
 

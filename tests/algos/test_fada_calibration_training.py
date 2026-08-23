@@ -1322,9 +1322,10 @@ def test_serial_does_not_read_scale_evidence_path_before_stage2_publication(
     assert not (tmp_path / "calibration_artifact.pt").exists()
 
 
-def test_source_projection_rejects_dataset_from_a_different_tracker() -> None:
+def _valid_source_projection(
+    policy: FADAPlannerIDMPolicy,
+) -> CalibrationRolloutBatch:
     config = _config()
-    policy = FADAPlannerIDMPolicy(config).eval()
     batch = _batch(config)
     with torch.no_grad():
         intent = policy.planner(batch.observation_history, batch.command)
@@ -1334,12 +1335,40 @@ def test_source_projection_rejects_dataset_from_a_different_tracker() -> None:
             intent,
         )
         nominal = policy.idm.decode_latent(latent)
-    valid = replace(batch, planner_intent=intent, nominal_action_chunk=nominal)
+    return replace(batch, planner_intent=intent, nominal_action_chunk=nominal)
+
+
+def test_source_projection_accepts_observed_cross_device_float32_drift() -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    valid = _valid_source_projection(policy)
+    validate_calibration_source_projection(
+        policy,
+        replace(
+            valid,
+            planner_intent=valid.planner_intent + 6.5e-4,
+            nominal_action_chunk=valid.nominal_action_chunk + 4.0e-5,
+        ),
+    )
+
+
+def test_source_projection_rejects_material_planner_drift() -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    valid = _valid_source_projection(policy)
+    with pytest.raises(ValueError, match="Planner Intent"):
+        validate_calibration_source_projection(
+            policy,
+            replace(valid, planner_intent=valid.planner_intent + 1.0e-2),
+        )
+
+
+def test_source_projection_rejects_dataset_from_a_different_tracker() -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    valid = _valid_source_projection(policy)
     validate_calibration_source_projection(policy, valid)
     with pytest.raises(ValueError, match="nominal Action"):
         validate_calibration_source_projection(
             policy,
-            replace(valid, nominal_action_chunk=nominal + 0.1),
+            replace(valid, nominal_action_chunk=valid.nominal_action_chunk + 0.1),
         )
 
 
