@@ -27,6 +27,8 @@ from unilab.algos.torch.fada_context.calibration_training.lifecycle import (
 from unilab.algos.torch.fada_context.calibration_training.types import (
     _DIRECTION_STAGE,
     CalibrationStageIdentity,
+    DirectionDiagnosticConfig,
+    DirectionDiagnosticPoint,
     DirectionStageConfig,
     DirectionStageResult,
 )
@@ -126,6 +128,203 @@ def direction_stage_compensation_ratio(
     )
 
 
+def _direction_stage_step(
+    policy: FADAPlannerIDMPolicy,
+    direction_bank: DirectionBank,
+    training_batch: CalibrationRolloutBatch,
+    optimizer: torch.optim.Optimizer,
+    policy_snapshot: dict[str, torch.Tensor],
+    *,
+    axis_index: int,
+) -> torch.Tensor:
+    optimizer.zero_grad(set_to_none=True)
+    loss = direction_stage_loss(
+        policy,
+        direction_bank,
+        training_batch,
+        axis_index=axis_index,
+    )
+    if not bool(torch.isfinite(loss)):
+        raise ValueError("Stage 1 produced a non-finite loss")
+    loss.backward()
+    bank_snapshot = _snapshot(direction_bank)
+    optimizer.step()
+    _require_unchanged("Stage 1", policy, policy_snapshot)
+    other_axes = (
+        torch.arange(direction_bank.axis_count, device=direction_bank.directions.device)
+        != axis_index
+    )
+    if not torch.equal(
+        direction_bank.directions[other_axes],
+        bank_snapshot["directions"][other_axes],
+    ):
+        raise ValueError("frozen Direction Bank axis mutated during Stage 1")
+    return loss.detach()
+
+
+@torch.no_grad()
+def _direction_diagnostic_point(
+    policy: FADAPlannerIDMPolicy,
+    direction_bank: DirectionBank,
+    training_batch: CalibrationRolloutBatch,
+    validation_batch: CalibrationRolloutBatch,
+    *,
+    axis_index: int,
+    step: int,
+) -> DirectionDiagnosticPoint:
+    training_loss = float(
+        direction_stage_loss(
+            policy,
+            direction_bank,
+            training_batch,
+            axis_index=axis_index,
+        )
+    )
+    training_ratio = float(
+        direction_stage_compensation_ratio(
+            policy,
+            direction_bank,
+            training_batch,
+            axis_index=axis_index,
+        )
+    )
+    validation_ratio = float(
+        direction_stage_compensation_ratio(
+            policy,
+            direction_bank,
+            validation_batch,
+            axis_index=axis_index,
+        )
+    )
+    direction_norm = float(direction_bank.directions[axis_index].norm())
+    values = torch.tensor(
+        (training_loss, training_ratio, validation_ratio, direction_norm),
+        dtype=torch.float64,
+    )
+    if not bool(torch.isfinite(values).all()):
+        raise ValueError("Stage 1 diagnostic produced a non-finite metric")
+    return DirectionDiagnosticPoint(
+        axis_index=axis_index,
+        step=step,
+        training_loss=training_loss,
+        training_compensation_ratio=training_ratio,
+        validation_compensation_ratio=validation_ratio,
+        direction_norm=direction_norm,
+    )
+
+
+def _policy_runtime_snapshot(
+    policy: FADAPlannerIDMPolicy,
+) -> tuple[
+    dict[str, torch.Tensor],
+    tuple[torch.Tensor | None, ...],
+    tuple[bool, ...],
+    tuple[bool, ...],
+]:
+    return (
+        _snapshot(policy),
+        tuple(
+            None if parameter.grad is None else parameter.grad.detach().clone()
+            for parameter in policy.parameters()
+        ),
+        tuple(parameter.requires_grad for parameter in policy.parameters()),
+        tuple(module.training for module in policy.modules()),
+    )
+
+
+def _restore_policy_runtime(
+    policy: FADAPlannerIDMPolicy,
+    snapshot: tuple[
+        dict[str, torch.Tensor],
+        tuple[torch.Tensor | None, ...],
+        tuple[bool, ...],
+        tuple[bool, ...],
+    ],
+) -> None:
+    state, gradients, requires_grad, training_modes = snapshot
+    _restore(policy, state)
+    for parameter, gradient, required in zip(
+        policy.parameters(), gradients, requires_grad, strict=True
+    ):
+        parameter.requires_grad_(required)
+        parameter.grad = None if gradient is None else gradient.clone()
+    for module, training in zip(policy.modules(), training_modes, strict=True):
+        module.training = training
+
+
+def diagnose_direction_stage_training(
+    policy: FADAPlannerIDMPolicy,
+    batch: CalibrationRolloutBatch,
+    identity: CalibrationStageIdentity,
+    config: DirectionDiagnosticConfig,
+) -> tuple[DirectionDiagnosticPoint, ...]:
+    identity.validate()
+    training_batch, validation_batch = _split_stage_batch(
+        policy,
+        batch,
+        training_split_id=config.training_split_id,
+        validation_split_id=config.validation_split_id,
+        stage_name="Stage 1 diagnostic",
+        axis_count=identity.axis_spec.axis_count,
+    )
+    axis_count = identity.axis_spec.axis_count
+    direction_bank = DirectionBank(
+        axis_count=axis_count,
+        prediction_horizon=policy.config.prediction_horizon,
+        latent_dim=policy.config.hidden_dim,
+    ).to(batch.observation_history.device)
+    policy_runtime = _policy_runtime_snapshot(policy)
+    policy_snapshot = policy_runtime[0]
+    requested_steps = set(config.checkpoint_steps)
+    points: list[DirectionDiagnosticPoint] = []
+    try:
+        for axis_index in range(axis_count):
+            if not bool((training_batch.axis_id == axis_index).any()) or not bool(
+                (validation_batch.axis_id == axis_index).any()
+            ):
+                raise ValueError(
+                    f"Stage 1 diagnostic axis {axis_index} is missing train or validation evidence"
+                )
+            optimizer = torch.optim.Adam(
+                [direction_bank.directions],
+                lr=config.learning_rate,
+            )
+            if 0 in requested_steps:
+                points.append(
+                    _direction_diagnostic_point(
+                        policy,
+                        direction_bank,
+                        training_batch,
+                        validation_batch,
+                        axis_index=axis_index,
+                        step=0,
+                    )
+                )
+            for step in range(1, config.checkpoint_steps[-1] + 1):
+                _direction_stage_step(
+                    policy,
+                    direction_bank,
+                    training_batch,
+                    optimizer,
+                    policy_snapshot,
+                    axis_index=axis_index,
+                )
+                if step in requested_steps:
+                    points.append(
+                        _direction_diagnostic_point(
+                            policy,
+                            direction_bank,
+                            training_batch,
+                            validation_batch,
+                            axis_index=axis_index,
+                            step=step,
+                        )
+                    )
+    finally:
+        _restore_policy_runtime(policy, policy_runtime)
+    return tuple(points)
+
+
 def run_direction_stage_training(
     policy: FADAPlannerIDMPolicy,
     batch: CalibrationRolloutBatch,
@@ -164,27 +363,14 @@ def run_direction_stage_training(
                 lr=config.learning_rate,
             )
             for _ in range(config.steps_per_axis):
-                optimizer.zero_grad(set_to_none=True)
-                loss = direction_stage_loss(
+                _direction_stage_step(
                     policy,
                     direction_bank,
                     training_batch,
+                    optimizer,
+                    policy_snapshot,
                     axis_index=axis_index,
                 )
-                if not bool(torch.isfinite(loss)):
-                    raise ValueError("Stage 1 produced a non-finite loss")
-                loss.backward()
-                bank_snapshot = _snapshot(direction_bank)
-                optimizer.step()
-                _require_unchanged("Stage 1", policy, policy_snapshot)
-                other_axes = (
-                    torch.arange(axis_count, device=direction_bank.directions.device) != axis_index
-                )
-                if not torch.equal(
-                    direction_bank.directions[other_axes],
-                    bank_snapshot["directions"][other_axes],
-                ):
-                    raise ValueError("frozen Direction Bank axis mutated during Stage 1")
             direction_bank.normalize_axis_(axis_index)
             ratio = float(
                 direction_stage_compensation_ratio(

@@ -62,6 +62,41 @@ class DirectionStageConfig:
 
 
 @dataclass(frozen=True)
+class DirectionDiagnosticConfig:
+    checkpoint_steps: tuple[int, ...] = (0, 25, 100, 300, 1000)
+    learning_rate: float = 3.0e-4
+    training_split_id: int = 0
+    validation_split_id: int = 1
+
+    def __post_init__(self) -> None:
+        if (
+            not self.checkpoint_steps
+            or any(
+                not isinstance(step, int) or isinstance(step, bool) or step < 0
+                for step in self.checkpoint_steps
+            )
+            or tuple(sorted(set(self.checkpoint_steps))) != self.checkpoint_steps
+        ):
+            raise ValueError(
+                "Stage 1 diagnostic checkpoint_steps must be non-negative, unique, and ordered"
+            )
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("Stage 1 diagnostic learning_rate must be finite and positive")
+        if self.training_split_id == self.validation_split_id:
+            raise ValueError("Stage 1 diagnostic training and validation split IDs must differ")
+
+
+@dataclass(frozen=True)
+class DirectionDiagnosticPoint:
+    axis_index: int
+    step: int
+    training_loss: float
+    training_compensation_ratio: float
+    validation_compensation_ratio: float
+    direction_norm: float
+
+
+@dataclass(frozen=True)
 class CoefficientStageConfig:
     steps: int = 1000
     learning_rate: float = 3.0e-4

@@ -405,6 +405,233 @@ def test_stage1_compensation_ratio_has_a_direct_hand_oracle() -> None:
         calibration_compensation_ratio(target, compensated, target)
 
 
+def test_stage1_diagnostics_record_requested_steps_without_mutating_policy() -> None:
+    torch.manual_seed(17)
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _admitted_batch(policy)
+    policy_snapshot = _snapshot(policy)
+    gradients = [parameter.grad for parameter in policy.parameters()]
+    requires_grad = [parameter.requires_grad for parameter in policy.parameters()]
+    training_modes = [module.training for module in policy.modules()]
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    diagnose = getattr(calibration_training, "diagnose_direction_stage_training")
+
+    points = diagnose(
+        policy,
+        batch,
+        _identity(),
+        config_type(checkpoint_steps=(0, 1), learning_rate=1.0e-3),
+    )
+
+    assert [(point.axis_index, point.step) for point in points] == [
+        (axis_index, step)
+        for axis_index in range(3)
+        for step in (0, 1)
+    ]
+    assert all(
+        torch.isfinite(
+            torch.tensor(
+                [
+                    point.training_loss,
+                    point.training_compensation_ratio,
+                    point.validation_compensation_ratio,
+                    point.direction_norm,
+                ]
+            )
+        ).all()
+        for point in points
+    )
+    assert all(point.direction_norm == 0.0 for point in points[::2])
+    assert all(point.direction_norm > 0.0 for point in points[1::2])
+    _assert_snapshot(policy, policy_snapshot)
+    assert [parameter.grad for parameter in policy.parameters()] == gradients
+    assert [parameter.requires_grad for parameter in policy.parameters()] == requires_grad
+    assert [module.training for module in policy.modules()] == training_modes
+
+
+def test_stage1_formal_and_diagnostic_paths_share_optimizer_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _admitted_batch(policy)
+    shared_step = getattr(stage1_owner, "_direction_stage_step")
+    calls: list[int] = []
+
+    def spy(*args, **kwargs):
+        calls.append(int(kwargs["axis_index"]))
+        return shared_step(*args, **kwargs)
+
+    monkeypatch.setattr(stage1_owner, "_direction_stage_step", spy)
+    monkeypatch.setattr(
+        stage1_owner,
+        "direction_stage_compensation_ratio",
+        lambda *args, **kwargs: torch.tensor(0.0),
+    )
+    run_direction_stage_training(
+        policy,
+        batch,
+        tmp_path / "stage1.pt",
+        _identity(),
+        DirectionStageConfig(steps_per_axis=1),
+    )
+    assert calls == [0, 1, 2]
+
+    calls.clear()
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    diagnose = getattr(calibration_training, "diagnose_direction_stage_training")
+    diagnose(
+        policy,
+        batch,
+        _identity(),
+        config_type(checkpoint_steps=(0, 1)),
+    )
+    assert calls == [0, 1, 2]
+
+
+def test_stage1_diagnostic_checkpoint_uses_the_post_step_direction_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _admitted_batch(policy)
+    updates = [0, 0, 0]
+
+    def deterministic_step(
+        policy,
+        direction_bank,
+        training_batch,
+        optimizer,
+        policy_snapshot,
+        *,
+        axis_index,
+    ):
+        del policy, training_batch, optimizer, policy_snapshot
+        updates[axis_index] += 1
+        direction_bank.directions.data[axis_index].fill_(float(updates[axis_index]))
+        return torch.tensor(float(updates[axis_index]))
+
+    def norm_metric(policy, direction_bank, batch, *, axis_index):
+        del policy, batch
+        return direction_bank.directions[axis_index].norm()
+
+    monkeypatch.setattr(stage1_owner, "_direction_stage_step", deterministic_step)
+    monkeypatch.setattr(stage1_owner, "direction_stage_loss", norm_metric)
+    monkeypatch.setattr(stage1_owner, "direction_stage_compensation_ratio", norm_metric)
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    diagnose = getattr(calibration_training, "diagnose_direction_stage_training")
+
+    points = diagnose(
+        policy,
+        batch,
+        _identity(),
+        config_type(checkpoint_steps=(0, 1, 2)),
+    )
+
+    latent_elements = policy.config.prediction_horizon * policy.config.hidden_dim
+    expected = {
+        0: 0.0,
+        1: latent_elements**0.5,
+        2: 2.0 * latent_elements**0.5,
+    }
+    for point in points:
+        assert point.direction_norm == pytest.approx(expected[point.step])
+        assert point.training_loss == pytest.approx(expected[point.step])
+        assert point.training_compensation_ratio == pytest.approx(expected[point.step])
+        assert point.validation_compensation_ratio == pytest.approx(expected[point.step])
+
+
+def test_stage1_diagnostic_restores_borrowed_policy_after_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _admitted_batch(policy)
+    policy_snapshot = _snapshot(policy)
+    gradients = [parameter.grad for parameter in policy.parameters()]
+    requires_grad = [parameter.requires_grad for parameter in policy.parameters()]
+    training_modes = [module.training for module in policy.modules()]
+
+    def corrupt_then_fail(*args, **kwargs):
+        del args, kwargs
+        parameter = next(policy.parameters())
+        parameter.data.add_(1.0)
+        parameter.grad = torch.ones_like(parameter)
+        parameter.requires_grad_(False)
+        policy.train()
+        raise RuntimeError("injected diagnostic failure")
+
+    monkeypatch.setattr(stage1_owner, "_direction_stage_step", corrupt_then_fail)
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    diagnose = getattr(calibration_training, "diagnose_direction_stage_training")
+    with pytest.raises(RuntimeError, match="injected diagnostic failure"):
+        diagnose(
+            policy,
+            batch,
+            _identity(),
+            config_type(checkpoint_steps=(0, 1)),
+        )
+    _assert_snapshot(policy, policy_snapshot)
+    assert [parameter.grad for parameter in policy.parameters()] == gradients
+    assert [parameter.requires_grad for parameter in policy.parameters()] == requires_grad
+    assert [module.training for module in policy.modules()] == training_modes
+
+
+@pytest.mark.parametrize("checkpoint_steps", [(), (-1,), (0, 0), (1, 0)])
+def test_stage1_diagnostic_config_rejects_invalid_steps_before_adam(
+    monkeypatch: pytest.MonkeyPatch,
+    checkpoint_steps: tuple[int, ...],
+) -> None:
+    calls = 0
+
+    def poison(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("Adam must be unreachable")
+
+    monkeypatch.setattr(torch.optim, "Adam", poison)
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    with pytest.raises(ValueError, match="checkpoint_steps"):
+        config_type(checkpoint_steps=checkpoint_steps)
+    assert calls == 0
+
+
+def test_stage1_diagnostics_report_high_ratio_without_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _admitted_batch(policy)
+
+    def poison(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("diagnostics must not publish a Stage artifact")
+
+    monkeypatch.setattr(stage1_owner, "_atomic_torch_save", poison)
+    monkeypatch.setattr(
+        stage1_owner,
+        "direction_stage_compensation_ratio",
+        lambda *args, **kwargs: torch.tensor(0.8),
+    )
+    config_type = getattr(calibration_training, "DirectionDiagnosticConfig")
+    diagnose = getattr(calibration_training, "diagnose_direction_stage_training")
+    points = diagnose(
+        policy,
+        batch,
+        _identity(),
+        config_type(checkpoint_steps=(0, 1)),
+    )
+    assert all(point.validation_compensation_ratio == pytest.approx(0.8) for point in points)
+
+    with pytest.raises(ValueError, match="compensation ratio"):
+        run_direction_stage_training(
+            policy,
+            batch,
+            tmp_path / "stage1.pt",
+            _identity(),
+            DirectionStageConfig(steps_per_axis=1),
+        )
+    assert not (tmp_path / "stage1.pt").exists()
+
+
 def test_stage2_coefficient_loss_only_exposes_encoder_gradient() -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)

@@ -14,6 +14,7 @@ from unilab.algos.torch.fada_context.calibration_training.pipeline import (
 )
 from unilab.algos.torch.fada_context.calibration_training.stage1 import (
     calibration_compensation_ratio,
+    diagnose_direction_stage_training,
     direction_stage_compensation_ratio,
     direction_stage_loss,
     run_direction_stage_training,
@@ -32,6 +33,8 @@ from unilab.algos.torch.fada_context.calibration_training.types import (
     CalibrationStageIdentity,
     CoefficientStageConfig,
     CoefficientStageResult,
+    DirectionDiagnosticConfig,
+    DirectionDiagnosticPoint,
     DirectionStageConfig,
     DirectionStageResult,
     ScaleStageResult,
