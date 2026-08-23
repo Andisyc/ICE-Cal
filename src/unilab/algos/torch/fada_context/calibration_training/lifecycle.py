@@ -10,7 +10,7 @@ from unilab.algos.torch.fada_context.calibration import CalibrationRolloutBatch
 
 _SOURCE_PROJECTION_RTOL = 1.0e-4
 _PLANNER_PROJECTION_ATOL = 1.0e-3
-_ACTION_PROJECTION_ATOL = 1.0e-4
+_ACTION_PROJECTION_ATOL = 5.0e-4
 
 
 def _validate_stage_batch(

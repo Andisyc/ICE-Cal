@@ -27,8 +27,8 @@
     "project": "ICE-Cal",
     "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
     "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-    "checkout": "codex/in-context-execution-calibration@7c2ba26f3fd7771ac0bd273eaa7afd3febd7009b+debug-fix-sha256:f97df0c5028fd2363d1d639287ddef29f33d03fdee72c56782941bae9a767552",
-    "review_object": "sha256:f97df0c5028fd2363d1d639287ddef29f33d03fdee72c56782941bae9a767552"
+    "checkout": "codex/in-context-execution-calibration@3f35f183169cba30d4eac415849b278c40e0ca82+debug-fix-sha256:a52eeb49de943eca892f64dd9ec0108be53b6e01a79a99b56d43eef1d6790ab6",
+    "review_object": "sha256:a52eeb49de943eca892f64dd9ec0108be53b6e01a79a99b56d43eef1d6790ab6"
   },
   "authority": {
     "review": {
@@ -42,13 +42,13 @@
     "report_write": {
       "status": "approved",
       "scope": "Persist the bounded debug-fix review object and receipt",
-      "receipt": "User requested local execution through the point immediately before personally synchronizing code"
+      "receipt": "User explicitly requested the code modification after the server reproduced the Action rejection"
     }
   },
   "review_object": {
     "kind": "diff",
     "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/reviews/2026-08-23-source-projection-device-tolerance-review-object.md",
-    "content_hash": "sha256:f97df0c5028fd2363d1d639287ddef29f33d03fdee72c56782941bae9a767552",
+    "content_hash": "sha256:a52eeb49de943eca892f64dd9ec0108be53b6e01a79a99b56d43eef1d6790ab6",
     "current": true
   },
   "repository_discipline": {
@@ -86,7 +86,7 @@
     {
       "name": "evidence-boundary",
       "disposition": "pass",
-      "evidence": "Runtime probes establish the CUDA-to-CPU false rejection; 340 offline tests and static checks do not claim a server rerun."
+      "evidence": "Runtime probes establish the CUDA-to-CPU false rejection; the server reproduced the first repair's under-budget Action rejection, while 340 offline tests and static checks do not claim a successful Stage 1 rerun."
     },
     {
       "name": "tensor-provenance",
@@ -107,7 +107,7 @@
   "findings": [],
   "residual_risks": [
     "A future numeric backend with drift above the explicit budget will fail closed and require a new measured compatibility decision.",
-    "The patch has not yet been synchronized to the server and Stage 1 has not rerun."
+    "This follow-up patch has not yet been synchronized to the server and Stage 1 has not rerun after it."
   ],
   "blockers": [],
   "claims": {

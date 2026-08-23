@@ -1346,7 +1346,7 @@ def test_source_projection_accepts_observed_cross_device_float32_drift() -> None
         replace(
             valid,
             planner_intent=valid.planner_intent + 6.5e-4,
-            nominal_action_chunk=valid.nominal_action_chunk + 4.0e-5,
+            nominal_action_chunk=valid.nominal_action_chunk + 4.0e-4,
         ),
     )
 
