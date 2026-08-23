@@ -1,4 +1,8 @@
 from unilab.algos.torch.fada_context.calibration import CoefficientEncoder
+from unilab.algos.torch.fada_context.calibration_training.direction_geometry import (
+    diagnose_direction_geometry,
+    summarize_direction_geometry,
+)
 from unilab.algos.torch.fada_context.calibration_training.io import (
     CALIBRATION_SCALE_EVIDENCE_SCHEMA,
     CALIBRATION_STAGE_ARTIFACT_SCHEMA,
@@ -35,6 +39,9 @@ from unilab.algos.torch.fada_context.calibration_training.types import (
     CoefficientStageResult,
     DirectionDiagnosticConfig,
     DirectionDiagnosticPoint,
+    DirectionGeometryAxisReport,
+    DirectionGeometryConfig,
+    DirectionGeometrySplitReport,
     DirectionStageConfig,
     DirectionStageResult,
     ScaleStageResult,

@@ -5,6 +5,7 @@ import importlib
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -43,6 +44,7 @@ def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
         "train_fada_calibration.py",
         "train_fada_calibration_stage1.py",
         "diagnose_fada_calibration_stage1.py",
+        "diagnose_fada_calibration_direction_geometry.py",
         "train_fada_calibration_stage2.py",
         "train_fada_calibration_stage3.py",
         "evaluate_fada_calibration.py",
@@ -91,6 +93,18 @@ def test_calibration_cli_entrypoints_expose_real_parsers() -> None:
             assert "--output" not in result.stdout
             assert "--active-axis" not in result.stdout
             assert "--stage1-artifact" not in result.stdout
+        if script == "diagnose_fada_calibration_direction_geometry.py":
+            for flag in (
+                "--source-checkpoint",
+                "--dataset",
+                "--axis-catalog",
+            ):
+                assert flag in result.stdout
+            assert "--output" not in result.stdout
+            assert "--active-axis" not in result.stdout
+            assert "--stage1-artifact" not in result.stdout
+            assert "--steps" not in result.stdout
+            assert "--learning-rate" not in result.stdout
         if script == "train_fada_calibration_stage2.py":
             assert "--stage1-artifact" in result.stdout
             assert "--stage2-steps" in result.stdout
@@ -258,6 +272,172 @@ def test_stage1_diagnostic_main_rejects_source_mismatch_before_owner_or_adam(
         "argv",
         [
             "diagnose_fada_calibration_stage1.py",
+            "--source-checkpoint",
+            str(checkpoint),
+            "--dataset",
+            str(dataset_path),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="source Tracker digest"):
+        diagnostic_cli.main()
+    assert calls == 0
+
+
+def test_direction_geometry_main_binds_identity_and_prints_typed_reports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    diagnostic_cli = importlib.import_module(
+        "scripts.diagnose_fada_calibration_direction_geometry"
+    )
+    checkpoint = tmp_path / "source.pt"
+    dataset_path = tmp_path / "dataset.pt"
+    checkpoint.write_bytes(b"source-checkpoint")
+    dataset_path.write_bytes(b"sealed-dataset")
+    source_sha = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    dataset_sha = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+    catalog = FaultAxisCatalog.default()
+    axis_spec = CalibrationAxisSpec.from_catalog(catalog, ("gain",))
+    policy = SimpleNamespace(config=object())
+    dataset = SimpleNamespace(
+        batch=object(),
+        axis_spec=axis_spec,
+        metadata={
+            "source_tracker_sha256": source_sha,
+            "split_identity_sha256": "3" * 64,
+        },
+    )
+    split_type = getattr(diagnostic_cli, "DirectionGeometrySplitReport")
+    axis_type = getattr(diagnostic_cli, "DirectionGeometryAxisReport")
+    split_report = split_type(
+        split_id=0,
+        sample_count=2,
+        excluded_zero_coefficient_count=1,
+        excluded_zero_target_error_count=0,
+        zero_direction_count=0,
+        individual_ratio_median=0.02,
+        individual_ratio_p90=0.03,
+        individual_ratio_max=0.04,
+        individual_gate_fraction=1.0,
+        top1_energy_fraction=0.9,
+        cosine_to_consensus_mean=0.8,
+        cosine_to_consensus_p10=0.7,
+        opposing_direction_fraction=0.0,
+        direction_norm_p10=0.5,
+        direction_norm_median=0.6,
+        direction_norm_p90=0.7,
+        direction_norm_p90_p10_ratio=1.4,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        diagnostic_cli,
+        "load_fada_policy_checkpoint",
+        lambda *args, **kwargs: SimpleNamespace(policy=policy),
+    )
+    monkeypatch.setattr(diagnostic_cli, "load_fault_axis_catalog", lambda path: catalog)
+    monkeypatch.setattr(
+        diagnostic_cli,
+        "load_calibration_dataset",
+        lambda *args, **kwargs: dataset,
+    )
+
+    def diagnose(policy_arg, batch_arg, identity_arg, config_arg):
+        captured.update(
+            policy=policy_arg,
+            batch=batch_arg,
+            identity=identity_arg,
+            config=config_arg,
+        )
+        return (
+            axis_type(
+                axis_index=0,
+                supervision_scope="executed_first_action",
+                solver="linear_decoder_minimum_norm",
+                shared_training_ratio=0.5,
+                shared_validation_ratio=0.6,
+                training=split_report,
+                validation=replace(split_report, split_id=1),
+            ),
+        )
+
+    monkeypatch.setattr(diagnostic_cli, "diagnose_direction_geometry", diagnose)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "diagnose_fada_calibration_direction_geometry.py",
+            "--source-checkpoint",
+            str(checkpoint),
+            "--dataset",
+            str(dataset_path),
+        ],
+    )
+
+    assert diagnostic_cli.main() == 0
+    identity = captured["identity"]
+    assert identity.source_tracker_sha256 == source_sha
+    assert identity.dataset_sha256 == dataset_sha
+    assert identity.split_sha256 == "3" * 64
+    assert identity.axis_spec == axis_spec
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["supervision_scope"] == "executed_first_action"
+    assert payload["solver"] == "linear_decoder_minimum_norm"
+    assert payload["source_tracker_sha256"] == source_sha
+    assert payload["dataset_sha256"] == dataset_sha
+    assert payload["split_sha256"] == "3" * 64
+    assert payload["axis_spec"] == axis_spec.to_payload()
+    assert payload["reports"][0]["axis_name"] == "gain"
+    assert payload["reports"][0]["shared_validation_ratio"] == pytest.approx(0.6)
+
+
+def test_direction_geometry_main_rejects_source_mismatch_before_owner_or_adam(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_cli = importlib.import_module(
+        "scripts.diagnose_fada_calibration_direction_geometry"
+    )
+    checkpoint = tmp_path / "source.pt"
+    dataset_path = tmp_path / "dataset.pt"
+    checkpoint.write_bytes(b"source-checkpoint")
+    dataset_path.write_bytes(b"sealed-dataset")
+    catalog = FaultAxisCatalog.default()
+    dataset = SimpleNamespace(
+        batch=object(),
+        axis_spec=CalibrationAxisSpec.from_catalog(catalog, ("gain",)),
+        metadata={
+            "source_tracker_sha256": "0" * 64,
+            "split_identity_sha256": "3" * 64,
+        },
+    )
+    calls = 0
+
+    def poison(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("geometry owner and Adam must be unreachable")
+
+    monkeypatch.setattr(
+        diagnostic_cli,
+        "load_fada_policy_checkpoint",
+        lambda *args, **kwargs: SimpleNamespace(policy=SimpleNamespace(config=object())),
+    )
+    monkeypatch.setattr(diagnostic_cli, "load_fault_axis_catalog", lambda path: catalog)
+    monkeypatch.setattr(
+        diagnostic_cli,
+        "load_calibration_dataset",
+        lambda *args, **kwargs: dataset,
+    )
+    monkeypatch.setattr(diagnostic_cli, "diagnose_direction_geometry", poison)
+    monkeypatch.setattr(torch.optim, "Adam", poison)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "diagnose_fada_calibration_direction_geometry.py",
             "--source-checkpoint",
             str(checkpoint),
             "--dataset",

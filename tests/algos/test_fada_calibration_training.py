@@ -45,6 +45,7 @@ from unilab.algos.torch.fada_context.calibration_training import (
     CalibrationScaleEvidence,
     CalibrationStageIdentity,
     CoefficientStageConfig,
+    DirectionGeometryConfig,
     DirectionStageConfig,
     SerialCalibrationConfig,
     calibration_compensation_ratio,
@@ -159,6 +160,29 @@ def _admitted_batch(
         planner_intent=intent.repeat(2, 1, 1),
         rollout_id=torch.arange(6, dtype=torch.int64),
         seed=torch.arange(6, dtype=torch.int64) + 100,
+        split_id=torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.int64),
+    )
+
+
+def _gain_geometry_batch(policy: FADAPlannerIDMPolicy) -> CalibrationRolloutBatch:
+    source = project_calibration_rollout_batch(
+        _admitted_batch(policy),
+        FaultAxisCatalog.default(),
+        _axis_spec(("gain",)),
+        config=policy.config,
+    )
+    indices = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.int64)
+    selected = source.index_select(indices)
+    c_true = selected.c_true.clone()
+    c_true[[2, 5], 0] = 0.0
+    target = selected.target_action_chunk.clone()
+    target[[2, 5]] = selected.nominal_action_chunk[[2, 5]]
+    return replace(
+        selected,
+        target_action_chunk=target,
+        c_true=c_true,
+        rollout_id=torch.arange(6, dtype=torch.int64) + 500,
+        seed=torch.arange(6, dtype=torch.int64) + 600,
         split_id=torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.int64),
     )
 
@@ -319,6 +343,19 @@ def test_stage_configs_reject_nonfinite_learning_rate_before_adam(
 
 
 @pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"training_split_id": 1, "validation_split_id": 1},
+        {"minimum_abs_coefficient": 0.0},
+        {"minimum_abs_coefficient": float("nan")},
+    ],
+)
+def test_direction_geometry_config_rejects_unidentifiable_boundaries(kwargs) -> None:
+    with pytest.raises(ValueError, match="direction geometry"):
+        DirectionGeometryConfig(**kwargs)
+
+
+@pytest.mark.parametrize(
     ("field", "invalid"),
     [
         ("source_tracker_sha256", "A" * 64),
@@ -443,6 +480,141 @@ def test_stage1_diagnostics_record_requested_steps_without_mutating_policy() -> 
     )
     assert all(point.direction_norm == 0.0 for point in points[::2])
     assert all(point.direction_norm > 0.0 for point in points[1::2])
+    _assert_snapshot(policy, policy_snapshot)
+    assert [parameter.grad for parameter in policy.parameters()] == gradients
+    assert [parameter.requires_grad for parameter in policy.parameters()] == requires_grad
+    assert [module.training for module in policy.modules()] == training_modes
+
+
+def test_direction_geometry_summary_distinguishes_aligned_orthogonal_and_opposite() -> None:
+    owner = importlib.import_module(
+        "unilab.algos.torch.fada_context.calibration_training.direction_geometry"
+    )
+    ratios = torch.tensor([0.01, 0.04])
+
+    aligned = owner.summarize_direction_geometry(
+        torch.tensor([[1.0, 0.0], [2.0, 0.0]]),
+        ratios,
+        split_id=0,
+        excluded_zero_coefficient_count=1,
+        excluded_zero_target_error_count=2,
+    )
+    assert aligned.sample_count == 2
+    assert aligned.excluded_zero_coefficient_count == 1
+    assert aligned.excluded_zero_target_error_count == 2
+    assert aligned.top1_energy_fraction == pytest.approx(1.0)
+    assert aligned.cosine_to_consensus_mean == pytest.approx(1.0)
+    assert aligned.cosine_to_consensus_p10 == pytest.approx(1.0)
+    assert aligned.opposing_direction_fraction == pytest.approx(0.0)
+    assert aligned.individual_gate_fraction == pytest.approx(1.0)
+    assert aligned.direction_norm_p10 == pytest.approx(1.1)
+    assert aligned.direction_norm_median == pytest.approx(1.5)
+    assert aligned.direction_norm_p90 == pytest.approx(1.9)
+    assert aligned.direction_norm_p90_p10_ratio == pytest.approx(1.9 / 1.1)
+
+    orthogonal = owner.summarize_direction_geometry(
+        torch.eye(2),
+        ratios,
+        split_id=0,
+        excluded_zero_coefficient_count=0,
+        excluded_zero_target_error_count=0,
+    )
+    assert orthogonal.top1_energy_fraction == pytest.approx(0.5)
+
+    opposite = owner.summarize_direction_geometry(
+        torch.tensor([[1.0, 0.0], [-1.0, 0.0]]),
+        ratios,
+        split_id=0,
+        excluded_zero_coefficient_count=0,
+        excluded_zero_target_error_count=0,
+    )
+    assert opposite.top1_energy_fraction == pytest.approx(1.0)
+    assert opposite.opposing_direction_fraction == pytest.approx(0.5)
+
+
+def test_direction_geometry_summary_rejects_unidentifiable_or_nonfinite_inputs() -> None:
+    owner = importlib.import_module(
+        "unilab.algos.torch.fada_context.calibration_training.direction_geometry"
+    )
+    with pytest.raises(ValueError, match="two nonzero"):
+        owner.summarize_direction_geometry(
+            torch.tensor([[1.0, 0.0], [0.0, 0.0]]),
+            torch.tensor([0.1, 1.0]),
+            split_id=0,
+            excluded_zero_coefficient_count=0,
+            excluded_zero_target_error_count=0,
+        )
+    with pytest.raises(ValueError, match="finite"):
+        owner.summarize_direction_geometry(
+            torch.tensor([[1.0, 0.0], [float("nan"), 1.0]]),
+            torch.tensor([0.1, 0.2]),
+            split_id=0,
+            excluded_zero_coefficient_count=0,
+            excluded_zero_target_error_count=0,
+        )
+
+
+def test_direction_geometry_diagnostic_is_exact_first_action_only_and_restores_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch.manual_seed(23)
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    batch = _gain_geometry_batch(policy)
+    policy_snapshot = _snapshot(policy)
+    gradients = [parameter.grad for parameter in policy.parameters()]
+    requires_grad = [parameter.requires_grad for parameter in policy.parameters()]
+    training_modes = [module.training for module in policy.modules()]
+    owner = importlib.import_module(
+        "unilab.algos.torch.fada_context.calibration_training.direction_geometry"
+    )
+    config_type = getattr(calibration_training, "DirectionGeometryConfig")
+
+    def poison_adam(*args, **kwargs):
+        raise AssertionError("analytic direction geometry must not construct Adam")
+
+    monkeypatch.setattr(torch.optim, "Adam", poison_adam)
+
+    reports = owner.diagnose_direction_geometry(
+        policy,
+        batch,
+        _identity(("gain",)),
+        config_type(),
+    )
+    changed_future_target = batch.target_action_chunk.clone()
+    changed_future_target[:, 1:] += 100.0
+    counterfactual_reports = owner.diagnose_direction_geometry(
+        policy,
+        replace(batch, target_action_chunk=changed_future_target),
+        _identity(("gain",)),
+        config_type(),
+    )
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.axis_index == 0
+    assert report.supervision_scope == "executed_first_action"
+    assert report.solver == "linear_decoder_minimum_norm"
+    assert report.training.split_id == 0
+    assert report.validation.split_id == 1
+    assert report.training.sample_count == 2
+    assert report.validation.sample_count == 2
+    assert report.training.excluded_zero_coefficient_count == 1
+    assert report.validation.excluded_zero_coefficient_count == 1
+    assert reports == counterfactual_reports
+    assert report.shared_training_ratio < 1.0e-8
+    assert report.shared_validation_ratio < 1.0e-8
+    assert report.training.individual_ratio_max < 1.0e-8
+    assert report.validation.individual_ratio_max < 1.0e-8
+    assert torch.isfinite(
+        torch.tensor(
+            [
+                report.shared_training_ratio,
+                report.shared_validation_ratio,
+                report.training.top1_energy_fraction,
+                report.validation.top1_energy_fraction,
+            ]
+        )
+    ).all()
     _assert_snapshot(policy, policy_snapshot)
     assert [parameter.grad for parameter in policy.parameters()] == gradients
     assert [parameter.requires_grad for parameter in policy.parameters()] == requires_grad

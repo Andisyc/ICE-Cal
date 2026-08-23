@@ -97,6 +97,56 @@ class DirectionDiagnosticPoint:
 
 
 @dataclass(frozen=True)
+class DirectionGeometryConfig:
+    training_split_id: int = 0
+    validation_split_id: int = 1
+    minimum_abs_coefficient: float = 1.0e-6
+
+    def __post_init__(self) -> None:
+        if self.training_split_id == self.validation_split_id:
+            raise ValueError("direction geometry training and validation split IDs must differ")
+        if (
+            not math.isfinite(self.minimum_abs_coefficient)
+            or self.minimum_abs_coefficient <= 0
+        ):
+            raise ValueError(
+                "direction geometry minimum_abs_coefficient must be finite and positive"
+            )
+
+
+@dataclass(frozen=True)
+class DirectionGeometrySplitReport:
+    split_id: int
+    sample_count: int
+    excluded_zero_coefficient_count: int
+    excluded_zero_target_error_count: int
+    zero_direction_count: int
+    individual_ratio_median: float
+    individual_ratio_p90: float
+    individual_ratio_max: float
+    individual_gate_fraction: float
+    top1_energy_fraction: float
+    cosine_to_consensus_mean: float
+    cosine_to_consensus_p10: float
+    opposing_direction_fraction: float
+    direction_norm_p10: float
+    direction_norm_median: float
+    direction_norm_p90: float
+    direction_norm_p90_p10_ratio: float
+
+
+@dataclass(frozen=True)
+class DirectionGeometryAxisReport:
+    axis_index: int
+    supervision_scope: Literal["executed_first_action"]
+    solver: Literal["linear_decoder_minimum_norm"]
+    shared_training_ratio: float
+    shared_validation_ratio: float
+    training: DirectionGeometrySplitReport
+    validation: DirectionGeometrySplitReport
+
+
+@dataclass(frozen=True)
 class CoefficientStageConfig:
     steps: int = 1000
     learning_rate: float = 3.0e-4
