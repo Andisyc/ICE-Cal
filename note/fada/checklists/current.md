@@ -1,36 +1,32 @@
-# Current Checklist: Calibratable Tracker v007/v006
+# Current Checklist: Configurable-Axis Tracker v008/v007
 
-Status: `IMPLEMENTED-OFFLINE / MODULE-CORRECT / FORMAL-AUDIT-PENDING`
+Status: `OFFLINE-CLOSED / FORMAL-AUDIT-NOT-RUN`
 
 ## Authority
 
-- [x] Concept Figure 08 and Design Inspector 09 synchronized.
-- [x] Human-authorized semantic projection recorded.
-- [x] `FADA-CONTEXT-METHOD-v007` and `FADA-CONTEXT-TRAIN-v006` active.
-- [x] v006/v005 Contracts and technical receipts classified historical.
-- [x] Module Test Cards confirmed by the user.
-- [x] Stage Isolation Engineering Plan received `code-review-expert: READY`.
+- [x] Design Inspector states `m=len(active_axes)` with full three-axis default.
+- [x] `FADA-CONTEXT-METHOD-v008` and `FADA-CONTEXT-TRAIN-v007` active.
+- [x] Fixed-three-axis v007/v006 Contracts and receipts classified historical.
+- [x] Configurable-axis Module Test Cards confirmed by the user's execution authorization.
+- [x] Engineering Plan received validated `code-review-expert: READY`.
+- [x] State-schema migration plan validates.
 
 ## Engineering gates
 
-- [x] Axis catalog and analytic label owner implemented.
-- [x] Stage 1 Direction Bank satisfies per-axis compensation and freeze gates.
-- [x] Stage 2 Coefficient Encoder satisfies coefficient error and freeze gates.
-- [x] Stage 3 typed evidence and monotone Scale Curve artifacts satisfy identity, fit, and range-event gates.
-- [x] Stage 1, Stage 2, and Stage 3 expose independent public transactions and standalone CLIs.
-- [x] Stage 2 and Stage 3 exact-byte load admitted predecessor artifacts and bind parent/evidence digests.
-- [x] The serial convenience route crosses the same persisted boundaries and does not inspect future-stage evidence early.
-- [x] Stage artifact and deployment publication are atomic, preserve old targets on failure, and reject the retired generic checkpoint schema.
-- [x] Composition owner proves zero identity, six-token direction fields, and first-action execution.
-- [x] Held-out multi-axis combinations have the declared four-route offline evaluation owner.
-- [x] v006/v005 Support/Query artifacts fail closed on the active route.
+- [x] One canonical `CalibrationAxisSpec` owns catalog version and ordered active names.
+- [x] Dataset sealing filters/projects rows and preserves non-catalog caller order.
+- [x] `calibration_training.py` is replaced by Stage-owned package modules.
+- [x] Stage 1/2/3 and every persisted artifact derive `m` from the typed Axis Spec.
+- [x] Exact legacy gain raw v1 reseals; old trained schemas reject before mutation.
+- [x] Playback thresholds resolve by artifact axis names; `m=1` combination evaluation is N/A.
+- [x] Full-three-axis default behavior remains characterized.
 
 ## Evidence gates
 
-- [x] `module-alignment-test: MODULE-CORRECT` for v007/v006 Stage Isolation (17 owners, 75 semantic cases, 151-test affected suite).
-- [x] `code-review-expert: FINAL_GATE_PASS` for the Stage Isolation diff.
-- [ ] `formal-runtime-audit` for official data, stage, persistence, and deployment routes.
-- [ ] Separate human authorization for any training, simulation, or policy-quality run.
-
-Current v007/v006 receipts are under `note/testing/` and `note/fada/reviews/`. Old v006/v005
-receipts remain `HISTORICAL` and are not admissible for any current box.
+- [x] Existing fixed-three-axis baseline: 157 tests passed before production edits.
+- [x] TDD RED cases observed for AxisSpec, dataset projection and package-owner boundaries.
+- [x] Impacted-set Module Alignment current: 338 FADA calibration/context tests passed.
+- [x] Ruff clean and mypy clean across 23 source files.
+- [x] `code-review-expert: MIGRATION_REVIEW_PASS` and `FINAL_GATE_PASS` for the complete diff.
+- [x] `formal-runtime-audit` remains separate and not run.
+- [x] Training, simulation, deployment and policy-quality execution remain unauthorized.

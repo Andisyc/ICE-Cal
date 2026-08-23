@@ -1,4 +1,4 @@
-"""Train and seal only the v007/v006 Stage 1 Direction Bank."""
+"""Train and seal only the v008/v007 Stage 1 Direction Bank."""
 
 from __future__ import annotations
 
@@ -40,18 +40,17 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     loaded = load_fada_policy_checkpoint(args.source_checkpoint, device="cpu")
-    batch, metadata = load_calibration_dataset(args.dataset, loaded.policy.config)
+    catalog = load_fault_axis_catalog(args.axis_catalog)
+    dataset = load_calibration_dataset(args.dataset, loaded.policy.config, catalog)
+    batch, metadata = dataset.batch, dataset.metadata
     source_sha256 = _sha256(args.source_checkpoint)
     if metadata["source_tracker_sha256"] != source_sha256:
         raise ValueError("dataset source Tracker digest does not match the selected checkpoint")
-    catalog = load_fault_axis_catalog(args.axis_catalog)
-    if metadata["axis_catalog_version"] != catalog.version:
-        raise ValueError("dataset and configured fault-axis catalog differ")
     identity = CalibrationStageIdentity(
         source_tracker_sha256=source_sha256,
         dataset_sha256=_sha256(args.dataset),
         split_sha256=str(metadata["split_identity_sha256"]),
-        axis_catalog_version=str(metadata["axis_catalog_version"]),
+        axis_spec=dataset.axis_spec,
     )
     result = run_direction_stage_training(
         loaded.policy,

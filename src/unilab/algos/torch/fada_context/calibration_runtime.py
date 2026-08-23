@@ -10,10 +10,12 @@ from unilab.algos.torch.distill.fada import FADAPlannerIDMPolicy
 from unilab.algos.torch.distill.fada_playback import FADAPlaybackController
 from unilab.algos.torch.fada_context.calibration import (
     CalibratedFADAPolicy,
+    CalibrationAxisSpec,
     CalibrationReadout,
     CalibrationReadoutState,
     CoefficientEncoder,
     DirectionBank,
+    FaultAxisCatalog,
     MonotoneScaleCurve,
     load_calibration_artifact,
 )
@@ -27,13 +29,19 @@ class CalibratedFADAPlaybackController(FADAPlaybackController):
         policy: CalibratedFADAPolicy,
         *,
         device: str | torch.device,
-        jump_threshold: torch.Tensor,
+        jump_threshold: Mapping[str, float],
     ) -> None:
         super().__init__(policy, device=device)
         self.calibrated_policy = policy
+        if set(jump_threshold) != set(policy.axis_spec.names):
+            raise ValueError("jump_threshold must bind every active axis by name")
+        ordered_jump_threshold = torch.tensor(
+            [float(jump_threshold[name]) for name in policy.axis_spec.names],
+            dtype=torch.float32,
+        )
         self.readout_state = CalibrationReadoutState(
             axis_count=policy.direction_bank.axis_count,
-            jump_threshold=jump_threshold,
+            jump_threshold=ordered_jump_threshold,
         )
         self._history_count: torch.Tensor | None = None
         self.last_readout: CalibrationReadout | None = None
@@ -110,8 +118,13 @@ def load_calibrated_policy(
     *,
     device: str | torch.device = "cpu",
     expected_metadata: Mapping[str, str],
+    catalog: FaultAxisCatalog,
+    expected_axis_spec: CalibrationAxisSpec | None = None,
 ) -> CalibratedFADAPolicy:
-    payload = load_calibration_artifact(artifact_path)
+    payload = load_calibration_artifact(artifact_path, catalog)
+    axis_spec = CalibrationAxisSpec.from_payload(payload["axis_spec"], catalog)
+    if expected_axis_spec is not None and axis_spec != expected_axis_spec:
+        raise ValueError("calibration artifact axis spec does not match the expected dataset")
     artifact_metadata = payload["metadata"]
     if any(artifact_metadata.get(name) != value for name, value in expected_metadata.items()):
         raise ValueError("calibration artifact metadata identity mismatch")
@@ -120,7 +133,7 @@ def load_calibrated_policy(
     direction_state = payload["direction_bank"]
     directions = direction_state.get("directions")
     expected_direction_shape = (
-        len(payload["axis_names"]),
+        axis_spec.axis_count,
         healthy_policy.config.prediction_horizon,
         healthy_policy.config.hidden_dim,
     )
@@ -142,7 +155,7 @@ def load_calibrated_policy(
     expected_encoder_config = {
         "state_dim": healthy_policy.config.obs_dim,
         "action_dim": healthy_policy.config.action_dim,
-        "axis_count": len(payload["axis_names"]),
+        "axis_count": axis_spec.axis_count,
         "hidden_dim": 128,
         "layers": 2,
     }
@@ -167,6 +180,7 @@ def load_calibrated_policy(
         direction_bank=direction_bank.to(device),
         coefficient_encoder=encoder.to(device),
         scale_curves=tuple(curves),
+        axis_spec=axis_spec,
         planner=healthy_policy.planner.to(device),
         idm=healthy_policy.idm.to(device),
     )

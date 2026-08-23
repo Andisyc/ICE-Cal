@@ -1,6 +1,6 @@
 ---
 contract_id: FADA-CONTEXT-METHOD-v007
-status: active
+status: historical
 effective_date: 2026-08-19
 supersedes: FADA-CONTEXT-METHOD-v006
 prerequisite: FADA-METHOD-v005

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,16 +11,33 @@ import torch
 import unilab.algos.torch.fada_context as fada_context
 from unilab.algos.torch.distill.fada import FADAArchitectureConfig, FADAPlannerIDMPolicy
 from unilab.algos.torch.fada_context import calibration_training
+from unilab.algos.torch.fada_context.calibration_training import (
+    io as training_io_owner,
+)
+from unilab.algos.torch.fada_context.calibration_training import (
+    stage1 as stage1_owner,
+)
+from unilab.algos.torch.fada_context.calibration_training import (
+    stage2 as stage2_owner,
+)
+from unilab.algos.torch.fada_context.calibration_training import (
+    stage3 as stage3_owner,
+)
 
 _SOURCE_SHA256 = "1" * 64
 _DATASET_SHA256 = "2" * 64
 _SPLIT_SHA256 = "3" * 64
 from unilab.algos.torch.fada_context.calibration import (
+    CalibrationAxisSpec,
     CalibrationRolloutBatch,
     CoefficientEncoder,
     DirectionBank,
+    FaultAxisCatalog,
     fit_scale_curve_bank,
     load_calibration_artifact,
+)
+from unilab.algos.torch.fada_context.calibration_data import (
+    project_calibration_rollout_batch,
 )
 from unilab.algos.torch.fada_context.calibration_runtime import load_calibrated_policy
 from unilab.algos.torch.fada_context.calibration_training import (
@@ -82,17 +100,23 @@ def _metadata() -> dict[str, str]:
         "source_tracker_sha256": _SOURCE_SHA256,
         "dataset_sha256": _DATASET_SHA256,
         "split_sha256": _SPLIT_SHA256,
-        "axis_catalog_version": "gain-delay-offset-v1",
     }
 
 
-def _identity() -> CalibrationStageIdentity:
-    return CalibrationStageIdentity(**_metadata())
+def _axis_spec(names: tuple[str, ...] | None = None) -> CalibrationAxisSpec:
+    return CalibrationAxisSpec.from_catalog(FaultAxisCatalog.default(), names)
 
 
-def _scale_evidence() -> CalibrationScaleEvidence:
-    coefficient_scan_grid = torch.linspace(-1.0, 1.0, 21).repeat(3, 1)
-    readings = torch.linspace(-1.0, 1.0, 21).view(1, 21, 1).repeat(3, 1, 32)
+def _identity(names: tuple[str, ...] | None = None) -> CalibrationStageIdentity:
+    return CalibrationStageIdentity(**_metadata(), axis_spec=_axis_spec(names))
+
+
+def _scale_evidence(
+    names: tuple[str, ...] | None = None,
+) -> CalibrationScaleEvidence:
+    axis_spec = _axis_spec(names)
+    coefficient_scan_grid = torch.linspace(-1.0, 1.0, 21).repeat(axis_spec.axis_count, 1)
+    readings = torch.linspace(-1.0, 1.0, 21).view(1, 21, 1).repeat(axis_spec.axis_count, 1, 32)
     candidates = torch.linspace(-0.5, 0.5, 41)
     desired = 0.2 * readings
     errors = (candidates.view(1, 1, 1, -1) - desired.unsqueeze(-1)).square()
@@ -101,6 +125,7 @@ def _scale_evidence() -> CalibrationScaleEvidence:
         readings=readings,
         candidate_scales=candidates,
         action_errors=errors,
+        axis_spec=axis_spec,
         metadata=_metadata(),
     )
 
@@ -138,6 +163,28 @@ def _admitted_batch(
     )
 
 
+def _append_held_out_combinations(batch: CalibrationRolloutBatch) -> CalibrationRolloutBatch:
+    extras = {
+        name: getattr(batch, name)[:2].clone()
+        for name in CalibrationRolloutBatch.__dataclass_fields__
+    }
+    extras["c_true"] = torch.tensor(
+        [[0.2, 0.0, 0.4], [0.2, 0.3, 0.0]],
+        dtype=batch.c_true.dtype,
+    )
+    extras["axis_id"] = torch.full((2,), -1, dtype=torch.int64)
+    extras["is_held_out_combination"] = torch.ones(2, dtype=torch.bool)
+    extras["rollout_id"] = torch.tensor([1000, 1001], dtype=torch.int64)
+    extras["seed"] = torch.tensor([2000, 2001], dtype=torch.int64)
+    extras["split_id"] = torch.zeros(2, dtype=torch.int64)
+    return CalibrationRolloutBatch(
+        **{
+            name: torch.cat((getattr(batch, name), extras[name]), dim=0)
+            for name in CalibrationRolloutBatch.__dataclass_fields__
+        }
+    )
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -161,7 +208,7 @@ def _make_direction_artifact(
     batch: CalibrationRolloutBatch,
 ) -> Path:
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -184,7 +231,7 @@ def _make_coefficient_artifact(
 ) -> Path:
     direction_path = _make_direction_artifact(tmp_path, monkeypatch, policy, batch)
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -220,6 +267,19 @@ def test_stage_isolation_public_export_surface_has_no_generic_checkpoint_api() -
         "load_calibration_training_checkpoint",
     ):
         assert not hasattr(fada_context, name), name
+
+
+def test_calibration_training_is_split_into_stage_owner_modules() -> None:
+    assert hasattr(calibration_training, "__path__")
+    owners = {
+        "stage1": run_direction_stage_training,
+        "stage2": run_coefficient_stage_training,
+        "stage3": run_scale_stage_fitting,
+        "pipeline": run_serial_calibration_training,
+    }
+    for module_name, entrypoint in owners.items():
+        module = importlib.import_module(f"{calibration_training.__name__}.{module_name}")
+        assert entrypoint is getattr(module, entrypoint.__name__)
 
 
 def test_stage_owned_configs_cannot_relax_active_contract_gates() -> None:
@@ -396,7 +456,7 @@ def test_stage3_scale_fit_does_not_construct_or_update_neural_owner() -> None:
     candidates = torch.linspace(-0.4, 0.4, 81)
     desired = 0.2 * readings
     action_errors = (candidates.view(1, 1, 1, -1) - desired.unsqueeze(-1)).square()
-    artifact = fit_scale_stage(readings, candidates, action_errors)
+    artifact = fit_scale_stage(readings, candidates, action_errors, _axis_spec())
     assert len(artifact) == 3
     assert all(curve.kind == "pchip" for curve in artifact)
 
@@ -404,7 +464,12 @@ def test_stage3_scale_fit_does_not_construct_or_update_neural_owner() -> None:
 def test_stage3_rejects_missing_32_repeat_evidence() -> None:
     readings = torch.linspace(-1.0, 1.0, 21).repeat(3, 1)
     with pytest.raises(ValueError, match="32 repetitions"):
-        fit_scale_stage(readings, torch.linspace(-1.0, 1.0, 3), torch.zeros(3, 21, 3))
+        fit_scale_stage(
+            readings,
+            torch.linspace(-1.0, 1.0, 3),
+            torch.zeros(3, 21, 3),
+            _axis_spec(),
+        )
 
 
 def test_stage3_rejects_low_quality_monotone_fit() -> None:
@@ -414,13 +479,13 @@ def test_stage3_rejects_low_quality_monotone_fit() -> None:
     desired[:, :, ::2] *= -1
     action_errors = (candidates.view(1, 1, 1, -1) - desired.unsqueeze(-1)).square()
     with pytest.raises(ValueError, match=r"R\^2"):
-        fit_scale_stage(readings, candidates, action_errors)
+        fit_scale_stage(readings, candidates, action_errors, _axis_spec())
 
 
 def test_stage3_evidence_round_trip_binds_transaction_identity(tmp_path) -> None:
     evidence = _scale_evidence()
     path = save_calibration_scale_evidence(tmp_path / "scale-evidence.pt", evidence)
-    restored = load_calibration_scale_evidence(path, expected_metadata=_metadata())
+    restored = load_calibration_scale_evidence(path, expected_identity=_identity())
     torch.testing.assert_close(
         restored.coefficient_scan_grid,
         evidence.coefficient_scan_grid,
@@ -430,7 +495,7 @@ def test_stage3_evidence_round_trip_binds_transaction_identity(tmp_path) -> None
     with pytest.raises(ValueError, match="metadata identity"):
         load_calibration_scale_evidence(
             path,
-            expected_metadata={**_metadata(), "dataset_sha256": "other-dataset"},
+            expected_identity=replace(_identity(), dataset_sha256="4" * 64),
         )
 
 
@@ -440,6 +505,12 @@ def test_stage3_evidence_rejects_a_noncanonical_coefficient_scan_grid() -> None:
     bad_grid[1, 10] = 0.01
     with pytest.raises(ValueError, match="coefficient scan grid"):
         replace(evidence, coefficient_scan_grid=bad_grid).validate()
+
+
+def test_scale_evidence_rejects_axis_count_in_provenance_metadata() -> None:
+    evidence = _scale_evidence()
+    with pytest.raises(ValueError, match="reserved axis identity"):
+        replace(evidence, metadata={**evidence.metadata, "axis_count": "3"}).validate()
 
 
 @pytest.mark.parametrize(
@@ -469,7 +540,7 @@ def test_scale_evidence_loader_rejects_invalid_persisted_envelope(
     elif mutation == "training_contract":
         payload["training_contract_id"] = "wrong-training"
     elif mutation == "axis_order":
-        payload["axis_names"] = tuple(reversed(payload["axis_names"]))
+        payload["axis_spec"]["names"] = list(reversed(payload["axis_spec"]["names"]))
     elif mutation.startswith("missing_"):
         field = {
             "missing_grid": "coefficient_scan_grid",
@@ -482,7 +553,7 @@ def test_scale_evidence_loader_rejects_invalid_persisted_envelope(
         payload["readings"][0, 0, 0] = torch.nan
     torch.save(payload, path)
     with pytest.raises(ValueError):
-        load_calibration_scale_evidence(path, expected_metadata=_metadata())
+        load_calibration_scale_evidence(path, expected_identity=_identity())
 
 
 @pytest.mark.parametrize("preexisting", [False, True])
@@ -518,7 +589,7 @@ def test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directio
     batch = _admitted_batch(policy)
     policy_snapshot = _snapshot(policy)
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -526,7 +597,7 @@ def test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directio
     def poison(*args, **kwargs):
         raise AssertionError("Stage 1 must not construct a Coefficient Encoder")
 
-    monkeypatch.setattr(calibration_training, "CoefficientEncoder", poison)
+    assert not hasattr(stage1_owner, "CoefficientEncoder")
     result = run_direction_stage_training(
         policy,
         batch,
@@ -562,7 +633,7 @@ def test_stage2_strictly_loads_stage1_and_seals_parent_identity(
     }
     policy_snapshot = _snapshot(policy)
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -634,14 +705,15 @@ def test_stage2_rejects_invalid_predecessor_before_optimizer(
         payload["training_contract_id"] = "wrong-training"
     elif mutation == "stage":
         payload["stage"] = "coefficient_frozen"
-    elif mutation in {"source", "dataset", "split", "catalog"}:
+    elif mutation in {"source", "dataset", "split"}:
         identity_field = {
             "source": "source_tracker_sha256",
             "dataset": "dataset_sha256",
             "split": "split_sha256",
-            "catalog": "axis_catalog_version",
         }[mutation]
         payload["identity"][identity_field] = "other"
+    elif mutation == "catalog":
+        payload["identity"]["axis_spec"]["catalog_version"] = "other"
     elif mutation == "architecture":
         payload["architecture"]["hidden_dim"] = 9
     elif mutation in {"history_dimension", "horizon_dimension", "latent_dimension"}:
@@ -652,7 +724,9 @@ def test_stage2_rejects_invalid_predecessor_before_optimizer(
         }[mutation]
         payload["dimensions"][dimension] += 1
     elif mutation == "axis_order":
-        payload["axis_names"] = tuple(reversed(payload["axis_names"]))
+        payload["identity"]["axis_spec"]["names"] = list(
+            reversed(payload["identity"]["axis_spec"]["names"])
+        )
     elif mutation == "direction_config":
         payload["owners"]["direction_bank"]["config"]["axis_count"] = 4
     elif mutation == "owner_set":
@@ -707,7 +781,7 @@ def test_stage2_binds_exact_copied_parent_bytes_and_rejects_corruption_before_op
     copied = tmp_path / "copied-stage1.pt"
     copied.write_bytes(original.read_bytes())
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -771,14 +845,14 @@ def test_training_stage_rolls_back_injected_borrowed_policy_mutation_without_pub
     batch = _admitted_batch(policy)
     policy_snapshot = _snapshot(policy)
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
     if stage == "coefficient":
         predecessor = _make_direction_artifact(tmp_path, monkeypatch, policy, batch)
         monkeypatch.setattr(
-            calibration_training,
+            stage2_owner,
             "coefficient_validation_error",
             lambda *args, **kwargs: torch.tensor(0.0),
         )
@@ -853,7 +927,7 @@ def test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digest
     artifact = torch.load(result.artifact_path, map_location="cpu", weights_only=True)
     assert artifact["metadata"]["parent_stage_sha256"] == result.parent_stage_sha256
     assert artifact["metadata"]["scale_evidence_sha256"] == result.scale_evidence_sha256
-    loaded = load_calibration_artifact(result.artifact_path)
+    loaded = load_calibration_artifact(result.artifact_path, FaultAxisCatalog.default())
     for owner_name in ("direction_bank", "coefficient_encoder"):
         stage_owner = stage2_payload["owners"][owner_name]["state_dict"]
         deployment_owner = loaded[owner_name]
@@ -1041,7 +1115,11 @@ def test_stage3_failed_publication_preserves_old_target_and_cleans_staging(
         Path(path).write_bytes(b"partial")
         raise OSError("injected deployment serialization failure")
 
-    monkeypatch.setattr(calibration_training, "save_calibration_artifact", fail_after_partial_write)
+    monkeypatch.setattr(
+        training_io_owner,
+        "save_calibration_artifact",
+        fail_after_partial_write,
+    )
     with pytest.raises(OSError, match="deployment serialization failure"):
         run_scale_stage_fitting(
             policy,
@@ -1069,7 +1147,7 @@ def test_stage_artifact_publication_cleans_unique_temp_and_preserves_target(
     if preexisting:
         target.write_bytes(b"old-target")
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -1116,7 +1194,7 @@ def test_serial_training_rejects_missing_validation_before_optimizer(
             source_tracker_sha256=_SOURCE_SHA256,
             dataset_sha256=_DATASET_SHA256,
             split_sha256=_SPLIT_SHA256,
-            axis_catalog_version="gain-delay-offset-v1",
+            axis_spec=_axis_spec(),
             scale_evidence=_scale_evidence(),
             config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
         )
@@ -1149,7 +1227,7 @@ def test_serial_training_does_not_admit_stage3_evidence_before_stage1_optimizer(
             source_tracker_sha256=_SOURCE_SHA256,
             dataset_sha256=_DATASET_SHA256,
             split_sha256=_SPLIT_SHA256,
-            axis_catalog_version="gain-delay-offset-v1",
+            axis_spec=_axis_spec(),
             scale_evidence=wrong_evidence,
             config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
         )
@@ -1174,12 +1252,12 @@ def test_serial_materializes_in_memory_future_evidence_only_after_stage2_publica
         readings[0, 0, 0] = torch.nan
         evidence = replace(evidence, readings=readings)
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -1200,7 +1278,7 @@ def test_serial_materializes_in_memory_future_evidence_only_after_stage2_publica
             source_tracker_sha256=_SOURCE_SHA256,
             dataset_sha256=_DATASET_SHA256,
             split_sha256=_SPLIT_SHA256,
-            axis_catalog_version="gain-delay-offset-v1",
+            axis_spec=_axis_spec(),
             scale_evidence=evidence,
             config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
         )
@@ -1218,12 +1296,12 @@ def test_serial_does_not_read_scale_evidence_path_before_stage2_publication(
     policy = FADAPlannerIDMPolicy(_config()).eval()
     batch = _admitted_batch(policy)
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -1235,7 +1313,7 @@ def test_serial_does_not_read_scale_evidence_path_before_stage2_publication(
             source_tracker_sha256=_SOURCE_SHA256,
             dataset_sha256=_DATASET_SHA256,
             split_sha256=_SPLIT_SHA256,
-            axis_catalog_version="gain-delay-offset-v1",
+            axis_spec=_axis_spec(),
             scale_evidence_path=tmp_path / "missing-evidence.pt",
             config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
         )
@@ -1303,7 +1381,7 @@ def test_serial_training_completes_all_three_real_owner_stages(tmp_path) -> None
         source_tracker_sha256=_SOURCE_SHA256,
         dataset_sha256=_DATASET_SHA256,
         split_sha256=_SPLIT_SHA256,
-        axis_catalog_version="gain-delay-offset-v1",
+        axis_spec=_axis_spec(),
         scale_evidence=_scale_evidence(),
         config=SerialCalibrationConfig(
             stage1_steps_per_axis=200,
@@ -1355,12 +1433,12 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
     independent_policy = FADAPlannerIDMPolicy(_config()).eval()
     independent_policy.load_state_dict(source_state, strict=True)
     monkeypatch.setattr(
-        calibration_training,
+        stage1_owner,
         "direction_stage_compensation_ratio",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
     monkeypatch.setattr(
-        calibration_training,
+        stage2_owner,
         "coefficient_validation_error",
         lambda *args, **kwargs: torch.tensor(0.0),
     )
@@ -1377,7 +1455,7 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
         source_tracker_sha256=_SOURCE_SHA256,
         dataset_sha256=_DATASET_SHA256,
         split_sha256=_SPLIT_SHA256,
-        axis_catalog_version="gain-delay-offset-v1",
+        axis_spec=_axis_spec(),
         scale_evidence=evidence,
         config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
     )
@@ -1437,7 +1515,6 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
             "stage",
             "architecture",
             "dimensions",
-            "axis_names",
             "identity",
             "gate",
         ):
@@ -1451,8 +1528,10 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
         serial_dir / "stage1_direction_frozen.pt"
     )
     assert independent_stage2["parent_stage_sha256"] == _sha256(direction.artifact_path)
-    serial_artifact = load_calibration_artifact(serial["artifact_path"])
-    independent_artifact = load_calibration_artifact(complete.artifact_path)
+    serial_artifact = load_calibration_artifact(serial["artifact_path"], FaultAxisCatalog.default())
+    independent_artifact = load_calibration_artifact(
+        complete.artifact_path, FaultAxisCatalog.default()
+    )
     assert serial_artifact["metadata"]["parent_stage_sha256"] == _sha256(
         serial_dir / "stage2_coefficient_frozen.pt"
     )
@@ -1472,11 +1551,13 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
         serial_healthy,
         serial["artifact_path"],
         expected_metadata=_metadata(),
+        catalog=FaultAxisCatalog.default(),
     )
     independent_loaded = load_calibrated_policy(
         independent_healthy,
         complete.artifact_path,
         expected_metadata=_metadata(),
+        catalog=FaultAxisCatalog.default(),
     )
     observation = batch.observation_history[:2].clone()
     action_history = batch.action_history[:2].clone()
@@ -1496,3 +1577,104 @@ def test_serial_and_independent_transactions_are_fresh_reload_action_equivalent(
     torch.testing.assert_close(serial_output.action, serial_output.action_chunk[:, 0])
     torch.testing.assert_close(independent_output.action, independent_output.action_chunk[:, 0])
     torch.testing.assert_close(serial_output.action, independent_output.action, rtol=0.0, atol=0.0)
+
+
+@pytest.mark.parametrize("names", [("gain",), ("offset", "gain")])
+def test_configurable_axis_spec_runs_the_complete_serial_owner_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    names: tuple[str, ...],
+) -> None:
+    torch.manual_seed(401)
+    policy = FADAPlannerIDMPolicy(_config()).eval()
+    axis_spec = _axis_spec(names)
+    source_batch = _admitted_batch(policy)
+    if names == ("offset", "gain"):
+        source_batch = _append_held_out_combinations(source_batch)
+    batch = project_calibration_rollout_batch(
+        source_batch,
+        FaultAxisCatalog.default(),
+        axis_spec,
+        config=policy.config,
+    )
+    if names == ("offset", "gain"):
+        held_out = torch.nonzero(batch.is_held_out_combination, as_tuple=False).flatten()
+        assert held_out.numel() == 1
+        assert int(batch.axis_id[held_out[0]]) == -1
+        torch.testing.assert_close(
+            batch.c_true[held_out[0]],
+            torch.tensor([0.4, 0.2]),
+        )
+    monkeypatch.setattr(
+        stage1_owner,
+        "direction_stage_compensation_ratio",
+        lambda *args, **kwargs: torch.tensor(0.0),
+    )
+    monkeypatch.setattr(
+        stage2_owner,
+        "coefficient_validation_error",
+        lambda *args, **kwargs: torch.tensor(0.0),
+    )
+    result = run_serial_calibration_training(
+        policy,
+        batch,
+        output_dir=tmp_path,
+        source_tracker_sha256=_SOURCE_SHA256,
+        dataset_sha256=_DATASET_SHA256,
+        split_sha256=_SPLIT_SHA256,
+        axis_spec=axis_spec,
+        scale_evidence=_scale_evidence(names),
+        config=SerialCalibrationConfig(stage1_steps_per_axis=1, stage2_steps=1),
+    )
+    assert result["axis_spec"] == axis_spec.to_payload()
+    stage1 = torch.load(
+        tmp_path / "stage1_direction_frozen.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    stage2 = torch.load(
+        tmp_path / "stage2_coefficient_frozen.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    final = load_calibration_artifact(result["artifact_path"], FaultAxisCatalog.default())
+    assert stage1["identity"]["axis_spec"] == axis_spec.to_payload()
+    assert tuple(stage1["owners"]["direction_bank"]["state_dict"]["directions"].shape) == (
+        axis_spec.axis_count,
+        policy.config.prediction_horizon,
+        policy.config.hidden_dim,
+    )
+    assert stage2["owners"]["coefficient_encoder"]["config"]["axis_count"] == (axis_spec.axis_count)
+    assert final["axis_spec"] == axis_spec.to_payload()
+    assert len(final["scale_curves"]) == axis_spec.axis_count
+    fresh_healthy = FADAPlannerIDMPolicy(_config()).eval()
+    fresh_healthy.load_state_dict(policy.state_dict(), strict=True)
+    if names == ("offset", "gain"):
+        with pytest.raises(ValueError, match="expected dataset"):
+            load_calibrated_policy(
+                fresh_healthy,
+                result["artifact_path"],
+                expected_metadata=_metadata(),
+                catalog=FaultAxisCatalog.default(),
+                expected_axis_spec=_axis_spec(("gain", "offset")),
+            )
+    loaded = load_calibrated_policy(
+        fresh_healthy,
+        result["artifact_path"],
+        expected_metadata=_metadata(),
+        catalog=FaultAxisCatalog.default(),
+        expected_axis_spec=axis_spec,
+    )
+    observation = batch.observation_history[:2]
+    action_history = batch.action_history[:2]
+    command = batch.command[:2]
+    with torch.no_grad():
+        nominal = fresh_healthy(observation, action_history, command)
+        reconstructed = loaded.reconstruct_with_coefficients(
+            observation,
+            action_history,
+            command,
+            torch.zeros(2, axis_spec.axis_count),
+        )
+    torch.testing.assert_close(reconstructed.action_chunk, nominal.action_chunk)
+    torch.testing.assert_close(reconstructed.action, nominal.action)

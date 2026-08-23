@@ -18,9 +18,6 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 from unilab.algos.torch.distill import load_fada_policy_checkpoint  # noqa: E402
-from unilab.algos.torch.fada_context.calibration import (  # noqa: E402
-    CALIBRATION_AXIS_CATALOG_VERSION,
-)
 from unilab.algos.torch.fada_context.calibration_collection import (  # noqa: E402
     GainCalibrationCollectionProtocol,
     GainCalibrationRawIdentity,
@@ -29,6 +26,9 @@ from unilab.algos.torch.fada_context.calibration_collection import (  # noqa: E4
     load_gain_calibration_protocol,
     save_gain_calibration_raw_rollouts,
     sha256_file,
+)
+from unilab.algos.torch.fada_context.calibration_data import (  # noqa: E402
+    load_fault_axis_catalog,
 )
 from unilab.training import (  # noqa: E402
     BackendAdapter,
@@ -52,6 +52,15 @@ def _parse_args() -> argparse.Namespace:
         / "gain_smoke_v1.yaml",
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--axis-catalog",
+        type=Path,
+        default=ROOT_DIR
+        / "conf"
+        / "fada_context"
+        / "calibration_axes"
+        / "gain_delay_offset_v1.yaml",
+    )
     parser.add_argument("--device", default="cpu")
     return parser.parse_args()
 
@@ -115,6 +124,7 @@ def main() -> int:
         cfg, base_override
     )
     loaded = load_fada_policy_checkpoint(source_checkpoint, device=args.device)
+    catalog = load_fault_axis_catalog(args.axis_catalog)
     ensure_registries()
 
     def environment_factory(point, split):
@@ -135,17 +145,18 @@ def main() -> int:
         loaded.policy,
         protocol,
         environment_factory,
+        catalog=catalog,
         identity=GainCalibrationRawIdentity(
             source_checkpoint_sha256=observed_sha256,
             source_checkpoint_path=str(source_checkpoint),
             protocol_sha256=protocol_sha256,
             resolved_task_backend_sha256=task_backend_sha256,
-            axis_catalog_version=CALIBRATION_AXIS_CATALOG_VERSION,
+            axis_catalog_version=catalog.version,
         ),
         protocol_bytes=protocol_bytes,
         resolved_task_backend_payload=task_backend_payload,
     )
-    output = save_gain_calibration_raw_rollouts(args.output, artifact)
+    output = save_gain_calibration_raw_rollouts(args.output, artifact, catalog=catalog)
     print(
         json.dumps(
             {

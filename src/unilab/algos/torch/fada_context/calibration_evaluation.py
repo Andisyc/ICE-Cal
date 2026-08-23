@@ -114,6 +114,8 @@ def evaluate_held_out_calibration(
         raise ValueError("nominal and calibrated policy architectures must match")
     axis_count = int(batch.c_true.shape[-1])
     batch.validate(nominal_policy.config, axis_count=axis_count)
+    if axis_count < 2:
+        raise ValueError("held-out combination evaluation is not applicable to a one-axis run")
     if full_finetune.action_chunk.shape != batch.target_action_chunk.shape:
         raise ValueError("full-finetune action chunks must bind every dataset row")
     if not torch.equal(full_finetune.rollout_id.to(batch.rollout_id), batch.rollout_id):

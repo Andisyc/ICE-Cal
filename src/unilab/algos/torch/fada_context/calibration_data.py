@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
+import tempfile
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,16 +12,33 @@ from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill.fada import FADAArchitectureConfig
 from unilab.algos.torch.fada_context.calibration import (
-    CALIBRATION_AXIS_CATALOG_VERSION,
-    CALIBRATION_AXIS_NAMES,
     CALIBRATION_METHOD_CONTRACT_ID,
     CALIBRATION_TRAINING_CONTRACT_ID,
+    CalibrationAxisSpec,
     CalibrationRolloutBatch,
     FaultAxis,
     FaultAxisCatalog,
 )
 
-CALIBRATION_DATASET_SCHEMA = "unilab_fada_calibration_dataset_v1"
+CALIBRATION_DATASET_SCHEMA = "unilab_fada_calibration_dataset_v2"
+
+_RESERVED_AXIS_METADATA_KEYS = frozenset(
+    {
+        "active_axes",
+        "axis_catalog_version",
+        "axis_count",
+        "axis_names",
+        "axis_spec",
+        "catalog_version",
+    }
+)
+
+
+@dataclass(frozen=True)
+class LoadedCalibrationDataset:
+    batch: CalibrationRolloutBatch
+    axis_spec: CalibrationAxisSpec
+    metadata: Mapping[str, Any]
 
 
 def load_fault_axis_catalog(path: str | Path) -> FaultAxisCatalog:
@@ -55,6 +73,7 @@ def prepare_calibration_rollout_batch(
     raw: Mapping[str, Any],
     config: FADAArchitectureConfig,
     catalog: FaultAxisCatalog,
+    axis_spec: CalibrationAxisSpec | None = None,
 ) -> CalibrationRolloutBatch:
     tensor_names = (
         "observation_history",
@@ -96,7 +115,7 @@ def prepare_calibration_rollout_batch(
             raw["nominal_action_chunk"][row : row + 1],
             float(raw["injected_strength"][row]),
         )
-    return CalibrationRolloutBatch(
+    batch = CalibrationRolloutBatch(
         observation_history=raw["observation_history"],
         action_history=raw["action_history"],
         command=raw["command"],
@@ -111,6 +130,56 @@ def prepare_calibration_rollout_batch(
         seed=raw["seed"],
         split_id=raw["split_id"],
     ).validate(config, axis_count=len(catalog.axes))
+    return project_calibration_rollout_batch(
+        batch,
+        catalog,
+        CalibrationAxisSpec.from_catalog(catalog) if axis_spec is None else axis_spec,
+        config=config,
+    )
+
+
+def project_calibration_rollout_batch(
+    batch: CalibrationRolloutBatch,
+    catalog: FaultAxisCatalog,
+    axis_spec: CalibrationAxisSpec,
+    *,
+    config: FADAArchitectureConfig | None = None,
+) -> CalibrationRolloutBatch:
+    selected_catalog_indices = axis_spec.catalog_indices(catalog)
+    selected_set = set(selected_catalog_indices)
+    keep_rows: list[int] = []
+    for row in range(batch.c_true.shape[0]):
+        if bool(batch.is_held_out_combination[row]):
+            active = set(torch.nonzero(batch.c_true[row], as_tuple=False).flatten().tolist())
+            if len(active) >= 2 and active.issubset(selected_set):
+                keep_rows.append(row)
+        elif int(batch.axis_id[row]) in selected_set:
+            keep_rows.append(row)
+    if not keep_rows:
+        raise ValueError("axis selection leaves no calibration rollout rows")
+    row_indices = torch.tensor(keep_rows, dtype=torch.int64, device=batch.axis_id.device)
+    projected = batch.index_select(row_indices)
+    column_indices = torch.tensor(
+        selected_catalog_indices,
+        dtype=torch.int64,
+        device=projected.c_true.device,
+    )
+    remap = {
+        catalog_index: spec_index
+        for spec_index, catalog_index in enumerate(selected_catalog_indices)
+    }
+    remapped_axis_id = projected.axis_id.clone()
+    for row in range(remapped_axis_id.shape[0]):
+        if not bool(projected.is_held_out_combination[row]):
+            remapped_axis_id[row] = remap[int(remapped_axis_id[row])]
+    projected = replace(
+        projected,
+        c_true=projected.c_true.index_select(1, column_indices),
+        axis_id=remapped_axis_id,
+    )
+    if config is not None:
+        projected.validate(config, axis_count=axis_spec.axis_count)
+    return projected
 
 
 def calibration_split_identity_sha256(batch: CalibrationRolloutBatch) -> str:
@@ -134,19 +203,23 @@ def save_calibration_dataset(
     batch: CalibrationRolloutBatch,
     config: FADAArchitectureConfig,
     *,
+    axis_spec: CalibrationAxisSpec,
     metadata: Mapping[str, Any],
 ) -> Path:
-    batch.validate(config, axis_count=batch.c_true.shape[-1])
-    if batch.c_true.shape[-1] != len(CALIBRATION_AXIS_NAMES):
-        raise ValueError("calibration dataset axis count does not match the active catalog")
-    required = {"source_tracker_sha256", "axis_catalog_version", "split_identity_sha256"}
+    batch.validate(config, axis_count=axis_spec.axis_count)
+    if batch.c_true.shape[-1] != axis_spec.axis_count:
+        raise ValueError("calibration dataset axis count does not match its axis spec")
+    reserved = sorted(_RESERVED_AXIS_METADATA_KEYS.intersection(metadata))
+    if reserved:
+        raise ValueError(
+            f"calibration dataset metadata contains reserved axis identity: {reserved}"
+        )
+    required = {"source_tracker_sha256", "split_identity_sha256"}
     missing = sorted(
         name for name in required if not isinstance(metadata.get(name), str) or not metadata[name]
     )
     if missing:
         raise ValueError(f"calibration dataset metadata is missing: {missing}")
-    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration dataset axis catalog mismatch")
     if metadata["split_identity_sha256"] != calibration_split_identity_sha256(batch):
         raise ValueError("calibration dataset split identity does not match its rows")
     target = Path(path).expanduser().resolve()
@@ -156,21 +229,31 @@ def save_calibration_dataset(
         "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
         "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
         "architecture": asdict(config),
-        "axis_count": int(batch.c_true.shape[-1]),
-        "axis_names": CALIBRATION_AXIS_NAMES,
+        "axis_spec": axis_spec.to_payload(),
         "metadata": dict(metadata),
         **_fields(batch),
     }
-    temporary = target.with_suffix(f"{target.suffix}.tmp")
-    torch.save(payload, temporary)
-    temporary.replace(target)
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=target.parent,
+        delete=False,
+    )
+    temporary = Path(handle.name)
+    handle.close()
+    try:
+        torch.save(payload, temporary)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return target
 
 
 def load_calibration_dataset(
     path: str | Path,
     config: FADAArchitectureConfig,
-) -> tuple[CalibrationRolloutBatch, Mapping[str, Any]]:
+    catalog: FaultAxisCatalog,
+) -> LoadedCalibrationDataset:
     payload = torch.load(Path(path), map_location="cpu", weights_only=True)
     if not isinstance(payload, dict) or payload.get("schema_version") != CALIBRATION_DATASET_SCHEMA:
         raise ValueError("unsupported calibration dataset schema")
@@ -180,11 +263,7 @@ def load_calibration_dataset(
         raise ValueError("calibration dataset training Contract mismatch")
     if payload.get("architecture") != asdict(config):
         raise ValueError("calibration dataset architecture mismatch")
-    if (
-        payload.get("axis_count") != len(CALIBRATION_AXIS_NAMES)
-        or tuple(payload.get("axis_names", ())) != CALIBRATION_AXIS_NAMES
-    ):
-        raise ValueError("calibration dataset axis catalog identity mismatch")
+    axis_spec = CalibrationAxisSpec.from_payload(payload.get("axis_spec"), catalog)
     names = tuple(CalibrationRolloutBatch.__dataclass_fields__)
     missing = [name for name in names if not isinstance(payload.get(name), torch.Tensor)]
     if missing:
@@ -192,8 +271,11 @@ def load_calibration_dataset(
     metadata = payload.get("metadata")
     if not isinstance(metadata, Mapping):
         raise ValueError("calibration dataset metadata must be a mapping")
-    if metadata.get("axis_catalog_version") != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration dataset axis catalog mismatch")
+    reserved = sorted(_RESERVED_AXIS_METADATA_KEYS.intersection(metadata))
+    if reserved:
+        raise ValueError(
+            f"calibration dataset metadata contains reserved axis identity: {reserved}"
+        )
     if (
         not isinstance(metadata.get("source_tracker_sha256"), str)
         or not metadata["source_tracker_sha256"]
@@ -205,7 +287,7 @@ def load_calibration_dataset(
     ):
         raise ValueError("calibration dataset split identity is missing")
     batch = CalibrationRolloutBatch(**{name: payload[name] for name in names})
-    batch.validate(config, axis_count=int(payload.get("axis_count", -1)))
+    batch.validate(config, axis_count=axis_spec.axis_count)
     if metadata["split_identity_sha256"] != calibration_split_identity_sha256(batch):
         raise ValueError("calibration dataset split identity does not match its rows")
-    return batch, metadata
+    return LoadedCalibrationDataset(batch=batch, axis_spec=axis_spec, metadata=metadata)

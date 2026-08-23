@@ -1,6 +1,6 @@
 ---
 contract_id: FADA-CONTEXT-TRAIN-v006
-status: active
+status: historical
 effective_date: 2026-08-19
 supersedes: FADA-CONTEXT-TRAIN-v005
 method_contract: FADA-CONTEXT-METHOD-v007

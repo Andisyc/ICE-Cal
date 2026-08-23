@@ -1,4 +1,4 @@
-"""Launch frozen v007 calibrated FADA playback through the existing viewer composition root."""
+"""Launch frozen v008 calibrated FADA playback through the existing viewer composition root."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ for path in (ROOT_DIR / "scripts", ROOT_DIR / "src", ROOT_DIR):
 from play_interactive import _build_play_args, play_interactive  # noqa: E402
 
 from unilab.algos.torch.distill import load_fada_policy_checkpoint  # noqa: E402
+from unilab.algos.torch.fada_context.calibration_data import (  # noqa: E402
+    load_fault_axis_catalog,
+)
 from unilab.algos.torch.fada_context.calibration_runtime import (  # noqa: E402
     CalibratedFADAPlaybackController,
     load_calibrated_policy,
@@ -37,15 +40,20 @@ def _session_factory(**kwargs: Any) -> Any:
     cfg = kwargs["cfg"]
     source = (ROOT_DIR / str(cfg.calibration_playback.source_checkpoint)).resolve()
     artifact = (ROOT_DIR / str(cfg.calibration_playback.artifact)).resolve()
+    axis_catalog_path = (ROOT_DIR / str(cfg.calibration_playback.axis_catalog)).resolve()
+    catalog = load_fault_axis_catalog(axis_catalog_path)
     healthy = load_fada_policy_checkpoint(source, device=str(kwargs["device"])).policy
     policy = load_calibrated_policy(
         healthy,
         artifact,
         device=str(kwargs["device"]),
         expected_metadata={"source_tracker_sha256": _sha256(source)},
+        catalog=catalog,
     )
     session, policy_obs_mode, checkpoint_path = create_fada_playback_session(**kwargs)
-    threshold = list(cfg.calibration_playback.get("jump_threshold", [0.25, 0.25, 0.25]))
+    threshold = {
+        str(name): float(value) for name, value in cfg.calibration_playback.jump_threshold.items()
+    }
     session.bind_controller(
         CalibratedFADAPlaybackController(
             policy,

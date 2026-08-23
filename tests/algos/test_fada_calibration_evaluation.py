@@ -136,6 +136,21 @@ def test_held_out_evaluation_rejects_training_only_or_wrong_upper_bound_shape() 
         )
 
 
+def test_one_axis_evaluation_is_explicitly_not_applicable() -> None:
+    source = _batch().index_select(torch.tensor([0]))
+    batch = replace(source, c_true=source.c_true[:, :1]).validate(_config(), axis_count=1)
+    with pytest.raises(ValueError, match="not applicable"):
+        evaluate_held_out_calibration(
+            _NominalPolicy(),
+            _CalibratedPolicy(),
+            batch,
+            full_finetune=CalibrationFullFinetuneUpperBound(
+                action_chunk=batch.target_action_chunk,
+                rollout_id=batch.rollout_id,
+            ),
+        )
+
+
 def test_full_finetune_upper_bound_round_trip_binds_row_identity(tmp_path) -> None:
     upper = CalibrationFullFinetuneUpperBound(
         action_chunk=torch.zeros(3, 6, 2),

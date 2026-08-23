@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import sys
@@ -15,7 +16,11 @@ from torch import nn
 
 import unilab.algos.torch.fada_context as fada_context
 from unilab.algos.torch.distill.fada import FADAArchitectureConfig, PlannerIDMOutput
-from unilab.algos.torch.fada_context.calibration import DirectionBank, FaultAxisCatalog
+from unilab.algos.torch.fada_context.calibration import (
+    CalibrationAxisSpec,
+    DirectionBank,
+    FaultAxisCatalog,
+)
 from unilab.algos.torch.fada_context.calibration_data import prepare_calibration_rollout_batch
 from unilab.algos.torch.fada_context.calibration_training import direction_stage_loss
 from unilab.base.np_env import NpEnvState
@@ -151,6 +156,7 @@ def test_scenario_uses_real_warmup_and_rolls_back_the_whole_drifted_episode() ->
         policy,
         _scenario_spec(),
         rollout_id_start=10,
+        axis_spec=CalibrationAxisSpec.from_catalog(FaultAxisCatalog.default()),
     )
 
     assert result.environment_steps == 64
@@ -246,6 +252,33 @@ def _resolved_task_backend_payload() -> dict[str, object]:
     }
 
 
+@pytest.fixture(scope="module")
+def calibration_raw_artifacts():
+    module = _collection_module()
+    policy = _FrozenPolicy()
+    current = module.collect_gain_calibration_rollouts(
+        policy,
+        _approved_protocol(module),
+        lambda point, split: _PseudoEnv(gain=point.gain),
+        catalog=FaultAxisCatalog.default(),
+        identity=_identity(module),
+        protocol_bytes=_protocol_bytes(),
+        resolved_task_backend_payload=_resolved_task_backend_payload(),
+    )
+    legacy = copy.deepcopy(current)
+    legacy["schema_version"] = "unilab_fada_gain_calibration_raw_rollouts_v1"
+    legacy["method_contract_id"] = "FADA-CONTEXT-METHOD-v007"
+    legacy["training_contract_id"] = "FADA-CONTEXT-TRAIN-v006"
+    legacy.pop("axis_spec")
+    legacy["axis_count"] = 3
+    legacy["axis_names"] = ("gain", "delay", "offset")
+    legacy["metadata"] = {
+        **legacy["metadata"],
+        "axis_catalog_version": "gain-delay-offset-v1",
+    }
+    return current, legacy
+
+
 def test_full_collection_binds_identity_and_keeps_diagnostic_actions_out_of_training() -> None:
     module = _collection_module()
     policy = _FrozenPolicy()
@@ -262,6 +295,7 @@ def test_full_collection_binds_identity_and_keeps_diagnostic_actions_out_of_trai
         policy,
         protocol,
         factory,
+        catalog=FaultAxisCatalog.default(),
         identity=_identity(module),
         protocol_bytes=_protocol_bytes(),
         resolved_task_backend_payload=_resolved_task_backend_payload(),
@@ -302,13 +336,19 @@ def test_raw_round_trip_rejects_corrupt_identity_and_atomic_failure_preserves_ta
         policy,
         _approved_protocol(module),
         lambda point, split: _PseudoEnv(gain=point.gain),
+        catalog=FaultAxisCatalog.default(),
         identity=_identity(module),
         protocol_bytes=_protocol_bytes(),
         resolved_task_backend_payload=_resolved_task_backend_payload(),
     )
-    target = module.save_gain_calibration_raw_rollouts(tmp_path / "raw.pt", artifact)
+    target = module.save_gain_calibration_raw_rollouts(
+        tmp_path / "raw.pt",
+        artifact,
+        catalog=FaultAxisCatalog.default(),
+    )
     loaded = module.load_gain_calibration_raw_rollouts(
         target,
+        catalog=FaultAxisCatalog.default(),
         expected_source_sha256="a" * 64,
         expected_architecture=policy.config,
     )
@@ -321,15 +361,24 @@ def test_raw_round_trip_rejects_corrupt_identity_and_atomic_failure_preserves_ta
     with pytest.raises(ValueError, match="architecture identity"):
         module.load_gain_calibration_raw_rollouts(
             target,
+            catalog=FaultAxisCatalog.default(),
             expected_source_sha256="a" * 64,
             expected_architecture=policy.config,
         )
-    module.save_gain_calibration_raw_rollouts(target, artifact)
+    module.save_gain_calibration_raw_rollouts(
+        target,
+        artifact,
+        catalog=FaultAxisCatalog.default(),
+    )
     payload = torch.load(target, map_location="cpu", weights_only=True)
     payload["method_contract_id"] = "wrong"
     torch.save(payload, target)
     with pytest.raises(ValueError, match="method Contract"):
-        module.load_gain_calibration_raw_rollouts(target, expected_source_sha256="a" * 64)
+        module.load_gain_calibration_raw_rollouts(
+            target,
+            catalog=FaultAxisCatalog.default(),
+            expected_source_sha256="a" * 64,
+        )
 
     target.write_bytes(b"preserve-me")
 
@@ -339,9 +388,127 @@ def test_raw_round_trip_rejects_corrupt_identity_and_atomic_failure_preserves_ta
 
     monkeypatch.setattr(module.torch, "save", fail_save)
     with pytest.raises(OSError, match="synthetic"):
-        module.save_gain_calibration_raw_rollouts(target, artifact)
+        module.save_gain_calibration_raw_rollouts(
+            target,
+            artifact,
+            catalog=FaultAxisCatalog.default(),
+        )
     assert target.read_bytes() == b"preserve-me"
     assert list(tmp_path.glob(".raw.pt.*.tmp")) == []
+
+
+def test_exact_legacy_gain_raw_v1_is_admitted_for_dataset_resealing(
+    tmp_path: Path,
+    calibration_raw_artifacts,
+) -> None:
+    module = _collection_module()
+    policy = _FrozenPolicy()
+    _, legacy = calibration_raw_artifacts
+    path = tmp_path / "legacy-raw.pt"
+    torch.save(legacy, path)
+    loaded = module.load_gain_calibration_raw_rollouts(
+        path,
+        catalog=FaultAxisCatalog.default(),
+        expected_source_sha256="a" * 64,
+        expected_architecture=policy.config,
+    )
+    assert loaded["axis_name"] == ["gain"] * 192
+    forbidden_target = tmp_path / "forbidden-legacy-write.pt"
+    with pytest.raises(ValueError, match="unsupported.*schema"):
+        module.save_gain_calibration_raw_rollouts(
+            forbidden_target,
+            legacy,
+            catalog=FaultAxisCatalog.default(),
+        )
+    assert not forbidden_target.exists()
+    assert list(tmp_path.glob(".forbidden-legacy-write.pt.*")) == []
+    tampered = dict(legacy)
+    tampered["training_contract_id"] = "FADA-CONTEXT-TRAIN-v007"
+    torch.save(tampered, path)
+    with pytest.raises(ValueError, match="training Contract"):
+        module.load_gain_calibration_raw_rollouts(
+            path,
+            catalog=FaultAxisCatalog.default(),
+        )
+
+
+@pytest.mark.parametrize(
+    "duplicate_key",
+    ["active_axes", "axis_catalog_version", "axis_count", "axis_names", "catalog_version"],
+)
+def test_active_raw_writer_rejects_duplicate_top_level_axis_identity(
+    tmp_path: Path,
+    calibration_raw_artifacts,
+    duplicate_key: str,
+) -> None:
+    module = _collection_module()
+    current, _ = calibration_raw_artifacts
+    artifact = copy.deepcopy(current)
+    artifact[duplicate_key] = ["gain", "delay", "offset"]
+    target = tmp_path / f"duplicate-{duplicate_key}.pt"
+    with pytest.raises(ValueError, match="duplicate axis identity"):
+        module.save_gain_calibration_raw_rollouts(
+            target,
+            artifact,
+            catalog=FaultAxisCatalog.default(),
+        )
+    assert not target.exists()
+    assert list(tmp_path.glob(f".duplicate-{duplicate_key}.pt.*")) == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "schema",
+        "method_contract",
+        "catalog_version",
+        "axis_order",
+        "non_gain_label",
+        "nonzero_omitted_coordinate",
+        "source",
+        "protocol",
+        "backend",
+        "architecture",
+    ],
+)
+def test_legacy_gain_raw_gateway_rejects_identity_and_semantic_mutations(
+    tmp_path: Path,
+    calibration_raw_artifacts,
+    mutation: str,
+) -> None:
+    module = _collection_module()
+    _, source = calibration_raw_artifacts
+    artifact = copy.deepcopy(source)
+    expected_source = "a" * 64
+    if mutation == "schema":
+        artifact["schema_version"] = "unilab_fada_gain_calibration_raw_rollouts_v0"
+    elif mutation == "method_contract":
+        artifact["method_contract_id"] = "FADA-CONTEXT-METHOD-v008"
+    elif mutation == "catalog_version":
+        artifact["metadata"]["axis_catalog_version"] = "wrong-catalog"
+    elif mutation == "axis_order":
+        artifact["axis_names"] = ("offset", "delay", "gain")
+    elif mutation == "non_gain_label":
+        artifact["axis_name"][0] = "delay"
+    elif mutation == "nonzero_omitted_coordinate":
+        artifact["c_true"][0, 1] = 0.2
+    elif mutation == "source":
+        expected_source = "b" * 64
+    elif mutation == "protocol":
+        artifact["metadata"]["protocol_sha256"] = "d" * 64
+    elif mutation == "backend":
+        artifact["metadata"]["resolved_task_backend_sha256"] = "d" * 64
+    else:
+        artifact["architecture"]["hidden_dim"] = 16
+    path = tmp_path / f"legacy-{mutation}.pt"
+    torch.save(artifact, path)
+    with pytest.raises(ValueError):
+        module.load_gain_calibration_raw_rollouts(
+            path,
+            catalog=FaultAxisCatalog.default(),
+            expected_source_sha256=expected_source,
+            expected_architecture=_config(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -358,6 +525,7 @@ def test_raw_loader_recomputes_provenance_digests_from_embedded_material(
         policy,
         _approved_protocol(module),
         lambda point, split: _PseudoEnv(gain=point.gain),
+        catalog=FaultAxisCatalog.default(),
         identity=_identity(module),
         protocol_bytes=_protocol_bytes(),
         resolved_task_backend_payload=_resolved_task_backend_payload(),
@@ -369,6 +537,7 @@ def test_raw_loader_recomputes_provenance_digests_from_embedded_material(
     with pytest.raises(ValueError, match="provenance digest"):
         module.load_gain_calibration_raw_rollouts(
             target,
+            catalog=FaultAxisCatalog.default(),
             expected_source_sha256="a" * 64,
             expected_architecture=policy.config,
         )
@@ -396,6 +565,7 @@ def test_prepare_cli_rejects_tampered_provenance_before_dataset_save(
         policy,
         _approved_protocol(module),
         lambda point, split: _PseudoEnv(gain=point.gain),
+        catalog=FaultAxisCatalog.default(),
         identity=identity,
         protocol_bytes=_protocol_bytes(),
         resolved_task_backend_payload=_resolved_task_backend_payload(),

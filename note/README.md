@@ -10,15 +10,15 @@ repositories.
 | Layer | Current artifact | Status |
 |---|---|---|
 | Concept Figure | `architecture/08_in_context_execution_calibration.html` | Synchronized with ICA-DP-08 |
-| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed axis-bank + serial three-stage design |
-| Active FADA Contract lineage | `fada/contracts/README.md` | Base v005 plus active Context v007/v006 |
-| Engineering transition | `fada/plans/2026-08-20-calibration-stage-isolation.md` | Three stages isolated; module-correct; formal audit pending |
-| Governance | `governance.json` | MODULE-CORRECT / FORMAL-AUDIT-PENDING |
+| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed axis-bank + configurable active subset |
+| Active FADA Contract lineage | `fada/contracts/README.md` | Base v005 plus active Context v008/v007 |
+| Engineering transition | `fada/plans/2026-08-23-configurable-axis-training-refactor.md` | Offline implemented and independently reviewed |
+| Governance | `governance.json` | CLOSED / OFFLINE EVIDENCE ONLY |
 
-The Concept Figure, Inspector, active Context Contracts, independently invokable Stage 1/2/3
-implementation, Module Test Cards, and current offline receipts agree. The older query-conditioned
-and pre-isolation receipts remain historical. Current offline implementation evidence does not
-authorize training, simulation, deployment, or policy-quality claims.
+The Concept Figure and Inspector retain the three-axis catalog as the default example, while the
+active Context Contracts define one ordered active subset per training transaction. Fresh v008/v007
+module evidence covers the local implementation; v007/v006 receipts remain historical. No offline
+document authorizes training, simulation, deployment, or policy-quality claims.
 
 ## Recall order
 

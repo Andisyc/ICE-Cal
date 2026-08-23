@@ -1,4 +1,4 @@
-"""Train the v007/v006 FADA calibrator through serial S1/S2/S3 owners."""
+"""Train the v008/v007 FADA calibrator through serial S1/S2/S3 owners."""
 
 from __future__ import annotations
 
@@ -45,15 +45,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     loaded = load_fada_policy_checkpoint(args.source_checkpoint, device="cpu")
-    batch, dataset_metadata = load_calibration_dataset(args.dataset, loaded.policy.config)
+    catalog = load_fault_axis_catalog(args.axis_catalog)
+    dataset = load_calibration_dataset(args.dataset, loaded.policy.config, catalog)
+    batch, dataset_metadata = dataset.batch, dataset.metadata
     source_sha256 = _sha256(args.source_checkpoint)
     if dataset_metadata["source_tracker_sha256"] != source_sha256:
         raise ValueError("dataset source Tracker digest does not match the selected checkpoint")
-    catalog = load_fault_axis_catalog(args.axis_catalog)
-    if dataset_metadata["axis_catalog_version"] != catalog.version:
-        raise ValueError("dataset and configured fault-axis catalog differ")
-    if batch.c_true.shape[-1] != len(catalog.axes):
-        raise ValueError("dataset coefficient width does not match the fault-axis catalog")
     dataset_sha256 = _sha256(args.dataset)
     split_sha256 = str(dataset_metadata["split_identity_sha256"])
     result = run_serial_calibration_training(
@@ -63,7 +60,7 @@ def main() -> int:
         source_tracker_sha256=source_sha256,
         dataset_sha256=dataset_sha256,
         split_sha256=split_sha256,
-        axis_catalog_version=str(dataset_metadata["axis_catalog_version"]),
+        axis_spec=dataset.axis_spec,
         scale_evidence_path=args.scale_evidence,
         config=SerialCalibrationConfig(
             stage1_steps_per_axis=args.stage1_steps,

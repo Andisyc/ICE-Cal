@@ -17,16 +17,31 @@ from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill.fada import FADAArchitectureConfig, FADAPlannerIDMPolicy
 from unilab.algos.torch.fada_context.calibration import (
-    CALIBRATION_AXIS_CATALOG_VERSION,
-    CALIBRATION_AXIS_NAMES,
     CALIBRATION_METHOD_CONTRACT_ID,
     CALIBRATION_TRAINING_CONTRACT_ID,
+    CalibrationAxisSpec,
+    FaultAxisCatalog,
 )
 
-GAIN_CALIBRATION_RAW_SCHEMA = "unilab_fada_gain_calibration_raw_rollouts_v1"
+GAIN_CALIBRATION_RAW_SCHEMA = "unilab_fada_gain_calibration_raw_rollouts_v2"
+_LEGACY_GAIN_CALIBRATION_RAW_SCHEMA = "unilab_fada_gain_calibration_raw_rollouts_v1"
+_LEGACY_METHOD_CONTRACT_ID = "FADA-CONTEXT-METHOD-v007"
+_LEGACY_TRAINING_CONTRACT_ID = "FADA-CONTEXT-TRAIN-v006"
+_LEGACY_AXIS_CATALOG_VERSION = "gain-delay-offset-v1"
+_LEGACY_AXIS_NAMES = ("gain", "delay", "offset")
 _APPROVED_POINTS = ((-1.0, 0.8), (0.0, 1.0), (1.0, 1.2))
 _APPROVED_SPLITS = (("train", 0, 101), ("validation", 1, 201))
 _HEX_DIGITS = frozenset("0123456789abcdef")
+_RESERVED_AXIS_METADATA_KEYS = frozenset(
+    {
+        "active_axes",
+        "axis_catalog_version",
+        "axis_count",
+        "axis_names",
+        "axis_spec",
+        "catalog_version",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -132,7 +147,7 @@ class GainCalibrationRawIdentity:
     resolved_task_backend_sha256: str
     axis_catalog_version: str
 
-    def validate(self) -> GainCalibrationRawIdentity:
+    def validate(self, axis_spec: CalibrationAxisSpec) -> GainCalibrationRawIdentity:
         for name in (
             "source_checkpoint_sha256",
             "protocol_sha256",
@@ -143,7 +158,7 @@ class GainCalibrationRawIdentity:
                 raise ValueError(f"raw rollout {name} must be a lowercase SHA256")
         if not self.source_checkpoint_path:
             raise ValueError("raw rollout source checkpoint path is required")
-        if self.axis_catalog_version != CALIBRATION_AXIS_CATALOG_VERSION:
+        if self.axis_catalog_version != axis_spec.catalog_version:
             raise ValueError("raw rollout axis catalog version mismatch")
         return self
 
@@ -306,6 +321,7 @@ def collect_gain_calibration_scenario(
     spec: GainCalibrationScenarioSpec,
     *,
     rollout_id_start: int,
+    axis_spec: CalibrationAxisSpec,
 ) -> GainCalibrationScenarioResult:
     """Collect one all-or-nothing episode transaction for a gain/split scenario."""
 
@@ -314,6 +330,9 @@ def collect_gain_calibration_scenario(
         raise ValueError("calibration collection requires an eval-mode frozen policy")
     if policy.config.history_length != 30 or policy.config.prediction_horizon != 6:
         raise ValueError("gain calibration collection requires H=30 and K=6")
+    if "gain" not in axis_spec.names:
+        raise ValueError("gain calibration collection requires an active gain axis")
+    gain_axis_index = axis_spec.names.index("gain")
     if int(getattr(env, "num_envs", -1)) != 1:
         raise ValueError("gain calibration collection requires exactly one environment")
     set_autoreset = getattr(env, "set_autoreset", None)
@@ -381,13 +400,15 @@ def collect_gain_calibration_scenario(
             and np.array_equal(next_command, fixed_command)
         )
         if valid_transaction and len(actions) >= policy.config.history_length:
+            coefficients = torch.zeros((1, axis_spec.axis_count), dtype=torch.float32)
+            coefficients[0, gain_axis_index] = spec.point.c_true
             pending.append(
                 {
                     "observation_history": torch.from_numpy(observation_history.copy()),
                     "action_history": torch.from_numpy(action_history.copy()),
                     "command": torch.from_numpy(command.copy()),
                     "nominal_action_chunk": torch.from_numpy(chunk.copy()),
-                    "c_true": torch.tensor([[spec.point.c_true, 0.0, 0.0]], dtype=torch.float32),
+                    "c_true": coefficients,
                     "is_held_out_combination": torch.zeros((1,), dtype=torch.bool),
                     "injected_strength": torch.tensor([spec.point.gain], dtype=torch.float32),
                     "planner_intent": torch.from_numpy(intent.copy()),
@@ -441,12 +462,13 @@ def build_gain_calibration_raw_artifact(
     config: FADAArchitectureConfig,
     protocol: GainCalibrationCollectionProtocol,
     identity: GainCalibrationRawIdentity,
+    axis_spec: CalibrationAxisSpec,
     *,
     protocol_bytes: bytes,
     resolved_task_backend_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
     protocol.validate_approved()
-    identity.validate()
+    identity.validate(axis_spec)
     if _protocol_from_bytes(protocol_bytes) != protocol:
         raise ValueError("embedded protocol bytes do not match the approved protocol object")
     observed_protocol_sha256 = hashlib.sha256(protocol_bytes).hexdigest()
@@ -460,16 +482,17 @@ def build_gain_calibration_raw_artifact(
     ):
         raise ValueError("gain calibration raw rollout provenance digest mismatch")
     _validate_resolved_task_backend_payload(normalized_payload, protocol)
+    metadata = asdict(identity)
+    metadata.pop("axis_catalog_version")
     return {
         "schema_version": GAIN_CALIBRATION_RAW_SCHEMA,
         "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
         "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
         "architecture": asdict(config),
-        "axis_count": len(CALIBRATION_AXIS_NAMES),
-        "axis_names": CALIBRATION_AXIS_NAMES,
+        "axis_spec": axis_spec.to_payload(),
         "protocol_bytes": protocol_bytes,
         "resolved_task_backend_payload": normalized_payload,
-        "metadata": asdict(identity),
+        "metadata": metadata,
         **rows,
     }
 
@@ -479,6 +502,7 @@ def collect_gain_calibration_rollouts(
     protocol: GainCalibrationCollectionProtocol,
     environment_factory: Callable[[GainCalibrationPoint, GainCalibrationSplit], Any],
     *,
+    catalog: FaultAxisCatalog,
     identity: GainCalibrationRawIdentity,
     protocol_bytes: bytes,
     resolved_task_backend_payload: Mapping[str, Any],
@@ -486,7 +510,8 @@ def collect_gain_calibration_rollouts(
     """Collect the complete approved grid and close every factory-owned environment."""
 
     protocol.validate_approved()
-    identity.validate()
+    axis_spec = CalibrationAxisSpec.from_catalog(catalog)
+    identity.validate(axis_spec)
     if policy.training:
         raise ValueError("calibration collection requires an eval-mode frozen policy")
     snapshot = {name: value.detach().cpu().clone() for name, value in policy.state_dict().items()}
@@ -509,6 +534,7 @@ def collect_gain_calibration_rollouts(
                         command_key=protocol.command_key,
                     ),
                     rollout_id_start=next_rollout_id,
+                    axis_spec=axis_spec,
                 )
                 scenario_rows.append(result.rows)
                 next_rollout_id = result.next_rollout_id
@@ -526,6 +552,7 @@ def collect_gain_calibration_rollouts(
         policy.config,
         protocol,
         identity,
+        axis_spec,
         protocol_bytes=protocol_bytes,
         resolved_task_backend_payload=resolved_task_backend_payload,
     )
@@ -588,17 +615,22 @@ def _validate_resolved_task_backend_payload(
         raise ValueError("resolved task/backend provenance must precede per-point gain injection")
 
 
-def validate_gain_calibration_raw_artifact(
+def _validate_gain_calibration_raw_artifact(
     artifact: Mapping[str, Any],
     *,
+    catalog: FaultAxisCatalog,
+    legacy: bool,
     expected_source_sha256: str | None = None,
     expected_architecture: FADAArchitectureConfig | None = None,
 ) -> Mapping[str, Any]:
-    if artifact.get("schema_version") != GAIN_CALIBRATION_RAW_SCHEMA:
+    expected_schema = _LEGACY_GAIN_CALIBRATION_RAW_SCHEMA if legacy else GAIN_CALIBRATION_RAW_SCHEMA
+    if artifact.get("schema_version") != expected_schema:
         raise ValueError("unsupported gain calibration raw rollout schema")
-    if artifact.get("method_contract_id") != CALIBRATION_METHOD_CONTRACT_ID:
+    expected_method = _LEGACY_METHOD_CONTRACT_ID if legacy else CALIBRATION_METHOD_CONTRACT_ID
+    expected_training = _LEGACY_TRAINING_CONTRACT_ID if legacy else CALIBRATION_TRAINING_CONTRACT_ID
+    if artifact.get("method_contract_id") != expected_method:
         raise ValueError("gain calibration raw rollout method Contract mismatch")
-    if artifact.get("training_contract_id") != CALIBRATION_TRAINING_CONTRACT_ID:
+    if artifact.get("training_contract_id") != expected_training:
         raise ValueError("gain calibration raw rollout training Contract mismatch")
     try:
         config = FADAArchitectureConfig(**artifact["architecture"])
@@ -606,16 +638,51 @@ def validate_gain_calibration_raw_artifact(
         raise ValueError("gain calibration raw rollout architecture is malformed") from exc
     if expected_architecture is not None and config != expected_architecture:
         raise ValueError("gain calibration raw rollout architecture identity mismatch")
-    if (
-        artifact.get("axis_count") != len(CALIBRATION_AXIS_NAMES)
-        or tuple(artifact.get("axis_names", ())) != CALIBRATION_AXIS_NAMES
-    ):
-        raise ValueError("gain calibration raw rollout axis catalog mismatch")
+    active_axis_spec = CalibrationAxisSpec.from_catalog(catalog)
+    if legacy:
+        if (
+            catalog.version != _LEGACY_AXIS_CATALOG_VERSION
+            or catalog.names != _LEGACY_AXIS_NAMES
+            or artifact.get("axis_count") != len(_LEGACY_AXIS_NAMES)
+            or tuple(artifact.get("axis_names", ())) != _LEGACY_AXIS_NAMES
+        ):
+            raise ValueError("legacy gain calibration raw rollout axis catalog mismatch")
+    else:
+        if artifact.get("axis_spec") != active_axis_spec.to_payload():
+            raise ValueError("gain calibration raw rollout axis spec mismatch")
+        duplicated_identity = sorted(
+            (_RESERVED_AXIS_METADATA_KEYS - {"axis_spec"}).intersection(artifact)
+        )
+        if duplicated_identity:
+            raise ValueError(
+                f"active raw rollout contains duplicate axis identity: {duplicated_identity}"
+            )
     raw_identity = artifact.get("metadata")
     if not isinstance(raw_identity, Mapping):
         raise ValueError("gain calibration raw rollout metadata must be a mapping")
     try:
-        identity = GainCalibrationRawIdentity(**raw_identity).validate()
+        identity_payload = dict(raw_identity)
+        if not legacy:
+            reserved = sorted(_RESERVED_AXIS_METADATA_KEYS.intersection(identity_payload))
+            if reserved:
+                raise ValueError("active raw rollout metadata contains reserved axis identity")
+            identity_payload["axis_catalog_version"] = active_axis_spec.catalog_version
+        identity = GainCalibrationRawIdentity(**identity_payload)
+        if legacy:
+            for name in (
+                "source_checkpoint_sha256",
+                "protocol_sha256",
+                "resolved_task_backend_sha256",
+            ):
+                value = getattr(identity, name)
+                if len(value) != 64 or any(char not in _HEX_DIGITS for char in value):
+                    raise ValueError(f"legacy raw rollout {name} must be a lowercase SHA256")
+            if not identity.source_checkpoint_path:
+                raise ValueError("legacy raw rollout source checkpoint path is required")
+            if identity.axis_catalog_version != _LEGACY_AXIS_CATALOG_VERSION:
+                raise ValueError("legacy raw rollout catalog version mismatch")
+        else:
+            identity.validate(active_axis_spec)
     except (TypeError, ValueError) as exc:
         raise ValueError("gain calibration raw rollout metadata identity is malformed") from exc
     protocol_bytes = artifact.get("protocol_bytes")
@@ -664,7 +731,7 @@ def validate_gain_calibration_raw_artifact(
         "action_history": (batch, config.history_length, config.action_dim),
         "command": (batch, config.command_dim),
         "nominal_action_chunk": (batch, config.prediction_horizon, config.action_dim),
-        "c_true": (batch, len(CALIBRATION_AXIS_NAMES)),
+        "c_true": (batch, active_axis_spec.axis_count),
         "is_held_out_combination": (batch,),
         "injected_strength": (batch,),
         "planner_intent": (batch, config.prediction_horizon, config.obs_dim),
@@ -682,12 +749,17 @@ def validate_gain_calibration_raw_artifact(
     axis_name = artifact.get("axis_name")
     if not isinstance(axis_name, (list, tuple)) or axis_name != ["gain"] * batch:
         raise ValueError("gain calibration raw rollout must bind every row to gain")
+    if "gain" not in active_axis_spec.names:
+        raise ValueError("gain calibration raw rollout catalog lacks gain")
+    gain_axis_index = active_axis_spec.names.index("gain")
     if artifact["is_held_out_combination"].dtype != torch.bool or bool(
         artifact["is_held_out_combination"].any()
     ):
         raise ValueError("gain-only smoke rows cannot be held-out combinations")
-    if not bool((artifact["c_true"][:, 1:] == 0.0).all()):
-        raise ValueError("gain-only smoke rows cannot label delay or offset")
+    omitted_axes = torch.ones(active_axis_spec.axis_count, dtype=torch.bool)
+    omitted_axes[gain_axis_index] = False
+    if not bool((artifact["c_true"][:, omitted_axes] == 0.0).all()):
+        raise ValueError("gain-only smoke rows cannot label omitted axes")
     fixed = torch.tensor(protocol.fixed_command, dtype=artifact["command"].dtype)
     if not torch.equal(artifact["command"], fixed[None].expand(batch, -1)):
         raise ValueError("gain calibration raw rollout command identity mismatch")
@@ -703,7 +775,7 @@ def validate_gain_calibration_raw_artifact(
             mask = (
                 (artifact["split_id"] == split.split_id)
                 & (artifact["seed"] == split.seed)
-                & (artifact["c_true"][:, 0] == point.c_true)
+                & (artifact["c_true"][:, gain_axis_index] == point.c_true)
                 & (artifact["injected_strength"] == point.gain)
             )
             if int(mask.sum()) != protocol.accepted_rows_per_scenario:
@@ -717,11 +789,49 @@ def validate_gain_calibration_raw_artifact(
     return artifact
 
 
+def validate_gain_calibration_raw_artifact(
+    artifact: Mapping[str, Any],
+    *,
+    catalog: FaultAxisCatalog,
+    expected_source_sha256: str | None = None,
+    expected_architecture: FADAArchitectureConfig | None = None,
+) -> Mapping[str, Any]:
+    """Validate only the active raw v2 envelope used by current writers."""
+
+    return _validate_gain_calibration_raw_artifact(
+        artifact,
+        catalog=catalog,
+        legacy=False,
+        expected_source_sha256=expected_source_sha256,
+        expected_architecture=expected_architecture,
+    )
+
+
+def _load_legacy_gain_calibration_raw_gateway(
+    artifact: Mapping[str, Any],
+    *,
+    catalog: FaultAxisCatalog,
+    expected_source_sha256: str | None,
+    expected_architecture: FADAArchitectureConfig | None,
+) -> Mapping[str, Any]:
+    """Read the exact historical v1 donor envelope for one-time dataset resealing."""
+
+    return _validate_gain_calibration_raw_artifact(
+        artifact,
+        catalog=catalog,
+        legacy=True,
+        expected_source_sha256=expected_source_sha256,
+        expected_architecture=expected_architecture,
+    )
+
+
 def save_gain_calibration_raw_rollouts(
     path: str | Path,
     artifact: Mapping[str, Any],
+    *,
+    catalog: FaultAxisCatalog,
 ) -> Path:
-    validate_gain_calibration_raw_artifact(artifact)
+    validate_gain_calibration_raw_artifact(artifact, catalog=catalog)
     target = Path(path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
@@ -740,6 +850,7 @@ def save_gain_calibration_raw_rollouts(
 def load_gain_calibration_raw_rollouts(
     path: str | Path,
     *,
+    catalog: FaultAxisCatalog,
     expected_source_sha256: str | None = None,
     expected_architecture: FADAArchitectureConfig | None = None,
 ) -> Mapping[str, Any]:
@@ -747,8 +858,16 @@ def load_gain_calibration_raw_rollouts(
     payload = torch.load(io.BytesIO(serialized), map_location="cpu", weights_only=True)
     if not isinstance(payload, Mapping):
         raise ValueError("gain calibration raw rollout artifact must be a mapping")
+    if payload.get("schema_version") == _LEGACY_GAIN_CALIBRATION_RAW_SCHEMA:
+        return _load_legacy_gain_calibration_raw_gateway(
+            payload,
+            catalog=catalog,
+            expected_source_sha256=expected_source_sha256,
+            expected_architecture=expected_architecture,
+        )
     return validate_gain_calibration_raw_artifact(
         payload,
+        catalog=catalog,
         expected_source_sha256=expected_source_sha256,
         expected_architecture=expected_architecture,
     )

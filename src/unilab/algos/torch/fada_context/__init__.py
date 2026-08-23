@@ -6,6 +6,7 @@ from unilab.algos.torch.fada_context.calibration import (
     CALIBRATION_METHOD_CONTRACT_ID,
     CALIBRATION_TRAINING_CONTRACT_ID,
     CalibratedFADAPolicy,
+    CalibrationAxisSpec,
     CalibrationRolloutBatch,
     CoefficientEncoder,
     DirectionBank,
@@ -33,10 +34,12 @@ from unilab.algos.torch.fada_context.calibration_collection import (
 )
 from unilab.algos.torch.fada_context.calibration_data import (
     CALIBRATION_DATASET_SCHEMA,
+    LoadedCalibrationDataset,
     calibration_split_identity_sha256,
     load_calibration_dataset,
     load_fault_axis_catalog,
     prepare_calibration_rollout_batch,
+    project_calibration_rollout_batch,
     save_calibration_dataset,
 )
 from unilab.algos.torch.fada_context.calibration_evaluation import (
@@ -226,6 +229,8 @@ __all__ = [
     "CALIBRATION_SCALE_EVIDENCE_SCHEMA",
     "CALIBRATION_STAGE_ARTIFACT_SCHEMA",
     "CalibratedFADAPolicy",
+    "CalibrationAxisSpec",
+    "LoadedCalibrationDataset",
     "CalibrationRolloutBatch",
     "CalibrationScaleEvidence",
     "CalibrationStageIdentity",
@@ -248,6 +253,7 @@ __all__ = [
     "load_calibration_dataset",
     "load_fault_axis_catalog",
     "prepare_calibration_rollout_batch",
+    "project_calibration_rollout_batch",
     "evaluate_held_out_calibration",
     "CALIBRATION_UPPER_BOUND_SCHEMA",
     "CalibrationFullFinetuneUpperBound",

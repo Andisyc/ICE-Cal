@@ -1,3384 +1,411 @@
 {
   "schema_version": 1,
-  "scope": "Full Sweep",
-  "design_identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage",
-  "checkout_identity": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491 + content-sha256:73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
-  "base_checkout_identity": "codex/in-context-execution-calibration@0e49ea9a5b940fd5e466a63907179ec86e6a1491",
+  "scope": "Configurable-axis calibration impacted full sweep",
+  "design_identity": "ICE-Cal / ICA-DP-01..10 / FADA-CONTEXT-METHOD-v008 + FADA-CONTEXT-TRAIN-v007",
+  "checkout_identity": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d + content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194",
+  "base_checkout_identity": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d",
   "content_identity": {
-    "algorithm": "sha256(lexicographically sorted relative path + NUL + file sha256 + NUL)",
-    "sha256": "73535ba14e08111a43aa36a2340b0403b757a78247fe280abf923905500a6978",
-    "file_count": 21,
-    "files": [
-      "conf/distill/calibration_playback/gain_delay_offset_v1.yaml",
-      "conf/distill/config.yaml",
-      "conf/fada_context/calibration_axes/gain_delay_offset_v1.yaml",
-      "scripts/evaluate_fada_calibration.py",
-      "scripts/play_fada_calibration_viser.py",
-      "scripts/prepare_fada_calibration_dataset.py",
-      "scripts/prepare_fada_calibration_scale_evidence.py",
-      "scripts/train_fada_calibration.py",
-      "scripts/train_fada_calibration_stage1.py",
-      "scripts/train_fada_calibration_stage2.py",
-      "scripts/train_fada_calibration_stage3.py",
-      "src/unilab/algos/torch/fada_context/__init__.py",
-      "src/unilab/algos/torch/fada_context/calibration.py",
-      "src/unilab/algos/torch/fada_context/calibration_data.py",
-      "src/unilab/algos/torch/fada_context/calibration_evaluation.py",
-      "src/unilab/algos/torch/fada_context/calibration_runtime.py",
-      "src/unilab/algos/torch/fada_context/calibration_training.py",
-      "tests/algos/test_fada_calibration.py",
-      "tests/algos/test_fada_calibration_evaluation.py",
-      "tests/algos/test_fada_calibration_training.py",
-      "tests/scripts/test_fada_calibration_entrypoints.py"
-    ],
-    "evidence": "note/testing/calibratable_tracker_module_test_evidence.json#content_identity"
+    "algorithm": "sha256 of ordered openssl per-file SHA256 output",
+    "sha256": "4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194",
+    "file_count": 35,
+    "evidence": "note/testing/calibratable_tracker_module_test_evidence.json"
   },
   "card_registry": "note/testing/module_test_cards.md",
   "suite_evidence": "note/testing/calibratable_tracker_module_test_evidence.json#affected_suite",
   "overall_status": "MODULE-CORRECT",
   "modules": [
     {
-      "id": "MTC-01-axis-catalog",
-      "owner": "FaultAxisCatalog in calibration.py",
-      "public_boundary": "FaultAxisCatalog.analytic_target(name, nominal_action, strength) -> a_star",
+      "id": "MTC-axis-spec-and-gateway",
+      "owner": "CalibrationAxisSpec, calibration_data, and calibration_collection",
+      "public_boundary": "catalog plus ordered active_axes to sealed LoadedCalibrationDataset",
       "card": {
         "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
+        "identity": "MTC-01 and MTC-10 / v008-v007 / confirmed 2026-08-23"
       },
       "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-value",
-          "T-transform",
-          "T-scale",
-          "T-role",
-          "T-order"
-        ]
+        "s_tiers": ["S1"],
+        "case_families": ["C1", "C2", "C3", "C4"],
+        "t_kinds": ["T-order", "T-role", "T-meta", "T-persist", "T-scale"]
       },
       "case_family_waivers": {},
       "static_checks": [],
       "cases": [
         {
-          "id": "MTC01-C1-analytic",
+          "id": "AXIS-C1-ordered-projection",
           "case_family": "C1",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-transform"
-          ],
+          "t_kinds": ["T-order", "T-role"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "gain/delay/offset axis",
-              "nominal six-step action",
-              "known injected strength"
-            ],
-            "units_and_axes": "action units, time-token order, three registered axes",
-            "validity_semantics": "ordinary finite registered axis"
+            "semantic_roles": ["catalog columns", "requested offset-gain order", "single and combination rows"],
+            "units_and_axes": "catalog coordinates projected to ordered active coordinates",
+            "validity_semantics": "valid non-catalog-order active subset"
           },
           "oracle": {
             "kind": "hand-calculation",
             "independent_from_production": true,
-            "expected_answer": "gain divides, delay advances, offset subtracts on asymmetric six-step chunks"
+            "expected_answer": "offset becomes column zero, gain column one, and one-axis ids remap accordingly"
           },
           "sensitivity": {
             "kind": "controlled-counterexample",
             "observed_failure": true,
-            "counterexample": "wrong sign, delay direction, or gain multiplication fails the hand tensors"
+            "counterexample": "catalog-sorted columns fail the expected tensors and role ids"
           },
           "evidence": {
             "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          ]
+            "identity": "338-suite-pass#ordered-projection-and-m2-owner-chain"
+          }
         },
         {
-          "id": "MTC01-C2-boundaries",
+          "id": "AXIS-C2-invalid-selection",
           "case_family": "C2",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-scale"
-          ],
+          "t_kinds": ["T-role", "T-scale"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "zero gain, horizon+1 delay"
-            ],
-            "units_and_axes": "normalized axis strength and K=6 horizon",
-            "validity_semantics": "boundary invalid injection"
+            "semantic_roles": ["empty", "duplicate", "unknown", "same-width reordered axes"],
+            "units_and_axes": "active-axis set and order identity",
+            "validity_semantics": "invalid selections and identity mismatch"
           },
           "oracle": {
-            "kind": "hand-calculation",
+            "kind": "human-confirmed-golden",
             "independent_from_production": true,
-            "expected_answer": "gain zero and delay beyond horizon reject"
+            "expected_answer": "all invalid selections reject before optimizer or runtime owner construction"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "pre-fix",
             "observed_failure": true,
-            "counterexample": "allowing gain zero or a delay equal to horizon would not raise"
+            "counterexample": "the original fixed-m implementation had no subset Value Object"
           },
           "evidence": {
             "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          ]
+            "identity": "338-suite-pass#axis-spec-negative-matrix"
+          }
         },
         {
-          "id": "MTC01-C3-unknown",
+          "id": "AXIS-C3-legacy-gateway",
           "case_family": "C3",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-role"
-          ],
+          "t_kinds": ["T-meta", "T-persist", "T-role"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "unregistered fault name"
-            ],
-            "units_and_axes": "catalog role identity",
-            "validity_semantics": "forbidden axis"
+            "semantic_roles": ["exact v1 donor", "active v2 writer", "provenance and gain-only labels"],
+            "units_and_axes": "literal gain-delay-offset v1 donor identity",
+            "validity_semantics": "one exact read-only donor and altered forbidden variants"
           },
           "oracle": {
-            "kind": "hand-calculation",
+            "kind": "independent-reference",
             "independent_from_production": true,
-            "expected_answer": "unknown friction axis rejects"
+            "expected_answer": "only exact v1 reads; active writer cannot publish it; all identity and label mutations reject"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "pre-fix",
             "observed_failure": true,
-            "counterexample": "accepting an unregistered axis would pass the counterexample"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_axis_catalog_has_analytic_gain_delay_offset_targets"
-          ]
-        },
-        {
-          "id": "MTC01-C4-order",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-order",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "axis_order versus axes list"
-            ],
-            "units_and_axes": "gain/delay/offset column order",
-            "validity_semantics": "identity mismatch"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "same names in wrong configured order reject"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "silently accepting reordered catalog would swap coefficient columns"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_axis_catalog_rejects_same_axes_in_the_wrong_declared_order"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_axis_catalog_rejects_same_axes_in_the_wrong_declared_order"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-01-rollout-sealing",
-      "owner": "prepare_calibration_rollout_batch in calibration_data.py",
-      "public_boundary": "prepare_calibration_rollout_batch(raw, config, catalog) -> CalibrationRolloutBatch",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-transform",
-          "T-role",
-          "T-scale",
-          "T-shape",
-          "T-meta"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC01B-C1-seal",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-transform",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "recorded State/Action/Intent plus axis_name"
-            ],
-            "units_and_axes": "State/Action/Intent and action units",
-            "validity_semantics": "valid single-axis recorded rollout"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "single-axis rows receive catalog-derived a_star and axis IDs"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "using supplied target or wrong axis label changes the exact target/ID"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          ]
-        },
-        {
-          "id": "MTC01B-C2-range",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-scale",
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "normalized coefficient boundary"
-            ],
-            "units_and_axes": "c_true in [-1,1]",
-            "validity_semantics": "boundary label"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "c_true=1 is accepted while 1.01 rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "removing normalized bound lets an out-of-range label enter training"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibration_rollout_validation_binds_first_action_and_axis_width"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibration_rollout_validation_binds_first_action_and_axis_width"
-          ]
-        },
-        {
-          "id": "MTC01B-C3-missing",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "missing required raw field"
-            ],
-            "units_and_axes": "command identity",
-            "validity_semantics": "malformed recorded rollout"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "missing command field rejects before sealing"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "silent zero-fill would create an unbound command row"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          ]
-        },
-        {
-          "id": "MTC01B-C4-split",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "same tensors, changed split ID"
-            ],
-            "units_and_axes": "rollout/seed/split provenance",
-            "validity_semantics": "identity mutation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "changing split identity changes the digest"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "ignoring split/seed/rollout IDs would produce the same identity"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-02-direction-bank",
-      "owner": "DirectionBank in calibration.py",
-      "public_boundary": "DirectionBank.compose/normalize_axis_ -> latent [B,K,D]",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-value",
-          "T-shape",
-          "T-scale",
-          "T-grad",
-          "T-role"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC02-C1-zero",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "latent tokens, three axis coefficients"
-            ],
-            "units_and_axes": "K=6,D=128",
-            "validity_semantics": "ordinary zero calibration"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "zero coefficients return latent bitwise and field shape is [3,6,128]"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "a nonzero correction at c=0 or shared [D] direction fails exact identity"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_direction_bank_is_six_token_field_and_zero_is_nominal"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_direction_bank_is_six_token_field_and_zero_is_nominal"
-          ]
-        },
-        {
-          "id": "MTC02-C2-normalization",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-scale",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "axis one raw field and latent probe"
-            ],
-            "units_and_axes": "unit direction with pre-normalization norm",
-            "validity_semantics": "normalization boundary"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "one axis normalizes to unit while preserved scale keeps composition unchanged"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "dropping normalization_scale changes the composed latent after freeze"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage1_normalizes_only_the_admitted_axis"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage1_normalizes_only_the_admitted_axis"
-          ]
-        },
-        {
-          "id": "MTC02-C3-shape",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "malformed direction parameter"
-            ],
-            "units_and_axes": "[axis,horizon,latent] field",
-            "validity_semantics": "invalid owner state"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "shared [D] direction rejects before composition"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "broadcasting a shared vector would evade six-token semantics"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_direction_bank_is_six_token_field_and_zero_is_nominal"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_direction_bank_is_six_token_field_and_zero_is_nominal"
-          ]
-        },
-        {
-          "id": "MTC02-C4-axis",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-grad",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "axis_id=1 row subset"
-            ],
-            "units_and_axes": "axis column identity",
-            "validity_semantics": "single-axis ownership"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "only selected axis gets gradient"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "wrong axis selection would make a different direction nonzero"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage1_direction_loss_only_exposes_selected_direction_gradient"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage1_direction_loss_only_exposes_selected_direction_gradient"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-03-coefficient-encoder",
-      "owner": "CoefficientEncoder in calibration.py",
-      "public_boundary": "CoefficientEncoder.forward(StateHistory [B,30,O], ActionHistory [B,30,A]) -> [B,3]",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-shape",
-          "T-value",
-          "T-scale",
-          "T-diff",
-          "T-meta",
-          "T-oracle"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC03-C1-output",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "two asymmetric histories"
-            ],
-            "units_and_axes": "H=30, O=4,A=3,m=3",
-            "validity_semantics": "ordinary history"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "30-frame State/Action histories produce finite [B,3] raw readings"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "wrong history width or output width fails the public boundary"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_coefficient_encoder_requires_30_frame_histories_and_returns_raw_axis_readings"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_coefficient_encoder_requires_30_frame_histories_and_returns_raw_axis_readings"
-          ]
-        },
-        {
-          "id": "MTC03-C2-raw",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-scale",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "large finite raw coefficient"
-            ],
-            "units_and_axes": "normalized label range versus unclamped readout",
-            "validity_semantics": "just-outside raw reading"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "readout bias 3 remains 3 and is not clamped"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "clamping raw readout would change the exact 3.0 output"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_coefficient_encoder_uses_both_histories_is_row_covariant_and_does_not_clamp"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_coefficient_encoder_uses_both_histories_is_row_covariant_and_does_not_clamp"
-          ]
-        },
-        {
-          "id": "MTC03-C3-malformed",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-oracle"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "H=29 State/Action"
-            ],
-            "units_and_axes": "history readiness",
-            "validity_semantics": "invalid cold input"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "29-frame history rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "padding or silently repeating a frame would hide insufficient evidence"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_coefficient_encoder_requires_30_frame_histories_and_returns_raw_axis_readings"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_coefficient_encoder_requires_30_frame_histories_and_returns_raw_axis_readings"
-          ]
-        },
-        {
-          "id": "MTC03-C4-causal",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "asymmetric two-row histories"
-            ],
-            "units_and_axes": "State/Action trajectory roles",
-            "validity_semantics": "valid row permutation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "both State and Action perturbations matter and row permutation is covariant"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "ignoring one history or row identity fails the differential relation"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_coefficient_encoder_uses_both_histories_is_row_covariant_and_does_not_clamp"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_coefficient_encoder_uses_both_histories_is_row_covariant_and_does_not_clamp"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-04-direction-stage",
-      "owner": "run_direction_stage_training with DirectionStageConfig in calibration_training.py",
-      "public_boundary": "run_direction_stage_training(policy, batch, output_path, identity, config) -> direction_frozen artifact path",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-state",
-          "T-persist",
-          "T-role",
-          "T-value",
-          "T-scale",
-          "T-oracle",
-          "T-order",
-          "T-meta",
-          "T-grad",
-          "T-shape"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC04D-C1-transaction",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-state",
-            "T-persist",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "source policy, admitted rows, Stage 1 output path"
-            ],
-            "units_and_axes": "H=30,K=6,D=8; three ordered axes",
-            "validity_semantics": "valid isolated Direction transaction"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "only direction_bank is sealed and no Coefficient Encoder is constructed"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "constructing or persisting Encoder state violates Stage 1 ownership"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directions"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directions"
-          ]
-        },
-        {
-          "id": "MTC04D-C2-gate",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-scale",
-            "T-oracle"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "target, nominal and compensated Actions"
-            ],
-            "units_and_axes": "MSE compensation ratio and fixed <=0.1 gate",
-            "validity_semantics": "contract gate boundary"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "the direct oracle is 0.04 and owner config cannot relax the 0.1 threshold"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "an absolute threshold or configurable relaxation changes admission"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage_owned_configs_cannot_relax_active_contract_gates"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage_owned_configs_cannot_relax_active_contract_gates",
-            "tests/algos/test_fada_calibration_training.py::test_stage1_compensation_ratio_has_a_direct_hand_oracle"
-          ]
-        },
-        {
-          "id": "MTC04D-C3-admission",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-order",
-            "T-meta",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "noncanonical identity or injected frozen-policy mutation"
-            ],
-            "units_and_axes": "lowercase sha256 identity and borrowed owner state",
-            "validity_semantics": "invalid pre-optimizer or pre-publication transaction"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "invalid identity stops before Adam and any frozen-owner mutation rolls back without publication"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "late identity checks or partial rollback leak state/artifacts"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage_identity_rejects_noncanonical_digest_before_adam_or_publication"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage_identity_rejects_noncanonical_digest_before_adam_or_publication",
-            "tests/algos/test_fada_calibration_training.py::test_training_stage_rolls_back_injected_borrowed_policy_mutation_without_publication"
-          ]
-        },
-        {
-          "id": "MTC04D-C4-owner",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-grad",
-            "T-role",
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "selected axis and unselected Direction rows"
-            ],
-            "units_and_axes": "axis x K x D direction tensor and normalization scale",
-            "validity_semantics": "owner-gradient and normalization isolation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "only the selected Direction row changes and normalization preserves its admitted composition"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "joint gradients or cross-axis normalization mutate forbidden owners"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage1_direction_loss_only_exposes_selected_direction_gradient"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage1_direction_loss_only_exposes_selected_direction_gradient",
-            "tests/algos/test_fada_calibration_training.py::test_stage1_normalizes_only_the_admitted_axis"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-04-coefficient-stage",
-      "owner": "run_coefficient_stage_training with CoefficientStageConfig in calibration_training.py",
-      "public_boundary": "run_coefficient_stage_training(policy, batch, direction_artifact_path, output_path, identity, config) -> coefficient_frozen artifact path",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-state",
-          "T-order",
-          "T-value",
-          "T-scale",
-          "T-oracle",
-          "T-meta",
-          "T-grad",
-          "T-role"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC04C-C1-predecessor",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-persist",
-            "T-state",
-            "T-order"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "fresh source policy, Stage 1 artifact path, Stage 2 output path"
-            ],
-            "units_and_axes": "direction_frozen predecessor bytes and coefficient_frozen schema",
-            "validity_semantics": "valid isolated Coefficient transaction"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "Stage 2 strictly reloads Stage 1, preserves Direction state and seals its exact parent digest"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "in-memory owner forwarding or omitted parent identity bypasses the boundary"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_strictly_loads_stage1_and_seals_parent_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_strictly_loads_stage1_and_seals_parent_identity"
-          ]
-        },
-        {
-          "id": "MTC04C-C2-gate",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-scale",
-            "T-oracle"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "predicted and target axis coefficients"
-            ],
-            "units_and_axes": "per-axis normalized error and fixed <=0.05 gate",
-            "validity_semantics": "worst-axis admission boundary"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "the worst coefficient error owns admission and config cannot relax 0.05"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "mean aggregation or a relaxed threshold accepts a bad axis"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage_owned_configs_cannot_relax_active_contract_gates"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage_owned_configs_cannot_relax_active_contract_gates",
-            "tests/algos/test_fada_calibration_training.py::test_stage2_admission_uses_worst_normalized_coefficient_error"
-          ]
-        },
-        {
-          "id": "MTC04C-C3-admission",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-order",
-            "T-meta",
-            "T-grad"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "mutated Stage 1 envelope or invalid Encoder gradients"
-            ],
-            "units_and_axes": "schema/contracts/H/K/D/axis/config/owner/gate metadata",
-            "validity_semantics": "invalid predecessor before optimizer/publication"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "all malformed predecessors reject before Adam and zero/nonfinite gradients fail admission"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "shape-only loading or unchecked gradients admit corrupt ownership"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer",
-            "tests/algos/test_fada_calibration_training.py::test_stage2_rejects_zero_or_nonfinite_encoder_gradients"
-          ]
-        },
-        {
-          "id": "MTC04C-C4-owner",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-grad",
-            "T-role",
-            "T-persist"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "copied predecessor bytes and Coefficient Encoder parameters"
-            ],
-            "units_and_axes": "exact sha256 lineage and Encoder-only optimizer scope",
-            "validity_semantics": "parent-byte and owner isolation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "the exact predecessor bytes are bound and only Encoder parameters receive gradients"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "reconstructed lineage or joint optimization changes frozen owners"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_binds_exact_copied_parent_bytes_and_rejects_corruption_before_optimizer"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_binds_exact_copied_parent_bytes_and_rejects_corruption_before_optimizer",
-            "tests/algos/test_fada_calibration_training.py::test_stage2_coefficient_loss_only_exposes_encoder_gradient"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-04-scale-stage",
-      "owner": "run_scale_stage_fitting in calibration_training.py",
-      "public_boundary": "run_scale_stage_fitting(policy, coefficient_artifact_path, scale_evidence_path, output_path, identity) -> deployment artifact path",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-state",
-          "T-role",
-          "T-shape",
-          "T-scale",
-          "T-value",
-          "T-order",
-          "T-meta",
-          "T-diff"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC04S-C1-transaction",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-persist",
-            "T-state",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "fresh policy, coefficient artifact path and Scale Evidence path"
-            ],
-            "units_and_axes": "typed predecessor/evidence bytes and three scale curves",
-            "validity_semantics": "valid isolated Scale fitting transaction"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "Stage 3 accepts only typed paths, constructs no optimizer and preserves frozen owner state"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "in-memory evidence or optimizer construction violates Stage 3 ownership"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests"
-          ]
-        },
-        {
-          "id": "MTC04S-C2-grid-quality",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-scale",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "canonical 21-point coefficient grid, 32 repeats and Action errors"
-            ],
-            "units_and_axes": "axis x grid x repeat x candidate",
-            "validity_semantics": "scale-fit shape and quality gates"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "noncanonical grid, missing repeats and low-quality monotone fit all reject"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "sparse or ad hoc scans can fabricate acceptable curves"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_evidence_rejects_a_noncanonical_coefficient_scan_grid"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_evidence_rejects_a_noncanonical_coefficient_scan_grid",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_missing_32_repeat_evidence",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_low_quality_monotone_fit"
-          ]
-        },
-        {
-          "id": "MTC04S-C3-admission",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-order",
-            "T-meta",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "wrong-stage predecessor, wrong evidence identity or malformed owner envelope"
-            ],
-            "units_and_axes": "stage/contracts/parent/owners/gates/dimensions",
-            "validity_semantics": "invalid typed input before publication"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "all invalid inputs reject without optimizer construction or deployment publication"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "late validation can publish curves from the wrong transaction"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_rejects_stage1_without_publication"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_stage1_without_publication",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_wrong_evidence_and_nonfinite_encoder_without_publication",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_invalid_coefficient_artifact_without_optimizer_or_publication"
-          ]
-        },
-        {
-          "id": "MTC04S-C4-provenance",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-persist",
-            "T-meta",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "same semantic identity with mutated Scale Evidence bytes"
-            ],
-            "units_and_axes": "byte sha256 of predecessor and evidence",
-            "validity_semantics": "provenance mutation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "Stage 3 hashes the same evidence bytes it deserializes and binds the changed digest"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "hashing a different read preserves stale provenance"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_binds_new_digest_after_typed_evidence_bytes_change"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_binds_new_digest_after_typed_evidence_bytes_change",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-05-coefficient-loss",
-      "owner": "coefficient_stage_loss/validate_encoder_gradients in calibration_training.py",
-      "public_boundary": "coefficient_stage_loss(policy, bank, encoder, batch) -> scalar and gradient admission",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-grad",
-          "T-value",
-          "T-scale"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC05-C1-loss",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-grad",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "single-axis labeled batch"
-            ],
-            "units_and_axes": "coefficient and action losses",
-            "validity_semantics": "valid loss"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "loss backpropagates to Encoder and not frozen Planner/Direction Bank"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "allowing the frozen owners to receive gradient violates the owner boundary"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_coefficient_loss_only_exposes_encoder_gradient"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_coefficient_loss_only_exposes_encoder_gradient"
-          ]
-        },
-        {
-          "id": "MTC05-C2-coefficient",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-scale"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "predicted [[0,.2,0]] versus zero target"
-            ],
-            "units_and_axes": "normalized coefficient units",
-            "validity_semantics": "admission threshold"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "max absolute coefficient error, not mean, is the admission value"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "a mean-only gate would accept one bad axis"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_admission_uses_worst_normalized_coefficient_error"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_admission_uses_worst_normalized_coefficient_error"
-          ]
-        },
-        {
-          "id": "MTC05-C3-gradient",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-grad"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "zero/NaN/nonzero parameter gradients"
-            ],
-            "units_and_axes": "gradient finite/nonzero",
-            "validity_semantics": "invalid gradient"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "zero and NaN gradients reject, finite nonzero gradient passes"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "checking only grad is not None would accept a dead Encoder"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_rejects_zero_or_nonfinite_encoder_gradients"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_rejects_zero_or_nonfinite_encoder_gradients"
-          ]
-        },
-        {
-          "id": "MTC05-C4-lambda",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "action_weight argument"
-            ],
-            "units_and_axes": "coefficient semantics plus action safety",
-            "validity_semantics": "loss identity"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "action safety term is fixed at lambda=.1 and cannot be overridden"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "passing another action weight must reject"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_coefficient_loss_only_exposes_encoder_gradient"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_coefficient_loss_only_exposes_encoder_gradient"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-06-scale-curve",
-      "owner": "MonotoneScaleCurve and fit_scale_stage",
-      "public_boundary": "fit_scale_stage(readings [m,21,32], candidate_scales, action_errors) -> PCHIP curves",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-value",
-          "T-transform",
-          "T-scale",
-          "T-shape",
-          "T-oracle",
-          "T-meta",
-          "T-role",
-          "T-persist"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC06-C1-fit",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-transform"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "21 readings, 32 repeats, candidate error grid"
-            ],
-            "units_and_axes": "coefficient reading to latent scale",
-            "validity_semantics": "ordinary grid"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "argmin candidate scales over 32 repeats fit three monotone PCHIP curves"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "using supplied targets instead of error argmin changes selected scale"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_scale_fit_does_not_construct_or_update_neural_owner"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_scale_fit_does_not_construct_or_update_neural_owner"
-          ]
-        },
-        {
-          "id": "MTC06-C2-range",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-scale",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "values below/inside/above [-1,1]"
-            ],
-            "units_and_axes": "raw reading versus bounded mapped scale",
-            "validity_semantics": "range boundary"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "outside reading saturates endpoint and raises event"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "silent extrapolation returns a different endpoint value/event"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_scale_curve_is_monotone_bounded_and_reports_range"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_scale_curve_is_monotone_bounded_and_reports_range"
-          ]
-        },
-        {
-          "id": "MTC06-C3-invalid",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-oracle"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "wrong repeat tensor"
-            ],
-            "units_and_axes": "[m,21,32,candidate] evidence",
-            "validity_semantics": "invalid evidence"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "missing 32-repeat evidence rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "accepting a [m,21] shortcut breaks measurement confidence"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_rejects_missing_32_repeat_evidence"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_missing_32_repeat_evidence"
-          ]
-        },
-        {
-          "id": "MTC06-C4-axis",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "asymmetric three-axis grids"
-            ],
-            "units_and_axes": "axis row identity",
-            "validity_semantics": "permuted bank"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "permuting axis rows permutes fitted curves"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "sorting or mixing axis curves breaks inverse permutation"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_scale_curve_bank_is_axis_permutation_covariant"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_scale_curve_bank_is_axis_permutation_covariant"
-          ]
-        },
-        {
-          "id": "MTC06-C5-quality",
-          "case_family": "C5",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-persist",
-            "T-scale"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "alternating repeat-optimal scales"
-            ],
-            "units_and_axes": "fit-quality lifecycle",
-            "validity_semantics": "failed admission"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "low R2 rejects rather than publishing a curve"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "dropping R2 gate would publish noisy evidence"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_rejects_low_quality_monotone_fit"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_rejects_low_quality_monotone_fit"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-07-calibrated-policy",
-      "owner": "CalibratedFADAPolicy in calibration.py",
-      "public_boundary": "forward/reconstruct_with_coefficients -> six-action Planner-IDM output",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-value",
-          "T-transform",
-          "T-diff",
-          "T-shape",
-          "T-meta",
-          "T-role"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC07-C1-compose",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-transform"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "asymmetric latent/directions/coefficients"
-            ],
-            "units_and_axes": "K=6,D=8 tiny projection; first action",
-            "validity_semantics": "valid calibrated query"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "decoded chunk equals independently recomputed z+sum(sigma*c Delta) and action is chunk[:,0]"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "wrong sign, axis, or decoder input changes hand-computed chunk"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          ]
-        },
-        {
-          "id": "MTC07-C2-zero",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-value",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "zero curves and healthy policy"
-            ],
-            "units_and_axes": "zero coefficient identity",
-            "validity_semantics": "zero correction"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "zero scale is nominal action bitwise"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "nonzero cold-start correction changes zero identity"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_policy_zero_readout_preserves_frozen_tracker_and_first_action"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_policy_zero_readout_preserves_frozen_tracker_and_first_action"
-          ]
-        },
-        {
-          "id": "MTC07-C3-shape",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "[B,2] coefficients"
-            ],
-            "units_and_axes": "axis width m=3",
-            "validity_semantics": "malformed coefficient"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "wrong coefficient width rejects before decode"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "broadcasting two columns would reach decoder"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          ]
-        },
-        {
-          "id": "MTC07-C4-row",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "two asymmetric rows"
-            ],
-            "units_and_axes": "row and coefficient identity",
-            "validity_semantics": "row permutation"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "permuting rows permutes action chunks"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "cross-row latent mixing breaks inverse permutation"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_policy_explicit_coefficients_match_manual_latent_composition"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-08-readout-state",
-      "owner": "CalibrationReadoutState in calibration.py",
-      "public_boundary": "CalibrationReadoutState.apply/reset -> scales and typed events",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-state",
-          "T-value",
-          "T-scale",
-          "T-shape",
-          "T-role",
-          "T-meta"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC08-C1-ready",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-state",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "ready [True] coefficient"
-            ],
-            "units_and_axes": "raw coefficient to scale",
-            "validity_semantics": "ready readout"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "ready row maps coefficient through curve and returns no cold-start"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "zeroing all ready output would lose calibrated state"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          ]
-        },
-        {
-          "id": "MTC08-C2-events",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-scale",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "cold/range/jump three-axis sequence"
-            ],
-            "units_and_axes": "raw versus mapped scale and threshold",
-            "validity_semantics": "transition events"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "not-ready is exact zero; range event and adjacent jump freeze only affected axes"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "clamping raw or freezing all axes changes event matrix"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          ]
-        },
-        {
-          "id": "MTC08-C3-invalid",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "[1,3] coefficients with [2] ready"
-            ],
-            "units_and_axes": "batch identity",
-            "validity_semantics": "malformed state"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "ready mask width mismatch rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "broadcasting a mask could mark wrong rows ready"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          ]
-        },
-        {
-          "id": "MTC08-C4-axis",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-role",
-            "T-meta"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "asymmetric axis coefficients"
-            ],
-            "units_and_axes": "axis-specific thresholds",
-            "validity_semantics": "affected-axis event"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "jump on axes 0/1 leaves axis2 scale unchanged"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "global freeze would alter unaffected axis"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_readout_state_cold_start_range_and_jump_freeze_are_explicit"
-          ]
-        },
-        {
-          "id": "MTC08-C5-reset",
-          "case_family": "C5",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "full episode reset"
-            ],
-            "units_and_axes": "episode lifecycle",
-            "validity_semantics": "reset transition"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "reset clears previous readout and cold-start resumes"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "stale previous coefficients after reset would cause a jump event"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-09-held-out-evaluation",
-      "owner": "evaluate_held_out_calibration in calibration_evaluation.py",
-      "public_boundary": "evaluate_held_out_calibration(nominal, calibrated, batch, upper_bound) -> report",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-role",
-          "T-value",
-          "T-shape",
-          "T-meta",
-          "T-diff"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC09-C1-routes",
-          "case_family": "C1",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-role",
-            "T-value"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "one train row plus two multi-axis rows"
-            ],
-            "units_and_axes": "held-out combination role and first action",
-            "validity_semantics": "valid evaluation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "report contains four route MSEs over only two held-out rows and executes index0"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "including the single-axis construction row changes exact MSE"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_routes_only_combination_rows_and_uses_first_action"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_routes_only_combination_rows_and_uses_first_action"
-          ]
-        },
-        {
-          "id": "MTC09-C2-minimum",
-          "case_family": "C2",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "one held-out row"
-            ],
-            "units_and_axes": "held-out sample count",
-            "validity_semantics": "insufficient evaluation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "fewer than two held-out rows rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "a one-row permutation is not a meaningful shuffled baseline"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_rejects_training_only_or_wrong_upper_bound_shape"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_rejects_training_only_or_wrong_upper_bound_shape"
-          ]
-        },
-        {
-          "id": "MTC09-C3-upper-bound",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "[2,6,A] upper bound / no heldout batch"
-            ],
-            "units_and_axes": "row identity and shape",
-            "validity_semantics": "invalid evaluation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "wrong upper-bound row shape or missing combinations rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "silent broadcast would compare mismatched rows"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_rejects_training_only_or_wrong_upper_bound_shape"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_rejects_training_only_or_wrong_upper_bound_shape"
-          ]
-        },
-        {
-          "id": "MTC09-C4-shuffle",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "asymmetric c_true pairs"
-            ],
-            "units_and_axes": "coefficient row identity",
-            "validity_semantics": "shuffled baseline"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "reverse coefficient permutation is sent through public reconstruction and changes route"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "using calibrated coefficients twice would hide identity sensitivity"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_routes_only_combination_rows_and_uses_first_action"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_evaluation.py::test_held_out_evaluation_routes_only_combination_rows_and_uses_first_action"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-10-dataset-persistence",
-      "owner": "save_calibration_dataset/load_calibration_dataset in calibration_data.py",
-      "public_boundary": "save_calibration_dataset(path, batch, config, metadata) / load_calibration_dataset(path, config) -> schema-bound batch",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S3"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4",
-          "C5"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-shape",
-          "T-order",
-          "T-role",
-          "T-meta",
-          "T-diff",
-          "T-state"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC10D-C1-roundtrip",
-          "case_family": "C1",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "sealed calibration batch and dataset file"
-            ],
-            "units_and_axes": "H/K/D tensors plus metadata",
-            "validity_semantics": "valid persisted dataset"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "round trip preserves every tensor field and metadata"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "field loss changes the restored semantic batch"
+            "counterexample": "the shared validator previously allowed the active writer to publish v1"
           },
           "evidence": {
             "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_collection.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          ]
+            "identity": "338-suite-pass#legacy-gateway-full-negative-matrix"
+          }
         },
         {
-          "id": "MTC10D-C2-schema",
-          "case_family": "C2",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-order"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "legacy dataset envelope"
-            ],
-            "units_and_axes": "active schema and v007/v006 roles",
-            "validity_semantics": "unsupported schema"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "legacy schema rejects before reinterpretation"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "accepting it reassigns historical Support/Query semantics"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          ]
-        },
-        {
-          "id": "MTC10D-C3-required-fields",
-          "case_family": "C3",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-role"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "missing or corrupted persisted fields"
-            ],
-            "units_and_axes": "raw rollout fields and role IDs",
-            "validity_semantics": "invalid stored dataset"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "missing/corrupted fields fail closed"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "default filling erases provenance"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          ]
-        },
-        {
-          "id": "MTC10D-C4-split-identity",
+          "id": "AXIS-C4-single-authority",
           "case_family": "C4",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-meta",
-            "T-role",
-            "T-diff"
-          ],
+          "s_tier": "S1",
+          "t_kinds": ["T-order", "T-meta", "T-persist"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "same values with changed split IDs"
-            ],
-            "units_and_axes": "train/validation/heldout row identity",
-            "validity_semantics": "role identity mutation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "split digest changes when row roles change"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "ignoring IDs makes roles interchangeable"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_raw_single_axis_rollouts_get_analytic_targets_and_split_identity"
-          ]
-        },
-        {
-          "id": "MTC10D-C5-reload",
-          "case_family": "C5",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "fresh loader and previously written bytes"
-            ],
-            "units_and_axes": "file-to-batch lifecycle",
-            "validity_semantics": "fresh-process-equivalent reload"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "the persisted dataset alone reconstructs the admitted batch"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "dependence on in-memory objects breaks restartability"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibration_dataset_round_trip_and_legacy_rejection"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-10-scale-evidence-persistence",
-      "owner": "save_calibration_scale_evidence/load_calibration_scale_evidence in calibration_training.py",
-      "public_boundary": "save_calibration_scale_evidence(path, evidence) / load_calibration_scale_evidence(path, expected_metadata) -> identity-bound evidence",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S3"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4",
-          "C5"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-shape",
-          "T-scale",
-          "T-order",
-          "T-meta",
-          "T-role",
-          "T-diff",
-          "T-state"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [],
-      "cases": [
-        {
-          "id": "MTC10E-C1-roundtrip",
-          "case_family": "C1",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-shape"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "coefficient grid, readings, candidate scales and Action errors"
-            ],
-            "units_and_axes": "axis x 21 points x 32 repeats x candidates",
-            "validity_semantics": "valid evidence envelope"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "round trip preserves typed evidence and transaction identity"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "bare tensors cannot satisfy the loader"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_evidence_round_trip_binds_transaction_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_evidence_round_trip_binds_transaction_identity"
-          ]
-        },
-        {
-          "id": "MTC10E-C2-grid",
-          "case_family": "C2",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-shape",
-            "T-scale"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "mutated scan point"
-            ],
-            "units_and_axes": "canonical -1..1 21-point grid per axis",
-            "validity_semantics": "noncanonical evidence geometry"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "a single grid mutation rejects"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "accepting arbitrary grids changes the fitted experiment"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_evidence_rejects_a_noncanonical_coefficient_scan_grid"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_evidence_rejects_a_noncanonical_coefficient_scan_grid"
-          ]
-        },
-        {
-          "id": "MTC10E-C3-envelope",
-          "case_family": "C3",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-order",
-            "T-meta"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "mutated schema/contracts/axis order/missing fields/nonfinite value"
-            ],
-            "units_and_axes": "typed evidence envelope",
-            "validity_semantics": "invalid persisted evidence"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "every envelope mutation fails closed"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "shape-only loading admits another contract or invalid numbers"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_scale_evidence_loader_rejects_invalid_persisted_envelope"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_scale_evidence_loader_rejects_invalid_persisted_envelope"
-          ]
-        },
-        {
-          "id": "MTC10E-C4-identity",
-          "case_family": "C4",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-role",
-            "T-diff",
-            "T-persist"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "matching tensors with wrong transaction identity or changed bytes"
-            ],
-            "units_and_axes": "source/dataset/split/catalog and byte digest",
-            "validity_semantics": "identity/provenance mutation"
+            "semantic_roles": ["repeated CLI active axes", "owner YAML catalog", "reserved duplicate keys"],
+            "units_and_axes": "composition-root order and persisted identity",
+            "validity_semantics": "one canonical AxisSpec with provenance-only metadata"
           },
           "oracle": {
             "kind": "metamorphic-relation",
             "independent_from_production": true,
-            "expected_answer": "wrong identity rejects and changed bytes produce a new bound digest"
+            "expected_answer": "offset then gain remains offset then gain and duplicate axis identities reject"
           },
           "sensitivity": {
             "kind": "controlled-counterexample",
             "observed_failure": true,
-            "counterexample": "ignoring identity mixes transactions"
+            "counterexample": "top-level axis_count or sorted CLI order violates the asserted identity"
           },
           "evidence": {
             "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_collection.py tests/scripts/test_fada_calibration_entrypoints.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_evidence_round_trip_binds_transaction_identity"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_evidence_round_trip_binds_transaction_identity",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_binds_new_digest_after_typed_evidence_bytes_change"
-          ]
-        },
-        {
-          "id": "MTC10E-C5-atomic",
-          "case_family": "C5",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "serialization failure with absent or preexisting target"
-            ],
-            "units_and_axes": "unique temp file and atomic replacement",
-            "validity_semantics": "failed persistence transaction"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "temporary files are cleaned and an old target is preserved bytewise"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "fixed temp names or eager replacement lose prior evidence"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_scale_evidence_serialization_failure_cleans_temp_and_preserves_target"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_scale_evidence_serialization_failure_cleans_temp_and_preserves_target"
-          ]
-        }
-      ],
-      "status": "MODULE-CORRECT"
-    },
-    {
-      "id": "MTC-10-stage-artifact-v2",
-      "owner": "save/load typed calibration stage artifacts in calibration_training.py",
-      "public_boundary": "run_direction_stage_training and run_coefficient_stage_training publish/load schema-v2 predecessor-path artifacts",
-      "card": {
-        "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
-      },
-      "required": {
-        "s_tiers": [
-          "S3",
-          "S0"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4",
-          "C5"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-state",
-          "T-shape",
-          "T-meta",
-          "T-order",
-          "T-role",
-          "T-diff"
-        ]
-      },
-      "case_family_waivers": {},
-      "static_checks": [
-        {
-          "id": "MTC10A-S0-public-export",
-          "t_kinds": [
-            "T-role",
-            "T-order"
-          ],
-          "evidence": {
-            "class": "static-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration_training.py::test_stage_isolation_public_export_surface_has_no_generic_checkpoint_api -q",
-            "exit_code": 0,
-            "identity": "tests/algos/test_fada_calibration_training.py::test_stage_isolation_public_export_surface_has_no_generic_checkpoint_api"
+            "identity": "338-suite-pass#single-axis-authority"
           }
         }
       ],
-      "cases": [
-        {
-          "id": "MTC10A-C1-roundtrip",
-          "case_family": "C1",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "direction_frozen and coefficient_frozen artifacts"
-            ],
-            "units_and_axes": "schema-v2 owner payloads",
-            "validity_semantics": "valid stage lifecycle"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "fresh Stage 2 reload recovers exact Direction state and publishes both owner sets"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "generic checkpoint state can bypass stage ownership"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directions"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage1_public_transaction_constructs_no_encoder_and_seals_only_directions",
-            "tests/algos/test_fada_calibration_training.py::test_stage2_strictly_loads_stage1_and_seals_parent_identity"
-          ]
-        },
-        {
-          "id": "MTC10A-C2-envelope",
-          "case_family": "C2",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-shape",
-            "T-meta",
-            "T-order"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "mutated H/K/D, architecture, axis order, configs or gate"
-            ],
-            "units_and_axes": "contract-fixed dimensions and owner envelope",
-            "validity_semantics": "boundary artifact mutation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "all dimension/config/gate mutations reject before optimizer"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "same-shaped but semantically different artifacts otherwise pass"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer"
-          ]
-        },
-        {
-          "id": "MTC10A-C3-fail-closed",
-          "case_family": "C3",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-role",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "old schema/contracts, wrong owner set, invalid norms or nonfinite state"
-            ],
-            "units_and_axes": "v2 schema and exact owner set",
-            "validity_semantics": "invalid persisted predecessor"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "legacy/generic/malformed artifacts fail closed"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "permissive loading revives retired checkpoint semantics"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_rejects_invalid_predecessor_before_optimizer"
-          ]
-        },
-        {
-          "id": "MTC10A-C4-lineage",
-          "case_family": "C4",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-meta",
-            "T-diff"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "copied and then corrupted predecessor bytes"
-            ],
-            "units_and_axes": "exact lowercase sha256 parent lineage",
-            "validity_semantics": "byte identity mutation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "copied bytes retain identity while changed/corrupt bytes rebind or reject"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "digesting reconstructed objects loses byte provenance"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage2_binds_exact_copied_parent_bytes_and_rejects_corruption_before_optimizer"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage2_binds_exact_copied_parent_bytes_and_rejects_corruption_before_optimizer"
-          ]
-        },
-        {
-          "id": "MTC10A-C5-atomic",
-          "case_family": "C5",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "write failure or frozen-owner mutation with absent/preexisting target"
-            ],
-            "units_and_axes": "unique temp and owner rollback lifecycle",
-            "validity_semantics": "failed stage publication"
-          },
-          "oracle": {
-            "kind": "metamorphic-relation",
-            "independent_from_production": true,
-            "expected_answer": "staging is cleaned, old targets preserved and borrowed owners restored"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "partial writes or partial rollback corrupt restart state"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage_artifact_publication_cleans_unique_temp_and_preserves_target"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage_artifact_publication_cleans_unique_temp_and_preserves_target",
-            "tests/algos/test_fada_calibration_training.py::test_training_stage_rolls_back_injected_borrowed_policy_mutation_without_publication"
-          ]
-        }
-      ],
       "status": "MODULE-CORRECT"
     },
     {
-      "id": "MTC-10-deployment-artifact",
-      "owner": "save_calibration_artifact/load_calibration_artifact/load_calibrated_policy in calibration.py and calibration_runtime.py",
-      "public_boundary": "deployment artifact save/load and runtime construction -> frozen calibrated policy",
+      "id": "MTC-stage-package-and-training",
+      "owner": "calibration_training package types, IO, lifecycle, stages, and pipeline",
+      "public_boundary": "dataset-bound AxisSpec through persisted Stage 1, Stage 2, and Stage 3 transactions",
       "card": {
         "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
+        "identity": "MTC-02 through MTC-06 and MTC-10 / v008-v007 / confirmed 2026-08-23"
       },
       "required": {
-        "s_tiers": [
-          "S3"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4",
-          "C5"
-        ],
-        "t_kinds": [
-          "T-persist",
-          "T-state",
-          "T-order",
-          "T-scale",
-          "T-meta",
-          "T-diff"
-        ]
+        "s_tiers": ["S1"],
+        "case_families": ["C1", "C2", "C3", "C4"],
+        "t_kinds": ["T-shape", "T-grad", "T-persist", "T-state", "T-order"]
       },
       "case_family_waivers": {},
       "static_checks": [],
       "cases": [
         {
-          "id": "MTC10P-C1-roundtrip",
+          "id": "STAGE-C1-package-owners",
           "case_family": "C1",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
+          "s_tier": "S1",
+          "t_kinds": ["T-state", "T-persist"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "complete Stage 3 owners, curves and lineage"
-            ],
-            "units_and_axes": "deployment schema and fresh runtime owners",
-            "validity_semantics": "valid deployment artifact"
+            "semantic_roles": ["types", "IO", "lifecycle", "three stages", "pipeline facade"],
+            "units_and_axes": "module responsibility and dependency direction",
+            "validity_semantics": "public imports preserved after monolith replacement"
           },
           "oracle": {
-            "kind": "metamorphic-relation",
+            "kind": "human-confirmed-golden",
             "independent_from_production": true,
-            "expected_answer": "round trip preserves exact owners, curves, contracts and parent/evidence digests"
+            "expected_answer": "each responsibility has one owner and the facade retains caller imports"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "pre-fix",
             "observed_failure": true,
-            "counterexample": "a neural checkpoint-shaped payload omits deployment semantics"
+            "counterexample": "the 1214-line module failed the package-owner RED assertion"
           },
           "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "class": "contract-confirmed",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_stage_three_artifact_round_trip_binds_contract_and_is_not_a_neural_checkpoint"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_stage_three_artifact_round_trip_binds_contract_and_is_not_a_neural_checkpoint",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests"
-          ]
+            "identity": "338-suite-pass#package-owner-boundaries"
+          }
         },
         {
-          "id": "MTC10P-C2-curve",
+          "id": "STAGE-C2-variable-width-chain",
           "case_family": "C2",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-order",
-            "T-scale"
-          ],
+          "s_tier": "S1",
+          "t_kinds": ["T-shape", "T-order", "T-persist"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "finite but nonmonotone curve payload"
-            ],
-            "units_and_axes": "ordered scale-curve knots",
-            "validity_semantics": "invalid curve boundary"
+            "semantic_roles": ["gain-only m1", "offset-gain m2", "default m3"],
+            "units_and_axes": "m by 6 by 128 directions and m coefficient outputs",
+            "validity_semantics": "valid variable-width three-stage transactions"
           },
           "oracle": {
             "kind": "hand-calculation",
             "independent_from_production": true,
-            "expected_answer": "loader rejects nonmonotone state"
+            "expected_answer": "all model and evidence widths equal len of the ordered AxisSpec"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "pre-fix",
             "observed_failure": true,
-            "counterexample": "finite-only checks admit invalid mappings"
+            "counterexample": "fixed three-axis constructors fail m1 and m2 expected shapes"
           },
           "evidence": {
             "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_artifact_rejects_finite_but_nonmonotone_curve_state"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_artifact_rejects_finite_but_nonmonotone_curve_state"
-          ]
+            "identity": "338-suite-pass#m1-m2-m3-stage-chain"
+          }
         },
         {
-          "id": "MTC10P-C3-lineage",
+          "id": "STAGE-C3-gradient-boundaries",
           "case_family": "C3",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-meta",
-            "T-state"
-          ],
+          "s_tier": "S1",
+          "t_kinds": ["T-grad", "T-state"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "missing/malformed lineage, legacy schema or nonfinite owner state"
-            ],
-            "units_and_axes": "stage/source/dataset/split/parent/evidence identities",
-            "validity_semantics": "invalid deployment persistence"
+            "semantic_roles": ["selected direction", "Coefficient Encoder", "frozen Planner Tracker and predecessor"],
+            "units_and_axes": "stage-owned gradients and frozen state",
+            "validity_semantics": "one mutable owner per stage"
           },
           "oracle": {
-            "kind": "metamorphic-relation",
+            "kind": "conservation-law",
             "independent_from_production": true,
-            "expected_answer": "writer and loader fail closed before runtime owner construction"
+            "expected_answer": "only the declared stage owner changes and all borrowed owners remain bitwise unchanged"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "controlled-mutation",
             "observed_failure": true,
-            "counterexample": "late or permissive validation creates a wrong calibrated policy"
+            "counterexample": "injected frozen-owner mutation triggers rollback and rejection"
           },
           "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "class": "contract-confirmed",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_artifact_writer_rejects_missing_or_malformed_lineage"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_artifact_writer_rejects_missing_or_malformed_lineage",
-            "tests/algos/test_fada_calibration.py::test_artifact_loader_rejects_missing_or_malformed_lineage",
-            "tests/algos/test_fada_calibration.py::test_artifact_rejects_nonfinite_state_before_policy_construction",
-            "tests/algos/test_fada_calibration.py::test_legacy_artifact_rejects_before_runtime_owner_construction"
-          ]
+            "identity": "338-suite-pass#gradient-and-rollback-boundaries"
+          }
         },
         {
-          "id": "MTC10P-C4-provenance",
+          "id": "STAGE-C4-predecessor-and-atomic",
           "case_family": "C4",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-meta",
-            "T-diff"
-          ],
+          "s_tier": "S1",
+          "t_kinds": ["T-persist", "T-order", "T-state"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "exact predecessor/evidence bytes and one evidence-byte mutation"
-            ],
-            "units_and_axes": "two lineage sha256 fields",
-            "validity_semantics": "provenance differential"
+            "semantic_roles": ["predecessor digests", "Scale Evidence bytes", "preexisting targets", "serialization failure"],
+            "units_and_axes": "transaction identity and filesystem publication",
+            "validity_semantics": "ordered admitted predecessor or fail-closed publication"
           },
           "oracle": {
-            "kind": "metamorphic-relation",
+            "kind": "conservation-law",
             "independent_from_production": true,
-            "expected_answer": "deployment metadata binds the same consumed bytes and changes with evidence"
+            "expected_answer": "wrong predecessor rejects and failed writes preserve target bytes with no temporary residue"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "controlled-mutation",
             "observed_failure": true,
-            "counterexample": "stale digest publication misattributes the artifact"
+            "counterexample": "injected partial writes and digest mutation exercise the rejection path"
           },
           "evidence": {
             "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_loads_typed_paths_constructs_no_optimizer_and_binds_exact_digests",
-            "tests/algos/test_fada_calibration_training.py::test_stage3_binds_new_digest_after_typed_evidence_bytes_change"
-          ]
-        },
-        {
-          "id": "MTC10P-C5-atomic",
-          "case_family": "C5",
-          "s_tier": "S3",
-          "t_kinds": [
-            "T-persist",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "serialization failure with absent or preexisting deployment target"
-            ],
-            "units_and_axes": "unique staging path and atomic replacement",
-            "validity_semantics": "failed deployment publication"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "failed publication cleans staging and preserves the old target"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "eager overwrite destroys the last admitted artifact"
-          },
-          "evidence": {
-            "class": "persistence-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration_training.py::test_stage3_failed_publication_preserves_old_target_and_cleans_staging"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration_training.py::test_stage3_failed_publication_preserves_old_target_and_cleans_staging"
-          ]
+            "identity": "338-suite-pass#atomic-and-lineage-matrix"
+          }
         }
       ],
       "status": "MODULE-CORRECT"
     },
     {
-      "id": "MTC-08-playback-controller",
-      "owner": "CalibratedFADAPlaybackController in calibration_runtime.py",
-      "public_boundary": "controller.act/reset -> one first action with true history count",
+      "id": "MTC-runtime-and-evaluation",
+      "owner": "calibration_runtime and calibration_evaluation",
+      "public_boundary": "typed final artifact admission to calibrated first-action execution and held-out evaluation",
       "card": {
         "status": "confirmed",
-        "identity": "ICA-DP-01..10-calibratable-tracker-serial-three-stage / FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006 / MTC-confirmed-2026-08-20"
+        "identity": "MTC-07 through MTC-09 / v008-v007 / confirmed 2026-08-23"
       },
       "required": {
-        "s_tiers": [
-          "S1"
-        ],
-        "case_families": [
-          "C1",
-          "C2",
-          "C3",
-          "C4"
-        ],
-        "t_kinds": [
-          "T-state",
-          "T-connect",
-          "T-value",
-          "T-shape",
-          "T-oracle",
-          "T-meta",
-          "T-role"
-        ]
+        "s_tiers": ["S1"],
+        "case_families": ["C1", "C2", "C3", "C4"],
+        "t_kinds": ["T-transform", "T-role", "T-persist", "T-state", "T-order"]
       },
       "case_family_waivers": {},
       "static_checks": [],
       "cases": [
         {
-          "id": "MTC08B-C1-cold",
+          "id": "RUNTIME-C1-zero-nominal",
           "case_family": "C1",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-state",
-            "T-connect"
-          ],
+          "t_kinds": ["T-transform", "T-state"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "29/30 real samples"
-            ],
-            "units_and_axes": "history count H=30",
-            "validity_semantics": "valid deployment cold start"
+            "semantic_roles": ["freshly loaded m2 policy", "zero coefficients", "healthy Tracker"],
+            "units_and_axes": "latent residual composition and six-step Action",
+            "validity_semantics": "zero calibration evidence"
           },
           "oracle": {
-            "kind": "hand-calculation",
+            "kind": "conservation-law",
             "independent_from_production": true,
-            "expected_answer": "29 observations do not call Encoder; 30th calls once"
+            "expected_answer": "zero coefficients reproduce the nominal six-step chunk and first Action"
           },
           "sensitivity": {
             "kind": "controlled-counterexample",
             "observed_failure": true,
-            "counterexample": "old repeated-first-frame controller calls Encoder immediately"
+            "counterexample": "a nonzero residual or wrong axis composition changes the exact nominal tensor"
           },
           "evidence": {
             "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          ]
+            "identity": "338-suite-pass#fresh-reload-zero-nominal"
+          }
         },
         {
-          "id": "MTC08B-C2-reset",
+          "id": "RUNTIME-C2-axis-order-admission",
           "case_family": "C2",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-state",
-            "T-value"
-          ],
+          "t_kinds": ["T-order", "T-persist"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "reset then one observation"
-            ],
-            "units_and_axes": "episode lifecycle",
-            "validity_semantics": "reset boundary"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "full reset returns cold-start and clears readout"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "stale count would call Encoder after one post-reset sample"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          ]
-        },
-        {
-          "id": "MTC08B-C3-invalid",
-          "case_family": "C3",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-shape",
-            "T-oracle"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "NaN observation"
-            ],
-            "units_and_axes": "obs/action units",
-            "validity_semantics": "invalid observation"
-          },
-          "oracle": {
-            "kind": "hand-calculation",
-            "independent_from_production": true,
-            "expected_answer": "nonfinite observation rejects before action"
-          },
-          "sensitivity": {
-            "kind": "controlled-counterexample",
-            "observed_failure": true,
-            "counterexample": "passing NaN to policy would violate finite action boundary"
-          },
-          "evidence": {
-            "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
-            "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_uses_true_history_count_before_encoder"
-          ]
-        },
-        {
-          "id": "MTC08B-C4-row",
-          "case_family": "C4",
-          "s_tier": "S1",
-          "t_kinds": [
-            "T-meta",
-            "T-state"
-          ],
-          "invokes_production_public_boundary": true,
-          "fixture": {
-            "semantic_roles": [
-              "two rows, one done mask"
-            ],
-            "units_and_axes": "row-local episode state",
-            "validity_semantics": "partial reset"
+            "semantic_roles": ["offset-gain artifact", "gain-offset expected dataset", "named jump thresholds"],
+            "units_and_axes": "artifact coefficient order and runtime threshold order",
+            "validity_semantics": "same width but different semantic order"
           },
           "oracle": {
             "kind": "metamorphic-relation",
             "independent_from_production": true,
-            "expected_answer": "partial reset makes only one row cold while other row is ready and Encoder sees one ready row"
+            "expected_answer": "same-width reordered artifact rejects; threshold mapping resolves in artifact order"
           },
           "sensitivity": {
-            "kind": "controlled-counterexample",
+            "kind": "pre-fix",
             "observed_failure": true,
-            "counterexample": "global reset or full-batch Encoder call changes cold_start mask"
+            "counterexample": "evaluation previously omitted the dataset AxisSpec admission check"
+          },
+          "evidence": {
+            "class": "persistence-confirmed",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/scripts/test_fada_calibration_entrypoints.py",
+            "exit_code": 0,
+            "identity": "338-suite-pass#runtime-axis-order"
+          }
+        },
+        {
+          "id": "RUNTIME-C3-single-axis-na",
+          "case_family": "C3",
+          "s_tier": "S1",
+          "t_kinds": ["T-role", "T-state"],
+          "invokes_production_public_boundary": true,
+          "fixture": {
+            "semantic_roles": ["gain-only dataset", "combination evaluation", "downstream artifacts"],
+            "units_and_axes": "one active cause and multi-cause evaluation role",
+            "validity_semantics": "combination evaluation not applicable"
+          },
+          "oracle": {
+            "kind": "human-confirmed-golden",
+            "independent_from_production": true,
+            "expected_answer": "m1 rejects before calibrated artifact or upper-bound loading"
+          },
+          "sensitivity": {
+            "kind": "pre-fix",
+            "observed_failure": true,
+            "counterexample": "the entrypoint previously constructed both downstream routes before library rejection"
           },
           "evidence": {
             "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_partial_reset_is_row_local"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_partial_reset_is_row_local"
-          ]
+            "identity": "338-suite-pass#m1-early-na"
+          }
         },
         {
-          "id": "MTC08B-C5-readout",
-          "case_family": "C5",
+          "id": "RUNTIME-C4-held-out-role",
+          "case_family": "C4",
           "s_tier": "S1",
-          "t_kinds": [
-            "T-state",
-            "T-role"
-          ],
+          "t_kinds": ["T-role", "T-order", "T-transform"],
           "invokes_production_public_boundary": true,
           "fixture": {
-            "semantic_roles": [
-              "last_readout and done mask"
-            ],
-            "units_and_axes": "readout ownership",
-            "validity_semantics": "stateful playback"
+            "semantic_roles": ["offset-gain held-out row", "delay-containing row", "dataset AxisSpec"],
+            "units_and_axes": "combination membership and projected coefficient order",
+            "validity_semantics": "held-out row uses only selected causes"
           },
           "oracle": {
             "kind": "hand-calculation",
             "independent_from_production": true,
-            "expected_answer": "last_readout exposes row-local readiness after action"
+            "expected_answer": "offset-gain row remains with c=[offset,gain]; delay-containing row is excluded"
           },
           "sensitivity": {
             "kind": "controlled-counterexample",
             "observed_failure": true,
-            "counterexample": "discarding readout events loses deployment lifecycle evidence"
+            "counterexample": "retaining the delay row or catalog ordering fails role and coefficient assertions"
           },
           "evidence": {
             "class": "contract-confirmed",
-            "command": "uv run pytest tests/algos/test_fada_calibration.py tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py tests/scripts/test_fada_calibration_entrypoints.py -q",
+            "command": "uv run pytest -q tests/algos/test_fada_calibration_training.py tests/algos/test_fada_calibration_evaluation.py",
             "exit_code": 0,
-            "identity": "pytest-normalized-summary-sha256:fd8a5f106e1d13ad8b4097f59b3f55eed0db660495e96f1901bf0d892e020c32#tests/algos/test_fada_calibration.py::test_calibrated_playback_partial_reset_is_row_local"
-          },
-          "test_nodes": [
-            "tests/algos/test_fada_calibration.py::test_calibrated_playback_partial_reset_is_row_local"
-          ]
+            "identity": "338-suite-pass#m2-held-out-role"
+          }
         }
       ],
       "status": "MODULE-CORRECT"
     }
-  ],
-  "formal_handoff": {
-    "status": "PENDING-FORMAL",
-    "required_edges": [
-      "Stage 1 CLI -> direction_frozen artifact path",
-      "Stage 2 CLI -> strict predecessor-path reload -> coefficient_frozen artifact path",
-      "Stage 3 CLI -> strict coefficient/evidence path reload -> deployment artifact",
-      "deployment artifact -> fresh calibrated runtime -> first Action"
-    ],
-    "connectivity_compatibility": {
-      "classification": "CONNECTIVITY-ONLY",
-      "command": "uv run pytest tests/algos/test_fada_calibration_training.py::test_serial_and_independent_transactions_are_fresh_reload_action_equivalent -q",
-      "exit_code": 0,
-      "result": "1 passed",
-      "test_node": "tests/algos/test_fada_calibration_training.py::test_serial_and_independent_transactions_are_fresh_reload_action_equivalent",
-      "note": "Fresh-reload serial/independent Action equivalence is an S2 connectivity sentinel only; it is not module-semantic evidence and does not close the official-route formal audit."
-    },
-    "note": "S2/S4 official entrypoint connectivity, simulator/device behavior, long training, deployment readiness and policy quality remain outside this module manifest."
-  },
-  "contract_identity": "FADA-CONTEXT-METHOD-v007+FADA-CONTEXT-TRAIN-v006"
+  ]
 }

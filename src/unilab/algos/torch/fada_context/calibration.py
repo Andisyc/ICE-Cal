@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -15,9 +16,9 @@ from unilab.algos.torch.distill.fada import (
     _validate_finite,
 )
 
-CALIBRATION_METHOD_CONTRACT_ID = "FADA-CONTEXT-METHOD-v007"
-CALIBRATION_TRAINING_CONTRACT_ID = "FADA-CONTEXT-TRAIN-v006"
-CALIBRATION_ARTIFACT_SCHEMA = "unilab_fada_calibration_artifact_v1"
+CALIBRATION_METHOD_CONTRACT_ID = "FADA-CONTEXT-METHOD-v008"
+CALIBRATION_TRAINING_CONTRACT_ID = "FADA-CONTEXT-TRAIN-v007"
+CALIBRATION_ARTIFACT_SCHEMA = "unilab_fada_calibration_artifact_v2"
 CALIBRATION_AXIS_NAMES = ("gain", "delay", "offset")
 CALIBRATION_AXIS_CATALOG_VERSION = "gain-delay-offset-v1"
 
@@ -90,6 +91,71 @@ class FaultAxisCatalog:
         if name == "offset":
             return nominal_action - float(strength)
         raise ValueError(f"unregistered fault axis: {name}")
+
+
+@dataclass(frozen=True)
+class CalibrationAxisSpec:
+    catalog_version: str
+    names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.catalog_version, str) or not self.catalog_version:
+            raise ValueError("axis spec catalog_version must be non-empty")
+        if not self.names:
+            raise ValueError("axis spec names must be non-empty")
+        if any(not isinstance(name, str) or not name for name in self.names):
+            raise ValueError("axis spec names must be non-empty strings")
+        if len(set(self.names)) != len(self.names):
+            raise ValueError("axis spec names must be unique")
+
+    @classmethod
+    def from_catalog(
+        cls,
+        catalog: FaultAxisCatalog,
+        names: tuple[str, ...] | list[str] | None = None,
+    ) -> CalibrationAxisSpec:
+        selected = catalog.names if names is None else tuple(names)
+        for name in selected:
+            catalog.index(name)
+        return cls(catalog_version=catalog.version, names=selected)
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: object,
+        catalog: FaultAxisCatalog,
+    ) -> CalibrationAxisSpec:
+        if not isinstance(payload, Mapping):
+            raise ValueError("axis spec payload must be a mapping")
+        if set(payload) != {"catalog_version", "names"}:
+            raise ValueError("axis spec payload fields are invalid")
+        raw_names = payload.get("names")
+        if not isinstance(raw_names, (list, tuple)):
+            raise ValueError("axis spec payload names must be a sequence")
+        catalog_version = payload.get("catalog_version")
+        if not isinstance(catalog_version, str):
+            raise ValueError("axis spec payload catalog_version must be a string")
+        spec = cls(
+            catalog_version=catalog_version,
+            names=tuple(raw_names),
+        )
+        if spec.catalog_version != catalog.version:
+            raise ValueError("axis spec catalog version mismatch")
+        for name in spec.names:
+            catalog.index(name)
+        return spec
+
+    @property
+    def axis_count(self) -> int:
+        return len(self.names)
+
+    def catalog_indices(self, catalog: FaultAxisCatalog) -> tuple[int, ...]:
+        if catalog.version != self.catalog_version:
+            raise ValueError("axis spec catalog version mismatch")
+        return tuple(catalog.index(name) for name in self.names)
+
+    def to_payload(self) -> dict[str, object]:
+        return {"catalog_version": self.catalog_version, "names": list(self.names)}
 
 
 @dataclass(frozen=True)
@@ -519,10 +585,11 @@ def _validate_calibration_artifact_metadata(metadata: object) -> Mapping[str, An
                 f"calibration artifact lineage {name} must be a "
                 "64-character lowercase hexadecimal digest"
             )
-    if not isinstance(metadata.get("axis_catalog_version"), str):
-        raise ValueError("calibration artifact metadata axis catalog is missing")
-    if metadata["axis_catalog_version"] != CALIBRATION_AXIS_CATALOG_VERSION:
-        raise ValueError("calibration artifact axis catalog mismatch")
+    if any(
+        name in metadata
+        for name in ("axis_catalog_version", "axis_count", "axis_names", "axis_spec")
+    ):
+        raise ValueError("calibration artifact metadata contains reserved axis identity")
     if metadata.get("stage") != "complete":
         raise ValueError("calibration artifact lineage stage must be complete")
     return metadata
@@ -535,12 +602,13 @@ def save_calibration_artifact(
     direction_bank: DirectionBank,
     scale_curves: tuple[MonotoneScaleCurve, ...],
     coefficient_encoder: CoefficientEncoder,
+    axis_spec: CalibrationAxisSpec,
     metadata: Mapping[str, Any],
 ) -> Path:
     if len(scale_curves) != direction_bank.axis_count:
         raise ValueError("one scale curve is required per direction axis")
-    if direction_bank.axis_count != len(CALIBRATION_AXIS_NAMES):
-        raise ValueError("calibration artifact axis count does not match the active catalog")
+    if direction_bank.axis_count != axis_spec.axis_count:
+        raise ValueError("calibration artifact axis count does not match its axis spec")
     if tuple(direction_bank.directions.shape[1:]) != (
         config.prediction_horizon,
         config.hidden_dim,
@@ -558,7 +626,7 @@ def save_calibration_artifact(
     expected_encoder = (
         config.obs_dim,
         config.action_dim,
-        len(CALIBRATION_AXIS_NAMES),
+        axis_spec.axis_count,
         128,
         2,
     )
@@ -582,7 +650,7 @@ def save_calibration_artifact(
         "method_contract_id": CALIBRATION_METHOD_CONTRACT_ID,
         "training_contract_id": CALIBRATION_TRAINING_CONTRACT_ID,
         "architecture": asdict(config),
-        "axis_names": CALIBRATION_AXIS_NAMES,
+        "axis_spec": axis_spec.to_payload(),
         "direction_bank": direction_bank.state_dict(),
         "coefficient_encoder": coefficient_encoder.state_dict(),
         "coefficient_encoder_config": {
@@ -598,13 +666,26 @@ def save_calibration_artifact(
         ],
         "metadata": dict(metadata),
     }
-    temporary = target.with_suffix(f"{target.suffix}.tmp")
-    torch.save(payload, temporary)
-    temporary.replace(target)
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=target.parent,
+        delete=False,
+    )
+    temporary = Path(handle.name)
+    handle.close()
+    try:
+        torch.save(payload, temporary)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return target
 
 
-def load_calibration_artifact(path: str | Path) -> dict[str, Any]:
+def load_calibration_artifact(
+    path: str | Path,
+    catalog: FaultAxisCatalog,
+) -> dict[str, Any]:
     payload = torch.load(Path(path), map_location="cpu", weights_only=True)
     if (
         not isinstance(payload, dict)
@@ -617,8 +698,7 @@ def load_calibration_artifact(path: str | Path) -> dict[str, Any]:
         raise ValueError("calibration artifact training Contract mismatch")
     if not isinstance(payload.get("architecture"), Mapping):
         raise ValueError("calibration artifact architecture is missing")
-    if tuple(payload.get("axis_names", ())) != CALIBRATION_AXIS_NAMES:
-        raise ValueError("calibration artifact axis catalog mismatch")
+    axis_spec = CalibrationAxisSpec.from_payload(payload.get("axis_spec"), catalog)
     _validate_calibration_artifact_metadata(payload.get("metadata"))
     if (
         not isinstance(payload.get("direction_bank"), Mapping)
@@ -634,6 +714,7 @@ def load_calibration_artifact(path: str | Path) -> dict[str, Any]:
     if (
         not isinstance(directions, torch.Tensor)
         or directions.ndim != 3
+        or directions.shape[0] != axis_spec.axis_count
         or not isinstance(normalization_scale, torch.Tensor)
         or normalization_scale.shape != (directions.shape[0],)
     ):
@@ -643,7 +724,16 @@ def load_calibration_artifact(path: str | Path) -> dict[str, Any]:
         raise ValueError("calibration artifact Direction Bank is not normalized")
     if bool((normalization_scale <= 0).any()):
         raise ValueError("calibration artifact normalization scale must be positive")
-    if len(payload["scale_curves"]) != len(CALIBRATION_AXIS_NAMES):
+    expected_encoder_config = {
+        "state_dim": int(payload["architecture"]["obs_dim"]),
+        "action_dim": int(payload["architecture"]["action_dim"]),
+        "axis_count": axis_spec.axis_count,
+        "hidden_dim": 128,
+        "layers": 2,
+    }
+    if payload["coefficient_encoder_config"] != expected_encoder_config:
+        raise ValueError("calibration artifact Coefficient Encoder architecture mismatch")
+    if len(payload["scale_curves"]) != axis_spec.axis_count:
         raise ValueError("calibration artifact scale curve count mismatch")
     for curve in payload["scale_curves"]:
         _validate_scale_curve_payload(curve)
@@ -692,13 +782,17 @@ class CalibratedFADAPolicy(nn.Module):
         direction_bank: DirectionBank,
         coefficient_encoder: CoefficientEncoder,
         scale_curves: tuple[MonotoneScaleCurve, ...],
+        axis_spec: CalibrationAxisSpec,
         planner: FADAPlanner | None = None,
         idm: FADAInverseDynamicsModel | None = None,
     ) -> None:
         super().__init__()
         if len(scale_curves) != direction_bank.axis_count:
             raise ValueError("scale curve count must match direction axis count")
+        if direction_bank.axis_count != axis_spec.axis_count:
+            raise ValueError("calibrated policy owner widths must match the axis spec")
         self.config = config
+        self.axis_spec = axis_spec
         self.planner = planner if planner is not None else FADAPlanner(config)
         self.idm = idm if idm is not None else FADAInverseDynamicsModel(config)
         self.direction_bank = direction_bank

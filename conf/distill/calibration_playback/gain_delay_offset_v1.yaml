@@ -2,8 +2,11 @@
 calibration_playback:
   source_checkpoint: logs/fada/planner_idm.pt
   artifact: artifacts/fada_calibration/calibration_artifact.pt
-  axis_catalog_version: gain-delay-offset-v1
-  jump_threshold: [0.25, 0.25, 0.25]
+  axis_catalog: conf/fada_context/calibration_axes/gain_delay_offset_v1.yaml
+  jump_threshold:
+    gain: 0.25
+    delay: 0.25
+    offset: 0.25
 
 interactive:
   action_mode: policy

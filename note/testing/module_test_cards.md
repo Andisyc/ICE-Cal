@@ -1,17 +1,22 @@
-# Calibratable Tracker v007/v006 Module Test Cards
+# Calibratable Tracker v008/v007 Module Test Cards
 
-Status: `CONFIRMED — user-authorized implementation execution, 2026-08-20`
+Status: `CONFIRMED — configurable-axis refactor authorized, 2026-08-23`
 
 These cards define intended public behavior. Implementation evidence is recorded separately and does
 not by itself claim official-route connectivity, training quality, or deployment readiness.
 
-## MTC-01 Axis Catalog and Analytic Labels
+## MTC-01 Axis Catalog, Active Spec, and Analytic Labels
 
-- Owner: fault-axis dataset/config owner.
-- Input: registered axis, exact injected parameter, nominal six-step Action, provenance.
-- Output: normalized `c_true`, analytic `a_star`, axis identity.
+- Owner: Fault Axis Catalog owns registered causes; Calibration Axis Spec owns the ordered, non-empty
+  subset selected for one complete training transaction.
+- Input: catalog, ordered `active_axes`, exact injected parameter, nominal six-step Action, provenance.
+- Output: projected `[B,m] c_true`, analytic `a_star`, remapped axis identity, exact ordered Axis Spec.
 - Must prove: gain division, delay time advance, offset subtraction; finite/unit/range boundaries.
-- Must reject: unknown axis, invalid gain zero, unavailable delay target, mixed identity or overlap.
+- Must prove: `[gain]`, non-catalog-order `[offset,gain]`, and default full-catalog selection; caller
+  order is preserved through every persisted and runtime consumer; excluded row filtering and
+  held-out combination retention only when every nonzero cause is selected.
+- Must reject: empty/duplicate/unknown selection, invalid gain zero, unavailable delay target, mixed
+  identity, silent reordering, or overlap.
 
 ## MTC-02 Direction Bank
 
@@ -25,7 +30,7 @@ not by itself claim official-route connectivity, training quality, or deployment
 
 - Owner: rolling-history Coefficient Encoder.
 - Input: `[B,30,O]` State history and `[B,30,A]` Action history from the Tracker buffer.
-- Output: raw finite `[B,3]` coefficients; no clamp and no Action output.
+- Output: raw finite `[B,m]` coefficients in the persisted Axis Spec order; no clamp and no Action output.
 - Must prove: both histories causally affect the relevant axis; row permutation covariance; exact
   zero-compatible initialization/cold-start owner; malformed history rejects before composition.
 
@@ -57,6 +62,7 @@ not by itself claim official-route connectivity, training quality, or deployment
 - Must prove 21-point range, 32-repeat aggregation, PCHIP monotonicity, `R^2>=0.95`, endpoint mapping
   saturation with raw-reading preservation, and explicit out-of-range event.
 - Must reject non-monotone data, insufficient grid, wrong axis/version, and silent extrapolation.
+- Must prove `[m,21]`, `[m,21,32]`, and candidate-axis shapes for `m=1`, `m=2`, and default `m=3`.
 
 ## MTC-07 Composition and Frozen Execution
 
@@ -79,17 +85,27 @@ not by itself claim official-route connectivity, training quality, or deployment
   nominal, wrong/shuffled coefficient, and full-finetune upper-bound routes.
 - Must prove additive prediction and realized correction agree inside the declared first-order region;
   this evidence does not claim arbitrary unseen-cause coverage.
+- For `m=1`, combination evaluation is explicitly not applicable and rejects before constructing the
+  four comparison routes; gain-only smoke completion does not claim combination quality.
 
 ## MTC-10 Schema and Legacy Isolation
 
-- Owner: v007/v006 dataset/checkpoint preparation.
-- Must bind Contracts, catalog, H/K/D/m, normalization, Encoder, curves, stages, data/splits, source
+- Owner: v008/v007 dataset/artifact preparation.
+- Must bind Contracts, catalog version, ordered `active_axes`, H/K/D/m, normalization, Encoder, curves, stages, data/splits, source
   Tracker and provenance before construction.
 - The active stage envelope is a discriminated artifact: Stage 1 contains no
   random future Encoder, Stage 2 binds its Stage 1 parent digest, and the final
   artifact binds Stage 2 plus Scale Evidence digests. Stage publication uses a
   unique temporary sibling; failure exposes no new target, preserves an existing
   target byte-for-byte, and leaves no temporary residue.
-- v006/v005 Support/Query datasets/checkpoints must reject before policy, optimizer, or mutable load.
-- The pre-isolation generic calibration training-checkpoint schema must also
-  reject; it is not an active fallback.
+- New schemas contain exactly one canonical `axis_spec={catalog_version,names}` identity reconstructed
+  by the owner Value Object. Any mirrored model `axis_count` must equal `len(names)` before mutable
+  construction. Tampered version, names, count, or order rejects independently.
+- v007/v006 fixed-three-axis datasets, Stage Evidence, Stage Artifacts and final artifacts must reject
+  before policy, optimizer, or mutable load. The exact legacy gain raw envelope alone may be resealed
+  into a v008/v007 gain-only dataset; no trained state is migrated.
+- The legacy raw Gateway freezes donor schema v1, v007/v006 IDs, catalog/order, gain-only labels,
+  omitted-coordinate zeros, architecture and provenance digests; the active collector writes only
+  current raw schema v2.
+- Package refactoring must preserve the public `calibration_training` imports while tests patch the
+  real stage/lifecycle/IO owner seam rather than facade module globals.

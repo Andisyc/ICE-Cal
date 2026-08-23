@@ -1,4 +1,4 @@
-"""Seal recorded v007 fault rollouts into the active calibration dataset schema."""
+"""Seal admitted fault rollouts into the active v008/v007 calibration dataset."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 
 from unilab.algos.torch.distill import load_fada_policy_checkpoint
+from unilab.algos.torch.fada_context.calibration import CalibrationAxisSpec
 from unilab.algos.torch.fada_context.calibration_collection import (
     load_gain_calibration_raw_rollouts,
 )
@@ -36,27 +37,36 @@ def main() -> int:
         type=Path,
         default=Path("conf/fada_context/calibration_axes/gain_delay_offset_v1.yaml"),
     )
+    parser.add_argument(
+        "--active-axis",
+        action="append",
+        dest="active_axes",
+        help="Active cause name; repeat to preserve the requested axis order.",
+    )
     args = parser.parse_args()
     policy = load_fada_policy_checkpoint(args.source_checkpoint, device="cpu").policy
     source_sha256 = _sha256(args.source_checkpoint)
+    catalog = load_fault_axis_catalog(args.axis_catalog)
     raw = load_gain_calibration_raw_rollouts(
         args.raw_rollouts,
+        catalog=catalog,
         expected_source_sha256=source_sha256,
         expected_architecture=policy.config,
     )
-    catalog = load_fault_axis_catalog(args.axis_catalog)
+    axis_spec = CalibrationAxisSpec.from_catalog(catalog, args.active_axes)
     batch = prepare_calibration_rollout_batch(
         raw,
         policy.config,
         catalog,
+        axis_spec,
     )
     save_calibration_dataset(
         args.output,
         batch,
         policy.config,
+        axis_spec=axis_spec,
         metadata={
             "source_tracker_sha256": source_sha256,
-            "axis_catalog_version": catalog.version,
             "split_identity_sha256": calibration_split_identity_sha256(batch),
             "raw_protocol_sha256": raw["metadata"]["protocol_sha256"],
             "resolved_task_backend_sha256": raw["metadata"]["resolved_task_backend_sha256"],

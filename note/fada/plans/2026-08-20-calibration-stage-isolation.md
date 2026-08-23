@@ -4,8 +4,8 @@
 > `superpowers:test-driven-development`; run an independent `code-review-expert`
 > plan gate before production edits and a final gate after the complete diff.
 
-**Status:** current implementation plan; supersedes the execution boundary of
-`2026-08-19-calibratable-tracker-three-stage.md` without changing its scientific semantics.
+**Status:** superseded on 2026-08-23 by
+`2026-08-23-configurable-axis-training-refactor.md`; retained as historical Stage Isolation evidence.
 
 **Goal:** Make Stage 1, Stage 2, and Stage 3 independently invokable, strictly
 ordered training transactions with stage-owned artifacts, while preserving the
