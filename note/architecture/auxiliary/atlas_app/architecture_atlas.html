@@ -37,6 +37,11 @@
       letter-spacing: 0;
     }
 
+    .stage-tabs { display: flex; gap: 8px; padding: 12px 20px 0; background: var(--paper); }
+    .stage-tabs:empty { display: none; }
+    .stage-tab { border: 1px solid var(--line); border-radius: 8px 8px 0 0; background: var(--panel); color: var(--muted); padding: 10px 18px; font: 700 14px var(--font-body); cursor: pointer; }
+    .stage-tab.active { color: var(--ink); background: #fff; border-color: #8b8174; box-shadow: 0 -2px 0 #2563eb inset; }
+
     .atlas-equation {
       align-items: center;
       box-sizing: border-box;
@@ -157,6 +162,10 @@
       overflow: hidden;
     }
 
+    body.has-stage-tabs main {
+      height: calc(100vh - 105px);
+    }
+
     main.editor-hidden {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -255,6 +264,7 @@
       <button id="render">Render Editor</button>
     </div>
   </header>
+  <nav id="stage-tabs" class="stage-tabs" aria-label="Calibration stages"></nav>
   <main id="layout" class="editor-hidden">
     <aside>
       <div class="hint" id="hint"></div>
@@ -1047,6 +1057,7 @@
     }
 
     function drawMethodNode(rc, data, node) {
+      const textScale = node.viewScale || data.viewScale || 1;
       const color = conceptColor(data, node.concept, node.color || "#6688aa");
       const compact = node.h < 140;
       const shapeOptions = {
@@ -1099,7 +1110,7 @@
         const badgeY = node.y + (node.shape === "encoder" ? inset + 16 : 18);
         addText("❄", badgeX, badgeY, {
           fill: "#2563eb",
-          size: 15,
+          size: 15 * textScale,
           weight: 700,
           anchor: "middle",
         });
@@ -1110,18 +1121,18 @@
         const centerX = node.x + node.w / 2;
         const centerY = node.y + node.h / 2;
         wrapText(node.title, centerX, centerY - 12, node.w - 90, {
-          size: 14,
-          lineHeight: 16,
-          charWidth: 7,
+          size: 14 * textScale,
+          lineHeight: 16 * textScale,
+          charWidth: 7 * textScale,
           maxLines: 2,
           weight: 900,
           fill: "#27313d",
           anchor: "middle",
         });
         wrapText(node.summary || "", centerX, centerY + 20, node.w - 74, {
-          size: 11,
-          lineHeight: 15,
-          charWidth: 5.8,
+          size: 11 * textScale,
+          lineHeight: 15 * textScale,
+          charWidth: 5.8 * textScale,
           maxLines: 3,
           weight: 550,
           fill: "#4d5966",
@@ -1130,23 +1141,23 @@
         return;
       }
 
-      const textInset = node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
-      const titleLines = wrapText(node.title, node.x + textInset, node.y + 31, node.w - textInset * 2, {
-        size: compact ? 13 : 14,
-        lineHeight: 16,
-        charWidth: 7,
+      const textInset = node.id.endsWith("-LOSS") || node.id.endsWith("-PROOF") ? 24 * textScale : node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
+      const titleLines = wrapText(node.title, node.x + textInset, node.y + 36 * textScale, node.w - textInset * 2, {
+        size: (node.titleSize || (compact ? 13 : 14)) * textScale,
+        lineHeight: 16 * textScale,
+        charWidth: 7 * textScale,
         maxLines: 2,
         weight: 900,
         fill: "#27313d",
       });
-      const summaryLineHeight = compact ? 13 : 15;
-      const summaryY = node.y + 60 + Math.max(0, titleLines - 1) * 16;
-      const summaryBottom = node.y + node.h - 14;
+      const summaryLineHeight = (node.summaryLineHeight || (compact ? 13 : 15)) * textScale;
+      const summaryY = node.y + 68 * textScale + Math.max(0, titleLines - 1) * 19 * textScale;
+      const summaryBottom = node.y + node.h - 18 * textScale;
       const summaryMaxLines = Math.max(1, Math.floor((summaryBottom - summaryY) / summaryLineHeight));
-      wrapText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
-        size: node.summarySize || (compact ? 10 : 11),
+      wrapMultilineText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
+        size: (node.summarySize || (compact ? 10 : 11)) * textScale,
         lineHeight: summaryLineHeight,
-        charWidth: compact ? 5.4 : 5.8,
+        charWidth: (compact ? 5.4 : 5.8) * textScale,
         maxLines: summaryMaxLines,
         weight: 550,
         fill: "#4d5966",
@@ -1199,8 +1210,8 @@
         svg.appendChild(rc.linearPath(points, {
           stroke: color,
           strokeWidth: edge.kind === "feedback" ? 2.8 : 2.1,
-          roughness: 0.9,
-          bowing: 0.65,
+          roughness: edge.orthogonal ? 0 : 0.9,
+          bowing: edge.orthogonal ? 0 : 0.65,
           strokeLineDash: edge.kind === "evidence" ? [7, 5] : undefined,
         }));
         drawMethodArrowHead(points, color);
@@ -1916,8 +1927,90 @@
       });
     }
 
+    let activeStageIndex = 0;
+    function splitCalibrationStages(data) {
+      if (Array.isArray(data.stages)) return data.stages;
+      const isCalibrationFigure = data.layout === "method_figure"
+        && (data.nodes || []).some((node) => node.id.startsWith("ICA4-S1-"));
+      if (!isCalibrationFigure) return [data];
+      const groups = [
+        ["Stage 1 · Direction", "ICA4-S1-"],
+        ["Stage 2 · Coefficient", "ICA4-S2-"],
+        ["Stage 3 · Scale & Proof", "ICA4-S3-"],
+        ["部署 · Unseen Conditions", "ICA4-D-"],
+      ];
+      return groups.map(([stageTitle, prefix]) => {
+        const sourceNodes = (data.nodes || []).filter((node) => node.id.startsWith(prefix));
+        const minX = Math.min(...sourceNodes.map((node) => node.x));
+        const minY = Math.min(...sourceNodes.map((node) => node.y));
+        const maxX = Math.max(...sourceNodes.map((node) => node.x + node.w));
+        const maxY = Math.max(...sourceNodes.map((node) => node.y + node.h));
+        const sourceWidth = Math.max(1, maxX - minX);
+        const sourceHeight = Math.max(1, maxY - minY);
+        const figureWidth = 1920;
+        const figureHeight = 920;
+        const scaleCap = prefix === "ICA4-S1-" ? 1 : 1.08;
+        const scale = Math.min(scaleCap, (figureWidth - 160) / sourceWidth, (figureHeight - 160) / sourceHeight);
+        const offsetX = (figureWidth - sourceWidth * scale) / 2 - minX * scale;
+        const offsetY = (figureHeight - sourceHeight * scale) / 2 - minY * scale;
+        const nodes = sourceNodes.map((node) => ({
+          ...node,
+          x: node.x * scale + offsetX,
+          y: node.y * scale + offsetY,
+          w: node.w * scale,
+          h: node.h * scale,
+          shapeInset: node.shapeInset ? node.shapeInset * scale : node.shapeInset,
+          viewScale: scale,
+        }));
+        const ids = new Set(nodes.map((node) => node.id));
+        return {
+          ...data,
+          title: stageTitle,
+          figureWidth,
+          figureHeight,
+          layerDividers: [],
+          nodes,
+          viewScale: scale,
+          edges: (data.edges || []).filter((edge) => ids.has(edge.from) && ids.has(edge.to)).map((edge) => ({
+            ...edge,
+            via: (edge.via || []).map(([x, y]) => [x * scale + offsetX, y * scale + offsetY]),
+            labelX: edge.labelX == null ? edge.labelX : edge.labelX * scale + offsetX,
+            labelY: edge.labelY == null ? edge.labelY : edge.labelY * scale + offsetY,
+            labelSize: edge.labelSize ? edge.labelSize * scale : Math.max(13, 11 * scale),
+            labelLineHeight: edge.labelLineHeight ? edge.labelLineHeight * scale : edge.labelLineHeight,
+          })),
+        };
+      });
+    }
+
+    function renderStageTabs(data, stages) {
+      const tabs = document.getElementById("stage-tabs");
+      const showTabs = stages.length > 1;
+      document.body.classList.toggle("has-stage-tabs", showTabs);
+      tabs.replaceChildren();
+      if (!showTabs) return;
+      stages.forEach((stageData, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `stage-tab${index === activeStageIndex ? " active" : ""}`;
+        button.textContent = stageData.title;
+        button.addEventListener("click", () => {
+          activeStageIndex = index;
+          zoom = 1;
+          autoFitWidth = true;
+          stage.scrollLeft = 0;
+          stage.scrollTop = 0;
+          render(data);
+        });
+        tabs.appendChild(button);
+      });
+    }
+
     function render(data) {
       clearSvg();
+      const stages = splitCalibrationStages(data);
+      renderStageTabs(data, stages);
+      data = stages[Math.min(activeStageIndex, stages.length - 1)] || stages[0];
       const moduleInspectorActive = Boolean(data.moduleInspector) && viewMode !== "repository_reading";
       title.textContent = moduleInspectorActive
         ? data.moduleInspector?.title || data.title || "MOSAIC Architecture Atlas"

@@ -27,6 +27,11 @@
       letter-spacing: 0;
     }
 
+    .stage-tabs { display: flex; gap: 8px; padding: 12px 20px 0; background: var(--paper); }
+    .stage-tabs:empty { display: none; }
+    .stage-tab { border: 1px solid var(--line); border-radius: 8px 8px 0 0; background: var(--panel); color: var(--muted); padding: 10px 18px; font: 700 14px var(--font-body); cursor: pointer; }
+    .stage-tab.active { color: var(--ink); background: #fff; border-color: #8b8174; box-shadow: 0 -2px 0 #2563eb inset; }
+
     .atlas-equation {
       align-items: center;
       box-sizing: border-box;
@@ -147,6 +152,10 @@
       overflow: hidden;
     }
 
+    body.has-stage-tabs main {
+      height: calc(100vh - 105px);
+    }
+
     main.editor-hidden {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -245,6 +254,7 @@
       <button id="render">Render Editor</button>
     </div>
   </header>
+  <nav id="stage-tabs" class="stage-tabs" aria-label="Calibration stages"></nav>
   <main id="layout" class="editor-hidden">
     <aside>
       <div class="hint" id="hint"></div>
@@ -257,630 +267,7 @@
 
   <script src="./auxiliary/atlas_app/node_modules/roughjs/bundled/rough.js"></script>
   <script src="./auxiliary/atlas_app/node_modules/katex/dist/katex.min.js"></script>
-  <script id="atlas-embedded-data" type="application/json">
-{
-  "title": "In-Context Execution Calibration — Design Inspector",
-  "subtitle": "串行三阶段 + z+Σσᵢ(cᵢ)Δzᵢ：方向/系数/标定分离，禁联合训练；Contract 换代与工程证据待补",
-  "layout": "design_transaction_inspector",
-  "defaultZoom": 0.8,
-  "transaction": {
-    "phaseTitles": {
-      "pre": "准备与冻结",
-      "collection": "采集与解析标注",
-      "update": "串行三阶段构造与部署"
-    },
-    "steps": [
-      {
-        "id": "sample-axis",
-        "phase": "pre",
-        "label": "采样一条故障轴与强度 c_true",
-        "detail": "轴定义失真类型（增益/延迟/摩擦等），强度真值已知；c_true 只用于解析标签与 Stage 1/2 监督，对 Context Encoder 不可见"
-      },
-      {
-        "id": "freeze-source",
-        "phase": "pre",
-        "label": "冻结 Planner 与完整 Tracker",
-        "detail": "Planner、Tracker Encoder、Tracker Decoder 全程保持源 checkpoint；三个 Stage 均不更新它们"
-      },
-      {
-        "id": "rollout-labeled",
-        "phase": "collection",
-        "label": "单轴失真 Rollout + 解析标签 a*",
-        "detail": "在该轴该强度下 rollout；用 α_true 公式直接算正确动作 a*，不经网络、不经 RL"
-      },
-      {
-        "id": "stage1-direction",
-        "phase": "update",
-        "label": "Stage 1：学方向 Δzᵢ",
-        "detail": "c_true 代入，min ‖π(z+c_true·Δzᵢ)−a*‖²，梯度只进方向；Tracker 全冻结"
-      },
-      {
-        "id": "freeze-direction",
-        "phase": "update",
-        "label": "方向学成即冻结为架构常量",
-        "detail": "Δzᵢ 进入 Direction Bank，之后任何阶段不再更新；每轴一条方向"
-      },
-      {
-        "id": "stage2-coefficient",
-        "phase": "update",
-        "label": "Stage 2：学系数 Encoder",
-        "detail": "方向冻结；损失 ‖ĉ−c_true‖²+‖π(z+ĉ·Δzᵢ)−a*‖²，梯度只进 Context Encoder"
-      },
-      {
-        "id": "freeze-encoder",
-        "phase": "update",
-        "label": "Encoder 学成即冻结",
-        "detail": "Coefficient Encoder 成为部署唯一新网络，只输出 m 个标量"
-      },
-      {
-        "id": "stage3-scale",
-        "phase": "update",
-        "label": "Stage 3：离线拟合 σᵢ + 出证",
-        "detail": "不训练网络；逐轴扫描记录 (ĉ, 误差)，拟合换算曲线 σᵢ，出方向夹角/残差/恒等锚定/奇异值谱证据"
-      },
-      {
-        "id": "deploy-readout",
-        "phase": "update",
-        "label": "部署：短读数 → 读系数 → 冻结执行",
-        "detail": "未见条件下取一次短读数；冻结 Encoder 读 c；z+Σσᵢ(cᵢ)Δzᵢ 送入冻结 Tracker 执行；零再训练"
-      }
-    ]
-  },
-  "cards": [
-    {
-      "designId": "ICA-DP-01",
-      "blockId": "ICA-PERTURB",
-      "title": "Fault Axis Library",
-      "color": "#ad6b3d",
-      "responsibility": "枚举少量可解析的故障轴，作为方向学习与标定的工具性载体，而不是世界清单。",
-      "details": [
-        {
-          "heading": "1. 轴是工具不是目标",
-          "text": "枚举轴只为测出方向，不声称覆盖所有物理故障；第一批三轴 = 增益/延迟/零位偏差（m=3 起步），每条都有文献背书。"
-        },
-        {
-          "heading": "2. 轴真值解析已知，a* 初等可算",
-          "text": "每条轴的失真参数 α_true 由仿真直接给出，正确动作 a* 用初等运算得到，不经网络、不经 RL；强度在声明范围内连续采样，c_true 作为 Stage 1/2 监督信号；组合条件留出验证。",
-          "latex": [
-            "a^{*}=a_{\\mathrm{nominal}}/g",
-            "a^{*}_{t}=a_{\\mathrm{nominal},\\,t+k}",
-            "a^{*}=a_{\\mathrm{nominal}}-b"
-          ]
-        },
-        {
-          "heading": "3. 原因总表 · A 类：动作→执行通道（主战场）",
-          "text": "失真发生在发出的动作与实际执行之间；此类是校准对象，按批次入库。",
-          "table": {
-            "columns": [
-              "原因",
-              "参数 / 文献先例 / a* 可解析性",
-              "批次建议"
-            ],
-            "rows": [
-              [
-                "A1 增益 / 电机强度",
-                "g（全局或逐关节）；RMA [0.9,1.1]×12维、SplitAdapter U(0.9,1.1)；✅ a*/g",
-                "第一批"
-              ],
-              [
-                "A2 零位偏差",
-                "b（rad）；SplitAdapter U(−0.05,0.05)；✅ a−b",
-                "第一批"
-              ],
-              [
-                "A3 动作延迟",
-                "k（帧）；文献空白，Hwangbo actuator net 隐式建模；✅ 提前 k 拍",
-                "第一批"
-              ],
-              [
-                "A4 PD 增益失配",
-                "Kp/Kd；RMA Kp[50,60]、Kd[0.4,0.8]、SplitAdapter U(0.9,1.1)；🟡 一阶近似为有效增益",
-                "不单独立轴：作为 gain 轴成因之一（不可分辨即不用分辨）"
-              ],
-              [
-                "A5 死区",
-                "dz 阈值；工业常见、文献少；✅ a+sign(a)·dz",
-                "第二批"
-              ],
-              [
-                "A6 饱和 / 限幅",
-                "a_max；执行器普遍存在；✅ 量程内无需补偿，量程外属边界",
-                "第二批（兼边界声明）"
-              ],
-              [
-                "A7 齿隙 backlash",
-                "方向翻转死程；文献少；🟡 翻转时一阶补偿",
-                "第三批"
-              ],
-              [
-                "A8 执行器带宽 / slew rate",
-                "响应速率上限；Hwangbo actuator net 隐式；🟡 等效一阶低通 ≈ 延迟+增益",
-                "第三批"
-              ]
-            ]
-          }
-        },
-        {
-          "heading": "4. 原因总表 · B 类：本体动力学参数",
-          "text": "机器自身物理参数失配；a* 需逆动力学，不入第一批，显式声明边界或一阶化后再议。",
-          "table": {
-            "columns": [
-              "原因",
-              "参数 / 文献先例 / a* 可解析性",
-              "批次建议"
-            ],
-            "rows": [
-              [
-                "B1 载荷 / 质量",
-                "payload、link mass；RMA [0,6]kg、SplitAdapter U(0.8,1.2)；❌ 逆动力学",
-                "显式边界或雅可比一阶化后入库"
-              ],
-              [
-                "B2 质心偏移",
-                "CoM；RMA [−0.15,0.15]、SplitAdapter U(−0.1,0.1)m；❌",
-                "同 B1"
-              ],
-              [
-                "B3 关节阻尼 / 电枢",
-                "damping、armature；Isaac 系 DR 常见；🟡 等效速度增益",
-                "第三批"
-              ],
-              [
-                "B4 惯量失配",
-                "I；文献少枚举；❌",
-                "显式边界"
-              ]
-            ]
-          }
-        },
-        {
-          "heading": "5. 原因总表 · C 类：接触与地面",
-          "text": "接触力学失真，文献枚举最多但超出执行校准范围，全部显式声明为边界。",
-          "table": {
-            "columns": [
-              "原因",
-              "参数 / 文献先例 / a* 可解析性",
-              "批次建议"
-            ],
-            "rows": [
-              [
-                "C1 摩擦系数",
-                "μ；RMA [0.05,4.5]、Lee 𝒩(0.7,0.2)、SplitAdapter U(0.5,2.0)；❌ 接触力学",
-                "显式边界（已声明）"
-              ],
-              [
-                "C2 恢复系数",
-                "e；SplitAdapter U(0.05,0.2)；❌",
-                "显式边界"
-              ],
-              [
-                "C3 地形几何",
-                "高度/台阶/粗糙度；RMA 地形高度、Lee 全表；❌",
-                "边界（不属执行校准）"
-              ],
-              [
-                "C4 接触模式切换 / 跌倒",
-                "—；❌",
-                "永久边界（已声明）"
-              ]
-            ]
-          }
-        },
-        {
-          "heading": "6. 原因总表 · D/E 类：外部扰动与观测通道",
-          "text": "D 类可等效为短时/持续 offset 留作候选；E 类属感知与 Tracker 训练职责，不是 ICE-Cal 的校准对象。",
-          "table": {
-            "columns": [
-              "原因",
-              "参数 / 文献先例 / a* 可解析性",
-              "批次建议"
-            ],
-            "rows": [
-              [
-                "D1 外力 / 推搡",
-                "F（幅值/方向/时机）；SplitAdapter 每8步 [−50,50]N、Lee privileged 3维；🟡 脉冲等效短时 offset",
-                "第三批"
-              ],
-              [
-                "D2 持续偏置力 / 风",
-                "F_const；部分 DR 工作；🟡 等效 offset",
-                "第三批"
-              ],
-              [
-                "E1 观测噪声",
-                "各传感器 σ；SplitAdapter 全表；—",
-                "不枚举（Tracker 训练职责）"
-              ],
-              [
-                "E2 传感器偏置",
-                "IMU/编码器 bias；部分工作；✅ 观测侧减除",
-                "不枚举（属感知校准）"
-              ],
-              [
-                "E3 观测延迟 / 丢包",
-                "k / p_drop；部分工作；—",
-                "不枚举"
-              ]
-            ]
-          }
-        },
-        {
-          "heading": "7. 原因总表 · F 类：任务/物体参数（按需启用）",
-          "text": "manipulation 任务特有变量；正式实验若含搬运再议，当前不入库。",
-          "table": {
-            "columns": [
-              "原因",
-              "参数 / 文献先例 / a* 可解析性",
-              "批次建议"
-            ],
-            "rows": [
-              [
-                "F1 物体质量",
-                "box mass；SplitAdapter [0.5,5.0]kg；❌",
-                "若做搬运任务再议"
-              ],
-              [
-                "F2 物体摩擦 / 恢复",
-                "μ、e；SplitAdapter；❌",
-                "同 F1"
-              ],
-              [
-                "F3 物体几何 / 拾放高度",
-                "尺寸、高度；SplitAdapter；—",
-                "任务变量，非失真"
-              ]
-            ]
-          }
-        }
-      ],
-      "highlightSteps": [
-        "sample-axis",
-        "rollout-labeled",
-        "stage3-scale"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-02",
-      "blockId": "ICA-PLANNER",
-      "title": "Frozen Planner",
-      "color": "#47749f",
-      "responsibility": "始终决定机器人想做什么，为训练 Rollout 与部署提供目标 Motion。",
-      "details": [
-        {
-          "heading": "1. Planner 始终冻结",
-          "text": "无论离线三阶段构造还是部署，Planner 参数都不更新。"
-        },
-        {
-          "heading": "2. Planner 只输出目标 Motion",
-          "text": "它描述机器人应该怎样运动；具体 Action 仍由 Tracker 生成。"
-        },
-        {
-          "heading": "3. 训练 Rollout 记录当次 Planner 输出",
-          "text": "轨迹直接保存当时交给 Tracker 的目标 Motion，不需要额外提供预先保存的 clean rollout。"
-        },
-        {
-          "heading": "4. Context 不接管 Planner Intent",
-          "text": "校准只调整当前 Intent 的执行方式，不能修改 Command 所定义的任务目标；Planner Intent 可随当前 State History 动态变化。"
-        }
-      ],
-      "highlightSteps": [
-        "freeze-source",
-        "rollout-labeled",
-        "deploy-readout"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-03",
-      "blockId": "ICA-TRACKER",
-      "title": "Frozen Tracker",
-      "color": "#6c4d91",
-      "responsibility": "以 30 帧 State/Action 历史和 6 帧 Future Motion 生成六步 Action，并保持完整 Tracker 冻结。",
-      "details": [
-        {
-          "heading": "1. Tracker Encoder 使用 30+6 时序输入",
-          "text": "每个时刻输入当前 30 帧 State 历史、30 帧 Action 历史和 6 帧 Future Motion，产生基础表示 z。"
-        },
-        {
-          "heading": "2. Tracker Decoder 从标定 latent 输出六步 Action",
-          "text": "Tracker latent z 是 K=6 个 future token、每个 D=128 维；标定位移加在 action_head 之前：z̄=z+Σσᵢ(cᵢ)Δzᵢ，Decoder 从 z̄ 解码完整 6 步 Action chunk；校准只发生在这一处 latent 相加。",
-          "latex": "\\bar z = z + \\sum_i \\sigma_i(c_i)\\,\\Delta z_i"
-        },
-        {
-          "heading": "3. Receding-Horizon 只执行第一步",
-          "text": "每个控制周期只发送 Action chunk 的第一步，随后更新历史并重新规划。"
-        },
-        {
-          "heading": "4. Encoder 和 Decoder 始终冻结",
-          "text": "三个 Stage 与部署中 Tracker 参数都不更新，避免它直接记住各种缺陷。"
-        },
-        {
-          "heading": "5. Tracker 是唯一的 Action 生成器",
-          "text": "校准链路只提供低维 latent 位移，不能绕开 Decoder 直接输出 Action。"
-        }
-      ],
-      "highlightSteps": [
-        "freeze-source",
-        "stage1-direction",
-        "deploy-readout"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-04",
-      "blockId": "ICA-SUPPORT",
-      "title": "Deployment Readout",
-      "color": "#a05e4f",
-      "responsibility": "Stage 2 与部署的输入：一次短读数，提供当前条件的执行响应证据，不含任何真值标签。",
-      "details": [
-        {
-          "heading": "1. Support/Query 概念退役",
-          "text": "部署侧不再存在'6 条 episode 支持集 + 待矫正 Query'的对象；读数就是滚动 30 帧窗口的瞬时读数。输入形式与 RMA / SplitAdapter 的 history 输入对齐，差异化在输出语义：他们输出世界描述（辨识器），我们输出冻结方向上的系数（补偿器）。"
-        },
-        {
-          "heading": "2. 枚举发生在训练时",
-          "text": "故障枚举是数据生成的属性：仿真里逐轴注入已知故障，c_true 免费且精确；部署输入不需要承载枚举信息，只需一块'仪表'。旧 Support-Query 的死因是无真值自由向量 + 代理监督，不是输入不够富。"
-        },
-        {
-          "heading": "3. 逐步读数，冷启动 c=0",
-          "text": "每个控制步读一次 ĉ 并立即应用（Encoder 仅 2 层 d=128，50Hz 开销可忽略）；部署前 30 帧窗口未满时 c=0 走标称执行，与'c=0 ≡ 标称'锚点一致，零特殊逻辑。"
-        },
-        {
-          "heading": "4. 读数突变 = 显式事件",
-          "text": "相邻读数跳变超阈值时触发'快速失效'报警并冻结该轴读数，交给显式边界处理——D 类突发失效（抓握脱落等）的落地机制；轴只承接慢变执行通道失真。"
-        },
-        {
-          "heading": "5. 窗口边界：只承诺快签名轴",
-          "text": "0.6 s 窗口足以暴露增益 / 延迟 / 零偏的执行响应签名（与 RMA 约 1 s history 同量级）；慢签名参数（负载 / 质心 / 连杆质量）读不出，不进第一批；未来需要时加长窗口，不复活 Support-Query。"
-        },
-        {
-          "heading": "6. c=0 等价标称",
-          "text": "无失配时读数为零，执行自动回到标称。"
-        }
-      ],
-      "highlightSteps": [
-        "rollout-labeled",
-        "stage2-coefficient",
-        "deploy-readout"
-      ],
-      "chips": [],
-      "summary": "Support/Query 概念退役：读数 = 与 Tracker 同一份的滚动 30 帧窗口，每个控制步读一次三轴系数并立即应用到 latent。"
-    },
-    {
-      "designId": "ICA-DP-06",
-      "blockId": "ICA-DIRECTION-BANK",
-      "title": "Direction Bank",
-      "color": "#7b5b8e",
-      "responsibility": "在 Stage 1 学习并冻结少量可解释的 latent 修正方向，承载执行条件变化的主要响应轴。",
-      "details": [
-        {
-          "heading": "1. 方向与系数严格分离",
-          "text": "每条 Δzᵢ 是 K×D（6×128）的方向场：K 个 future token 各有一个 128 维方向，修正在 6 步上允许不均匀（延迟轴必需）；但整条轴只由一个标量系数 cᵢ 控制强度，Context Encoder 不能重新生成方向。",
-          "latex": "\\bar z = z + \\sum_i \\sigma_i(c_i)\\,\\Delta z_i,\\quad \\Delta z_i \\in \\mathbb{R}^{6\\times 128}"
-        },
-        {
-          "heading": "2. Stage 1 只学习方向",
-          "text": "c_true 代入，优化目标 min ‖π(z+c_true·Δzᵢ)−a*‖²；a* 由 α_true 解析计算，梯度只进方向，学成即冻结。",
-          "latex": "\\min_{\\Delta z_i}\\;\\lVert\\pi(z+c_{\\mathrm{true}}\\cdot\\Delta z_i)-a^{*}\\rVert_2^2"
-        },
-        {
-          "heading": "3. 每轴一条、总量低维",
-          "text": "方向与故障轴一一对应；方向库只保留解释主要执行响应的少量轴，不为每个扰动实例登记独立方向。"
-        },
-        {
-          "heading": "4. 零系数保持标称行为",
-          "text": "所有 cᵢ=0 时，校准路径必须退化为原始冻结 Tracker 的标称执行。"
-        },
-        {
-          "heading": "5. 方向归一化，各轴同刻度",
-          "text": "每条轴学成冻结前做归一化，使 cᵢ=1 在各轴上对应可比的标称修正强度；这是 σᵢ 标定与组合读数跨轴可比的前提。"
-        }
-      ],
-      "highlightSteps": [
-        "stage1-direction",
-        "freeze-direction"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-05",
-      "blockId": "ICA-CONTEXT",
-      "title": "Coefficient Encoder",
-      "color": "#3c7485",
-      "responsibility": "唯一新网络；从短读数读出各方向轴的标量系数 ĉ=(c₁…cₘ)，c=0 等价标称。",
-      "details": [
-        {
-          "heading": "1. Encoder 不预测动作",
-          "text": "它只读三轴系数，不输出 Action，也不重写 Tracker 的内部状态。"
-        },
-        {
-          "heading": "2. 输入窗口与 Tracker 同缓冲",
-          "text": "输入是 30 帧 State/Action history，与 Tracker 维护的同一份部署缓冲；零额外传感成本，'输入同 Stage 1' 的图面承诺自然兑现。30 帧约 0.6 s，足以暴露增益 / 零偏 / 延迟的执行响应签名。"
-        },
-        {
-          "heading": "3. 结构：小 Transformer encoder",
-          "text": "2 层 Transformer Encoder、d_model=128、mean-pool 后接 Linear 输出 m=3 个标量；与 Tracker 同族。注意力是延迟轴的结构性需求：读出时移 k 需要在窗口内做任意位置对任意位置的匹配（第 t-k 帧指令 vs 第 t 帧响应），固定感受野结构没有这条通道。TConv 候选经评审砍除，不留消融基线。",
-          "latex": "\\hat c = W\\,\\mathrm{meanpool}\\big(\\mathrm{TFEnc}_{2\\times 128}(H_{30})\\big) \\in \\mathbb{R}^{3}"
-        },
-        {
-          "heading": "4. 输出无截断，超量程显式报警",
-          "text": "ĉ 不加 clamp：读数超出 σ 扫描量程时触发'该轴量程外'警告并降级该轴，不静默截断——clamp 会把'不知道'伪装成'知道'。"
-        },
-        {
-          "heading": "5. 系数提供审计读数",
-          "text": "读出系数可直接与注入强度逐轴对照，异常时可见。"
-        },
-        {
-          "heading": "6. c=0 回退标称",
-          "text": "无失配时 ĉ≈0，组合修正恒等，标称路径不受损。"
-        },
-        {
-          "heading": "7. 系数相加限定于一阶校准区",
-          "text": "组合仅承诺在训练覆盖的强度范围内做线性叠加，跨区外推不做语义保证。"
-        }
-      ],
-      "highlightSteps": [
-        "stage2-coefficient",
-        "freeze-encoder",
-        "deploy-readout"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-07",
-      "blockId": "ICA-LEARNING",
-      "title": "Serial Three-Stage Training",
-      "color": "#a75555",
-      "responsibility": "严格串行的三阶段离线构造：学方向→冻结→学系数→冻结→拟合标定，禁联合训练。",
-      "details": [
-        {
-          "heading": "1. 串行禁止联合训练",
-          "text": "一次只训练一个对象，冻结边界禁止梯度越界，从源头消除联合训练的纠缠。"
-        },
-        {
-          "heading": "2. Stage 2 损失分工：系数锚定，动作做安全网",
-          "text": "主监督是系数项（ĉ 的含义归真值管）；动作项只做 λ=0.1 的一致性安全网。若动作项主导，梯度穿过冻结的 π/Δzᵢ/σ 会逼 Encoder 报假数吸收下游误差：审计语义死、组合性死、σ 现场重测的零重训承诺死。真解处两项本就一致（S1/S3 已用 c_true 认证过动作通路），放大动作项买不到信号只买到风险。评价指标仍是动作误差。全方法只调 λ 这一个超参，{0, 0.1} 一次消融定生死。",
-          "latex": "L = \\|\\hat c - c_{true}\\|^2 + 0.1\\,\\|\\pi(z + \\hat c\\,\\Delta z_i) - a^*\\|^2"
-        },
-        {
-          "heading": "3. S1/S2 数据复用，零额外采集",
-          "text": "两阶段用同一份网格扫描 labeled rollouts（轴 × 强度网格，c_true 已知）；变化的只是冻结对象与损失，数据不动。扩轴只追加新轴数据，已有轴全部保留。"
-        },
-        {
-          "heading": "4. 收敛判据 S1：补偿率 ≥90%",
-          "text": "验证集上 补偿后误差/未补偿误差 ≤0.1。达不到 = 该轴在 latent 空间不可达，不出库——这是出证的正面含义，不是训练失败。"
-        },
-        {
-          "heading": "5. 收敛判据 S2：读数误差 ≤0.05",
-          "text": "验证网格上 |ĉ−c_true| ≤0.05（归一化）。达不到 = 窗口信息不足以读该轴，加长窗口或砍轴。"
-        },
-        {
-          "heading": "6. 收敛判据 S3：R² ≥0.95 且单调",
-          "text": "σ 拟合优度 R²≥0.95 且曲线单调。达不到 = 该轴 σ 证据存疑。阈值均为工程起点，证据出来后可收紧，不是理论承诺。"
-        },
-        {
-          "heading": "7. 冻结后实测验证",
-          "text": "每阶段冻结边界生效后跑一次实测，确认性能不退化再放行下一阶段。"
-        }
-      ],
-      "highlightSteps": [
-        "stage1-direction",
-        "stage2-coefficient",
-        "stage3-scale"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-09",
-      "blockId": "ICA-SCALE-CURVE",
-      "title": "Scale Curve",
-      "color": "#b17845",
-      "responsibility": "把每个标量系数读数换算为对应方向的实际 latent 位移，并将方向强度标定为可检查的一维关系。",
-      "details": [
-        {
-          "heading": "1. σ 是离线换算",
-          "text": "扫描拟合把系数换算成方向强度，不触发训练，Encoder 结构与语义保持不变。"
-        },
-        {
-          "heading": "2. 扫描网格",
-          "text": "归一化 c∈[−1,+1]、21 点（步长 0.1），每点 32 条 rollout 取平均动作误差；c=±1 对应训练覆盖的最大强度。三轴共 63 点 × 32 条 ≈ 2000 条 rollout。"
-        },
-        {
-          "heading": "3. 拟合族：单调分段线性（PCHIP）",
-          "text": "修正强度必须随读数单调——非单调意味着同轴两个故障强度共用一个修正，语义即坏；单调约束比拟合精度更要紧。纯线性是 PCHIP 特例，接近线性的轴自然长成直线，不预设。"
-        },
-        {
-          "heading": "4. 端点行为：饱和 + 报警，不外推",
-          "text": "|ĉ|>1 时 σ 在端点饱和并触发量程外报警：读数不截断（审计可见真实读数）、映射不外推（曲线只在扫描范围内保证）、报警显式——与 DP-05 无截断条款咬合，三件事各归各位。"
-        },
-        {
-          "heading": "5. 真机重测协议：已知软故障当校准基准",
-          "text": "第一批三轴全在指令通路上、软件可注入：真机上故意施加已知故障网格（指令缩放/延迟/偏置），c_true 依然免费，逐点实测最优修正强度，重画 σ——零训练。角色分工：未知真故障是测量对象（滚动窗口真机读数），已知软故障是校准基准；用未知故障当基准是循环论证。即使 Encoder 真机读数有系统偏差，只要单调，σ 重画会把偏差吸收进刻度——sim-to-real gap 有一个一维、可现场重画的容器承接。"
-        },
-        {
-          "heading": "6. 组合靠系数相加",
-          "text": "σᵢ 只负责把各自的读数换成强度，跨轴组合由系数相加承担。"
-        }
-      ],
-      "highlightSteps": [
-        "stage3-scale"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-10",
-      "blockId": "ICA-COMPOSITION",
-      "title": "Composition by Addition",
-      "color": "#4f806b",
-      "responsibility": "用冻结方向的系数相加组合多个执行条件响应，形成可复用的校准接口。",
-      "details": [
-        {
-          "heading": "1. 多个方向在 latent 空间相加",
-          "text": "校准 latent 由各方向的标定位移线性相加得到：z̄=z+Σᵢσᵢ(cᵢ)Δzᵢ。"
-        },
-        {
-          "heading": "2. 组合不改变任务目标",
-          "text": "组合只改变 Motion 的执行方式；Planner Intent、Command 和 Tracker Decoder 的 Action 生成职责保持不变。"
-        },
-        {
-          "heading": "3. 留出组合是主图证据",
-          "text": "单轴有效不等于组合有效；held-out A+B 组合的恢复执行是主图证据，检查响应是否接近系数相加的预测。"
-        },
-        {
-          "heading": "4. 一阶区前提",
-          "text": "系数相加成立的前提是 Δz 有界小拧、保持在线性区；大幅失真超出方法边界。"
-        },
-        {
-          "heading": "5. 不把枚举清单当作方法本身",
-          "text": "方向库是对可辨识执行响应的低维投影，不声称覆盖所有物理故障或任意域外条件。"
-        }
-      ],
-      "highlightSteps": [
-        "sample-axis",
-        "deploy-readout"
-      ],
-      "chips": []
-    },
-    {
-      "designId": "ICA-DP-08",
-      "blockId": "ICA-QUERY",
-      "title": "Frozen Calibrated Execution",
-      "color": "#437f86",
-      "responsibility": "部署链：未见条件下一次短读数读出系数，沿冻结方向有界小拧 z，由冻结 Tracker 执行；全程零再训练。",
-      "details": [
-        {
-          "heading": "1. 未见条件直接进入",
-          "text": "新机器或新失真（含未枚举组合）出现时，不做任何参数更新。"
-        },
-        {
-          "heading": "2. 短读数读系数",
-          "text": "一次短读数进入冻结 Coefficient Encoder，读出 c=(c₁…cₘ)。"
-        },
-        {
-          "heading": "3. 查曲线换算成 latent 位移",
-          "text": "每个系数查 σᵢ 换算成该方向的实际位移，沿冻结方向相加到有界小拧。",
-          "latex": "\\bar z=z+\\sum_i\\sigma_i(c_i)\\,\\Delta z_i"
-        },
-        {
-          "heading": "4. 冻结 Tracker 执行",
-          "text": "冻结 Tracker Decoder 从 z̄ 输出 6 步 Action；receding-horizon 只执行第一步。"
-        },
-        {
-          "heading": "5. 全链路冻结",
-          "text": "Planner、Tracker、Coefficient Encoder、方向库、标定曲线全部冻结，只做推理，不进行在线参数更新。"
-        }
-      ],
-      "highlightSteps": [
-        "freeze-encoder",
-        "deploy-readout"
-      ],
-      "chips": []
-    }
-  ]
-}
-
-  </script>
+  <script id="atlas-embedded-data" type="application/json">{"title":"In-Context Execution Calibration — Design Inspector","subtitle":"串行三阶段 + z+Σσᵢ(cᵢ)Δzᵢ：方向/系数/标定分离，禁联合训练；Contract 换代与工程证据待补","layout":"design_transaction_inspector","defaultZoom":0.8,"transaction":{"phaseTitles":{"pre":"准备与冻结","collection":"采集与解析标注","update":"串行三阶段构造与部署"},"steps":[{"id":"sample-axis","phase":"pre","label":"采样一条故障轴与强度 c_true","detail":"轴定义失真类型（增益/延迟/摩擦等），强度真值已知；c_true 只用于解析标签与 Stage 1/2 监督，对 Context Encoder 不可见"},{"id":"freeze-source","phase":"pre","label":"冻结 Planner 与完整 Tracker","detail":"Planner、Tracker Encoder、Tracker Decoder 全程保持源 checkpoint；三个 Stage 均不更新它们"},{"id":"rollout-labeled","phase":"collection","label":"单轴失真 Rollout + 解析标签 a*","detail":"在该轴该强度下 rollout；用 α_true 公式直接算正确动作 a*，不经网络、不经 RL"},{"id":"stage1-direction","phase":"update","label":"Stage 1：学方向 Δzᵢ","detail":"c_true 代入，min ‖π(z+c_true·Δzᵢ)−a*‖²，梯度只进方向；Tracker 全冻结"},{"id":"freeze-direction","phase":"update","label":"方向学成即冻结为架构常量","detail":"Δzᵢ 进入 Direction Bank，之后任何阶段不再更新；每轴一条方向"},{"id":"stage2-coefficient","phase":"update","label":"Stage 2：学系数 Encoder","detail":"方向冻结；损失 ‖ĉ−c_true‖²+‖π(z+ĉ·Δzᵢ)−a*‖²，梯度只进 Context Encoder"},{"id":"freeze-encoder","phase":"update","label":"Encoder 学成即冻结","detail":"Coefficient Encoder 成为部署唯一新网络，只输出 m 个标量"},{"id":"stage3-scale","phase":"update","label":"Stage 3：离线拟合 σᵢ + 出证","detail":"不训练网络；逐轴扫描记录 (ĉ, 误差)，拟合换算曲线 σᵢ，出方向夹角/残差/恒等锚定/奇异值谱证据"},{"id":"deploy-readout","phase":"update","label":"部署：短读数 → 读系数 → 冻结执行","detail":"未见条件下取一次短读数；冻结 Encoder 读 c；z+Σσᵢ(cᵢ)Δzᵢ 送入冻结 Tracker 执行；零再训练"}]},"cards":[{"designId":"ICA-DP-01","blockId":"ICA-PERTURB","title":"Fault Axis Library","color":"#ad6b3d","responsibility":"枚举少量可解析的故障轴，作为方向学习与标定的工具性载体，而不是世界清单。","details":[{"heading":"1. 轴是工具不是目标","text":"枚举轴只为测出方向，不声称覆盖所有物理故障；第一批三轴 = 增益/延迟/零位偏差（m=3 起步），每条都有文献背书。"},{"heading":"2. 轴真值解析已知，a* 初等可算","text":"每条轴的失真参数 α_true 由仿真直接给出，正确动作 a* 用初等运算得到，不经网络、不经 RL；强度在声明范围内连续采样，c_true 作为 Stage 1/2 监督信号；组合条件留出验证。","latex":["a^{*}=a_{\\mathrm{nominal}}/g","a^{*}_{t}=a_{\\mathrm{nominal},\\,t+k}","a^{*}=a_{\\mathrm{nominal}}-b"]},{"heading":"3. 原因总表 · A 类：动作→执行通道（主战场）","text":"失真发生在发出的动作与实际执行之间；此类是校准对象，按批次入库。","table":{"columns":["原因","参数 / 文献先例 / a* 可解析性","批次建议"],"rows":[["A1 增益 / 电机强度","g（全局或逐关节）；RMA [0.9,1.1]×12维、SplitAdapter U(0.9,1.1)；✅ a*/g","第一批"],["A2 零位偏差","b（rad）；SplitAdapter U(−0.05,0.05)；✅ a−b","第一批"],["A3 动作延迟","k（帧）；文献空白，Hwangbo actuator net 隐式建模；✅ 提前 k 拍","第一批"],["A4 PD 增益失配","Kp/Kd；RMA Kp[50,60]、Kd[0.4,0.8]、SplitAdapter U(0.9,1.1)；🟡 一阶近似为有效增益","不单独立轴：作为 gain 轴成因之一（不可分辨即不用分辨）"],["A5 死区","dz 阈值；工业常见、文献少；✅ a+sign(a)·dz","第二批"],["A6 饱和 / 限幅","a_max；执行器普遍存在；✅ 量程内无需补偿，量程外属边界","第二批（兼边界声明）"],["A7 齿隙 backlash","方向翻转死程；文献少；🟡 翻转时一阶补偿","第三批"],["A8 执行器带宽 / slew rate","响应速率上限；Hwangbo actuator net 隐式；🟡 等效一阶低通 ≈ 延迟+增益","第三批"]]}},{"heading":"4. 原因总表 · B 类：本体动力学参数","text":"机器自身物理参数失配；a* 需逆动力学，不入第一批，显式声明边界或一阶化后再议。","table":{"columns":["原因","参数 / 文献先例 / a* 可解析性","批次建议"],"rows":[["B1 载荷 / 质量","payload、link mass；RMA [0,6]kg、SplitAdapter U(0.8,1.2)；❌ 逆动力学","显式边界或雅可比一阶化后入库"],["B2 质心偏移","CoM；RMA [−0.15,0.15]、SplitAdapter U(−0.1,0.1)m；❌","同 B1"],["B3 关节阻尼 / 电枢","damping、armature；Isaac 系 DR 常见；🟡 等效速度增益","第三批"],["B4 惯量失配","I；文献少枚举；❌","显式边界"]]}},{"heading":"5. 原因总表 · C 类：接触与地面","text":"接触力学失真，文献枚举最多但超出执行校准范围，全部显式声明为边界。","table":{"columns":["原因","参数 / 文献先例 / a* 可解析性","批次建议"],"rows":[["C1 摩擦系数","μ；RMA [0.05,4.5]、Lee 𝒩(0.7,0.2)、SplitAdapter U(0.5,2.0)；❌ 接触力学","显式边界（已声明）"],["C2 恢复系数","e；SplitAdapter U(0.05,0.2)；❌","显式边界"],["C3 地形几何","高度/台阶/粗糙度；RMA 地形高度、Lee 全表；❌","边界（不属执行校准）"],["C4 接触模式切换 / 跌倒","—；❌","永久边界（已声明）"]]}},{"heading":"6. 原因总表 · D/E 类：外部扰动与观测通道","text":"D 类可等效为短时/持续 offset 留作候选；E 类属感知与 Tracker 训练职责，不是 ICE-Cal 的校准对象。","table":{"columns":["原因","参数 / 文献先例 / a* 可解析性","批次建议"],"rows":[["D1 外力 / 推搡","F（幅值/方向/时机）；SplitAdapter 每8步 [−50,50]N、Lee privileged 3维；🟡 脉冲等效短时 offset","第三批"],["D2 持续偏置力 / 风","F_const；部分 DR 工作；🟡 等效 offset","第三批"],["E1 观测噪声","各传感器 σ；SplitAdapter 全表；—","不枚举（Tracker 训练职责）"],["E2 传感器偏置","IMU/编码器 bias；部分工作；✅ 观测侧减除","不枚举（属感知校准）"],["E3 观测延迟 / 丢包","k / p_drop；部分工作；—","不枚举"]]}},{"heading":"7. 原因总表 · F 类：任务/物体参数（按需启用）","text":"manipulation 任务特有变量；正式实验若含搬运再议，当前不入库。","table":{"columns":["原因","参数 / 文献先例 / a* 可解析性","批次建议"],"rows":[["F1 物体质量","box mass；SplitAdapter [0.5,5.0]kg；❌","若做搬运任务再议"],["F2 物体摩擦 / 恢复","μ、e；SplitAdapter；❌","同 F1"],["F3 物体几何 / 拾放高度","尺寸、高度；SplitAdapter；—","任务变量，非失真"]]}}],"highlightSteps":["sample-axis","rollout-labeled","stage3-scale"],"chips":[]},{"designId":"ICA-DP-02","blockId":"ICA-PLANNER","title":"Frozen Planner","color":"#47749f","responsibility":"始终决定机器人想做什么，为训练 Rollout 与部署提供目标 Motion。","details":[{"heading":"1. Planner 始终冻结","text":"无论离线三阶段构造还是部署，Planner 参数都不更新。"},{"heading":"2. Planner 只输出目标 Motion","text":"它描述机器人应该怎样运动；具体 Action 仍由 Tracker 生成。"},{"heading":"3. 训练 Rollout 记录当次 Planner 输出","text":"轨迹直接保存当时交给 Tracker 的目标 Motion，不需要额外提供预先保存的 clean rollout。"},{"heading":"4. Context 不接管 Planner Intent","text":"校准只调整当前 Intent 的执行方式，不能修改 Command 所定义的任务目标；Planner Intent 可随当前 State History 动态变化。"}],"highlightSteps":["freeze-source","rollout-labeled","deploy-readout"],"chips":[]},{"designId":"ICA-DP-03","blockId":"ICA-TRACKER","title":"Frozen Tracker","color":"#6c4d91","responsibility":"以 30 帧 State/Action 历史和 6 帧 Future Motion 生成六步 Action，并保持完整 Tracker 冻结。","details":[{"heading":"1. Tracker Encoder 使用 30+6 时序输入","text":"每个时刻输入当前 30 帧 State 历史、30 帧 Action 历史和 6 帧 Future Motion，产生基础表示 z。"},{"heading":"2. Tracker Decoder 从标定 latent 输出六步 Action","text":"Tracker latent z 是 K=6 个 future token、每个 D=128 维；标定位移加在 action_head 之前：z̄=z+Σσᵢ(cᵢ)Δzᵢ，Decoder 从 z̄ 解码完整 6 步 Action chunk；校准只发生在这一处 latent 相加。","latex":"\\bar z = z + \\sum_i \\sigma_i(c_i)\\,\\Delta z_i"},{"heading":"3. Receding-Horizon 只执行第一步","text":"每个控制周期只发送 Action chunk 的第一步，随后更新历史并重新规划。"},{"heading":"4. Encoder 和 Decoder 始终冻结","text":"三个 Stage 与部署中 Tracker 参数都不更新，避免它直接记住各种缺陷。"},{"heading":"5. Tracker 是唯一的 Action 生成器","text":"校准链路只提供低维 latent 位移，不能绕开 Decoder 直接输出 Action。"}],"highlightSteps":["freeze-source","stage1-direction","deploy-readout"],"chips":[]},{"designId":"ICA-DP-04","blockId":"ICA-SUPPORT","title":"Deployment Readout","color":"#a05e4f","responsibility":"Stage 2 与部署的输入：一次短读数，提供当前条件的执行响应证据，不含任何真值标签。","details":[{"heading":"1. Support/Query 概念退役","text":"部署侧不再存在'6 条 episode 支持集 + 待矫正 Query'的对象；读数就是滚动 30 帧窗口的瞬时读数。输入形式与 RMA / SplitAdapter 的 history 输入对齐，差异化在输出语义：他们输出世界描述（辨识器），我们输出冻结方向上的系数（补偿器）。"},{"heading":"2. 枚举发生在训练时","text":"故障枚举是数据生成的属性：仿真里逐轴注入已知故障，c_true 免费且精确；部署输入不需要承载枚举信息，只需一块'仪表'。旧 Support-Query 的死因是无真值自由向量 + 代理监督，不是输入不够富。"},{"heading":"3. 逐步读数，冷启动 c=0","text":"每个控制步读一次 ĉ 并立即应用（Encoder 仅 2 层 d=128，50Hz 开销可忽略）；部署前 30 帧窗口未满时 c=0 走标称执行，与'c=0 ≡ 标称'锚点一致，零特殊逻辑。"},{"heading":"4. 读数突变 = 显式事件","text":"相邻读数跳变超阈值时触发'快速失效'报警并冻结该轴读数，交给显式边界处理——D 类突发失效（抓握脱落等）的落地机制；轴只承接慢变执行通道失真。"},{"heading":"5. 窗口边界：只承诺快签名轴","text":"0.6 s 窗口足以暴露增益 / 延迟 / 零偏的执行响应签名（与 RMA 约 1 s history 同量级）；慢签名参数（负载 / 质心 / 连杆质量）读不出，不进第一批；未来需要时加长窗口，不复活 Support-Query。"},{"heading":"6. c=0 等价标称","text":"无失配时读数为零，执行自动回到标称。"}],"highlightSteps":["rollout-labeled","stage2-coefficient","deploy-readout"],"chips":[],"summary":"Support/Query 概念退役：读数 = 与 Tracker 同一份的滚动 30 帧窗口，每个控制步读一次三轴系数并立即应用到 latent。"},{"designId":"ICA-DP-06","blockId":"ICA-DIRECTION-BANK","title":"Direction Bank","color":"#7b5b8e","responsibility":"在 Stage 1 学习并冻结少量可解释的 latent 修正方向，承载执行条件变化的主要响应轴。","details":[{"heading":"1. 方向与系数严格分离","text":"每条 Δzᵢ 是 K×D（6×128）的方向场：K 个 future token 各有一个 128 维方向，修正在 6 步上允许不均匀（延迟轴必需）；但整条轴只由一个标量系数 cᵢ 控制强度，Context Encoder 不能重新生成方向。","latex":"\\bar z = z + \\sum_i \\sigma_i(c_i)\\,\\Delta z_i,\\quad \\Delta z_i \\in \\mathbb{R}^{6\\times 128}"},{"heading":"2. Stage 1 只学习方向","text":"c_true 代入，优化目标 min ‖π(z+c_true·Δzᵢ)−a*‖²；a* 由 α_true 解析计算，梯度只进方向，学成即冻结。","latex":"\\min_{\\Delta z_i}\\;\\lVert\\pi(z+c_{\\mathrm{true}}\\cdot\\Delta z_i)-a^{*}\\rVert_2^2"},{"heading":"3. 每轴一条、总量低维","text":"方向与故障轴一一对应；方向库只保留解释主要执行响应的少量轴，不为每个扰动实例登记独立方向。"},{"heading":"4. 零系数保持标称行为","text":"所有 cᵢ=0 时，校准路径必须退化为原始冻结 Tracker 的标称执行。"},{"heading":"5. 方向归一化，各轴同刻度","text":"每条轴学成冻结前做归一化，使 cᵢ=1 在各轴上对应可比的标称修正强度；这是 σᵢ 标定与组合读数跨轴可比的前提。"}],"highlightSteps":["stage1-direction","freeze-direction"],"chips":[]},{"designId":"ICA-DP-05","blockId":"ICA-CONTEXT","title":"Coefficient Encoder","color":"#3c7485","responsibility":"唯一新网络；从短读数读出各方向轴的标量系数 ĉ=(c₁…cₘ)，c=0 等价标称。","details":[{"heading":"1. Encoder 不预测动作","text":"它只读三轴系数，不输出 Action，也不重写 Tracker 的内部状态。"},{"heading":"2. 输入窗口与 Tracker 同缓冲","text":"输入是 30 帧 State/Action history，与 Tracker 维护的同一份部署缓冲；零额外传感成本，'输入同 Stage 1' 的图面承诺自然兑现。30 帧约 0.6 s，足以暴露增益 / 零偏 / 延迟的执行响应签名。"},{"heading":"3. 结构：小 Transformer encoder","text":"2 层 Transformer Encoder、d_model=128、mean-pool 后接 Linear 输出 m=3 个标量；与 Tracker 同族。注意力是延迟轴的结构性需求：读出时移 k 需要在窗口内做任意位置对任意位置的匹配（第 t-k 帧指令 vs 第 t 帧响应），固定感受野结构没有这条通道。TConv 候选经评审砍除，不留消融基线。","latex":"\\hat c = W\\,\\mathrm{meanpool}\\big(\\mathrm{TFEnc}_{2\\times 128}(H_{30})\\big) \\in \\mathbb{R}^{3}"},{"heading":"4. 输出无截断，超量程显式报警","text":"ĉ 不加 clamp：读数超出 σ 扫描量程时触发'该轴量程外'警告并降级该轴，不静默截断——clamp 会把'不知道'伪装成'知道'。"},{"heading":"5. 系数提供审计读数","text":"读出系数可直接与注入强度逐轴对照，异常时可见。"},{"heading":"6. c=0 回退标称","text":"无失配时 ĉ≈0，组合修正恒等，标称路径不受损。"},{"heading":"7. 系数相加限定于一阶校准区","text":"组合仅承诺在训练覆盖的强度范围内做线性叠加，跨区外推不做语义保证。"}],"highlightSteps":["stage2-coefficient","freeze-encoder","deploy-readout"],"chips":[]},{"designId":"ICA-DP-07","blockId":"ICA-LEARNING","title":"Serial Three-Stage Training","color":"#a75555","responsibility":"严格串行的三阶段离线构造：学方向→冻结→学系数→冻结→拟合标定，禁联合训练。","details":[{"heading":"1. 串行禁止联合训练","text":"一次只训练一个对象，冻结边界禁止梯度越界，从源头消除联合训练的纠缠。"},{"heading":"2. Stage 2 损失分工：系数锚定，动作做安全网","text":"主监督是系数项（ĉ 的含义归真值管）；动作项只做 λ=0.1 的一致性安全网。若动作项主导，梯度穿过冻结的 π/Δzᵢ/σ 会逼 Encoder 报假数吸收下游误差：审计语义死、组合性死、σ 现场重测的零重训承诺死。真解处两项本就一致（S1/S3 已用 c_true 认证过动作通路），放大动作项买不到信号只买到风险。评价指标仍是动作误差。全方法只调 λ 这一个超参，{0, 0.1} 一次消融定生死。","latex":"L = \\|\\hat c - c_{true}\\|^2 + 0.1\\,\\|\\pi(z + \\hat c\\,\\Delta z_i) - a^*\\|^2"},{"heading":"3. S1/S2 数据复用，零额外采集","text":"两阶段用同一份网格扫描 labeled rollouts（轴 × 强度网格，c_true 已知）；变化的只是冻结对象与损失，数据不动。扩轴只追加新轴数据，已有轴全部保留。"},{"heading":"4. 收敛判据 S1：补偿率 ≥90%","text":"验证集上 补偿后误差/未补偿误差 ≤0.1。达不到 = 该轴在 latent 空间不可达，不出库——这是出证的正面含义，不是训练失败。"},{"heading":"5. 收敛判据 S2：读数误差 ≤0.05","text":"验证网格上 |ĉ−c_true| ≤0.05（归一化）。达不到 = 窗口信息不足以读该轴，加长窗口或砍轴。"},{"heading":"6. 收敛判据 S3：R² ≥0.95 且单调","text":"σ 拟合优度 R²≥0.95 且曲线单调。达不到 = 该轴 σ 证据存疑。阈值均为工程起点，证据出来后可收紧，不是理论承诺。"},{"heading":"7. 冻结后实测验证","text":"每阶段冻结边界生效后跑一次实测，确认性能不退化再放行下一阶段。"}],"highlightSteps":["stage1-direction","stage2-coefficient","stage3-scale"],"chips":[]},{"designId":"ICA-DP-09","blockId":"ICA-SCALE-CURVE","title":"Scale Curve","color":"#b17845","responsibility":"把每个标量系数读数换算为对应方向的实际 latent 位移，并将方向强度标定为可检查的一维关系。","details":[{"heading":"1. σ 是离线换算","text":"扫描拟合把系数换算成方向强度，不触发训练，Encoder 结构与语义保持不变。"},{"heading":"2. 扫描网格","text":"归一化 c∈[−1,+1]、21 点（步长 0.1），每点 32 条 rollout 取平均动作误差；c=±1 对应训练覆盖的最大强度。三轴共 63 点 × 32 条 ≈ 2000 条 rollout。"},{"heading":"3. 拟合族：单调分段线性（PCHIP）","text":"修正强度必须随读数单调——非单调意味着同轴两个故障强度共用一个修正，语义即坏；单调约束比拟合精度更要紧。纯线性是 PCHIP 特例，接近线性的轴自然长成直线，不预设。"},{"heading":"4. 端点行为：饱和 + 报警，不外推","text":"|ĉ|>1 时 σ 在端点饱和并触发量程外报警：读数不截断（审计可见真实读数）、映射不外推（曲线只在扫描范围内保证）、报警显式——与 DP-05 无截断条款咬合，三件事各归各位。"},{"heading":"5. 真机重测协议：已知软故障当校准基准","text":"第一批三轴全在指令通路上、软件可注入：真机上故意施加已知故障网格（指令缩放/延迟/偏置），c_true 依然免费，逐点实测最优修正强度，重画 σ——零训练。角色分工：未知真故障是测量对象（滚动窗口真机读数），已知软故障是校准基准；用未知故障当基准是循环论证。即使 Encoder 真机读数有系统偏差，只要单调，σ 重画会把偏差吸收进刻度——sim-to-real gap 有一个一维、可现场重画的容器承接。"},{"heading":"6. 组合靠系数相加","text":"σᵢ 只负责把各自的读数换成强度，跨轴组合由系数相加承担。"}],"highlightSteps":["stage3-scale"],"chips":[]},{"designId":"ICA-DP-10","blockId":"ICA-COMPOSITION","title":"Composition by Addition","color":"#4f806b","responsibility":"用冻结方向的系数相加组合多个执行条件响应，形成可复用的校准接口。","details":[{"heading":"1. 多个方向在 latent 空间相加","text":"校准 latent 由各方向的标定位移线性相加得到：z̄=z+Σᵢσᵢ(cᵢ)Δzᵢ。"},{"heading":"2. 组合不改变任务目标","text":"组合只改变 Motion 的执行方式；Planner Intent、Command 和 Tracker Decoder 的 Action 生成职责保持不变。"},{"heading":"3. 留出组合是主图证据","text":"单轴有效不等于组合有效；held-out A+B 组合的恢复执行是主图证据，检查响应是否接近系数相加的预测。"},{"heading":"4. 一阶区前提","text":"系数相加成立的前提是 Δz 有界小拧、保持在线性区；大幅失真超出方法边界。"},{"heading":"5. 不把枚举清单当作方法本身","text":"方向库是对可辨识执行响应的低维投影，不声称覆盖所有物理故障或任意域外条件。"}],"highlightSteps":["sample-axis","deploy-readout"],"chips":[]},{"designId":"ICA-DP-08","blockId":"ICA-QUERY","title":"Frozen Calibrated Execution","color":"#437f86","responsibility":"部署链：未见条件下一次短读数读出系数，沿冻结方向有界小拧 z，由冻结 Tracker 执行；全程零再训练。","details":[{"heading":"1. 未见条件直接进入","text":"新机器或新失真（含未枚举组合）出现时，不做任何参数更新。"},{"heading":"2. 短读数读系数","text":"一次短读数进入冻结 Coefficient Encoder，读出 c=(c₁…cₘ)。"},{"heading":"3. 查曲线换算成 latent 位移","text":"每个系数查 σᵢ 换算成该方向的实际位移，沿冻结方向相加到有界小拧。","latex":"\\bar z=z+\\sum_i\\sigma_i(c_i)\\,\\Delta z_i"},{"heading":"4. 冻结 Tracker 执行","text":"冻结 Tracker Decoder 从 z̄ 输出 6 步 Action；receding-horizon 只执行第一步。"},{"heading":"5. 全链路冻结","text":"Planner、Tracker、Coefficient Encoder、方向库、标定曲线全部冻结，只做推理，不进行在线参数更新。"}],"highlightSteps":["freeze-encoder","deploy-readout"],"chips":[]}]}</script>
   <script>
 
     const params = new URLSearchParams(window.location.search);
@@ -1659,6 +1046,7 @@
     }
 
     function drawMethodNode(rc, data, node) {
+      const textScale = node.viewScale || data.viewScale || 1;
       const color = conceptColor(data, node.concept, node.color || "#6688aa");
       const compact = node.h < 140;
       const shapeOptions = {
@@ -1706,23 +1094,34 @@
       shape.appendChild(tooltip);
       svg.appendChild(shape);
 
+      if (node.frozen) {
+        const badgeX = node.x + node.w - (node.shape === "encoder" ? 10 : 14);
+        const badgeY = node.y + (node.shape === "encoder" ? inset + 16 : 18);
+        addText("❄", badgeX, badgeY, {
+          fill: "#2563eb",
+          size: 15 * textScale,
+          weight: 700,
+          anchor: "middle",
+        });
+      }
+
       const centeredTrackerText = node.shape === "encoder" || node.shape === "decoder";
       if (centeredTrackerText) {
         const centerX = node.x + node.w / 2;
         const centerY = node.y + node.h / 2;
         wrapText(node.title, centerX, centerY - 12, node.w - 90, {
-          size: 14,
-          lineHeight: 16,
-          charWidth: 7,
+          size: 14 * textScale,
+          lineHeight: 16 * textScale,
+          charWidth: 7 * textScale,
           maxLines: 2,
           weight: 900,
           fill: "#27313d",
           anchor: "middle",
         });
         wrapText(node.summary || "", centerX, centerY + 20, node.w - 74, {
-          size: 11,
-          lineHeight: 15,
-          charWidth: 5.8,
+          size: 11 * textScale,
+          lineHeight: 15 * textScale,
+          charWidth: 5.8 * textScale,
           maxLines: 3,
           weight: 550,
           fill: "#4d5966",
@@ -1731,23 +1130,23 @@
         return;
       }
 
-      const textInset = node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
-      const titleLines = wrapText(node.title, node.x + textInset, node.y + 31, node.w - textInset * 2, {
-        size: compact ? 13 : 14,
-        lineHeight: 16,
-        charWidth: 7,
+      const textInset = node.id.endsWith("-LOSS") || node.id.endsWith("-PROOF") ? 24 * textScale : node.shape === "context_encoder" ? 34 : node.shape ? 26 : 16;
+      const titleLines = wrapText(node.title, node.x + textInset, node.y + 36 * textScale, node.w - textInset * 2, {
+        size: (node.titleSize || (compact ? 13 : 14)) * textScale,
+        lineHeight: 16 * textScale,
+        charWidth: 7 * textScale,
         maxLines: 2,
         weight: 900,
         fill: "#27313d",
       });
-      const summaryLineHeight = compact ? 13 : 15;
-      const summaryY = node.y + 60 + Math.max(0, titleLines - 1) * 16;
-      const summaryBottom = node.y + node.h - 14;
+      const summaryLineHeight = (node.summaryLineHeight || (compact ? 13 : 15)) * textScale;
+      const summaryY = node.y + 68 * textScale + Math.max(0, titleLines - 1) * 19 * textScale;
+      const summaryBottom = node.y + node.h - 18 * textScale;
       const summaryMaxLines = Math.max(1, Math.floor((summaryBottom - summaryY) / summaryLineHeight));
-      wrapText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
-        size: node.summarySize || (compact ? 10 : 11),
+      wrapMultilineText(node.summary || "", node.x + textInset, summaryY, node.w - textInset * 2, {
+        size: (node.summarySize || (compact ? 10 : 11)) * textScale,
         lineHeight: summaryLineHeight,
-        charWidth: compact ? 5.4 : 5.8,
+        charWidth: (compact ? 5.4 : 5.8) * textScale,
         maxLines: summaryMaxLines,
         weight: 550,
         fill: "#4d5966",
@@ -1800,8 +1199,8 @@
         svg.appendChild(rc.linearPath(points, {
           stroke: color,
           strokeWidth: edge.kind === "feedback" ? 2.8 : 2.1,
-          roughness: 0.9,
-          bowing: 0.65,
+          roughness: edge.orthogonal ? 0 : 0.9,
+          bowing: edge.orthogonal ? 0 : 0.65,
           strokeLineDash: edge.kind === "evidence" ? [7, 5] : undefined,
         }));
         drawMethodArrowHead(points, color);
@@ -2517,8 +1916,90 @@
       });
     }
 
+    let activeStageIndex = 0;
+    function splitCalibrationStages(data) {
+      if (Array.isArray(data.stages)) return data.stages;
+      const isCalibrationFigure = data.layout === "method_figure"
+        && (data.nodes || []).some((node) => node.id.startsWith("ICA4-S1-"));
+      if (!isCalibrationFigure) return [data];
+      const groups = [
+        ["Stage 1 · Direction", "ICA4-S1-"],
+        ["Stage 2 · Coefficient", "ICA4-S2-"],
+        ["Stage 3 · Scale & Proof", "ICA4-S3-"],
+        ["部署 · Unseen Conditions", "ICA4-D-"],
+      ];
+      return groups.map(([stageTitle, prefix]) => {
+        const sourceNodes = (data.nodes || []).filter((node) => node.id.startsWith(prefix));
+        const minX = Math.min(...sourceNodes.map((node) => node.x));
+        const minY = Math.min(...sourceNodes.map((node) => node.y));
+        const maxX = Math.max(...sourceNodes.map((node) => node.x + node.w));
+        const maxY = Math.max(...sourceNodes.map((node) => node.y + node.h));
+        const sourceWidth = Math.max(1, maxX - minX);
+        const sourceHeight = Math.max(1, maxY - minY);
+        const figureWidth = 1920;
+        const figureHeight = 920;
+        const scaleCap = prefix === "ICA4-S1-" ? 1 : 1.08;
+        const scale = Math.min(scaleCap, (figureWidth - 160) / sourceWidth, (figureHeight - 160) / sourceHeight);
+        const offsetX = (figureWidth - sourceWidth * scale) / 2 - minX * scale;
+        const offsetY = (figureHeight - sourceHeight * scale) / 2 - minY * scale;
+        const nodes = sourceNodes.map((node) => ({
+          ...node,
+          x: node.x * scale + offsetX,
+          y: node.y * scale + offsetY,
+          w: node.w * scale,
+          h: node.h * scale,
+          shapeInset: node.shapeInset ? node.shapeInset * scale : node.shapeInset,
+          viewScale: scale,
+        }));
+        const ids = new Set(nodes.map((node) => node.id));
+        return {
+          ...data,
+          title: stageTitle,
+          figureWidth,
+          figureHeight,
+          layerDividers: [],
+          nodes,
+          viewScale: scale,
+          edges: (data.edges || []).filter((edge) => ids.has(edge.from) && ids.has(edge.to)).map((edge) => ({
+            ...edge,
+            via: (edge.via || []).map(([x, y]) => [x * scale + offsetX, y * scale + offsetY]),
+            labelX: edge.labelX == null ? edge.labelX : edge.labelX * scale + offsetX,
+            labelY: edge.labelY == null ? edge.labelY : edge.labelY * scale + offsetY,
+            labelSize: edge.labelSize ? edge.labelSize * scale : Math.max(13, 11 * scale),
+            labelLineHeight: edge.labelLineHeight ? edge.labelLineHeight * scale : edge.labelLineHeight,
+          })),
+        };
+      });
+    }
+
+    function renderStageTabs(data, stages) {
+      const tabs = document.getElementById("stage-tabs");
+      const showTabs = stages.length > 1;
+      document.body.classList.toggle("has-stage-tabs", showTabs);
+      tabs.replaceChildren();
+      if (!showTabs) return;
+      stages.forEach((stageData, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `stage-tab${index === activeStageIndex ? " active" : ""}`;
+        button.textContent = stageData.title;
+        button.addEventListener("click", () => {
+          activeStageIndex = index;
+          zoom = 1;
+          autoFitWidth = true;
+          stage.scrollLeft = 0;
+          stage.scrollTop = 0;
+          render(data);
+        });
+        tabs.appendChild(button);
+      });
+    }
+
     function render(data) {
       clearSvg();
+      const stages = splitCalibrationStages(data);
+      renderStageTabs(data, stages);
+      data = stages[Math.min(activeStageIndex, stages.length - 1)] || stages[0];
       const moduleInspectorActive = Boolean(data.moduleInspector) && viewMode !== "repository_reading";
       title.textContent = moduleInspectorActive
         ? data.moduleInspector?.title || data.title || "MOSAIC Architecture Atlas"
