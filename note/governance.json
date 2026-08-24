@@ -1,53 +1,53 @@
 {
   "schema_version": "workflow-governance/v1",
-  "governance_id": "ice-cal-configurable-axis-offline-closeout-2026-08-23",
-  "lifecycle_phase": "closed",
-  "target_phase": "closed",
-  "admission": "CLOSED",
+  "governance_id": "ice-cal-data-driven-v009-activation-2026-08-24",
+  "lifecycle_phase": "design-proposal",
+  "target_phase": "contract-active",
+  "admission": "DESIGN-CONFIRMED",
   "scope": {
     "requested": [
-      "Split calibration training by Stage responsibility",
-      "Replace fixed three-axis assumptions with one ordered configurable active-axis subset",
-      "Complete bounded offline construction, tests and independent review in one execution unit"
+      "Activate the data-driven task-relevant correction-basis method",
+      "Retire the analytic physical-axis v008/v007 Context contracts",
+      "Construct the first bounded Gain-only straight-walk transaction with m=1"
     ],
     "preserved": [
-      "Full gain-delay-offset selection remains the default",
-      "Frozen Planner and Tracker with H=30, K=6, D=128 and first-action-only execution",
-      "Stage 1 Direction, Stage 2 Coefficient and Stage 3 Scale ownership and gates"
+      "Frozen Planner and Tracker with H=30, K=6, D=128 and first-action execution",
+      "Single latent injection point before Tracker decoding",
+      "Serial Stage 1 operator, Stage 2 coefficient, and Stage 3 scale ownership"
     ],
     "forbidden": [
-      "No simulator collection, training, policy-quality evaluation, live deployment or network operation",
-      "No commit, push, merge, branch or destructive cleanup",
-      "No promotion of offline evidence into formal-runtime or efficacy claims"
+      "No production code edit, simulator collection, training, deployment or real-robot operation in this activation",
+      "No multi-component quality claim from the Gain-only transaction",
+      "No Git commit, push, merge or destructive cleanup"
     ]
   },
   "identities": {
     "project": "ICE-Cal",
-    "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-    "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-    "checkout": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194",
-    "entrypoint": "catalog+active_axes -> dataset v2 -> Stage 1 v3 -> Stage 2 v3 -> Scale Evidence v2 -> final artifact v2 -> evaluate/play",
-    "effective_config": "H=30,K=6,D=128,m=len(active_axes),default-axes=gain-delay-offset,ordered-axis-spec",
-    "checkpoint": "no-real-checkpoint; offline construction and state-schema migration only"
+    "design": "ICA-DP-01..07-data-driven-correction-basis",
+    "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008",
+    "checkout": "codex/in-context-execution-calibration@8fa57c0cf37e14f244efadb01912a336967966a4",
+    "entrypoint": "DR tuple -> delta_z_star -> carrier regression/SVD -> typed operator -> coefficient encoder -> PCHIP scale",
+    "effective_config": "H=30,K=6,D=128,m=1 first transaction,straight-walk,gain-only",
+    "checkpoint": "no-real-checkpoint; source Tracker identity must be sealed before construction"
   },
   "authority": {
     "semantic": {
       "status": "approved",
-      "scope": "Ordered training-time active_axes with complete three-axis default",
-      "receipt": "User requested the configurable-axis refactor and one-shot execution on 2026-08-23"
+      "scope": "Activate full v009 data-driven method; first transaction is Gain-only straight-walk with m=1",
+      "receipt": "User confirmed semantic activation and retirement of the old scheme on 2026-08-24"
     },
     "local_reversible": {
       "status": "approved",
-      "scope": "Repository-local Contracts, Inspector, plan, tests, production code, receipts and governance documents",
-      "receipt": "User authorized complete local execution on 2026-08-23"
+      "scope": "Repository-local Contract, registry, plan and governance migration artifacts only",
+      "receipt": "User requested engineering scheme construction on 2026-08-24"
     },
     "git_actions": {
       "status": "not-requested",
-      "scope": "No commit, push, merge, branch or worktree action"
+      "scope": "No commit, push, merge or branch action"
     },
     "external_operations": {
-      "status": "not-required",
-      "scope": "No network or remote operation"
+      "status": "not-requested",
+      "scope": "No server, network, device or remote operation"
     },
     "bounded_live": {
       "status": "not-requested",
@@ -58,125 +58,96 @@
       "scope": "No long training or expensive evaluation"
     },
     "destructive": {
-      "status": "not-requested",
-      "scope": "Historical Contracts and evidence remain preserved"
+      "status": "approved",
+      "scope": "Retire old active Contract paths by moving them to history; preserve content unchanged",
+      "receipt": "User explicitly requested retirement of the old scheme on 2026-08-24"
     }
   },
   "artifacts": [
     {
-      "kind": "contract",
-      "artifact_id": "FADA-CONTEXT-METHOD-v008",
-      "path": "fada/contracts/active/method/FADA-CONTEXT-METHOD-v008.md",
+      "kind": "concept-figure",
+      "artifact_id": "ICE-Cal-concept-figure-current",
+      "path": "architecture/08_in_context_execution_calibration.html",
       "lifecycle": "current",
       "status": "active",
       "current": true,
-      "content_hash": "sha256:be7ba1eee4508ebccc19acf2cf12ffaf698916cc5bfb189c93223ed7e808229b",
-      "identities": {
-        "project": "ICE-Cal",
-        "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-        "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007"
-      }
+      "content_hash": "sha256:15b58daabd45130521b23214283f44e08b2475789a1bc98f425c1cc93adfb76f",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..07-data-driven-correction-basis", "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008"}
     },
     {
-      "kind": "architecture",
-      "artifact_id": "ICE-Cal-current-architecture",
-      "path": "architecture/atlas_manifest.json",
+      "kind": "design-inspector",
+      "artifact_id": "ICA-DP-01..07-data-driven-correction-basis",
+      "path": "architecture/concept/09_in_context_execution_calibration_design_inspector.data.json",
       "lifecycle": "current",
-      "status": "active",
+      "status": "confirmed",
       "current": true,
-      "content_hash": "sha256:1d9dd96fb3a638369661f7c5a2b6b09a1af3bae7a33d9e01fb38908b345317a0",
-      "identities": {
-        "project": "ICE-Cal",
-        "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-        "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-        "checkout": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194"
-      }
+      "content_hash": "sha256:9b0e2b3faad90e5ad5364f4481acb83fb24f411d7b0651145f687ac9349df675",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..07-data-driven-correction-basis", "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008"}
     },
     {
-      "kind": "evidence-ledger",
-      "artifact_id": "configurable-axis-module-evidence",
-      "path": "testing/calibratable_tracker_module_test_evidence.json",
-      "lifecycle": "current",
-      "status": "active",
+      "kind": "contract-proposal",
+      "artifact_id": "FADA-CONTEXT-METHOD-v009",
+      "path": "fada/contracts/active/method/FADA-CONTEXT-METHOD-v009.md",
+      "lifecycle": "volatile",
+      "status": "proposal",
       "current": true,
-      "content_hash": "sha256:957228a95318b45c6bcda75b63ba942588efaa6ee65602019f578a3f96a4b48a",
-      "identities": {
-        "project": "ICE-Cal",
-        "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-        "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-        "checkout": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194"
-      }
+      "content_hash": "sha256:2a20be26728a72322473b3d201eceb94b123139e502af046ba86217963ce5331",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..07-data-driven-correction-basis", "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008"}
+    },
+    {
+      "kind": "training-contract-proposal",
+      "artifact_id": "FADA-CONTEXT-TRAIN-v008",
+      "path": "fada/contracts/active/training/FADA-CONTEXT-TRAIN-v008.md",
+      "lifecycle": "volatile",
+      "status": "proposal",
+      "current": true,
+      "content_hash": "sha256:c6a456cb37da251efa4a3d47f6e36c5b0900483b6c24042a81862547709cb9ff",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..07-data-driven-correction-basis", "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008", "checkout": "codex/in-context-execution-calibration@8fa57c0cf37e14f244efadb01912a336967966a4"}
     },
     {
       "kind": "plan",
-      "artifact_id": "configurable-axis-refactor-plan",
-      "path": "fada/plans/2026-08-23-configurable-axis-training-refactor.md",
+      "artifact_id": "gain-straight-walk-v009-first-transaction",
+      "path": "fada/plans/2026-08-24-gain-straight-walk-end-to-end.md",
       "lifecycle": "volatile",
-      "status": "closed",
-      "current": false,
-      "content_hash": "sha256:44440802b9cb02dd7e6fef69f8dbce9c2fda1f005c4c2793416f5b1e8563e5f9",
-      "identities": {
-        "project": "ICE-Cal",
-        "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-        "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-        "checkout": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194"
-      }
-    }
-  ],
-  "dependencies": [
-    {
-      "kind": "code-review-expert",
-      "status": "FINAL_GATE_PASS",
-      "schema_version": "code-review-expert/v1",
-      "manifest_path": "fada/reviews/2026-08-23-configurable-axis-final-gate.json",
-      "manifest_hash": "sha256:17a7c8072833a3c98e4ab659c578bf7e02338d498348cbaab9bab0b539108190",
+      "status": "proposal",
       "current": true,
-      "identities": {
-        "project": "ICE-Cal",
-        "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes",
-        "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
-        "checkout": "codex/in-context-execution-calibration@bdc4e420e39033558e5b1db9a03a018f4337bd5d+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194",
-        "entrypoint": "catalog+active_axes -> dataset v2 -> Stage 1 v3 -> Stage 2 v3 -> Scale Evidence v2 -> final artifact v2 -> evaluate/play",
-        "effective_config": "H=30,K=6,D=128,m=len(active_axes),default-axes=gain-delay-offset,ordered-axis-spec",
-        "checkpoint": "no-real-checkpoint; offline construction and state-schema migration only"
-      },
-      "validation": {
-        "command": "uv run python /Users/chengyuxuan/.codex/skills/code-review-expert/scripts/validate_review_manifest.py note/fada/reviews/2026-08-23-configurable-axis-final-gate.json --target final-gate",
-        "exit_code": 0,
-        "identity": "VALID code-review-expert/v1 target=final-gate verdict=FINAL_GATE_PASS",
-        "current": true
-      }
+      "content_hash": "sha256:b916c479864d92ccc261ca692a3c383e6de15fb29dcfb672d839ed710394f616",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..07-data-driven-correction-basis", "contract": "FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008", "checkout": "codex/in-context-execution-calibration@8fa57c0cf37e14f244efadb01912a336967966a4"}
+    },
+    {
+      "kind": "historical-contract",
+      "artifact_id": "FADA-CONTEXT-METHOD-v008-HISTORICAL",
+      "path": "fada/contracts/history/method/FADA-CONTEXT-METHOD-v008.md",
+      "lifecycle": "historical",
+      "status": "historical",
+      "current": false,
+      "content_hash": "sha256:be7ba1eee4508ebccc19acf2cf12ffaf698916cc5bfb189c93223ed7e808229b",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes", "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007", "checkout": "codex/in-context-execution-calibration@8fa57c0cf37e14f244efadb01912a336967966a4"}
+    },
+    {
+      "kind": "historical-contract",
+      "artifact_id": "FADA-CONTEXT-TRAIN-v007-HISTORICAL",
+      "path": "fada/contracts/history/training/FADA-CONTEXT-TRAIN-v007.md",
+      "lifecycle": "historical",
+      "status": "historical",
+      "current": false,
+      "content_hash": "sha256:0bfccff36d1f55296e69de21b0012542a3cda68d816b9dd9ee3fa282c1f8f323",
+      "identities": {"project": "ICE-Cal", "design": "ICA-DP-01..10-calibratable-tracker-configurable-active-axes", "contract": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007", "checkout": "codex/in-context-execution-calibration@8fa57c0cf37e14f244efadb01912a336967966a4"}
     }
   ],
+  "dependencies": [],
   "design_review": {
     "semantic_change": true,
     "status": "confirmed",
     "mapping_complete": true,
-    "receipt": "User confirmed configurable training axes and authorized implementation on 2026-08-23",
-    "proposal_hash": "sha256:be7ba1eee4508ebccc19acf2cf12ffaf698916cc5bfb189c93223ed7e808229b",
-    "inspector_hash": "sha256:5734beba6194b3314ade705365c28e4a7e2bc16f497452bbf2f6180046252c3e"
+    "receipt": "User confirmed full v009 data-driven method activation with Gain-only m=1 first transaction on 2026-08-24",
+    "proposal_hash": "sha256:2a20be26728a72322473b3d201eceb94b123139e502af046ba86217963ce5331",
+    "inspector_hash": "sha256:9b0e2b3faad90e5ad5364f4481acb83fb24f411d7b0651145f687ac9349df675"
   },
   "open_boundaries": [],
-  "invalidations": [],
-  "recovery": {
-    "cwd_match": true,
-    "access_gaps": [],
-    "stale_or_volatile": [
-      "Legacy v007/v006 trained artifacts remain incompatible with the current state schemas",
-      "No formal runtime, simulator, training or policy-quality evidence was produced"
-    ],
-    "blockers": [],
-    "next_safe_action": "Run formal-runtime-audit before any simulator training, expensive evaluation or deployment claim"
-  },
-  "closeout": {
-    "evidence_complete": true,
-    "atlas_synced": true,
-    "stale_interpretations_named": true,
-    "volatile_artifacts_closed": true,
-    "maintainability_status": "resolved",
-    "maintainability_rationale": "Independent final review reported FINAL_GATE_PASS with no P0-P3 findings",
-    "formal_route_status": "deferred",
-    "formal_route_rationale": "Formal runtime, simulator, training efficacy and deployment were outside the authorized offline unit",
-    "next_decision": "Authorize and execute formal-runtime-audit before simulation or training"
-  }
+  "invalidations": [
+    {"id": "V008-RETIRE-001", "trigger": "v009 data-driven target and component identity activated", "affected_artifact_ids": ["FADA-CONTEXT-METHOD-v008-HISTORICAL", "FADA-CONTEXT-TRAIN-v007-HISTORICAL"], "status": "resolved", "resolution_receipt": "Old Context contracts moved to history on 2026-08-24; old receipts remain historical and cannot authorize v009"}
+  ],
+  "recovery": {"cwd_match": true, "access_gaps": ["server gain dataset unavailable locally"], "stale_or_volatile": ["old v008/v007 receipts are historical", "Gain plan is volatile proposal", "no runtime or efficacy evidence"], "blockers": ["V009-ENG-001", "V009-DATA-001"], "next_safe_action": "Review the v009/v008 plan and obtain a current engineering plan-review receipt before code or simulator work"},
+  "closeout": {"evidence_complete": false, "atlas_synced": false, "stale_interpretations_named": true, "volatile_artifacts_closed": false, "maintainability_status": "deferred", "formal_route_status": "deferred", "next_decision": "Engineering authorization for the first Gain-only transaction"}
 }

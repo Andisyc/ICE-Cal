@@ -179,17 +179,16 @@ def test_scenario_uses_real_warmup_and_rolls_back_the_whole_drifted_episode() ->
 
 def _approved_protocol(module):
     return module.GainCalibrationCollectionProtocol(
-        version="gain-smoke-v1",
+        version="gain-smoke-v2",
         task_config="g1_walk_flat/mujoco",
         task_name="G1WalkFlat",
         sim_backend="mujoco",
         observation_key="obs",
         command_key="commands",
         fixed_command=(0.4, 0.0, 0.0),
-        points=(
-            module.GainCalibrationPoint(-1.0, 0.8),
-            module.GainCalibrationPoint(0.0, 1.0),
-            module.GainCalibrationPoint(1.0, 1.2),
+        points=tuple(
+            module.GainCalibrationPoint(c_true, gain)
+            for c_true, gain in module._APPROVED_POINTS
         ),
         splits=(
             module.GainCalibrationSplit("train", 0, 101),
@@ -301,11 +300,11 @@ def test_full_collection_binds_identity_and_keeps_diagnostic_actions_out_of_trai
         resolved_task_backend_payload=_resolved_task_backend_payload(),
     )
 
-    assert artifact["observation_history"].shape == (192, 30, 2)
-    assert artifact["nominal_action_chunk"].shape == (192, 6, 2)
-    assert artifact["planner_intent"].shape == (192, 6, 2)
-    assert artifact["c_true"].shape == (192, 3)
-    assert artifact["executed_action"].shape == (192, 2)
+    assert artifact["observation_history"].shape == (2048, 30, 2)
+    assert artifact["nominal_action_chunk"].shape == (2048, 6, 2)
+    assert artifact["planner_intent"].shape == (2048, 6, 2)
+    assert artifact["c_true"].shape == (2048, 3)
+    assert artifact["executed_action"].shape == (2048, 2)
     assert set(artifact["axis_name"]) == {"gain"}
     train_ids = set(artifact["rollout_id"][artifact["split_id"] == 0].tolist())
     validation_ids = set(artifact["rollout_id"][artifact["split_id"] == 1].tolist())
@@ -412,7 +411,7 @@ def test_exact_legacy_gain_raw_v1_is_admitted_for_dataset_resealing(
         expected_source_sha256="a" * 64,
         expected_architecture=policy.config,
     )
-    assert loaded["axis_name"] == ["gain"] * 192
+    assert loaded["axis_name"] == ["gain"] * 2048
     forbidden_target = tmp_path / "forbidden-legacy-write.pt"
     with pytest.raises(ValueError, match="unsupported.*schema"):
         module.save_gain_calibration_raw_rollouts(

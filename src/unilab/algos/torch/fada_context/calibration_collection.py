@@ -29,7 +29,10 @@ _LEGACY_METHOD_CONTRACT_ID = "FADA-CONTEXT-METHOD-v007"
 _LEGACY_TRAINING_CONTRACT_ID = "FADA-CONTEXT-TRAIN-v006"
 _LEGACY_AXIS_CATALOG_VERSION = "gain-delay-offset-v1"
 _LEGACY_AXIS_NAMES = ("gain", "delay", "offset")
-_APPROVED_POINTS = ((-1.0, 0.8), (0.0, 1.0), (1.0, 1.2))
+_APPROVED_POINTS = tuple(
+    (round(-1.0 + 2.0 * index / 31.0, 9), round(0.8 + 0.4 * index / 31.0, 9))
+    for index in range(32)
+)
 _APPROVED_SPLITS = (("train", 0, 101), ("validation", 1, 201))
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _RESERVED_AXIS_METADATA_KEYS = frozenset(
@@ -125,7 +128,7 @@ class GainCalibrationCollectionProtocol:
         if observed_splits != _APPROVED_SPLITS or len(observed_splits) != len(self.splits):
             raise ValueError("protocol does not match the approved train/validation splits")
         if (
-            self.version != "gain-smoke-v1"
+            self.version != "gain-smoke-v2"
             or self.task_config != "g1_walk_flat/mujoco"
             or self.task_name != "G1WalkFlat"
             or self.sim_backend != "mujoco"

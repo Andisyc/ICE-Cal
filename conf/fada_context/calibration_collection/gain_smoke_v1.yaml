@@ -1,4 +1,4 @@
-version: gain-smoke-v1
+version: gain-smoke-v2
 task_config: g1_walk_flat/mujoco
 task_name: G1WalkFlat
 sim_backend: mujoco
@@ -7,7 +7,36 @@ command_key: commands
 fixed_command: [0.4, 0.0, 0.0]
 points:
   - {c_true: -1.0, gain: 0.8}
-  - {c_true: 0.0, gain: 1.0}
+  - {c_true: -0.935483871, gain: 0.812903226}
+  - {c_true: -0.870967742, gain: 0.825806452}
+  - {c_true: -0.806451613, gain: 0.838709677}
+  - {c_true: -0.741935484, gain: 0.851612903}
+  - {c_true: -0.677419355, gain: 0.864516129}
+  - {c_true: -0.612903226, gain: 0.877419355}
+  - {c_true: -0.548387097, gain: 0.890322581}
+  - {c_true: -0.483870968, gain: 0.903225806}
+  - {c_true: -0.419354839, gain: 0.916129032}
+  - {c_true: -0.35483871, gain: 0.929032258}
+  - {c_true: -0.290322581, gain: 0.941935484}
+  - {c_true: -0.225806452, gain: 0.95483871}
+  - {c_true: -0.161290323, gain: 0.967741935}
+  - {c_true: -0.096774194, gain: 0.980645161}
+  - {c_true: -0.032258065, gain: 0.993548387}
+  - {c_true: 0.032258065, gain: 1.006451613}
+  - {c_true: 0.096774194, gain: 1.019354839}
+  - {c_true: 0.161290323, gain: 1.032258065}
+  - {c_true: 0.225806452, gain: 1.04516129}
+  - {c_true: 0.290322581, gain: 1.058064516}
+  - {c_true: 0.35483871, gain: 1.070967742}
+  - {c_true: 0.419354839, gain: 1.083870968}
+  - {c_true: 0.483870968, gain: 1.096774194}
+  - {c_true: 0.548387097, gain: 1.109677419}
+  - {c_true: 0.612903226, gain: 1.122580645}
+  - {c_true: 0.677419355, gain: 1.135483871}
+  - {c_true: 0.741935484, gain: 1.148387097}
+  - {c_true: 0.806451613, gain: 1.161290323}
+  - {c_true: 0.870967742, gain: 1.174193548}
+  - {c_true: 0.935483871, gain: 1.187096774}
   - {c_true: 1.0, gain: 1.2}
 splits:
   - {name: train, split_id: 0, seed: 101}

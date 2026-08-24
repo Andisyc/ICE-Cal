@@ -631,11 +631,14 @@ def test_gain_collection_protocol_and_base_override_are_config_owned() -> None:
     protocol, protocol_bytes, digest = load_gain_calibration_protocol(
         ROOT / "conf/fada_context/calibration_collection/gain_smoke_v1.yaml"
     )
-    assert [(point.c_true, point.gain) for point in protocol.points] == [
-        (-1.0, 0.8),
-        (0.0, 1.0),
-        (1.0, 1.2),
-    ]
+    points = [(point.c_true, point.gain) for point in protocol.points]
+    assert len(points) == 32
+    assert points[0] == (-1.0, 0.8)
+    assert points[-1] == (1.0, 1.2)
+    assert all(
+        left[0] < right[0] and left[1] < right[1]
+        for left, right in zip(points, points[1:], strict=False)
+    )
     assert (
         protocol_bytes
         == (ROOT / "conf/fada_context/calibration_collection/gain_smoke_v1.yaml").read_bytes()
