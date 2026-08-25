@@ -272,8 +272,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
             batch = replace(
                 batch,
                 idm_source_role=torch.tensor(
-                    ([1] * 12 if request.iteration == 0 else [1] * 3 + [0] * 9)
-                    + [0] * 24,
+                    [1] * 12 + [0] * 24,
                     dtype=torch.int64,
                 ),
             )

@@ -17,6 +17,7 @@ from .fada import (
 )
 from .fada_async_runtime import allocate_fada_command_scenarios
 from .fada_replay import FADAReplayBuffer
+from .fada_training_phase import parse_fada_training_phase
 from .fada_workflow_setup import (
     build_fada_architecture_config,
 )
@@ -197,7 +198,8 @@ def _require_fada_curriculum_artifact(
     ):
         raise ValueError("FADA walking recovery IDM role must be oracle_shadow")
     ordinary_main_mask = main_mask & ~walking_recovery_mask
-    if iteration == 0:
+    training_phase = parse_fada_training_phase(OmegaConf.select(cfg, "training.fada.phase"))
+    if not training_phase.main_rollout_uses_student(iteration=iteration):
         valid_ordinary_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
     else:
         trajectory_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["trajectory"]
@@ -206,7 +208,7 @@ def _require_fada_curriculum_artifact(
         ) & ~batch.oracle_shadow_valid
         valid_ordinary_role = trajectory_role | planner_only_terminal
     if bool((ordinary_main_mask & ~valid_ordinary_role).any()):
-        raise ValueError("FADA main-source IDM role does not match rollout iteration")
+        raise ValueError("FADA main-source IDM role does not match training phase and iteration")
 
 
 slice_fada_batch = _slice_fada_batch

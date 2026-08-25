@@ -134,8 +134,7 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
             batch = replace(
                 batch,
                 idm_source_role=torch.tensor(
-                    ([1] * 12 if request.iteration == 0 else [1] * 3 + [0] * 9)
-                    + [0] * 24,
+                    [1] * 12 + [0] * 24,
                     dtype=torch.int64,
                 ),
                 command_scenario=torch.tensor(

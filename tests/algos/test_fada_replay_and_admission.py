@@ -548,6 +548,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
             "student": {"obs_dim": config.obs_dim, "action_dim": config.action_dim},
             "training": {
                 "fada": {
+                    "phase": "planner",
                     "windows_per_iteration": 8,
                     "batch_size": 8,
                     "command_dim": config.command_dim,
@@ -647,6 +648,15 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
     )
 
     fada_artifact_admission.require_fada_curriculum_artifact(cfg, metadata, batch)
+    cfg.training.fada.phase = "idm_pretrain"
+    idm_roles = batch.idm_source_role.clone()
+    idm_roles[:8] = FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
+    fada_artifact_admission.require_fada_curriculum_artifact(
+        cfg,
+        metadata,
+        replace(batch, idm_source_role=idm_roles),
+    )
+    cfg.training.fada.phase = "planner"
     planner_only_roles = batch.idm_source_role.clone()
     planner_only_roles[2] = FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
     planner_only_valid = batch.oracle_shadow_valid.clone()
