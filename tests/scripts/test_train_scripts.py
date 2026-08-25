@@ -23,6 +23,7 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
+from unilab.algos.torch.distill import LEGACY_REQUEST_STAGE_NAMES
 from unilab.base.backend.base import BackendSceneArtifacts
 from unilab.base.backend.motrix.playback import run_motrix_playback
 
@@ -1539,7 +1540,7 @@ def test_distill_collect_wrapper_emits_legacy_request_observations_only_when_opt
     )
 
     observations = result["performance_stage_observations"]
-    assert [item["stage"] for item in observations] == list(mod.LEGACY_REQUEST_STAGE_NAMES)
+    assert [item["stage"] for item in observations] == list(LEGACY_REQUEST_STAGE_NAMES)
     assert observations[0]["duration_seconds"] == pytest.approx(0.1)
     assert observations[-2]["row_count"] == 2
     assert observations[-1]["row_count"] == 2

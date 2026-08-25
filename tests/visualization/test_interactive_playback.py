@@ -37,6 +37,14 @@ from unilab.visualization.interactive_playback import (
 _VEL_LIMIT = [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
 
 
+def test_default_fada_playback_owner_accepts_source_and_adapted_checkpoints() -> None:
+    from unilab.algos.torch.distill import load_fada_deployable_policy_checkpoint
+
+    deps = interactive_playback._default_fada_playback_deps(_REPO_ROOT)
+
+    assert deps["load_fada_policy"] is load_fada_deployable_policy_checkpoint
+
+
 def test_external_velocity_command_rows_broadcasts_and_rejects_nonfinite() -> None:
     owner = np.zeros((2, 3), dtype=np.float32)
     rows = interactive_playback._external_velocity_command_rows(
@@ -225,6 +233,72 @@ def test_fada_playback_missing_checkpoint_fails_before_env_creation(tmp_path: Pa
         )
 
     assert create_calls == 0
+
+
+def test_fada_v2_playback_accepts_raw_98d_env_and_projects_for_66d_policy(
+    tmp_path: Path,
+) -> None:
+    from unilab.algos.torch.distill import FADAArchitectureConfig, FADAPlannerIDMPolicy
+
+    checkpoint = tmp_path / "planner-v2.pt"
+    checkpoint.touch()
+    policy = FADAPlannerIDMPolicy(
+        FADAArchitectureConfig(
+            obs_dim=66,
+            action_dim=29,
+            command_dim=3,
+            observation_contract="g1_fada_state_v2",
+            history_length=2,
+            prediction_horizon=2,
+            hidden_dim=8,
+            num_heads=2,
+            planner_layers=1,
+            idm_encoder_layers=1,
+            idm_decoder_layers=1,
+            feedforward_dim=16,
+        )
+    )
+
+    class FakeEnv:
+        action_space = SimpleNamespace(shape=(29,))
+
+    class FakeWrapper:
+        num_obs = 98
+
+        def __init__(self, env: Any, *, device: str, policy_obs_mode: str) -> None:
+            self.env = env
+
+        def close(self) -> None:
+            return None
+
+    session, _, _ = create_fada_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="G1WalkFlat",
+            load_run="unused",
+            checkpoint=None,
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="distill",
+            log_root=None,
+        ),
+        cfg=SimpleNamespace(training=SimpleNamespace(task_name="G1WalkFlat")),
+        root_dir=tmp_path,
+        device="cpu",
+        deps={
+            "resolve_checkpoint": lambda *_args: checkpoint,
+            "create_env": lambda *_args, **_kwargs: FakeEnv(),
+            "wrapper_cls": FakeWrapper,
+            "load_fada_policy": lambda *_args, **_kwargs: SimpleNamespace(
+                policy=policy,
+                checkpoint={"completed_iterations": 0},
+            ),
+        },
+        log=lambda _message: None,
+    )
+
+    assert session.controller is not None
+    actions = session.controller.act(torch.zeros(1, 98), torch.zeros(1, 3))
+    assert actions.shape == (1, 29)
 
 
 def test_fada_playback_does_not_treat_factory_type_error_as_signature_probe(

@@ -1,0 +1,15 @@
+defaults:
+  - _self_
+  - algo: sac
+  - task: sac/g1_walk_flat/mujoco_left_knee_090
+  - collection: fada_target
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false
+  job_logging:
+    root:
+      handlers: [console]

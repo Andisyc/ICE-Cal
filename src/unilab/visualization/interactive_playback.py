@@ -1317,7 +1317,7 @@ def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
 
 def _default_fada_playback_deps(root_dir: str | Path) -> dict[str, Any]:
     _ensure_scripts_dir(root_dir)
-    from unilab.algos.torch.distill import load_fada_policy_checkpoint
+    from unilab.algos.torch.distill import load_fada_deployable_policy_checkpoint
     from unilab.algos.torch.hora.rsl_rl import HoraRslRlVecEnvWrapper
     from unilab.training import BackendAdapter, create_env, ensure_registries
 
@@ -1329,7 +1329,7 @@ def _default_fada_playback_deps(root_dir: str | Path) -> dict[str, Any]:
             algo_name="distill",
         ).build_task_env_cfg_override(),
         "create_env": create_env,
-        "load_fada_policy": load_fada_policy_checkpoint,
+        "load_fada_policy": load_fada_deployable_policy_checkpoint,
         "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
         "wrapper_cls": HoraRslRlVecEnvWrapper,
     }
@@ -1735,9 +1735,12 @@ def create_fada_playback_session(
         controller = FADAPlaybackController(loaded.policy, device=device_name)
         architecture = loaded.policy.config
         log(f"Loading FADA Planner-IDM checkpoint: {checkpoint}")
+        completed_name = (
+            "completed_steps" if "completed_steps" in loaded.checkpoint else "completed_iterations"
+        )
         log(
             "FADA checkpoint diagnostics: "
-            f"completed_iterations={int(loaded.checkpoint['completed_iterations'])}, "
+            f"{completed_name}={int(loaded.checkpoint[completed_name])}, "
             f"obs_dim={architecture.obs_dim}, action_dim={architecture.action_dim}, "
             f"command_dim={architecture.command_dim}, history={architecture.history_length}, "
             f"horizon={architecture.prediction_horizon}"
@@ -1768,16 +1771,24 @@ def create_fada_playback_session(
         env, device=device_name, policy_obs_mode=policy_obs_mode
     )
     if architecture is not None:
+        from unilab.algos.torch.distill.fada_observation import (
+            raw_observation_dim_for_fada_contract,
+        )
+
         observed_obs_dim = int(wrapped_env.num_obs)
         observed_action_dim = int(env.action_space.shape[0])
+        expected_raw_obs_dim = raw_observation_dim_for_fada_contract(
+            architecture.observation_contract,
+            policy_observation_dim=architecture.obs_dim,
+        )
         if (observed_obs_dim, observed_action_dim) != (
-            architecture.obs_dim,
+            expected_raw_obs_dim,
             architecture.action_dim,
         ):
             wrapped_env.close()
             raise ValueError(
                 "FADA checkpoint/playback IO mismatch: "
-                f"checkpoint=({architecture.obs_dim}, {architecture.action_dim}) "
+                f"checkpoint_raw=({expected_raw_obs_dim}, {architecture.action_dim}) "
                 f"environment=({observed_obs_dim}, {observed_action_dim})"
             )
 

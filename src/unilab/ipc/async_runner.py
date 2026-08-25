@@ -18,6 +18,24 @@ from unilab.ipc.collector_error import (
 _SPAWN_CTX = mp.get_context("spawn")
 
 
+def _enable_collector_faulthandler() -> None:
+    """Dump a Python-level stack on fatal native signals in collector subprocesses.
+
+    Collectors can die inside native code (MuJoCo/CUDA) as a bare signal
+    (e.g. SIGSEGV) with no Python traceback, leaving the parent with only
+    "killed by signal 11". faulthandler prints the faulting thread's Python
+    stack to stderr and then re-raises the default handler, so process
+    termination semantics are unchanged. Best-effort diagnostics only.
+    """
+    try:
+        import faulthandler
+
+        if not faulthandler.is_enabled():
+            faulthandler.enable(all_threads=True)
+    except Exception:  # pragma: no cover - diagnostics must never break collection
+        pass
+
+
 def _collector_entry_wrapper(
     target_fn: Callable,
     error_conn: Any,
@@ -32,6 +50,7 @@ def _collector_entry_wrapper(
     collector 本进程 abort, 以便 core dump 保留真实 collector native 状态.
     """
     label = kwargs.pop("_error_label", "collector")
+    _enable_collector_faulthandler()
     try:
         with collector_error_guard(
             error_conn=error_conn,

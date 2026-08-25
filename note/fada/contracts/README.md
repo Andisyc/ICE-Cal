@@ -4,10 +4,15 @@ Default recall reads only the active contracts listed here.
 
 | Contract | Category | Status | Scope |
 |---|---|---|---|
-| [FADA-METHOD-v005](active/method/FADA-METHOD-v005.md) | method | active | Planner-IDM factorization with exact cold-start and scenario-preserving replay |
-| [FADA-TRAIN-v005](active/training/FADA-TRAIN-v005.md) | training | active | Persistent-async UniLab training with scenario-balanced Planner replay |
+| [FADA-METHOD-v010](active/method/FADA-METHOD-v010.md) | method | active | Paper-ordered IDM pretraining followed by Planner training through a permanently frozen IDM |
+| [FADA-TRAIN-v010](active/training/FADA-TRAIN-v010.md) | training | active / implementation | Two separate persistent-async phases with schema-4 phase identity; launch still requires formal audit and separate authorization |
+| [FADA-ADAPT-METHOD-v002](active/method/FADA-ADAPT-METHOD-v002.md) | method | active | IDM LoRA adaptation from non-leaking v2 target windows |
+| [FADA-ADAPT-TRAIN-v002](active/training/FADA-ADAPT-TRAIN-v002.md) | training | active | v2 target split, LoRA-only optimization, adapted checkpoint, and admission |
 | [FADA-CONTEXT-METHOD-v009](active/method/FADA-CONTEXT-METHOD-v009.md) | method | active | Data-driven task-relevant correction basis, frozen Tracker injection and coefficient readout |
 | [FADA-CONTEXT-TRAIN-v008](active/training/FADA-CONTEXT-TRAIN-v008.md) | training | active | Serial basis discovery, operator freeze, coefficient training and scale evidence |
+
+The base FADA pair is in offline implementation only: training launch still requires a fresh formal
+runtime audit and separate authorization. The active Adapt pair has the same evidence boundary.
 
 The active Context pair is in semantic activation and bounded offline construction. v008/v007
 analytic-axis implementation and review receipts became historical when the data-driven target and

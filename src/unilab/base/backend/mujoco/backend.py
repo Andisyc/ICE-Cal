@@ -893,6 +893,22 @@ class MuJoCoBackend(SimBackend):
         self._physics_state[env_indices] = state_out.astype(self._np_dtype)
         self._sensor_data[env_indices] = sensor_np.astype(self._np_dtype)
 
+    def reset_physics_rows_to_default(self, env_indices: np.ndarray) -> None:
+        """Sanitize the given rows back to each assigned model variant's default state.
+
+        B1: 复用 set_state 原生 reset 通道, qpos=qpos0/qvel=0, 不做任何 domain randomization.
+        """
+
+        indices = np.asarray(env_indices, dtype=np.int64).reshape(-1)
+        if indices.size == 0:
+            return
+        assignments = np.asarray(self._model_assignments, dtype=np.int64)[indices]
+        qpos = np.stack(
+            [self._model_variants[int(variant)].qpos0 for variant in assignments]
+        ).astype(np.float64)
+        qvel = np.zeros((indices.size, self.nv), dtype=np.float64)
+        self.set_state(indices, qpos, qvel)
+
     def get_dr_capabilities(self) -> DomainRandomizationCapabilities:
         return DomainRandomizationCapabilities(
             supported_reset_terms=frozenset(
@@ -927,6 +943,17 @@ class MuJoCoBackend(SimBackend):
         if self._pool is not None:
             raise RuntimeError("MuJoCo backend pool is already materialized")
         self._pool = self._build_pool()
+
+    def close(self) -> None:
+        """Release the native batch pool before removing scene assets."""
+
+        pool = self._pool
+        self._pool = None
+        try:
+            if pool is not None:
+                pool.close()
+        finally:
+            super().close()
 
     def apply_interval_randomization(self, plan: IntervalRandomizationPlan) -> None:
         if plan.is_empty():

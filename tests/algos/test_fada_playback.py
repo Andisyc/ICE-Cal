@@ -96,6 +96,35 @@ def test_fada_playback_controller_owns_history_and_done_reset() -> None:
     torch.testing.assert_close(reset_action_history, torch.zeros(1, 3, 2))
 
 
+def test_fada_playback_projects_raw_g1_actor_observation_for_v2_policy() -> None:
+    config = FADAArchitectureConfig(
+        obs_dim=66,
+        action_dim=29,
+        command_dim=3,
+        observation_contract="g1_fada_state_v2",
+        history_length=2,
+        prediction_horizon=2,
+        hidden_dim=8,
+        num_heads=2,
+        planner_layers=1,
+        idm_encoder_layers=1,
+        idm_decoder_layers=1,
+        feedforward_dim=16,
+    )
+    policy = _RecordingPolicy(config)
+    controller = FADAPlaybackController(policy, device="cpu")
+    raw = torch.arange(98, dtype=torch.float32).unsqueeze(0)
+
+    action = controller.act(raw, torch.tensor([[0.4, 0.0, 0.0]]))
+
+    expected = torch.cat((raw[:, :64], raw[:, 96:98]), dim=1)
+    observed_history, observed_actions, observed_command = policy.calls[0]
+    torch.testing.assert_close(observed_history, expected.unsqueeze(1).repeat(1, 2, 1))
+    torch.testing.assert_close(observed_actions, torch.zeros(1, 2, 29))
+    torch.testing.assert_close(observed_command, torch.tensor([[0.4, 0.0, 0.0]]))
+    assert action.shape == (1, 29)
+
+
 def test_load_fada_policy_checkpoint_reconstructs_strict_inference_policy(tmp_path) -> None:
     config = _small_config()
     policy = FADAPlannerIDMPolicy(config)

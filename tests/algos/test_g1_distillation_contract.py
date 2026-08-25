@@ -4460,6 +4460,45 @@ def test_sac_teacher_checkpoint_loads_with_dim_guard(tmp_path) -> None:
     assert all(param.requires_grad is False for param in teacher.parameters())
 
 
+def test_sac_teacher_checkpoint_reloads_into_one_resident_actor(tmp_path) -> None:
+    from unilab.algos.torch.distill import DistillationTeacherSpec, load_sac_teacher_policy
+    from unilab.algos.torch.distill.teacher import reload_sac_teacher_policy_
+    from unilab.algos.torch.fast_sac.learner import SACActor
+
+    spec = DistillationTeacherSpec(
+        algo_type="sac",
+        obs_dim=5,
+        action_dim=3,
+        actor_hidden_dim=8,
+        use_layer_norm=False,
+    )
+    paths = []
+    for seed in (17, 23):
+        torch.manual_seed(seed)
+        actor = SACActor(
+            obs_dim=5,
+            action_dim=3,
+            hidden_dim=8,
+            use_layer_norm=False,
+            device="cpu",
+        )
+        path = tmp_path / f"teacher-{seed}.pt"
+        torch.save({"actor": actor.state_dict()}, path)
+        paths.append(path)
+
+    resident = load_sac_teacher_policy(paths[0], spec)
+    expected = load_sac_teacher_policy(paths[1], spec)
+    actor_identity = id(resident.actor)
+    parameter_ptrs = tuple(param.data_ptr() for param in resident.actor.parameters())
+    observation = torch.randn(4, 5)
+
+    reload_sac_teacher_policy_(resident, paths[1], spec)
+
+    assert id(resident.actor) == actor_identity
+    assert tuple(param.data_ptr() for param in resident.actor.parameters()) == parameter_ptrs
+    torch.testing.assert_close(resident(observation), expected(observation))
+
+
 def test_sac_teacher_checkpoint_inspector_reports_actor_input_dim(tmp_path) -> None:
     from unilab.algos.torch.distill import inspect_sac_teacher_checkpoint
     from unilab.algos.torch.fast_sac.learner import SACActor

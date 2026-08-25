@@ -3,7 +3,7 @@ contract_id: FADA-CONTEXT-METHOD-v009
 status: active
 effective_date: 2026-08-24
 supersedes: FADA-CONTEXT-METHOD-v008
-prerequisite: FADA-METHOD-v005
+prerequisite: FADA-METHOD-v010
 design_points: ICA-DP-01..07
 scope: data-driven task-relevant execution-mismatch basis, frozen Tracker correction, coefficient readout, and scale calibration
 implementation_status: engineering-proposal

@@ -6,6 +6,7 @@ from typing import Any, Protocol
 import torch
 
 from .fada import FADAArchitectureConfig
+from .fada_observation import project_fada_observation_tensor
 
 
 class FADAPlaybackActionOutput(Protocol):
@@ -27,8 +28,6 @@ class FADAPlaybackPolicy(Protocol):
         action_history: torch.Tensor,
         command: torch.Tensor,
     ) -> FADAPlaybackActionOutput: ...
-
-
 class FADAPlaybackController:
     """Own FADA execution histories and emit one receding-horizon action per query."""
 
@@ -106,6 +105,10 @@ class FADAPlaybackController:
         obs = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
         if obs.ndim == 1:
             obs = obs.unsqueeze(0)
+        obs = project_fada_observation_tensor(
+            obs,
+            observation_contract=self.config.observation_contract,
+        )
         expected_feature_dim = self.config.obs_dim
         if obs.ndim != 2 or obs.shape[1] != expected_feature_dim:
             raise ValueError(

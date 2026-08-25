@@ -697,3 +697,58 @@ class TestRewardSanitization:
         )
 
         env.step(np.zeros((4, 3), dtype=np.float32))
+class TestPhysicsEnvelopeGuard:
+    """Opt-in physics envelope guard: sanitize corrupted rows before the next native step."""
+
+    def _env_with_physics(self, physics: np.ndarray) -> _StubNpEnv:
+        env = _StubNpEnv(num_envs=physics.shape[0])
+        env._backend.get_physics_state = MagicMock(return_value=physics)
+        env._backend.reset_physics_rows_to_default = MagicMock()
+        return env
+
+    def test_guard_disabled_by_default_skips_backend_queries(self):
+        env = _StubNpEnv(num_envs=4)
+        env._backend.get_physics_state = MagicMock()
+        env.step(np.zeros((4, 3), dtype=np.float64))
+        env._backend.get_physics_state.assert_not_called()
+
+    def test_guard_marks_and_sanitizes_extreme_rows(self):
+        physics = np.zeros((4, 6))
+        physics[2, :] = 2.0e4
+        env = self._env_with_physics(physics)
+        env.set_physics_envelope_guard(1.0e4)
+        state = env.step(np.zeros((4, 3), dtype=np.float64))
+        env._backend.reset_physics_rows_to_default.assert_called_once()
+        (indices,), _ = env._backend.reset_physics_rows_to_default.call_args
+        np.testing.assert_array_equal(indices, [2])
+        assert env.physics_guard_trip_count == 1
+        assert bool(state.terminated[2])
+        assert not bool(state.terminated[0])
+
+    def test_guard_catches_nonfinite_rows(self):
+        physics = np.zeros((4, 6))
+        physics[1, 3] = np.nan
+        env = self._env_with_physics(physics)
+        env.set_physics_envelope_guard(1.0e4)
+        state = env.step(np.zeros((4, 3), dtype=np.float64))
+        env._backend.reset_physics_rows_to_default.assert_called_once()
+        (indices,), _ = env._backend.reset_physics_rows_to_default.call_args
+        np.testing.assert_array_equal(indices, [1])
+        assert env.physics_guard_trip_count == 1
+        assert bool(state.terminated[1])
+
+    def test_guard_passes_clean_rows(self):
+        physics = np.full((4, 6), 10.0)
+        env = self._env_with_physics(physics)
+        env.set_physics_envelope_guard(1.0e4)
+        state = env.step(np.zeros((4, 3), dtype=np.float64))
+        env._backend.reset_physics_rows_to_default.assert_not_called()
+        assert env.physics_guard_trip_count == 0
+        assert not np.any(state.terminated)
+
+    def test_guard_rejects_invalid_bound(self):
+        env = _StubNpEnv(num_envs=2)
+        with pytest.raises(ValueError):
+            env.set_physics_envelope_guard(0.0)
+        with pytest.raises(ValueError):
+            env.set_physics_envelope_guard(float("nan"))

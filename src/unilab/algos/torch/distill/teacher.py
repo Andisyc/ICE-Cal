@@ -99,7 +99,8 @@ def inspect_sac_teacher_checkpoint(
 ) -> DistillationTeacherCheckpointInfo:
     """Inspect a SAC teacher checkpoint without constructing the actor."""
 
-    checkpoint = torch.load(Path(checkpoint_path), map_location=device, weights_only=False)
+    del device
+    checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
     actor_state = checkpoint.get("actor") if isinstance(checkpoint, dict) else None
     if not isinstance(actor_state, dict):
         raise ValueError(f"SAC teacher checkpoint does not contain actor: {checkpoint_path}")
@@ -149,7 +150,7 @@ def load_sac_teacher_policy(
         raise ValueError(f"Unsupported distillation teacher algo_type: {spec.algo_type!r}")
 
     validate_sac_teacher_checkpoint_contract(checkpoint_path, spec, device=device)
-    checkpoint = torch.load(Path(checkpoint_path), map_location=device, weights_only=False)
+    checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
     actor_state = checkpoint.get("actor")
     if actor_state is None:
         raise ValueError(f"SAC teacher checkpoint does not contain actor: {checkpoint_path}")
@@ -181,3 +182,56 @@ def load_sac_teacher_policy(
         action_dim=int(spec.action_dim),
         obs_normalizer=obs_normalizer,
     )
+
+
+def reload_sac_teacher_policy_(
+    policy: LoadedTeacherPolicy,
+    checkpoint_path: str | Path,
+    spec: DistillationTeacherSpec,
+) -> None:
+    """Reload one CPU-owned SAC checkpoint into an existing teacher policy."""
+
+    if policy.obs_dim != int(spec.obs_dim) or policy.action_dim != int(spec.action_dim):
+        raise ValueError("resident SAC teacher shape contract does not match the reload spec")
+    checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
+    actor_state = checkpoint.get("actor") if isinstance(checkpoint, dict) else None
+    if not isinstance(actor_state, dict):
+        raise ValueError(f"SAC teacher checkpoint does not contain actor: {checkpoint_path}")
+
+    resident_state = policy.actor.state_dict()
+    if actor_state.keys() != resident_state.keys():
+        missing = sorted(set(resident_state) - set(actor_state))
+        unexpected = sorted(set(actor_state) - set(resident_state))
+        raise ValueError(
+            "SAC teacher checkpoint actor keys do not match the resident actor: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    shape_mismatches = {
+        key: (tuple(actor_state[key].shape), tuple(resident_state[key].shape))
+        for key in resident_state
+        if tuple(actor_state[key].shape) != tuple(resident_state[key].shape)
+    }
+    if shape_mismatches:
+        raise ValueError(
+            "SAC teacher checkpoint actor shapes do not match the resident actor: "
+            f"{shape_mismatches}"
+        )
+
+    normalizer_state = checkpoint.get("obs_normalizer")
+    resident_normalizer = policy.obs_normalizer
+    if (normalizer_state is None) != (resident_normalizer is None):
+        raise ValueError(
+            "SAC teacher checkpoint normalization ownership does not match the resident actor"
+        )
+
+    with policy_load_dim_guard(
+        env_obs_dim=int(spec.obs_dim),
+        env_action_dim=int(spec.action_dim),
+        algo_name="sac_teacher_reload",
+    ):
+        policy.actor.load_state_dict(actor_state, strict=True)
+        if resident_normalizer is not None:
+            if not isinstance(normalizer_state, dict):
+                raise ValueError("SAC teacher checkpoint normalizer state must be a mapping")
+            resident_normalizer.load_state_dict(normalizer_state, strict=True)
+    policy.eval()

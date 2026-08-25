@@ -69,6 +69,8 @@ class NpEnv(ABEnv):
         self._nan_guard: NanGuard | None = None
         self._autoreset = True
         self._nan_guard_dump_model_file = self._resolve_nan_guard_model_file()
+        self._physics_guard_max_abs: float | None = None
+        self._physics_guard_trips = 0
 
     @property
     def cfg(self) -> EnvCfg:
@@ -239,9 +241,17 @@ class NpEnv(ABEnv):
         backend_result = self._backend.step(ctrl, self._cfg.sim_substeps)
         step_core_time = time.perf_counter() - t0
 
+        # B-guard: 原生 step 之后立刻隔离物理包线外的行, 防止腐败状态回流下一步原生调用.
+        blown_indices = self._check_physics_envelope()
+        if blown_indices is not None:
+            self._backend.reset_physics_rows_to_default(blown_indices)
+
         t0 = time.perf_counter()
         self._state = self.update_state(self._state)
         update_state_time = time.perf_counter() - t0
+
+        if blown_indices is not None:
+            self._state.terminated[blown_indices] = True
 
         self._state.info["steps"] += 1
         self.step_counter += 1
@@ -564,6 +574,49 @@ class NpEnv(ABEnv):
     def set_nan_guard(self, guard: "NanGuard") -> None:
         self._nan_guard = guard
 
+    def set_physics_envelope_guard(self, max_abs_state: float | None) -> None:
+        """Opt in to a fail-closed physics-envelope check after every backend step.
+
+        Rows whose physics state becomes non-finite or whose magnitude exceeds
+        ``max_abs_state`` are treated as physically invalid episodes: they are
+        marked terminated and immediately sanitized back to the model default
+        state, so corrupted physics is never fed into the next native step.
+        ``None`` disables the guard (default). Requires the backend to
+        implement ``get_physics_state`` and ``reset_physics_rows_to_default``.
+        """
+        if max_abs_state is None:
+            self._physics_guard_max_abs = None
+            return
+        value = float(max_abs_state)
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"physics envelope bound must be positive finite, got {value}")
+        self._physics_guard_max_abs = value
+
+    @property
+    def physics_guard_trip_count(self) -> int:
+        """Cumulative number of env rows sanitized by the physics envelope guard."""
+
+        return self._physics_guard_trips
+
+    def _check_physics_envelope(self) -> np.ndarray | None:
+        """Return indices of rows violating the physics envelope, or None when clean/disabled."""
+
+        if self._physics_guard_max_abs is None:
+            return None
+        physics = np.asarray(self._backend.get_physics_state())
+        if physics.ndim != 2 or physics.shape[0] != self._num_envs:
+            raise RuntimeError(
+                "physics envelope guard expected a "
+                f"({self._num_envs}, n) physics state, got {physics.shape}"
+            )
+        finite = np.isfinite(physics)
+        safe_abs_max = np.where(finite, np.abs(physics), 0.0).max(axis=1)
+        blown = ~finite.all(axis=1) | (safe_abs_max > self._physics_guard_max_abs)
+        if not np.any(blown):
+            return None
+        self._physics_guard_trips += int(np.count_nonzero(blown))
+        return np.flatnonzero(blown)
+
     def set_autoreset(self, enabled: bool) -> None:
         """Toggle automatic reset of done envs at the end of ``step``.
 
@@ -573,10 +626,9 @@ class NpEnv(ABEnv):
         self._autoreset = bool(enabled)
 
     def close(self) -> None:
-        """Close the environment and release backend-owned scene assets."""
-        cleanup_scene_assets = getattr(self._backend, "cleanup_scene_assets", None)
-        if callable(cleanup_scene_assets):
-            cleanup_scene_assets()
+        """Close the environment through the public backend lifecycle owner."""
+
+        self._backend.close()
 
     def _supports_backend_property(self, name: str) -> bool:
         return hasattr(self._backend, name)

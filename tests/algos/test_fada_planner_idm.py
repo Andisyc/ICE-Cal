@@ -18,6 +18,44 @@ from unilab.algos.torch.distill.fada import (
 )
 
 
+def test_idm_source_loss_selects_one_causal_pair_per_row() -> None:
+    config = _config()
+    idm = FADAInverseDynamicsModel(config)
+    batch = _batch(config, batch_size=4)
+    roles = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    batch = replace(batch, idm_source_role=roles, oracle_shadow_valid=torch.tensor([True, True, True, False]))
+
+    selected = replace(
+        batch,
+        realized_future=batch.realized_future.clone(),
+        executed_action_chunk=batch.executed_action_chunk.clone(),
+        oracle_future=batch.oracle_future.clone(),
+        oracle_action_chunk=batch.oracle_action_chunk.clone(),
+    )
+    selected.realized_future[0] = 11.0
+    selected.executed_action_chunk[0] = 12.0
+    selected.oracle_future[1] = 21.0
+    selected.oracle_action_chunk[1] = 22.0
+    selected.realized_future[2] = 31.0
+    selected.executed_action_chunk[2] = 32.0
+    selected.oracle_future[3] = 41.0
+    selected.oracle_action_chunk[3] = 42.0
+
+    changed_unused = replace(
+        selected,
+        oracle_future=selected.oracle_future.clone(),
+        oracle_action_chunk=selected.oracle_action_chunk.clone(),
+    )
+    changed_unused.oracle_future[0] = -101.0
+    changed_unused.oracle_action_chunk[0] = -102.0
+    changed_unused.oracle_future[2] = -103.0
+    changed_unused.oracle_action_chunk[2] = -104.0
+    changed_unused.oracle_future[3] = -105.0
+    changed_unused.oracle_action_chunk[3] = -106.0
+
+    torch.testing.assert_close(idm_source_loss(idm, selected), idm_source_loss(idm, changed_unused))
+
+
 def _config() -> FADAArchitectureConfig:
     return FADAArchitectureConfig(
         obs_dim=7,
@@ -68,6 +106,7 @@ def _batch(config: FADAArchitectureConfig, *, batch_size: int = 4) -> FADASource
             config.action_dim,
         ),
         oracle_shadow_valid=torch.ones(batch_size, dtype=torch.bool),
+        idm_source_role=torch.zeros(batch_size, dtype=torch.int64),
         oracle_first_action=torch.randn(batch_size, config.action_dim),
         command_scenario=torch.zeros(batch_size, dtype=torch.int64),
         planner_eligible=torch.ones(batch_size, dtype=torch.bool),
@@ -392,7 +431,7 @@ def test_source_losses_route_causal_and_oracle_targets_separately() -> None:
     assert all(parameter.requires_grad for parameter in idm.parameters())
 
 
-def test_idm_source_loss_uses_only_valid_oracle_shadow_rows() -> None:
+def test_idm_source_loss_ignores_oracle_shadow_fields_for_trajectory_rows() -> None:
     config = _config()
     idm = FADAInverseDynamicsModel(config)
     batch = _batch(config)
@@ -405,11 +444,22 @@ def test_idm_source_loss_uses_only_valid_oracle_shadow_rows() -> None:
         invalid,
         oracle_action_chunk=torch.full_like(batch.oracle_action_chunk, -1_000.0),
     )
-    valid = replace(invalid, oracle_shadow_valid=torch.ones_like(batch.oracle_shadow_valid))
-
     invalid_loss = idm_source_loss(idm, invalid)
     torch.testing.assert_close(invalid_loss, idm_source_loss(idm, changed_but_invalid))
-    assert float(idm_source_loss(idm, valid)) > float(invalid_loss)
+
+
+def test_idm_source_loss_uses_only_valid_oracle_shadow_rows() -> None:
+    config = _config()
+    idm = FADAInverseDynamicsModel(config)
+    batch = replace(
+        _batch(config),
+        idm_source_role=torch.ones(4, dtype=torch.int64),
+        oracle_shadow_valid=torch.zeros(4, dtype=torch.bool),
+    )
+    with pytest.raises(ValueError, match="no valid role-selected causal rows"):
+        idm_source_loss(idm, batch)
+    valid = replace(batch, oracle_shadow_valid=torch.ones(4, dtype=torch.bool))
+    assert float(idm_source_loss(idm, valid)) >= 0.0
 
 
 def test_source_batch_rejects_noncausal_shape_mismatch() -> None:
@@ -424,6 +474,7 @@ def test_source_batch_rejects_noncausal_shape_mismatch() -> None:
         oracle_future=batch.oracle_future,
         oracle_action_chunk=batch.oracle_action_chunk,
         oracle_shadow_valid=batch.oracle_shadow_valid,
+        idm_source_role=batch.idm_source_role,
         oracle_first_action=batch.oracle_first_action,
         command_scenario=batch.command_scenario,
         planner_eligible=batch.planner_eligible,
@@ -431,4 +482,13 @@ def test_source_batch_rejects_noncausal_shape_mismatch() -> None:
     )
 
     with pytest.raises(ValueError, match="realized_future shape mismatch"):
+        invalid.validate(config)
+
+
+def test_source_batch_rejects_unknown_idm_source_role() -> None:
+    config = _config()
+    batch = _batch(config)
+    invalid = replace(batch, idm_source_role=torch.full((4,), 9, dtype=torch.int64))
+
+    with pytest.raises(ValueError, match="idm_source_role contains an unknown role id"):
         invalid.validate(config)

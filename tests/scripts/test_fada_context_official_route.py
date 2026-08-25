@@ -25,6 +25,7 @@ from unilab.algos.torch.distill import (
     FADAArchitectureConfig,
     FADAInverseDynamicsModel,
     FADAPlannerIDMPolicy,
+    load_fada_deployable_policy_checkpoint,
     load_fada_policy_checkpoint,
 )
 from unilab.algos.torch.fada_context import support_query_training as context_training
@@ -622,7 +623,7 @@ def _install_playback_external_seams(
 
     def external_deps(root_dir: str | Path) -> dict[str, Any]:
         deps = cast(dict[str, Any], original_default(root_dir))
-        assert deps["load_fada_policy"] is load_fada_policy_checkpoint
+        assert deps["load_fada_policy"] is load_fada_deployable_policy_checkpoint
         deps["create_env"] = create_env
         deps["wrapper_cls"] = create_wrapper
         assert harness.dependency_maps is not None

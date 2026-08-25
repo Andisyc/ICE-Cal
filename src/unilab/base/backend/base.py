@@ -228,6 +228,11 @@ class SimBackend(abc.ABC):
         cleanup_handle.cleanup()
         self._scene_cleanup_handle = None
 
+    def close(self) -> None:
+        """Release backend-owned runtime resources and cold-path assets."""
+
+        self.cleanup_scene_assets()
+
     def __del__(self) -> None:
         try:
             self.cleanup_scene_assets()
@@ -421,6 +426,17 @@ class SimBackend(abc.ABC):
         """Return a physics snapshot suitable for offline playback/video export."""
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support physics-state playback"
+        )
+
+    def reset_physics_rows_to_default(self, env_indices: np.ndarray) -> None:
+        """Reset the given rows to the model default physics state without randomization.
+
+        Runtime guards use this to sanitize corrupted physics rows before the
+        next native step; it deliberately bypasses domain randomization and
+        episode bookkeeping, which remain owned by the env reset path.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support physics row sanitization"
         )
 
     def capture_rollout_state(self) -> Any:

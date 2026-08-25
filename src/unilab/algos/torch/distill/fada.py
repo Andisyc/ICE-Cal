@@ -8,8 +8,18 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from .fada_observation import (
+    FADA_G1_ACTION_DIM,
+    FADA_G1_COMMAND_DIM,
+    FADA_G1_STATE_DIM,
+    FADA_G1_STATE_OBSERVATION_CONTRACT,
+    FADA_LEGACY_OBSERVATION_CONTRACT,
+)
+
 FADA_COMMAND_SCENARIOS = ("walk", "static_stand", "walk_to_stand")
 FADA_SCENARIO_IDS = {name: index for index, name in enumerate(FADA_COMMAND_SCENARIOS)}
+FADA_IDM_SOURCE_ROLES = ("trajectory", "oracle_shadow")
+FADA_IDM_SOURCE_ROLE_IDS = {name: index for index, name in enumerate(FADA_IDM_SOURCE_ROLES)}
 
 
 @dataclass(frozen=True)
@@ -19,6 +29,7 @@ class FADAArchitectureConfig:
     obs_dim: int
     action_dim: int
     command_dim: int
+    observation_contract: str = FADA_LEGACY_OBSERVATION_CONTRACT
     history_length: int = 30
     prediction_horizon: int = 6
     hidden_dim: int = 128
@@ -46,6 +57,23 @@ class FADAArchitectureConfig:
         for name, value in integer_fields.items():
             if int(value) <= 0:
                 raise ValueError(f"{name} must be positive, got {value}")
+        if self.observation_contract not in {
+            FADA_LEGACY_OBSERVATION_CONTRACT,
+            FADA_G1_STATE_OBSERVATION_CONTRACT,
+        }:
+            raise ValueError(
+                f"unsupported FADA observation_contract: {self.observation_contract!r}"
+            )
+        dimensions = (int(self.obs_dim), int(self.action_dim), int(self.command_dim))
+        g1_v2_dimensions = (FADA_G1_STATE_DIM, FADA_G1_ACTION_DIM, FADA_G1_COMMAND_DIM)
+        if self.observation_contract == FADA_G1_STATE_OBSERVATION_CONTRACT:
+            if dimensions != g1_v2_dimensions:
+                raise ValueError(
+                    "g1_fada_state_v2 requires obs/action/command dimensions "
+                    f"{g1_v2_dimensions}, got {dimensions}"
+                )
+        elif dimensions == g1_v2_dimensions:
+            raise ValueError("the 66/29/3 FADA architecture tuple is reserved for g1_fada_state_v2")
         if self.hidden_dim % self.num_heads != 0:
             raise ValueError(
                 "hidden_dim must be divisible by num_heads, "
@@ -76,6 +104,7 @@ class FADASourceBatch:
     oracle_future: torch.Tensor
     oracle_action_chunk: torch.Tensor
     oracle_shadow_valid: torch.Tensor
+    idm_source_role: torch.Tensor
     oracle_first_action: torch.Tensor
     command_scenario: torch.Tensor
     planner_eligible: torch.Tensor
@@ -125,6 +154,16 @@ class FADASourceBatch:
                 f"shape={tuple(self.oracle_shadow_valid.shape)} "
                 f"dtype={self.oracle_shadow_valid.dtype}"
             )
+        if self.idm_source_role.ndim != 1 or self.idm_source_role.dtype != torch.int64:
+            raise ValueError(
+                "idm_source_role must be rank-1 int64, got "
+                f"shape={tuple(self.idm_source_role.shape)} dtype={self.idm_source_role.dtype}"
+            )
+        valid_roles = torch.zeros_like(self.idm_source_role, dtype=torch.bool)
+        for role_id in FADA_IDM_SOURCE_ROLE_IDS.values():
+            valid_roles |= self.idm_source_role == role_id
+        if not bool(valid_roles.all()):
+            raise ValueError("idm_source_role contains an unknown role id")
         _validate_matrix("command", self.command, feature_dim=config.command_dim)
         _validate_matrix(
             "oracle_first_action",
@@ -145,6 +184,7 @@ class FADASourceBatch:
             self.oracle_future,
             self.oracle_action_chunk,
             self.oracle_shadow_valid,
+            self.idm_source_role,
             self.oracle_first_action,
             self.command_scenario,
             self.planner_eligible,
@@ -176,9 +216,11 @@ def _validate_row_identity(
         valid_ids |= command_scenario == scenario_id
     if not bool(valid_ids.all()):
         raise ValueError("command_scenario contains an unknown scenario id")
-    static_id = FADA_SCENARIO_IDS["static_stand"]
-    if bool((cold_start & (command_scenario != static_id)).any()):
-        raise ValueError("cold_start rows must belong to static_stand")
+    cold_start_owner = (command_scenario == FADA_SCENARIO_IDS["walk"]) | (
+        command_scenario == FADA_SCENARIO_IDS["static_stand"]
+    )
+    if bool((cold_start & ~cold_start_owner).any()):
+        raise ValueError("cold_start rows must belong to walk or static_stand")
     if bool((cold_start & ~planner_eligible).any()):
         raise ValueError("cold_start rows must be Planner eligible")
 
@@ -442,30 +484,30 @@ def idm_source_loss(
     idm: FADAInverseDynamicsModel,
     batch: FADASourceBatch,
 ) -> torch.Tensor:
-    """Train IDM from realized and valid final-Oracle-shadow causal pairs."""
+    """Train IDM from one role-selected causal pair per source row."""
 
     # B1: 先关闭 shape/finite/row mismatch, 确认 causal window 可作为 IDM 证据.
     batch.validate(idm.config)
-    # B2: trajectory-source 始终进入 Eq. 4.2, 产出 realized causal first-action rows.
-    trajectory_predicted = idm(
-        batch.observation_history,
-        batch.action_history,
-        batch.realized_future,
+    trajectory = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["trajectory"]
+    oracle_shadow = (
+        (batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"])
+        & batch.oracle_shadow_valid
     )
-    predicted_first = [trajectory_predicted[:, 0]]
-    target_first = [batch.executed_action_chunk[:, 0]]
-
-    # B3: 仅将完整 snapshot rollout 的 valid Oracle-shadow rows 合入同一 IDM 均值损失.
-    valid = batch.oracle_shadow_valid
-    if bool(valid.any()):
-        oracle_predicted = idm(
-            batch.observation_history[valid],
-            batch.action_history[valid],
-            batch.oracle_future[valid],
-        )
-        predicted_first.append(oracle_predicted[:, 0])
-        target_first.append(batch.oracle_action_chunk[valid, 0])
-    return F.mse_loss(torch.cat(predicted_first, dim=0), torch.cat(target_first, dim=0))
+    selected = trajectory | oracle_shadow
+    if not bool(selected.any()):
+        raise ValueError("IDM source batch contains no valid role-selected causal rows")
+    future = torch.where(
+        oracle_shadow[:, None, None], batch.oracle_future, batch.realized_future
+    )
+    target = torch.where(
+        oracle_shadow[:, None, None], batch.oracle_action_chunk, batch.executed_action_chunk
+    )
+    predicted = idm(
+        batch.observation_history[selected],
+        batch.action_history[selected],
+        future[selected],
+    )
+    return F.mse_loss(predicted[:, 0], target[selected, 0])
 
 
 @contextmanager

@@ -7,7 +7,6 @@ assembles the configured entrypoint routes.
 from __future__ import annotations
 
 import json
-import math
 import os
 import sys
 import time
@@ -25,20 +24,10 @@ from omegaconf import DictConfig, OmegaConf
 from unilab.algos.torch.distill import (
     COLLECTOR_REQUEST_STAGE_NAMES,
     DISTILLATION_METRICS_SCHEMA_VERSION,
-    FADA_ASYNC_SCENARIO,
-    FADA_SCENARIO_IDS,
-    LEGACY_REQUEST_STAGE_NAMES,
     BehaviorDistillationTrainer,
     DistillationPerformanceRunContext,
     DistillationStageObservation,
     DistillationTeacherSpec,
-    FADAArchitectureConfig,
-    FADACollectionSpec,
-    FADAPaperSourcePlan,
-    FADAPlannerIDMPolicy,
-    FADAReplayBuffer,
-    FADASourceBatch,
-    FADATrainer,
     MLPStudentPolicy,
     MoEStudentPolicy,
     RoleArtifactSpec,
@@ -47,24 +36,17 @@ from unilab.algos.torch.distill import (
     WorkflowScenarioSpec,
     WorkflowStudentUpdateResult,
     adopt_legacy_role_artifact,
-    allocate_fada_command_scenarios,
-    build_fada_paper_source_plan,
     build_multitask_distillation_dataset,
     build_persistent_fada_runtime,
     collect_distillation_dataset_from_env,
-    collect_fada_source_windows,
     collect_transition_distillation_dataset_from_env,
     config_fingerprint,
-    evaluate_fada_source_batch,
     file_sha256,
     finalize_workflow_performance,
     fork_workflow_run,
     load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
-    load_fada_checkpoint,
-    load_fada_policy_checkpoint,
-    load_fada_source_batch,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
     required_balanced_replay_updates,
@@ -75,19 +57,10 @@ from unilab.algos.torch.distill import (
     run_multirole_dagger_workflow,
     run_offline_distillation_updates,
     save_distillation_dataset,
-    save_fada_checkpoint,
     validate_sac_teacher_checkpoint_contract,
 )
-from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.fada_workflow import (
     FADAWorkflowDependencies,
-    _fada_execution_mode,
-    _fada_quality_batch,
-    _fada_v005_replay_settings,
-    _paper_source_plan,
-    _require_fada_curriculum_artifact,
-    _slice_fada_batch,
-    build_fada_architecture_config,
     run_fada_training_owner,
 )
 from unilab.algos.torch.distill.g1_persistent_worker import (

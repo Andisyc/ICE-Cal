@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import queue
+import threading
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ from unilab.algos.torch.distill.async_runtime import (
     DaggerCollectRequest,
     DaggerCollectResult,
     PersistentDaggerCollectorRunner,
+    _persistent_dagger_collector_entry,
 )
 
 
@@ -38,6 +41,18 @@ class _FakeCollectorService:
 
 def _build_fake_collector_service(*, rows_per_request: int = 7):
     return _FakeCollectorService(rows_per_request=rows_per_request)
+
+
+class _CollectAndCloseFailureService(_FakeCollectorService):
+    def collect(self, request: DaggerCollectRequest) -> DaggerCollectResult:
+        raise ValueError("primary collect failure")
+
+    def close(self) -> None:
+        raise RuntimeError("secondary cleanup failure")
+
+
+def _build_collect_and_close_failure_service() -> _CollectAndCloseFailureService:
+    return _CollectAndCloseFailureService()
 
 
 def _request(tmp_path: Path, *, request_id: str, scenario: str = "walk_flat"):
@@ -77,6 +92,20 @@ def test_persistent_runner_propagates_worker_exception_with_async_runner_diagnos
             runner.collect(_request(tmp_path, request_id="req-boom", scenario="explode"))
     finally:
         runner.close()
+
+
+def test_persistent_runner_preserves_collect_failure_when_cleanup_also_fails(tmp_path):
+    request_queue: queue.Queue[object] = queue.Queue()
+    request_queue.put(_request(tmp_path, request_id="req-primary-failure"))
+
+    with pytest.raises(ValueError, match="primary collect failure"):
+        _persistent_dagger_collector_entry(
+            stop_event=threading.Event(),
+            request_queue=request_queue,
+            result_queue=queue.Queue(),
+            worker_factory=_build_collect_and_close_failure_service,
+            worker_kwargs={},
+        )
 
 
 def test_persistent_runner_fails_closed_on_result_weight_version_mismatch(tmp_path):

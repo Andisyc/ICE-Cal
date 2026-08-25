@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from .data import DistillationTensorDataset, build_distillation_dataset
+from .fada_observation import FADA_G1_STATE_OBSERVATION_CONTRACT, project_fada_g1_state
 from .performance import (
     DISTILLATION_METRICS_SCHEMA_VERSION,
     DistillationStageObservationAccumulator,
@@ -181,6 +182,10 @@ def project_student_obs(
     source_obs = np.asarray(source_obs, dtype=np.float32)
     if projection == "identity":
         student_obs = source_obs
+    elif projection == FADA_G1_STATE_OBSERVATION_CONTRACT:
+        if student_drop_index is not None:
+            raise ValueError("g1_fada_state_v2 does not accept student_drop_index")
+        student_obs = project_fada_g1_state(source_obs)
     elif projection == "drop_index":
         if student_drop_index is None:
             raise ValueError("student_drop_index is required when student_projection='drop_index'")

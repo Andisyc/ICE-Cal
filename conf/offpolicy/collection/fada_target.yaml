@@ -1,0 +1,16 @@
+policy_checkpoint_path: logs/fada/planner_idm_v006_state66.pt
+expected_checkpoint_sha256: null
+output_path: artifacts/fada_target/g1_walk_flat_mujoco_left_knee_090_v2.pt
+overwrite: false
+
+num_envs: 1
+num_windows: 4096
+max_env_steps: 100000
+device: cpu
+
+observation_key: obs
+student_projection: g1_fada_state_v2
+student_drop_index: null
+command_info_keys: [commands]
+
+fault_profile: left_knee_strength_0.9

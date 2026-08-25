@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
+import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, cast
@@ -106,6 +108,7 @@ def _persistent_dagger_collector_entry(
     """Spawn-safe service loop; exceptions escape to AsyncRunner's guard."""
 
     service = worker_factory(**dict(worker_kwargs))
+    collect_error: BaseException | None = None
     try:
         while not stop_event.is_set():
             try:
@@ -115,8 +118,22 @@ def _persistent_dagger_collector_entry(
             if request is None:
                 break
             result_queue.put(service.collect(request))
+    except BaseException as exc:
+        collect_error = exc
+        raise
     finally:
-        service.close()
+        try:
+            service.close()
+        except BaseException as cleanup_error:
+            if collect_error is None:
+                raise
+            print(
+                "[persistent DAgger collector] cleanup failed while preserving "
+                "the primary collection failure:",
+                file=sys.stderr,
+                flush=True,
+            )
+            traceback.print_exception(cleanup_error, file=sys.stderr)
 
 
 class PersistentDaggerCollectorRunner(AsyncRunner):
