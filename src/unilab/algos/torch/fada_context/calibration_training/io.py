@@ -12,17 +12,15 @@ from typing import Any, Literal
 import torch
 
 from unilab.algos.torch.distill.fada import FADAPlannerIDMPolicy
-from unilab.algos.torch.fada_context.calibration import (
-    CALIBRATION_METHOD_CONTRACT_ID,
-    CALIBRATION_TRAINING_CONTRACT_ID,
-    CalibrationAxisSpec,
+from unilab.algos.torch.fada_context.calibration_artifact import (
+    save_calibration_artifact,
+    validate_finite_state_tree,
+)
+from unilab.algos.torch.fada_context.calibration_models import (
     CoefficientEncoder,
     DirectionBank,
-    MonotoneScaleCurve,
-    _validate_finite_state_tree,
-    _validate_scale_curve_payload,
-    save_calibration_artifact,
 )
+from unilab.algos.torch.fada_context.calibration_readout import MonotoneScaleCurve
 from unilab.algos.torch.fada_context.calibration_training.types import (
     _COEFFICIENT_ERROR_LIMIT,
     _COEFFICIENT_STAGE,
@@ -30,6 +28,11 @@ from unilab.algos.torch.fada_context.calibration_training.types import (
     _DIRECTION_STAGE,
     _IDENTITY_FIELDS,
     CalibrationStageIdentity,
+)
+from unilab.algos.torch.fada_context.calibration_types import (
+    CALIBRATION_METHOD_CONTRACT_ID,
+    CALIBRATION_TRAINING_CONTRACT_ID,
+    CalibrationAxisSpec,
 )
 
 CALIBRATION_STAGE_ARTIFACT_SCHEMA = "unilab_fada_calibration_stage_artifact_v3"
@@ -329,7 +332,7 @@ def _validate_common_stage_envelope(
         raise ValueError("calibration stage artifact gate is missing")
     if not isinstance(payload.get("owners"), Mapping):
         raise ValueError("calibration stage artifact owners are missing")
-    _validate_finite_state_tree("calibration stage artifact", payload)
+    validate_finite_state_tree("calibration stage artifact", payload)
     return payload
 
 
