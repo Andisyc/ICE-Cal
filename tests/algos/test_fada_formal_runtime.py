@@ -208,6 +208,7 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
         standing
     )
     assert result["execution_mode"] == "persistent_async"
+    assert result["training_phase"] == "idm_pretrain"
     assert result["completed_iterations"] == 3
     assert result["samples_seen"] == 108
     assert result["replay_size"] == 96
@@ -218,11 +219,19 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
     }
     assert len(runtime.activations) == 3
     assert runtime.close_count == 1
+    assert result["last_idm_loss"] is not None
+    assert result["last_planner_loss"] is None
 
     restored_policy = FADAPlannerIDMPolicy(architecture)
     checkpoint = Path(cfg.training.fada.checkpoint_path)
     payload = load_fada_checkpoint(checkpoint, restored_policy)
     assert payload["schema_version"] == FADA_CHECKPOINT_SCHEMA_VERSION == 4
+    assert payload["training_phase"] == "idm_pretrain"
+    assert payload["phase_completed"] is True
+    assert payload["optimizer_owner"] == "idm"
+    assert "optimizer_state_dict" in payload
+    assert "idm_optimizer_state_dict" not in payload
+    assert "planner_optimizer_state_dict" not in payload
     assert payload["completed_iterations"] == 3
     assert payload["samples_seen"] == 108
     action = restored_policy.explore(

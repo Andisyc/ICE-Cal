@@ -13,6 +13,7 @@ UniLab 是一个 **高性能、模块化、contract 驱动** 的 RL infrastructu
 5. **Evidence only**: support claim 只写仓库里已有的注册、配置、测试或 benchmark 事实。
 6. **Validate near risk**: 在最接近风险的边界补验证，不只跑顶层命令。
 7. **Cold-path asset access only**: asset/XML/model metadata 只允许在 init / materialization / cache 等低频路径处理；热路径不能解析 asset，也不能靠 `getattr` / `hasattr` 探测 backend 私有能力。
+8. **Branch discipline**: 绝对不在未经用户明确请示/批准的情况下新建分支（`git branch` / `git switch -c` / `git checkout -b`）。确有需要时先说明理由并等待批准。
 
 ## High-Risk Areas
 
