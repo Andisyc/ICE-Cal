@@ -45,6 +45,7 @@ def build_actor(
             priv_info_embed_dim=priv_info_embed_dim,
             priv_mlp_hidden_dims=tuple(priv_mlp_hidden_dims),
             use_layer_norm=use_layer_norm,
+            priv_info_normalization=bool(kwargs.get("priv_info_normalization", False)),
             device=device,
         )
     if algo_type == "privileged_residual_sac":

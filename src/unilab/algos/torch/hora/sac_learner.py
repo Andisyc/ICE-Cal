@@ -6,8 +6,10 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 
+from unilab.algos.torch.common.normalization import EmpiricalNormalization
 from unilab.algos.torch.fast_sac.learner import FastSACLearner
 from unilab.algos.torch.hora.sac_models import HoraSACActor
 
@@ -47,6 +49,8 @@ class HoraSACLearner(FastSACLearner):
         log_std_min: float = -5.0,
         use_tanh: bool = True,
         use_layer_norm: bool = True,
+        obs_normalization: bool = False,
+        priv_info_normalization: bool = False,
         actor_lr: float = 3e-4,
         weight_decay: float = 0.001,
         use_symmetry: bool = False,
@@ -75,6 +79,11 @@ class HoraSACLearner(FastSACLearner):
             **kwargs,
         )
         self.priv_info_dim = int(priv_info_dim)
+        self.obs_normalizer: EmpiricalNormalization | nn.Identity
+        if obs_normalization:
+            self.obs_normalizer = EmpiricalNormalization(shape=obs_dim, device=device)
+        else:
+            self.obs_normalizer = nn.Identity()
         self.actor = HoraSACActor(
             obs_dim=obs_dim,
             priv_info_dim=self.priv_info_dim,
@@ -86,6 +95,7 @@ class HoraSACLearner(FastSACLearner):
             log_std_min=log_std_min,
             use_tanh=use_tanh,
             use_layer_norm=use_layer_norm,
+            priv_info_normalization=priv_info_normalization,
             device=device,
         )
         _fused = isinstance(device, str) and device.startswith("cuda")
@@ -96,6 +106,72 @@ class HoraSACLearner(FastSACLearner):
             fused=_fused,
             betas=(0.9, 0.95),
         )
+
+    def _normalize_actor_batch(
+        self,
+        batch: dict[str, torch.Tensor],
+        *,
+        update: bool,
+        include_next: bool,
+    ) -> dict[str, torch.Tensor]:
+        if isinstance(self.obs_normalizer, nn.Identity):
+            return batch
+        normalized = dict(batch)
+        obs = batch["obs"]
+        if include_next:
+            next_obs = batch["next_obs"]
+            combined = torch.cat([obs, next_obs], dim=0)
+            current, following = self.obs_normalizer(combined, update=update).split(
+                (obs.shape[0], next_obs.shape[0]), dim=0
+            )
+            normalized["obs"] = current
+            normalized["next_obs"] = following
+        else:
+            normalized["obs"] = self.obs_normalizer(obs, update=update)
+        return normalized
+
+    def update_critic(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+        actor = cast(HoraSACActor, self.actor)
+        actor.update_privileged_normalizer(
+            torch.cat(
+                [
+                    derive_priv_info_from_critic_obs(
+                        batch["obs"], batch["critic"], context="normalizer update"
+                    ),
+                    derive_priv_info_from_critic_obs(
+                        batch["next_obs"],
+                        batch["next_critic"],
+                        context="normalizer update",
+                    ),
+                ],
+                dim=0,
+            )
+        )
+        return super().update_critic(
+            self._normalize_actor_batch(batch, update=True, include_next=True)
+        )
+
+    def update_actor(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+        return super().update_actor(
+            self._normalize_actor_batch(batch, update=False, include_next=False)
+        )
+
+    def get_state_dict(self) -> dict[str, Any]:
+        state = super().get_state_dict()
+        if isinstance(self.obs_normalizer, EmpiricalNormalization):
+            state["obs_normalizer"] = self.obs_normalizer.state_dict()
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        normalizer_state: dict[str, Any] | None = None
+        if isinstance(self.obs_normalizer, EmpiricalNormalization):
+            candidate = state_dict.get("obs_normalizer")
+            if not isinstance(candidate, dict):
+                raise ValueError("HORA-SAC checkpoint is missing obs_normalizer state")
+            normalizer_state = candidate
+        super().load_state_dict(state_dict)
+        if normalizer_state is not None:
+            self.obs_normalizer.load_state_dict(normalizer_state)
 
     def _get_actions_and_log_probs_for_critic(
         self,

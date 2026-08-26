@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - /g1_walk_stage: mixed_mode
+  - /task/sac/g1_walk_flat/mujoco
   - _self_
 
 training:
@@ -18,31 +18,39 @@ algo:
   save_interval: 240
   updates_per_step: 8
   use_symmetry: false
+  gamma: 0.99
+  value_support_min: -30.0
+  value_support_max: 30.0
+  obs_normalization: true
   actor:
     oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
     priv_info_embed_dim: 32
     priv_mlp_hidden_dims: [256, 128, 32]
+    priv_info_normalization: true
   algo_params:
     alpha_init: 0.001
     target_entropy_ratio: 0.0
 env:
+  ctrl_dt: 0.02
   # Command already exposes stand/walk intent; keep the v012 actor at 98D.
   mode_observation: false
   fada_privileged_observation:
     enabled: true
     schema: g1_fada_privileged_v1
   commands:
-    # Zero command is an ordinary sample of this single locomotion task.
-    # Low-speed commands remain walking samples rather than a separate role.
+    # Zero command is an ordinary atom in the locomotion command distribution.
     rel_standing_envs: 0.3
     rel_transition_envs: 0.0
     small_xy_threshold: 0.0
+    vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
+    resampling_time: 0.0
+    heading_command: false
   control_config:
     action_scale: 1.0
   gait_phase_init_mode: offset_phase
   reset_base_qvel_limit: 0.5
   curriculum:
-    enabled: true
+    enabled: false
     initial_scale: 0.5
     min_scale: 0.5
     max_scale: 1.0
@@ -89,8 +97,6 @@ reward:
     pose: -0.5
     penalty_feet_ori: -20.0
     feet_phase: 0.0
-    feet_phase_contrast: 0.0
-    feet_phase_contact: 0.0
     alive: 10.0
   tracking_sigma: 0.25
   base_height_target: 0.754
@@ -100,9 +106,4 @@ reward:
   feet_phase_swing_height: 0.09
   feet_phase_tracking_sigma: 0.04
   close_feet_threshold: 0.15
-  gait_constraint:
-    # Reuse the proven zero-command phase freeze without assigning gait credit.
-    enabled: true
-    freeze_phase_in_stand_mode: true
-    penalty_scale: 0.0
   pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

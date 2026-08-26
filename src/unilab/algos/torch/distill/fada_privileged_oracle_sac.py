@@ -71,6 +71,9 @@ class FADAPrivilegedSACLearner(HoraSACLearner):
 
 
 def _object_items(value: Any) -> dict[str, Any]:
+    if OmegaConf.is_config(value):
+        resolved = OmegaConf.to_container(value, resolve=True)
+        return dict(resolved) if isinstance(resolved, dict) else {}
     if isinstance(value, dict):
         return dict(value)
     try:
@@ -96,6 +99,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             "priv_mlp_hidden_dims": tuple(
                 self.actor_cfg.get("priv_mlp_hidden_dims", (256, 128, 32))
             ),
+            "priv_info_normalization": bool(self.actor_cfg.get("priv_info_normalization", True)),
             "oracle_lineage_id": str(self.actor_cfg.get("oracle_lineage_id", "")),
             "privileged_schema": FADA_PRIVILEGED_SCHEMA,
         }
@@ -110,6 +114,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         action_dim: int,
     ) -> dict[str, Any]:
         kwargs = self.build_model_kwargs(obs_dim=obs_dim, critic_obs_dim=critic_obs_dim)
+        kwargs["obs_normalization"] = bool(cfg.algo.obs_normalization)
+        kwargs["v_min"] = float(cfg.algo.value_support_min)
+        kwargs["v_max"] = float(cfg.algo.value_support_max)
         layout_identity = env.get_fada_privileged_checkpoint_identity()
 
         def resolved(value: Any) -> Any:
@@ -173,6 +180,16 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             raise ValueError("privileged_locomotion_sac requires save_interval=240")
         if bool(getattr(cfg.algo, "use_symmetry", True)):
             raise ValueError("privileged_locomotion_sac requires use_symmetry=false")
+        if float(getattr(cfg.algo, "gamma", 0.0)) != 0.99:
+            raise ValueError("privileged_locomotion_sac requires gamma=0.99")
+        value_support = (
+            float(getattr(cfg.algo, "value_support_min", 0.0)),
+            float(getattr(cfg.algo, "value_support_max", 0.0)),
+        )
+        if value_support != (-30.0, 30.0):
+            raise ValueError("privileged_locomotion_sac requires value support [-30, 30]")
+        if not bool(getattr(cfg.algo, "obs_normalization", False)):
+            raise ValueError("privileged_locomotion_sac requires observation normalization")
         actor_cfg = getattr(cfg.algo, "actor", None)
         lineage_id = (
             actor_cfg.get("oracle_lineage_id", "")
@@ -181,12 +198,35 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         )
         if not str(lineage_id).strip() or str(lineage_id) == "REQUIRED":
             raise ValueError("privileged_locomotion_sac requires actor.oracle_lineage_id")
+        actor_items = _object_items(actor_cfg)
+        if not bool(actor_items.get("priv_info_normalization", False)):
+            raise ValueError("privileged_locomotion_sac requires privileged normalization")
         privileged_cfg = getattr(cfg.env, "fada_privileged_observation", None)
         if privileged_cfg is None or not bool(getattr(privileged_cfg, "enabled", False)):
             raise ValueError("g1_fada_privileged_v1 observation must be enabled")
         if getattr(privileged_cfg, "schema", None) != FADA_PRIVILEGED_SCHEMA:
             raise ValueError("g1_fada_privileged_v1 schema mismatch")
+        if bool(getattr(cfg.env, "mode_observation", False)):
+            raise ValueError("privileged_locomotion_sac forbids mode observation")
+        commands_cfg = getattr(cfg.env, "commands", None)
+        if float(getattr(cfg.env, "ctrl_dt", 0.0)) != 0.02:
+            raise ValueError("privileged_locomotion_sac requires ctrl_dt=0.02")
+        if float(getattr(commands_cfg, "rel_transition_envs", 0.0)) != 0.0:
+            raise ValueError("privileged_locomotion_sac forbids transition-mode samples")
+        if float(getattr(commands_cfg, "resampling_time", -1.0)) != 0.0:
+            raise ValueError("privileged_locomotion_sac forbids command resampling")
+        if bool(getattr(commands_cfg, "heading_command", True)):
+            raise ValueError("privileged_locomotion_sac forbids heading command mode")
+        vel_limit = getattr(commands_cfg, "vel_limit", None)
+        if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
+            raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
+        curriculum_cfg = getattr(cfg.env, "curriculum", None)
+        if bool(getattr(curriculum_cfg, "enabled", True)):
+            raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
         validate_no_gait_reward(_object_items(cfg.reward.scales))
+        reward_mode = getattr(cfg.reward, "mode", None)
+        if bool(getattr(reward_mode, "enabled", False)):
+            raise ValueError("privileged_locomotion_sac forbids reward.mode")
         gait_constraint = getattr(cfg.reward, "gait_constraint", None)
         penalty_scale = (
             gait_constraint.get("penalty_scale", 0.0)
@@ -194,9 +234,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             else getattr(gait_constraint, "penalty_scale", 0.0)
         )
         if float(penalty_scale) != 0.0:
-            raise ValueError(
-                "privileged_locomotion_sac requires gait constraint penalty_scale=0"
-            )
+            raise ValueError("privileged_locomotion_sac requires gait constraint penalty_scale=0")
+        if bool(getattr(gait_constraint, "enabled", False)):
+            raise ValueError("privileged_locomotion_sac forbids gait constraint mode")
 
 
 def resolve_privileged_locomotion_sac_runtime(

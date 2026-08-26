@@ -8,6 +8,8 @@ from typing import Tuple, cast
 import torch
 import torch.nn as nn
 
+from unilab.algos.torch.common.normalization import EmpiricalNormalization
+
 
 def _build_mlp(
     input_dim: int,
@@ -53,6 +55,7 @@ class HoraSACActor(nn.Module):
         log_std_min: float = -5.0,
         use_tanh: bool = True,
         use_layer_norm: bool = True,
+        priv_info_normalization: bool = False,
         device: str | torch.device = "cpu",
         action_scale: torch.Tensor | None = None,
         action_bias: torch.Tensor | None = None,
@@ -65,6 +68,14 @@ class HoraSACActor(nn.Module):
         self.log_std_max = float(log_std_max)
         self.log_std_min = float(log_std_min)
         self.use_tanh = bool(use_tanh)
+
+        self.priv_info_normalizer: EmpiricalNormalization | nn.Identity
+        if priv_info_normalization:
+            self.priv_info_normalizer = EmpiricalNormalization(
+                shape=self.priv_info_dim, device=device
+            )
+        else:
+            self.priv_info_normalizer = nn.Identity()
 
         self.priv_encoder, priv_out_dim = _build_mlp(
             self.priv_info_dim,
@@ -108,8 +119,17 @@ class HoraSACActor(nn.Module):
             self.register_buffer("action_bias", torch.zeros(self.action_dim, device=device))
 
     def encode_privileged_info(self, priv_info: torch.Tensor) -> torch.Tensor:
-        encoded = self.priv_encoder(priv_info)
+        normalized = (
+            self.priv_info_normalizer(priv_info, update=False)
+            if isinstance(self.priv_info_normalizer, EmpiricalNormalization)
+            else priv_info
+        )
+        encoded = self.priv_encoder(normalized)
         return torch.tanh(self.priv_projection(encoded))
+
+    def update_privileged_normalizer(self, priv_info: torch.Tensor) -> None:
+        if isinstance(self.priv_info_normalizer, EmpiricalNormalization):
+            self.priv_info_normalizer(priv_info, update=True)
 
     def _distribution_params(
         self,
