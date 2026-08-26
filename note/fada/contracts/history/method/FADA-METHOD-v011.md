@@ -1,9 +1,10 @@
 ---
 contract_id: FADA-METHOD-v011
-status: active
+status: superseded
 effective_date: 2026-08-26
 supersedes: FADA-METHOD-v010
-scope: unified-Oracle alternating Planner-IDM training
+superseded_by: FADA-METHOD-v012
+scope: historical unified-Oracle alternating Planner-IDM training
 ---
 
 # FADA Planner-IDM Method Contract v011

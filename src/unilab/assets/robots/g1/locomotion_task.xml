@@ -8,6 +8,8 @@
     <contact name="right_foot_contact_1" geom1="floor" geom2="right_foot_contact_1_geom" data="found" num="1" reduce="mindist"/>
     <contact name="right_foot_contact_2" geom1="floor" geom2="right_foot_contact_2_geom" data="found" num="1" reduce="mindist"/>
     <contact name="right_foot_contact_3" geom1="floor" geom2="right_foot_contact_3_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="left_foot_net_contact" geom1="floor" body2="left_ankle_roll_link" data="found force" num="1" reduce="netforce"/>
+    <contact name="right_foot_net_contact" geom1="floor" body2="right_ankle_roll_link" data="found force" num="1" reduce="netforce"/>
 
     <framelinvel objtype="site" objname="left_foot" name="left_foot_linvel"/>
     <framelinvel objtype="site" objname="right_foot" name="right_foot_linvel"/>

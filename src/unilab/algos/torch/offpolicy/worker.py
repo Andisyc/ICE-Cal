@@ -33,6 +33,7 @@ COLLECTOR_TIMING_KEYS = (
 def offpolicy_actor_requires_priv_info(algo_type: str) -> bool:
     return algo_type in {
         "hora_sac",
+        "privileged_locomotion_sac",
         "privileged_residual_sac",
         "privileged_full_action_sac",
     }
@@ -94,7 +95,7 @@ def resolve_offpolicy_actor_priv_info(
     if not offpolicy_actor_requires_priv_info(algo_type):
         return None
 
-    if algo_type == "hora_sac":
+    if algo_type in {"hora_sac", "privileged_locomotion_sac"}:
         from unilab.algos.torch.hora.observations import split_hora_obs_with_priv_info
 
         _, _, priv_info_np = split_hora_obs_with_priv_info(

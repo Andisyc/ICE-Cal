@@ -1,0 +1,91 @@
+# @package _global_
+training:
+  task_name: G1WalkFlat
+  sim_backend: mujoco
+interactive:
+  action_mode: policy
+  keyboard: true
+algo:
+  runtime_impl: privileged_locomotion_sac
+  runtime_resolver: unilab.algos.torch.distill.fada_privileged_oracle_sac:resolve_privileged_locomotion_sac_runtime
+  num_envs: 2048
+  learning_starts: 10
+  max_iterations: 5000
+  save_interval: 240
+  updates_per_step: 8
+  use_symmetry: false
+  actor:
+    oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
+    priv_info_embed_dim: 32
+    priv_mlp_hidden_dims: [256, 128, 32]
+  algo_params:
+    alpha_init: 0.001
+    target_entropy_ratio: 0.0
+env:
+  fada_privileged_observation:
+    enabled: true
+    schema: g1_fada_privileged_v1
+  commands:
+    small_xy_threshold: 0.0
+  control_config:
+    action_scale: 1.0
+  gait_phase_init_mode: offset_phase
+  reset_base_qvel_limit: 0.5
+  curriculum:
+    enabled: true
+    initial_scale: 0.5
+    min_scale: 0.5
+    max_scale: 1.0
+    level_down_threshold: 150.0
+    level_up_threshold: 750.0
+    degree: 0.001
+  noise_config:
+    level: 1.0
+    scale_gyro: 0.0
+    scale_gravity: 0.0
+    scale_joint_angle: 0.01
+    scale_joint_vel: 0.1
+    scale_linvel: 0.0
+  domain_rand:
+    randomize_ground_friction: true
+    ground_friction_multiplier_range: [0.1, 2.0]
+    random_com: true
+    com_offset_x: [-0.1, 0.1]
+    com_offset_y: [-0.1, 0.1]
+    com_offset_z: [-0.1, 0.1]
+    randomize_base_mass: true
+    added_mass_range: [-3.0, 6.0]
+    randomize_body_mass: true
+    body_mass_multiplier_range: [0.8, 1.3]
+    randomize_kp: true
+    kp_multiplier_range: [0.8, 1.2]
+    randomize_kd: true
+    kd_multiplier_range: [0.8, 1.2]
+    randomize_dof_position_bias: true
+    dof_position_bias_range: [-0.025, 0.025]
+    torque_rfi_fraction: 0.05
+    randomize_control_delay: true
+    push_robots: true
+    fada_push_interval_seconds: 7.5
+    fada_max_push_velocity: 0.8
+    push_body_name: pelvis
+reward:
+  scales:
+    tracking_lin_vel: 2.0
+    tracking_ang_vel: 1.5
+    penalty_ang_vel_xy: -1.0
+    penalty_orientation: -10.0
+    penalty_action_rate: -4.0
+    pose: -0.5
+    penalty_feet_ori: -20.0
+    feet_phase: 0.0
+    alive: 10.0
+  tracking_sigma: 0.25
+  base_height_target: 0.754
+  min_base_height: 0.3
+  max_tilt_deg: 65.0
+  gait_frequency: 1.5
+  feet_phase_swing_height: 0.09
+  feet_phase_tracking_sigma: 0.04
+  close_feet_threshold: 0.15
+  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

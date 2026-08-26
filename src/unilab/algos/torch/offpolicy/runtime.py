@@ -25,6 +25,24 @@ class OffPolicyRuntime:
         del obs_dim, critic_obs_dim
         return dict(self.actor_kwargs)
 
+    def build_training_model_kwargs(
+        self,
+        *,
+        cfg: Any,
+        env: Any,
+        obs_dim: int,
+        critic_obs_dim: int,
+        action_dim: int,
+    ) -> dict[str, Any]:
+        """Build learner-only kwargs from the materialized training identity."""
+        del cfg, env, action_dim
+        return self.build_model_kwargs(obs_dim=obs_dim, critic_obs_dim=critic_obs_dim)
+
+    def build_checkpoint_saver(self, learner: Any) -> Any | None:
+        """Return an optional runner checkpoint-saver dependency."""
+        del learner
+        return None
+
     def validate_training_config(self, cfg: Any) -> None:
         """Validate runtime-owned full-config invariants before environment creation."""
         del cfg

@@ -18,7 +18,7 @@ from unilab.base.backend import create_backend
 from unilab.base.curriculum import EpisodeLengthTracker, PenaltyCurriculum
 from unilab.base.np_env import NpEnvState
 from unilab.base.scene import SceneCfg
-from unilab.dr import ResetPlan, ResetRandomizationPayload
+from unilab.dr import IntervalRandomizationPlan, ResetPlan, ResetRandomizationPayload
 from unilab.dr.types import RESET_TERM_KD, RESET_TERM_KP
 from unilab.dtype_config import get_global_dtype
 from unilab.envs.common.rotation import np_wrap_to_pi, np_yaw_from_quat
@@ -38,6 +38,16 @@ from unilab.envs.locomotion.g1.base import G1BaseCfg, G1BaseEnv
 from unilab.envs.locomotion.g1.calibration_fault import (
     G1ActionExecutionFaultConfig,
     apply_action_execution_fault,
+)
+from unilab.envs.locomotion.g1.fada_privileged import (
+    DOF_POSITION_BIAS_LIMIT_RAD,
+    TORQUE_RFI_FRACTION,
+    G1FADAPrivilegedCheckpointLayoutIdentity,
+    G1FADAPrivilegedObservationConfig,
+    apply_fada_pd_target_perturbation,
+    build_fada_reset_info,
+    build_g1_fada_checkpoint_layout_identity,
+    pack_fada_runtime_observation,
 )
 
 
@@ -67,6 +77,16 @@ class G1DomainRandConfig(DomainRandConfig):
     kd_multiplier_range: list[float] = field(default_factory=lambda: [0.9, 1.1])
 
     actuator_strength: G1ActuatorStrengthConfig = field(default_factory=G1ActuatorStrengthConfig)
+    randomize_dof_position_bias: bool = False
+    dof_position_bias_range: list[float] = field(
+        default_factory=lambda: [-DOF_POSITION_BIAS_LIMIT_RAD, DOF_POSITION_BIAS_LIMIT_RAD]
+    )
+    torque_rfi_fraction: float = 0.0
+    randomize_control_delay: bool = False
+    com_offset_y: list[float] = field(default_factory=lambda: [-0.05, 0.05])
+    com_offset_z: list[float] = field(default_factory=lambda: [-0.05, 0.05])
+    fada_push_interval_seconds: float = 7.5
+    fada_max_push_velocity: float = 0.8
 
 
 @dataclass
@@ -483,20 +503,78 @@ class G1WalkEnvCfg(G1BaseCfg):
         default_factory=ForwardProgressTerminationConfig
     )
     action_execution_fault: G1ActionExecutionFaultConfig | None = None
+    fada_privileged_observation: G1FADAPrivilegedObservationConfig = field(
+        default_factory=G1FADAPrivilegedObservationConfig
+    )
 
     def validate(self) -> None:
         super().validate()
         if self.action_execution_fault is not None:
             self.action_execution_fault.validate()
+        if self.fada_privileged_observation.enabled:
+            if self.fada_privileged_observation.schema != "g1_fada_privileged_v1":
+                raise ValueError("unsupported FADA privileged observation schema")
+            bias_range = np.asarray(self.domain_rand.dof_position_bias_range, dtype=np.float64)
+            if (
+                bias_range.shape != (2,)
+                or bias_range[0] < -DOF_POSITION_BIAS_LIMIT_RAD
+                or bias_range[1] > DOF_POSITION_BIAS_LIMIT_RAD
+            ):
+                raise ValueError(
+                    "FADA DoF position bias range exceeds the confirmed moderate limit"
+                )
+            if not 0.0 <= float(self.domain_rand.torque_rfi_fraction) <= TORQUE_RFI_FRACTION:
+                raise ValueError("FADA torque RFI fraction exceeds the confirmed moderate limit")
+            if self.domain_rand.push_robots:
+                if not 5.0 <= float(self.domain_rand.fada_push_interval_seconds) <= 10.0:
+                    raise ValueError("FADA push interval must remain in [5, 10] seconds")
+                if not 0.1 <= float(self.domain_rand.fada_max_push_velocity) <= 1.5:
+                    raise ValueError("FADA max push velocity must remain in [0.1, 1.5] m/s")
+                if not self.domain_rand.push_body_name:
+                    raise ValueError("FADA velocity push requires push_body_name")
 
 
 class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
-    def __init__(self, *, base_kp: np.ndarray | None = None, base_kd: np.ndarray | None = None):
+    def __init__(
+        self,
+        *,
+        base_kp: np.ndarray | None = None,
+        base_kd: np.ndarray | None = None,
+        base_body_mass: np.ndarray | None = None,
+        base_geom_friction: np.ndarray | None = None,
+        ground_geom_id: int | None = None,
+    ):
         self._base_kp = base_kp
         self._base_kd = base_kd
+        self._base_body_mass = base_body_mass
+        self._base_geom_friction = base_geom_friction
+        self._ground_geom_id = ground_geom_id
 
     def _get_base_actuator_gains(self, env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self._base_kp, self._base_kd
+
+    def _get_reset_randomization_baselines(self, env: Any):
+        del env
+        return self._base_body_mass, self._base_geom_friction, self._ground_geom_id, None
+
+    def build_interval_randomization_plan(
+        self, env: Any, step_counter: int
+    ) -> IntervalRandomizationPlan | None:
+        if not bool(
+            getattr(getattr(env.cfg, "fada_privileged_observation", None), "enabled", False)
+        ):
+            return super().build_interval_randomization_plan(env, step_counter)
+        cfg = env.cfg.domain_rand
+        interval_steps = max(1, round(float(cfg.fada_push_interval_seconds) / env.cfg.ctrl_dt))
+        if not cfg.push_robots or step_counter % interval_steps:
+            return None
+        limit = float(cfg.fada_max_push_velocity)
+        velocity_delta = np.zeros((env._num_envs, 1, 3), dtype=get_global_dtype())
+        velocity_delta[:, 0, :2] = np.random.uniform(-limit, limit, size=(env._num_envs, 2))
+        return IntervalRandomizationPlan(
+            body_ids=np.asarray([env._backend.get_body_id(cfg.push_body_name)], dtype=np.int32),
+            body_linear_velocity_delta=velocity_delta,
+        )
 
     def _validated_actuator_strength_config(self, env: Any) -> Any | None:
         strength_cfg = getattr(env.cfg.domain_rand, "actuator_strength", None)
@@ -660,7 +738,53 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                     np.random.uniform(-limit, limit, size=(int(np.sum(standing)), 6)),
                     dtype=get_global_dtype(),
                 )
-        return self._apply_actuator_strength_to_reset_plan(env, env_ids, plan)
+        plan = self._apply_actuator_strength_to_reset_plan(env, env_ids, plan)
+        if not bool(
+            getattr(getattr(env.cfg, "fada_privileged_observation", None), "enabled", False)
+        ):
+            return plan
+        num_reset = len(env_ids)
+        payload = plan.randomization or ResetRandomizationPayload()
+        dtype = get_global_dtype()
+        low, high = env.cfg.domain_rand.dof_position_bias_range
+        if env.cfg.domain_rand.randomize_dof_position_bias:
+            dof_bias = np.random.uniform(low, high, size=(num_reset, env._num_action))
+        else:
+            dof_bias = np.zeros((num_reset, env._num_action))
+        control_delay = (
+            np.random.randint(0, 2, size=(num_reset, 1))
+            if env.cfg.domain_rand.randomize_control_delay
+            else np.zeros((num_reset, 1))
+        )
+        if any(
+            baseline is None
+            for baseline in (
+                env._fada_base_kp,
+                env._fada_base_kd,
+                env._fada_base_body_mass,
+                env._fada_base_geom_friction,
+                env._fada_ground_geom_id,
+            )
+        ):
+            raise ValueError("FADA privilege reset baselines were not initialized")
+        plan.info_updates.update(
+            build_fada_reset_info(
+                payload,
+                rows=num_reset,
+                num_actions=env._num_action,
+                base_kp=env._fada_base_kp,
+                base_kd=env._fada_base_kd,
+                base_body_mass=env._fada_base_body_mass,
+                base_geom_friction=env._fada_base_geom_friction,
+                ground_geom_id=env._fada_ground_geom_id,
+                dof_position_bias=dof_bias,
+                control_delay=control_delay,
+                push_interval_seconds=float(env.cfg.domain_rand.fada_push_interval_seconds),
+                push_velocity=float(env.cfg.domain_rand.fada_max_push_velocity),
+                dtype=np.dtype(dtype),
+            )
+        )
+        return plan
 
     def _build_extra_info_updates_for_commands(
         self, env: Any, num_reset: int, commands: np.ndarray
@@ -806,27 +930,88 @@ class G1WalkEnv(G1BaseEnv):
             )
 
         self._init_reward_functions()
+        self._fada_base_kp: np.ndarray | None = None
+        self._fada_base_kd: np.ndarray | None = None
+        self._fada_base_body_mass: np.ndarray | None = None
+        self._fada_ground_geom_id: int | None = None
+        self._fada_base_geom_friction: np.ndarray | None = None
+        self._fada_tau_max: np.ndarray | None = None
+        self._fada_body_names: tuple[str, ...] = ()
+        self._fada_checkpoint_layout_identity: (
+            G1FADAPrivilegedCheckpointLayoutIdentity | None
+        ) = None
         strength_enabled = bool(
             getattr(getattr(cfg.domain_rand, "actuator_strength", None), "enabled", False)
         )
-        if cfg.domain_rand.randomize_kp or cfg.domain_rand.randomize_kd or strength_enabled:
+        privileged_enabled = bool(cfg.fada_privileged_observation.enabled)
+        if (
+            cfg.domain_rand.randomize_kp
+            or cfg.domain_rand.randomize_kd
+            or strength_enabled
+            or privileged_enabled
+        ):
             base_kp, base_kd = backend.get_actuator_gains()
-            dr_provider = G1WalkDomainRandomizationProvider(base_kp=base_kp, base_kd=base_kd)
+            self._fada_base_kp = np.asarray(base_kp, dtype=np.float64)
+            self._fada_base_kd = np.asarray(base_kd, dtype=np.float64)
         else:
-            dr_provider = G1WalkDomainRandomizationProvider()
+            base_kp = base_kd = None
+        if privileged_enabled:
+            if backend.backend_type != "mujoco":
+                raise ValueError("g1_fada_privileged_v1 currently requires the MuJoCo backend")
+            self._fada_base_body_mass = backend.get_body_mass()
+            self._fada_base_geom_friction = backend.get_geom_friction()
+            self._fada_ground_geom_id = backend.get_geom_id("floor")
+            self._fada_tau_max = np.max(np.abs(backend.get_actuator_force_range()), axis=1)
+            self._fada_body_names = backend.get_body_names()
+            actuated_joint_names = backend.get_actuated_joint_names()
+            if len(actuated_joint_names) != self._num_action:
+                raise ValueError(
+                    "FADA actuated joint order must contain exactly one name per action"
+                )
+            self._fada_checkpoint_layout_identity = build_g1_fada_checkpoint_layout_identity(
+                body_names=self._fada_body_names,
+                actuated_joint_names=actuated_joint_names,
+                model_file=cfg.scene.model_file,
+            )
+        dr_provider = G1WalkDomainRandomizationProvider(
+            base_kp=base_kp,
+            base_kd=base_kd,
+            base_body_mass=self._fada_base_body_mass,
+            base_geom_friction=self._fada_base_geom_friction,
+            ground_geom_id=self._fada_ground_geom_id,
+        )
         self._init_domain_randomization(dr_provider)
 
     @property
     def obs_groups_spec(self) -> dict[str, int]:
         # gyro(3) + gravity(3) + diff(29) + dof_vel(29) + action(29) + cmd(3)
-        # + phase(2) [+ mode(1)] = 98/99; critic additionally sees linvel(3).
+        # + phase(2) [+ mode(1)] = 98/99. The ordinary critic adds linvel(3);
+        # the FADA bundle already owns base linear velocity and must not duplicate it.
         mode_dim = 1 if self._cfg.mode_observation else 0
         height_dim = 1 if self._uses_height_command_observation() else 0
         privileged_strength_dim = 29 if self._includes_privileged_actuator_strength_obs() else 0
+        fada_privileged_dim = (
+            174 + len(self._fada_body_names) if self._fada_privileged_enabled() else 0
+        )
+        critic_base_dim = 98 if self._fada_privileged_enabled() else 101
         return {
             "obs": 98 + mode_dim + height_dim,
-            "critic": 101 + mode_dim + height_dim + privileged_strength_dim,
+            "critic": critic_base_dim
+            + mode_dim
+            + height_dim
+            + privileged_strength_dim
+            + fada_privileged_dim,
         }
+
+    def get_fada_privileged_checkpoint_identity(
+        self,
+    ) -> G1FADAPrivilegedCheckpointLayoutIdentity:
+        """Return the immutable checkpoint layout sealed during environment initialization."""
+
+        identity = self._fada_checkpoint_layout_identity
+        if identity is None:
+            raise ValueError("FADA privileged checkpoint identity is unavailable")
+        return identity
 
     def _init_reward_functions(self):
         self._reward_fns: dict[str, Any] = {
@@ -1225,14 +1410,17 @@ class G1WalkEnv(G1BaseEnv):
         if self._cfg.mode_observation:
             critic_parts.append(mode_obs)
         critic_base = np.concatenate(critic_parts, axis=1, dtype=get_global_dtype())
-        critic = np.concatenate(
-            [
-                critic_base,
-                np.asarray(linvel * critic_linvel_scale, dtype=get_global_dtype()),
-            ],
-            axis=1,
-            dtype=get_global_dtype(),
-        )
+        if self._fada_privileged_enabled():
+            critic = critic_base
+        else:
+            critic = np.concatenate(
+                [
+                    critic_base,
+                    np.asarray(linvel * critic_linvel_scale, dtype=get_global_dtype()),
+                ],
+                axis=1,
+                dtype=get_global_dtype(),
+            )
         if self._includes_privileged_actuator_strength_obs():
             strength = np.asarray(
                 info.get("privileged_actuator_strength"),
@@ -1249,7 +1437,40 @@ class G1WalkEnv(G1BaseEnv):
                 raise ValueError("critic actuator-strength observation must be finite")
             critic = np.concatenate([critic, strength], axis=1, dtype=get_global_dtype())
 
+        if self._fada_privileged_enabled():
+            critic = np.concatenate(
+                [critic, self._materialize_fada_privileged_observation(info, linvel)],
+                axis=1,
+                dtype=get_global_dtype(),
+            )
+
         return {"obs": actor, "critic": critic}
+
+    def _fada_privileged_enabled(self) -> bool:
+        return bool(
+            getattr(getattr(self._cfg, "fada_privileged_observation", None), "enabled", False)
+        )
+
+    def _materialize_fada_privileged_observation(
+        self, info: dict, linvel: np.ndarray
+    ) -> np.ndarray:
+        rows = int(np.asarray(linvel).shape[0])
+        if self._fada_tau_max is None:
+            raise ValueError("FADA privileged observation requires cached actuator force limits")
+        return pack_fada_runtime_observation(
+            body_names=self._fada_body_names,
+            tau_max=self._fada_tau_max,
+            linvel=linvel,
+            left_contact_sensor=self._backend.get_sensor_data("left_foot_net_contact"),
+            right_contact_sensor=self._backend.get_sensor_data("right_foot_net_contact"),
+            root_clearance=self._terrain_relative_base_height(),
+            torques=np.asarray(
+                info.get("torques", np.zeros((rows, self._num_action))),
+                dtype=get_global_dtype(),
+            ),
+            info=info,
+            dtype=np.dtype(get_global_dtype()),
+        )
 
     def _includes_privileged_actuator_strength_obs(self) -> bool:
         domain_rand = getattr(self._cfg, "domain_rand", None)
@@ -2168,10 +2389,34 @@ class G1WalkEnv(G1BaseEnv):
             getattr(self._cfg, "action_execution_fault", None),
             num_envs=self._num_envs,
         )
+        previous_exec_actions = np.asarray(
+            state.info.get("executed_actions", exec_actions), dtype=get_global_dtype()
+        )
+        if self._fada_privileged_enabled():
+            delay = np.asarray(state.info["fada_control_delay"]).reshape(self._num_envs, 1)
+            exec_actions = np.where(delay > 0.5, previous_exec_actions, exec_actions)
         state.info["executed_actions"] = exec_actions
         ctrl: np.ndarray = (
             exec_actions * self._cfg.control_config.action_scale + self.default_angles
         )
+        if self._fada_privileged_enabled():
+            if self._fada_tau_max is None or self._fada_base_kp is None:
+                raise ValueError("FADA PD perturbation baselines were not initialized")
+            rfi_fraction = float(self._cfg.domain_rand.torque_rfi_fraction)
+            torque_rfi = np.random.uniform(
+                -rfi_fraction * self._fada_tau_max,
+                rfi_fraction * self._fada_tau_max,
+                size=(self._num_envs, self._num_action),
+            )
+            state.info["fada_torque_rfi"] = np.asarray(torque_rfi, dtype=get_global_dtype())
+            kp = np.asarray(state.info["fada_kp_scale"]) * self._fada_base_kp[None, :]
+            ctrl = apply_fada_pd_target_perturbation(
+                ctrl,
+                dof_position_bias=np.asarray(state.info["fada_dof_position_bias"]),
+                torque_rfi=torque_rfi,
+                kp=kp,
+                tau_max=self._fada_tau_max,
+            )
         if self._debug_action_trace_enabled():
             state.info["_g1_action_trace_ctrl"] = ctrl
         return ctrl

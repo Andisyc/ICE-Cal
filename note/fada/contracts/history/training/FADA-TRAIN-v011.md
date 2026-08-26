@@ -1,10 +1,11 @@
 ---
 contract_id: FADA-TRAIN-v011
-status: active
+status: superseded
 effective_date: 2026-08-26
 supersedes: FADA-TRAIN-v010
+superseded_by: FADA-TRAIN-v012
 method_contract: FADA-METHOD-v011
-scope: fresh persistent-async unified-Oracle alternating training
+scope: historical persistent-async unified-Oracle alternating training
 ---
 
 # FADA Alternating Source Training Contract v011

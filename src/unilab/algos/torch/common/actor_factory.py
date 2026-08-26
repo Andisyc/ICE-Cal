@@ -32,9 +32,9 @@ def build_actor(
             use_layer_norm=use_layer_norm,
             device=device,
         )
-    if algo_type == "hora_sac":
+    if algo_type in {"hora_sac", "privileged_locomotion_sac"}:
         if priv_info_dim is None:
-            raise ValueError("build_actor(algo_type='hora_sac') requires priv_info_dim.")
+            raise ValueError(f"build_actor(algo_type={algo_type!r}) requires priv_info_dim.")
         from unilab.algos.torch.hora.sac_models import HoraSACActor
 
         return HoraSACActor(

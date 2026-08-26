@@ -8,8 +8,41 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import torch
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
+
+
+def test_checkpoint_saver_port_preserves_default_and_supports_owner_gateway(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unilab.algos.torch.offpolicy.double_buffer_runner import (
+        DoubleBufferOffPolicyRunner,
+    )
+
+    class TinyLearner:
+        def get_state_dict(self):
+            return {"marker": 7}
+
+    default_calls = []
+    monkeypatch.setattr(torch, "save", lambda payload, path: default_calls.append((payload, path)))
+    default_runner = object.__new__(DoubleBufferOffPolicyRunner)
+    default_runner.learner = TinyLearner()
+    default_runner.checkpoint_saver = None
+    default_path = tmp_path / "default.pt"
+    default_runner._save_checkpoint(default_path, iteration=240)
+    assert default_calls == [({"marker": 7}, default_path)]
+
+    gateway_calls = []
+    gateway_runner = object.__new__(DoubleBufferOffPolicyRunner)
+    gateway_runner.learner = TinyLearner()
+    gateway_runner.checkpoint_saver = lambda learner, path, iteration: gateway_calls.append(
+        (learner, path, iteration)
+    )
+    gateway_path = tmp_path / "gateway.pt"
+    gateway_runner._save_checkpoint(gateway_path, iteration=5000)
+    assert gateway_calls == [(gateway_runner.learner, gateway_path, 5000)]
+    assert len(default_calls) == 1
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 _CONF_DIR = Path(__file__).parent.parent.parent / "conf"

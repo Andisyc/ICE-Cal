@@ -11,12 +11,12 @@ const dataPath = path.resolve(
 const review = JSON.parse(fs.readFileSync(dataPath, "utf8"));
 
 assert.equal(review.layout, "design_transaction_inspector");
-assert.equal(review.cards.length, 10);
+assert.equal(review.cards.length, 7);
 assert.deepEqual(
   review.cards.map(({ designId }) => designId),
   [
-    "ICA-DP-01", "ICA-DP-02", "ICA-DP-03", "ICA-DP-04", "ICA-DP-06",
-    "ICA-DP-05", "ICA-DP-07", "ICA-DP-09", "ICA-DP-10", "ICA-DP-08",
+    "ICA-DP-01", "ICA-DP-02", "ICA-DP-03", "ICA-DP-04", "ICA-DP-05",
+    "ICA-DP-06", "ICA-DP-07",
   ],
 );
 
@@ -32,15 +32,16 @@ for (const card of review.cards) {
 
 const text = JSON.stringify(review);
 for (const required of [
-  "z+Σσᵢ(cᵢ)Δzᵢ",
-  "Support/Query 概念退役",
+  "z̄=z+Σσᵢ(cᵢ)·Δᵢ(z)",
   "30 帧 State/Action",
   "2 层 Transformer",
-  "每条 Δzᵢ 是 K×D（6×128）",
-  "串行禁止联合训练",
+  "Tracker latent z 是 K=6 个 future token、每个 D=128 维",
+  "串行三阶段，禁联合训练",
   "PCHIP",
   "只执行第一步",
   "c=0 等价标称",
+  "禁止 Gait/feet-phase Reward",
+  "action-free future",
 ]) {
   assert.ok(text.includes(required), `missing current design decision: ${required}`);
 }

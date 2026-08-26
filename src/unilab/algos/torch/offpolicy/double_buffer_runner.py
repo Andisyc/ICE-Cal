@@ -8,8 +8,10 @@ import statistics
 import sys
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -28,6 +30,8 @@ from unilab.ipc.replay_pipelines.cpu_pinned_double_buffer import (
 )
 from unilab.logging import OffPolicyLogger, TraceRecorder
 from unilab.training.seed import derive_worker_seed
+
+CheckpointSaver = Callable[[Any, Path, int], None]
 
 
 class _CollectorDiedError(RuntimeError):
@@ -54,6 +58,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         *,
         replay_prefetch_mode: str = "one_tick",
         verbose_metrics: bool = False,
+        checkpoint_saver: CheckpointSaver | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -63,10 +68,18 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
             )
         self.replay_prefetch_mode = replay_prefetch_mode
         self.verbose_metrics = bool(verbose_metrics)
+        self.checkpoint_saver = checkpoint_saver
         self.replay_pack_layout = "packed"
         self.replay_pack_executor = "collector_thread"
         self.replay_h2d_submitter = "auto"
         self.replay_transfer_backend: dict[str, object] = {}
+
+    def _save_checkpoint(self, path: str | Path, *, iteration: int) -> None:
+        target = Path(path)
+        if self.checkpoint_saver is None:
+            torch.save(self.learner.get_state_dict(), target)
+            return
+        self.checkpoint_saver(self.learner, target, int(iteration))
 
     def _fail_collector_died(
         self,
@@ -668,7 +681,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
 
                 if save_interval > 0 and iteration % save_interval == 0:
                     ckpt_path = os.path.join(log_dir, f"model_{iteration}.pt")
-                    torch.save(self.learner.get_state_dict(), ckpt_path)
+                    self._save_checkpoint(ckpt_path, iteration=iter)
                     logger.log_save(ckpt_path)
 
             if trace_recorder:
@@ -689,7 +702,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
             # -- finalize --
             replay_pipeline.close()
             ckpt_path = os.path.join(log_dir, f"model_{max_iterations}.pt")
-            torch.save(self.learner.get_state_dict(), ckpt_path)
+            self._save_checkpoint(ckpt_path, iteration=max_iterations)
             logger.log_save(ckpt_path)
             self._sync_logger_replay_counters(logger, replay_buffer)
             logger.finish()

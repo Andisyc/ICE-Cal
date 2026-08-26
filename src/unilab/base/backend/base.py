@@ -110,6 +110,12 @@ class SimBackend(abc.ABC):
             Array with shape ``(num_actuators, 2)`` and columns ``[low, high]``.
         """
 
+    def get_actuator_force_range(self) -> np.ndarray:
+        """Return actuator force limits in actuator id order."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not expose actuator force limits"
+        )
+
     @abc.abstractmethod
     def get_keyframe_qpos(self, name: str) -> np.ndarray:
         """Return the full qpos for a named keyframe, including the floating base.
@@ -203,6 +209,16 @@ class SimBackend(abc.ABC):
     def get_body_mass(self) -> np.ndarray:
         """Return the backend body-mass table."""
         raise NotImplementedError(f"{self.__class__.__name__} does not expose body mass")
+
+    def get_body_names(self) -> tuple[str, ...]:
+        """Return body names in fixed backend/model id order."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose body names")
+
+    def get_actuated_joint_names(self) -> tuple[str, ...]:
+        """Return joint names in fixed actuator/action order."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not expose actuated joint names"
+        )
 
     def get_body_ipos(self) -> np.ndarray:
         """Return the backend body inertial-position table."""

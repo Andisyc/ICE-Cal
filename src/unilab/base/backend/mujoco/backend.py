@@ -643,6 +643,9 @@ class MuJoCoBackend(SimBackend):
     def get_actuator_ctrl_range(self) -> np.ndarray:
         return np.array(self._model.actuator_ctrlrange, dtype=self._np_dtype)
 
+    def get_actuator_force_range(self) -> np.ndarray:
+        return np.array(self._model.actuator_forcerange, dtype=self._np_dtype)
+
     def get_keyframe_qpos(self, name: str) -> np.ndarray:
         key_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, name)
         if key_id < 0:
@@ -730,6 +733,21 @@ class MuJoCoBackend(SimBackend):
 
     def get_body_mass(self) -> np.ndarray:
         return np.asarray(self._model.body_mass, dtype=np.float64).copy()
+
+    def get_body_names(self) -> tuple[str, ...]:
+        return tuple(
+            mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_BODY, body_id)
+            or f"unnamed_body_{body_id}"
+            for body_id in range(self._model.nbody)
+        )
+
+    def get_actuated_joint_names(self) -> tuple[str, ...]:
+        names: list[str] = []
+        for actuator_id in range(self._model.nu):
+            joint_id = int(self._model.actuator_trnid[actuator_id, 0])
+            name = mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
+            names.append(name or f"unnamed_joint_{joint_id}")
+        return tuple(names)
 
     def get_body_ipos(self) -> np.ndarray:
         return np.asarray(self._model.body_ipos, dtype=np.float64).copy()

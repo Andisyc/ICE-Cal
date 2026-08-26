@@ -230,6 +230,7 @@ def build_runner(algo_name: str, cfg: DictConfig):
         _custom_runtime = resolve_custom_offpolicy_runtime(_rl_cfg)
         if _custom_runtime is not None:
             _custom_runtime.validate_training_config(cfg)
+        _training_model_kwargs: dict[str, Any] = {}
         _env = cast(Any, create_env(cfg, num_envs=1, env_cfg_override=env_cfg_override))
         try:
             assert _env.action_space.shape
@@ -237,6 +238,17 @@ def build_runner(algo_name: str, cfg: DictConfig):
 
             _obs_dim, _critic_dim = _get_obs_dims(_env.obs_groups_spec)
             _action_dim = _env.action_space.shape[0]
+            if _custom_runtime is not None:
+                _training_model_kwargs = cast(
+                    dict[str, Any],
+                    _custom_runtime.build_training_model_kwargs(
+                        cfg=cfg,
+                        env=_env,
+                        obs_dim=int(_obs_dim),
+                        critic_obs_dim=int(_critic_dim),
+                        action_dim=int(_action_dim),
+                    ),
+                )
             _symmetry_aug = None
             if (
                 _custom_runtime is not None
@@ -267,18 +279,13 @@ def build_runner(algo_name: str, cfg: DictConfig):
         _actor_kwargs: dict[str, Any] = {}
         _learner_extra_kwargs: dict[str, Any] = {}
         if _custom_runtime is not None:
-            _learner_extra_kwargs = cast(
-                dict[str, Any],
-                _custom_runtime.build_model_kwargs(
-                    obs_dim=int(_obs_dim),
-                    critic_obs_dim=int(_critic_dim),
-                ),
-            )
+            _learner_extra_kwargs = dict(_training_model_kwargs)
             if _custom_runtime.learner_cls is not None:
                 _learner_cls = _custom_runtime.learner_cls
             if _custom_runtime.algo_type is not None:
                 _algo_type = str(_custom_runtime.algo_type)
             _actor_kwargs = dict(_learner_extra_kwargs)
+            _actor_kwargs.pop("checkpoint_contract", None)
 
         _learner = _learner_cls(
             obs_dim=_obs_dim,
@@ -304,6 +311,11 @@ def build_runner(algo_name: str, cfg: DictConfig):
             critic_obs_dim=_critic_dim,
             **_learner_extra_kwargs,
         )
+        _checkpoint_saver = (
+            None
+            if _custom_runtime is None
+            else _custom_runtime.build_checkpoint_saver(_learner)
+        )
 
         return DoubleBufferOffPolicyRunner(
             learner=_learner,
@@ -324,6 +336,7 @@ def build_runner(algo_name: str, cfg: DictConfig):
             sim_backend=cfg.training.sim_backend,
             env_cfg_override=env_cfg_override,
             actor_kwargs=_actor_kwargs,
+            checkpoint_saver=_checkpoint_saver,
             trace_enabled=cfg.training.trace_enabled,
             trace_output_dir=cfg.training.trace_output_dir,
             trace_thread_time=cfg.training.trace_thread_time,
