@@ -44,6 +44,18 @@ def test_checkpoint_saver_port_preserves_default_and_supports_owner_gateway(
     assert gateway_calls == [(gateway_runner.learner, gateway_path, 5000)]
     assert len(default_calls) == 1
 
+    scheduled_calls = []
+    scheduled_runner = object.__new__(DoubleBufferOffPolicyRunner)
+    scheduled_runner.learner = TinyLearner()
+    scheduled_runner.checkpoint_saver = lambda learner, path, iteration: scheduled_calls.append(
+        (learner, path, iteration)
+    )
+    scheduled_path = scheduled_runner._save_iteration_checkpoint(tmp_path, iteration=240)
+    assert scheduled_path == str(tmp_path / "model_240.pt")
+    assert scheduled_calls == [
+        (scheduled_runner.learner, tmp_path / "model_240.pt", 240)
+    ]
+
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 _CONF_DIR = Path(__file__).parent.parent.parent / "conf"
 

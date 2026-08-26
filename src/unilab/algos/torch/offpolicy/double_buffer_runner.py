@@ -81,6 +81,13 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
             return
         self.checkpoint_saver(self.learner, target, int(iteration))
 
+    def _save_iteration_checkpoint(self, log_dir: str | Path, *, iteration: int) -> str:
+        """Persist one iteration under the matching canonical filename."""
+        iteration_value = int(iteration)
+        target = Path(log_dir) / f"model_{iteration_value}.pt"
+        self._save_checkpoint(target, iteration=iteration_value)
+        return str(target)
+
     def _fail_collector_died(
         self,
         logger,
@@ -680,8 +687,10 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
                     )
 
                 if save_interval > 0 and iteration % save_interval == 0:
-                    ckpt_path = os.path.join(log_dir, f"model_{iteration}.pt")
-                    self._save_checkpoint(ckpt_path, iteration=iter)
+                    ckpt_path = self._save_iteration_checkpoint(
+                        log_dir,
+                        iteration=iteration,
+                    )
                     logger.log_save(ckpt_path)
 
             if trace_recorder:
@@ -701,8 +710,10 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
 
             # -- finalize --
             replay_pipeline.close()
-            ckpt_path = os.path.join(log_dir, f"model_{max_iterations}.pt")
-            self._save_checkpoint(ckpt_path, iteration=max_iterations)
+            ckpt_path = self._save_iteration_checkpoint(
+                log_dir,
+                iteration=max_iterations,
+            )
             logger.log_save(ckpt_path)
             self._sync_logger_replay_counters(logger, replay_buffer)
             logger.finish()
