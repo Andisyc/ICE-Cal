@@ -868,7 +868,15 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         dof_pos: Any,
         dof_vel: Any,
     ) -> dict[str, np.ndarray]:
-        return env._compute_obs(info_updates, linvel, gyro, gravity, dof_pos, dof_vel)  # type: ignore[no-any-return]
+        return env._compute_obs(  # type: ignore[no-any-return]
+            info_updates,
+            linvel,
+            gyro,
+            gravity,
+            dof_pos,
+            dof_vel,
+            row_ids=np.asarray(env_ids, dtype=np.int64),
+        )
 
 
 class G1WalkEnv(G1BaseEnv):
@@ -1364,7 +1372,15 @@ class G1WalkEnv(G1BaseEnv):
         self._reward_cfg.scales.update(copy.deepcopy(snapshot["reward_scales"]))
 
     def _compute_obs(
-        self, info: dict, linvel, gyro, gravity, dof_pos, dof_vel
+        self,
+        info: dict,
+        linvel,
+        gyro,
+        gravity,
+        dof_pos,
+        dof_vel,
+        *,
+        row_ids: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         noise_cfg = self._cfg.noise_config
         diff = dof_pos - self.default_angles
@@ -1439,7 +1455,14 @@ class G1WalkEnv(G1BaseEnv):
 
         if self._fada_privileged_enabled():
             critic = np.concatenate(
-                [critic, self._materialize_fada_privileged_observation(info, linvel)],
+                [
+                    critic,
+                    self._materialize_fada_privileged_observation(
+                        info,
+                        linvel,
+                        row_ids=row_ids,
+                    ),
+                ],
                 axis=1,
                 dtype=get_global_dtype(),
             )
@@ -1452,18 +1475,38 @@ class G1WalkEnv(G1BaseEnv):
         )
 
     def _materialize_fada_privileged_observation(
-        self, info: dict, linvel: np.ndarray
+        self,
+        info: dict,
+        linvel: np.ndarray,
+        *,
+        row_ids: np.ndarray | None = None,
     ) -> np.ndarray:
         rows = int(np.asarray(linvel).shape[0])
         if self._fada_tau_max is None:
             raise ValueError("FADA privileged observation requires cached actuator force limits")
+        row_indices = None
+        if row_ids is not None:
+            row_indices = np.asarray(row_ids, dtype=np.int64).reshape(-1)
+            if row_indices.size != rows:
+                raise ValueError(
+                    "FADA privileged observation row_ids must match the observation rows"
+                )
+
+        def select_backend_rows(values: np.ndarray) -> np.ndarray:
+            array = np.asarray(values)
+            return array if row_indices is None else array[row_indices]
+
         return pack_fada_runtime_observation(
             body_names=self._fada_body_names,
             tau_max=self._fada_tau_max,
             linvel=linvel,
-            left_contact_sensor=self._backend.get_sensor_data("left_foot_net_contact"),
-            right_contact_sensor=self._backend.get_sensor_data("right_foot_net_contact"),
-            root_clearance=self._terrain_relative_base_height(),
+            left_contact_sensor=select_backend_rows(
+                self._backend.get_sensor_data("left_foot_net_contact")
+            ),
+            right_contact_sensor=select_backend_rows(
+                self._backend.get_sensor_data("right_foot_net_contact")
+            ),
+            root_clearance=select_backend_rows(self._terrain_relative_base_height()),
             torques=np.asarray(
                 info.get("torques", np.zeros((rows, self._num_action))),
                 dtype=get_global_dtype(),

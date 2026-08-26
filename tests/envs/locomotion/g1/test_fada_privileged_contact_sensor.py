@@ -87,16 +87,26 @@ def test_privileged_oracle_env_reset_materializes_exact_critic_tail(
     override = BackendAdapter(cfg, root_dir=ROOT, algo_name="sac").build_task_env_cfg_override()
     env = create_env(
         cfg,
-        num_envs=1,
+        num_envs=4,
         env_cfg_override=override,
         sim_backend="mujoco",
     )
     try:
-        obs, _ = env.reset(np.asarray([0], dtype=np.int32))
-        body_count = len(env.get_fada_privileged_checkpoint_identity().body_names)
+        root_clearance = np.asarray([[0.1], [0.2], [0.3], [0.4]], dtype=np.float32)
+        monkeypatch.setattr(env, "_terrain_relative_base_height", lambda: root_clearance)
+        obs, _ = env.reset(np.asarray([1, 3], dtype=np.int32))
+        identity = env.get_fada_privileged_checkpoint_identity()
+        body_count = len(identity.body_names)
         expected_critic_dim = 98 + 174 + body_count
-        assert obs["obs"].shape == (1, 98)
-        assert obs["critic"].shape == (1, expected_critic_dim)
+        assert obs["obs"].shape == (2, 98)
+        assert obs["critic"].shape == (2, expected_critic_dim)
         assert env.obs_groups_spec["critic"] == expected_critic_dim
+        root_start = next(
+            start for name, start, _ in identity.field_slices if name == "root_clearance"
+        )
+        np.testing.assert_allclose(
+            obs["critic"][:, 98 + root_start],
+            np.asarray([0.2, 0.4], dtype=np.float32),
+        )
     finally:
         env.close()
