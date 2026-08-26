@@ -945,6 +945,9 @@ class MuJoCoBackend(SimBackend):
                 }
             ),
             supports_interval_push=self._push_body_id >= 0,
+            supports_interval_body_velocity_delta=(
+                self._root_qvel_dim == 6 and self._base_body_id >= 0
+            ),
             supports_interval_body_force=True,
         )
 
@@ -993,6 +996,29 @@ class MuJoCoBackend(SimBackend):
         self._pending_xfrc_applied[:, self._push_body_force_slice] = self._sample_push_force(
             force_range
         )
+
+    def apply_body_linear_velocity_delta(
+        self,
+        body_ids: np.ndarray,
+        velocity_delta: np.ndarray,
+    ) -> None:
+        """Apply a world-frame velocity delta to the floating base body."""
+        body_ids_np = np.asarray(body_ids, dtype=np.int32).reshape(-1)
+        delta_np = np.asarray(velocity_delta, dtype=self._np_dtype)
+        expected_shape = (self._num_envs, body_ids_np.size, 3)
+        if delta_np.shape != expected_shape:
+            raise ValueError(
+                f"body velocity delta must have shape {expected_shape}, got {delta_np.shape}"
+            )
+        if (
+            self._root_qvel_dim != 6
+            or body_ids_np.size != 1
+            or int(body_ids_np[0]) != self._base_body_id
+        ):
+            raise ValueError(
+                "MuJoCo interval body velocity perturbation requires the floating base body"
+            )
+        self._base_lin_vel_view += delta_np[:, 0, :]
 
     def apply_body_force(
         self,

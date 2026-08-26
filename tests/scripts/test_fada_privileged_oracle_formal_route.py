@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
@@ -19,20 +20,17 @@ from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
     FADAPrivilegedSACLearner,
 )
 from unilab.algos.torch.offpolicy.double_buffer_runner import DoubleBufferOffPolicyRunner
+from unilab.base.registry import ensure_registries
 from unilab.ipc.replay_buffer import ReplayBuffer
+from unilab.training import BackendAdapter, create_env
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v012_privileged_oracle_official_offline_transaction(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v012")
+def _compose_offline_oracle_config():
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
-        cfg = compose(
+        return compose(
             "config",
             overrides=[
                 "algo=sac",
@@ -44,6 +42,15 @@ def test_v012_privileged_oracle_official_offline_transaction(
                 "algo.algo_params.use_compile=false",
             ],
         )
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
+def test_v012_privileged_oracle_official_offline_transaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v012")
+    cfg = _compose_offline_oracle_config()
 
     runner = build_runner("sac", cfg)
     assert isinstance(runner, DoubleBufferOffPolicyRunner)
@@ -152,3 +159,34 @@ def test_v012_privileged_oracle_official_offline_transaction(
             sort_keys=True,
         )
     )
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
+def test_v012_official_env_steps_through_first_velocity_push(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-push-v012")
+    cfg = _compose_offline_oracle_config()
+    ensure_registries()
+    override = BackendAdapter(cfg, root_dir=ROOT, algo_name="sac").build_task_env_cfg_override()
+    env = create_env(
+        cfg,
+        num_envs=1,
+        env_cfg_override=override,
+        sim_backend="mujoco",
+    )
+    try:
+        state = env.init_state()
+        actions = np.zeros((1, env.action_space.shape[0]), dtype=np.float32)
+        interval_steps = round(
+            float(cfg.env.domain_rand.fada_push_interval_seconds) / env.cfg.ctrl_dt
+        )
+        for _ in range(interval_steps + 1):
+            state = env.step(actions)
+
+        assert env.step_counter == interval_steps + 1
+        assert np.isfinite(state.obs["obs"]).all()
+        assert np.isfinite(state.obs["critic"]).all()
+        assert np.isfinite(state.reward).all()
+    finally:
+        env.close()

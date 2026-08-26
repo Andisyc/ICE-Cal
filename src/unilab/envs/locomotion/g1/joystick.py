@@ -566,7 +566,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             return super().build_interval_randomization_plan(env, step_counter)
         cfg = env.cfg.domain_rand
         interval_steps = max(1, round(float(cfg.fada_push_interval_seconds) / env.cfg.ctrl_dt))
-        if not cfg.push_robots or step_counter % interval_steps:
+        if not cfg.push_robots or step_counter <= 0 or step_counter % interval_steps:
             return None
         limit = float(cfg.fada_max_push_velocity)
         velocity_delta = np.zeros((env._num_envs, 1, 3), dtype=get_global_dtype())
