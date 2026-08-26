@@ -147,6 +147,11 @@ def test_runtime_preflight_rejects_gait_reward_before_env_creation() -> None:
     with pytest.raises(ValueError, match="feet_phase"):
         runtime.validate_training_config(cfg)
 
+    cfg.reward.scales.feet_phase = 0.0
+    cfg.reward.gait_constraint = SimpleNamespace(enabled=True, penalty_scale=0.5)
+    with pytest.raises(ValueError, match="gait constraint penalty"):
+        runtime.validate_training_config(cfg)
+
 
 def test_privileged_oracle_hydra_profile_is_single_task_moderate_and_gait_free(
     monkeypatch: pytest.MonkeyPatch,
@@ -170,7 +175,17 @@ def test_privileged_oracle_hydra_profile_is_single_task_moderate_and_gait_free(
     assert cfg.training.task_name == "G1WalkFlat"
     assert cfg.algo.max_iterations == 5000
     assert cfg.algo.save_interval == 240
+    assert cfg.env.mode_observation is False
+    assert cfg.env.commands.rel_standing_envs == 0.3
+    assert cfg.env.commands.rel_transition_envs == 0.0
+    assert cfg.reward.mode.enabled is True
+    assert cfg.reward.mode.standing_enabled is True
+    assert cfg.reward.gait_constraint.enabled is True
+    assert cfg.reward.gait_constraint.freeze_phase_in_stand_mode is True
+    assert cfg.reward.gait_constraint.penalty_scale == 0.0
     assert cfg.reward.scales.feet_phase == 0.0
+    assert cfg.reward.scales.feet_phase_contrast == 0.0
+    assert cfg.reward.scales.feet_phase_contact == 0.0
     assert cfg.env.domain_rand.dof_position_bias_range == [-0.025, 0.025]
     assert cfg.env.domain_rand.torque_rfi_fraction == 0.05
 
@@ -181,6 +196,10 @@ def test_privileged_oracle_hydra_profile_is_single_task_moderate_and_gait_free(
     ).build_task_env_cfg_override()
     assert override["fada_privileged_observation"]["schema"] == "g1_fada_privileged_v1"
     assert override["domain_rand"]["randomize_control_delay"] is True
+    assert override["mode_observation"] is False
+    assert override["commands"]["rel_standing_envs"] == 0.3
+    assert override["commands"]["rel_transition_envs"] == 0.0
+    assert override["reward_config"]["gait_constraint"]["penalty_scale"] == 0.0
 
 
 def test_privileged_oracle_checkpoint_persists_lineage_and_actor_privilege_identity() -> None:

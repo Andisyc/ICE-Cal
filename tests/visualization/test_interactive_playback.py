@@ -1660,6 +1660,21 @@ def test_sac_playback_rejects_checkpoint_obs_dim_mismatch(
         )
 
 
+def test_sac_playback_uses_fada_oracle_checkpoint_obs_dim() -> None:
+    checkpoint = {
+        "actor": {
+            "priv_encoder.0.weight": torch.zeros((256, 205)),
+            "actor_trunk.0.weight": torch.zeros((512, 130)),
+        },
+        "fada_privileged_oracle": {
+            "schema_version": 2,
+            "dimensions": {"obs": 98, "critic": 303, "privileged": 205, "action": 29},
+        },
+    }
+
+    assert interactive_playback._offpolicy_checkpoint_actor_input_dim(checkpoint) == 98
+
+
 @pytest.mark.parametrize("metadata_obs_dim", [98, 99])
 def test_sac_playback_uses_privileged_checkpoint_metadata_for_obs_dim(
     monkeypatch: pytest.MonkeyPatch,

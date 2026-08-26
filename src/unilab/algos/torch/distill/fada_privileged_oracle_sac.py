@@ -187,6 +187,16 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         if getattr(privileged_cfg, "schema", None) != FADA_PRIVILEGED_SCHEMA:
             raise ValueError("g1_fada_privileged_v1 schema mismatch")
         validate_no_gait_reward(_object_items(cfg.reward.scales))
+        gait_constraint = getattr(cfg.reward, "gait_constraint", None)
+        penalty_scale = (
+            gait_constraint.get("penalty_scale", 0.0)
+            if isinstance(gait_constraint, dict)
+            else getattr(gait_constraint, "penalty_scale", 0.0)
+        )
+        if float(penalty_scale) != 0.0:
+            raise ValueError(
+                "privileged_locomotion_sac requires gait constraint penalty_scale=0"
+            )
 
 
 def resolve_privileged_locomotion_sac_runtime(

@@ -63,6 +63,21 @@ _PRIVILEGED_CHECKPOINT_SCHEMAS = {
 
 
 def _offpolicy_checkpoint_actor_input_dim(checkpoint: Mapping[str, Any]) -> int | None:
+    fada_metadata = checkpoint.get("fada_privileged_oracle")
+    if isinstance(fada_metadata, Mapping):
+        from unilab.algos.torch.distill.fada_privileged_oracle import (
+            FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION,
+        )
+
+        dimensions = fada_metadata.get("dimensions")
+        if (
+            fada_metadata.get("schema_version") == FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION
+            and isinstance(dimensions, Mapping)
+        ):
+            obs_dim = dimensions.get("obs")
+            if isinstance(obs_dim, int) and not isinstance(obs_dim, bool) and obs_dim > 0:
+                return obs_dim
+
     for metadata_key, expected_schema in _PRIVILEGED_CHECKPOINT_SCHEMAS.items():
         metadata = checkpoint.get(metadata_key)
         if not isinstance(metadata, Mapping) or metadata.get("schema") != expected_schema:

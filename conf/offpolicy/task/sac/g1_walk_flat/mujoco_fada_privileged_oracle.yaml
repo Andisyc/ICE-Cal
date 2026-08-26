@@ -1,4 +1,8 @@
 # @package _global_
+defaults:
+  - /g1_walk_stage: mixed_mode
+  - _self_
+
 training:
   task_name: G1WalkFlat
   sim_backend: mujoco
@@ -22,10 +26,16 @@ algo:
     alpha_init: 0.001
     target_entropy_ratio: 0.0
 env:
+  # Command already exposes stand/walk intent; keep the v012 actor at 98D.
+  mode_observation: false
   fada_privileged_observation:
     enabled: true
     schema: g1_fada_privileged_v1
   commands:
+    # Zero command is an ordinary sample of this single locomotion task.
+    # Low-speed commands remain walking samples rather than a separate role.
+    rel_standing_envs: 0.3
+    rel_transition_envs: 0.0
     small_xy_threshold: 0.0
   control_config:
     action_scale: 1.0
@@ -79,6 +89,8 @@ reward:
     pose: -0.5
     penalty_feet_ori: -20.0
     feet_phase: 0.0
+    feet_phase_contrast: 0.0
+    feet_phase_contact: 0.0
     alive: 10.0
   tracking_sigma: 0.25
   base_height_target: 0.754
@@ -88,4 +100,9 @@ reward:
   feet_phase_swing_height: 0.09
   feet_phase_tracking_sigma: 0.04
   close_feet_threshold: 0.15
+  gait_constraint:
+    # Reuse the proven zero-command phase freeze without assigning gait credit.
+    enabled: true
+    freeze_phase_in_stand_mode: true
+    penalty_scale: 0.0
   pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
