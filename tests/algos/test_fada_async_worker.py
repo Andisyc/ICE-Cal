@@ -27,7 +27,6 @@ from tests.algos._fada_training_test_support import (
     _paper_persistent_training_cfg,
     _paper_role_batch,
     _source_batch,
-    _StandingOracle,
     _State,
 )
 from unilab.algos.torch.distill import (
@@ -53,13 +52,11 @@ from unilab.algos.torch.distill.fada_async_runtime import (
     PersistentFADACollectorWorker,
     _fada_runtime_device,
     allocate_fada_command_scenarios,
-    build_persistent_fada_runtime,
 )
 from unilab.algos.torch.distill.fada_source_diagnostics import (
     classify_fada_coverage,
     run_fada_coverage_diagnostic,
 )
-from unilab.algos.torch.distill.fada_training import FADAPaperSourcePlan
 
 
 def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
@@ -73,7 +70,6 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
         {
             "training": {
                 "fada": {
-                    "phase": "idm_pretrain",
                     "windows_per_iteration": 1,
                     "oracle_shadow_enabled": True,
                     "observation_key": "obs",
@@ -91,7 +87,10 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     worker.final_teacher = _Oracle()
     worker.teacher_spec = object()
     worker.source_allocations = ((str(tmp_path / "intermediate.pt"), 1),)
-    worker._teacher_loader = lambda *_args, **_kwargs: _Oracle()
+    worker._intermediate_teacher_loader = lambda *_args, **_kwargs: _Oracle()
+    worker._intermediate_teacher_reloader = lambda *_args, **_kwargs: None
+    worker.intermediate_teacher = None
+    worker.intermediate_teacher_checkpoint = None
 
     class _WeightSync:
         def read_weights_into(self, _state_dict) -> int:
@@ -118,8 +117,12 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     assert result.num_samples == 2
     assert loaded.metadata["main_windows"] == 1
     assert [item["rollout_mode"] for item in loaded.metadata["collections"]] == [
-        "oracle",
+        "planner_idm",
         "intermediate_oracle",
+    ]
+    assert [item["oracle_role"] for item in loaded.metadata["collections"]] == [
+        "unified",
+        "walking",
     ]
 
 
@@ -134,7 +137,6 @@ def test_fada_persistent_worker_reuses_one_intermediate_teacher_across_rounds(
         {
             "training": {
                 "fada": {
-                    "phase": "idm_pretrain",
                     "windows_per_iteration": 1,
                     "oracle_shadow_enabled": True,
                     "observation_key": "obs",
@@ -166,8 +168,8 @@ def test_fada_persistent_worker_reuses_one_intermediate_teacher_across_rounds(
         assert teacher is constructed[0]
         reloaded_paths.append(str(checkpoint_path))
 
-    worker._teacher_loader = load_teacher
-    worker._teacher_reloader = reload_teacher
+    worker._intermediate_teacher_loader = load_teacher
+    worker._intermediate_teacher_reloader = reload_teacher
     worker.intermediate_teacher = None
     worker.intermediate_teacher_checkpoint = None
 
@@ -279,7 +281,6 @@ def test_fada_worker_constructor_rolls_back_partial_resident_resources(
             standing_cfg_payload=standing_cfg_payload,
             architecture=asdict(config),
             final_teacher_checkpoint="walking.pt",
-            standing_teacher_checkpoint="standing.pt",
             source_allocations=(),
             initial_checkpoint_path="student.pt",
             device="cpu",
@@ -287,7 +288,7 @@ def test_fada_worker_constructor_rolls_back_partial_resident_resources(
             weight_sync_lock=object(),
             weight_param_shapes={},
             env_factory=env_factory,
-            teacher_loader=lambda *_args, **_kwargs: _Oracle(),
+            oracle_loader=lambda *_args, **_kwargs: _Oracle(),
         )
 
     assert walking_env.close_count == 1
@@ -306,7 +307,6 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
         {
             "training": {
                 "fada": {
-                    "phase": "idm_pretrain",
                     "windows_per_iteration": 6,
                     "oracle_shadow_enabled": True,
                     "observation_key": "obs",
@@ -337,7 +337,6 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
     worker.standing_env = _CommandControlledEnv()
     worker.student = FADAPlannerIDMPolicy(config)
     worker.final_teacher = _Oracle()
-    worker.standing_teacher = _StandingOracle()
     worker.teacher_spec = object()
     worker.source_allocations = ()
 
@@ -376,11 +375,11 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
         "walk_to_stand",
     ]
     assert [item["oracle_role"] for item in loaded.metadata["collections"]] == [
-        "walking",
-        "walking",
-        "standing",
-        "standing",
-        "standing",
+        "unified",
+        "unified",
+        "unified",
+        "unified",
+        "unified",
     ]
     assert [item["window_profile"] for item in loaded.metadata["collections"]] == [
         "cold_start",
@@ -400,58 +399,6 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
     assert worker.env.step_count > 0
 
 
-def test_enabled_worker_curriculum_rejects_missing_standing_oracle(tmp_path: Path) -> None:
-    worker = PersistentFADACollectorWorker.__new__(PersistentFADACollectorWorker)
-    worker.config = _curriculum_config()
-    worker.device = "cpu"
-    worker.cfg = OmegaConf.create(
-        {
-            "training": {
-                "fada": {
-                    "phase": "idm_pretrain",
-                    "windows_per_iteration": 3,
-                    "oracle_shadow_enabled": False,
-                    "observation_key": "obs",
-                    "teacher_projection": "identity",
-                    "student_projection": "identity",
-                    "student_drop_index": None,
-                    "command_info_keys": ["commands"],
-                    "max_env_steps": 20,
-                    "stand_transition_curriculum": {
-                        "enabled": True,
-                        "walk_ratio": 1 / 3,
-                        "static_stand_ratio": 1 / 3,
-                        "walk_to_stand_ratio": 1 / 3,
-                    },
-                }
-            }
-        }
-    )
-    worker.env = _CommandControlledEnv()
-    worker.standing_env = _CommandControlledEnv()
-    worker.student = FADAPlannerIDMPolicy(worker.config)
-    worker.final_teacher = _Oracle()
-    worker.standing_teacher = None
-    worker.source_allocations = ()
-
-    class _WeightSync:
-        def read_weights_into(self, _state_dict) -> int:
-            return 1
-
-    worker.weight_sync = _WeightSync()
-    with pytest.raises(ValueError, match="loaded standing Oracle"):
-        worker.collect(
-            DaggerCollectRequest(
-                request_id="fada-0-v1",
-                scenario=FADA_ASYNC_SCENARIO,
-                iteration=0,
-                checkpoint_path=str((tmp_path / "fada.pt").resolve()),
-                output_path=str((tmp_path / "missing.pt").resolve()),
-                expected_weight_version=1,
-            )
-        )
-
-
 def test_enabled_worker_curriculum_rejects_missing_standing_environment(
     tmp_path: Path,
 ) -> None:
@@ -462,7 +409,6 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
         {
             "training": {
                 "fada": {
-                    "phase": "idm_pretrain",
                     "windows_per_iteration": 3,
                     "oracle_shadow_enabled": False,
                     "observation_key": "obs",
@@ -485,7 +431,6 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
     worker.standing_env = None
     worker.student = FADAPlannerIDMPolicy(worker.config)
     worker.final_teacher = _Oracle()
-    worker.standing_teacher = _StandingOracle()
     worker.source_allocations = ()
 
     class _WeightSync:
@@ -503,39 +448,4 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
                 output_path=str((tmp_path / "missing-env.pt").resolve()),
                 expected_weight_version=1,
             )
-        )
-
-
-def test_persistent_runtime_rejects_missing_standing_checkpoint_before_worker_start(
-    tmp_path: Path,
-) -> None:
-    cfg = OmegaConf.create(
-        {
-            "training": {
-                "device": "cpu",
-                "fada": {
-                    "phase": "idm_pretrain",
-                    "windows_per_iteration": 4,
-                    "command_info_keys": ["commands"],
-                    "stand_transition_curriculum": {
-                        "enabled": True,
-                        "standing_teacher_checkpoint_path": str(tmp_path / "missing.pt"),
-                        "walk_ratio": 0.5,
-                        "static_stand_ratio": 0.25,
-                        "walk_to_stand_ratio": 0.25,
-                        "walk_command": [0.4, 0.0, 0.0],
-                        "pre_switch_steps": 2,
-                        "post_switch_steps": 2,
-                    },
-                },
-            }
-        }
-    )
-    with pytest.raises(FileNotFoundError, match="standing Oracle checkpoint"):
-        build_persistent_fada_runtime(
-            cfg=cfg,
-            architecture=_curriculum_config(),
-            paper_source_plan=FADAPaperSourcePlan(enabled=False, source_allocations=()),
-            final_teacher_checkpoint=tmp_path / "walking.pt",
-            request_timeout_seconds=1.0,
         )

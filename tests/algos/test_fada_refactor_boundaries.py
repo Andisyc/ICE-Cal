@@ -30,19 +30,14 @@ TRAINING_OWNER_SYMBOLS = {
     ),
     "fada_checkpoint": (
         "FADA_CHECKPOINT_SCHEMA_VERSION",
+        "FADA_TRAINING_SCHEDULE",
         "FADA_V005_REQUIRED_QUALITY_METRICS",
         "LoadedFADAPlannerIDMPolicy",
         "load_fada_checkpoint",
         "load_fada_policy_checkpoint",
-        "load_pretrained_idm_checkpoint",
         "save_fada_checkpoint",
     ),
-    "fada_training_phase": (
-        "FADATrainingPhase",
-        "canonical_module_sha256",
-        "canonical_state_dict_sha256",
-        "parse_fada_training_phase",
-    ),
+    "fada_oracle": ("load_fada_oracle_policy",),
 }
 
 
@@ -56,17 +51,17 @@ def test_training_facade_reexports_each_owner_symbol_by_identity() -> None:
 def test_distill_package_keeps_existing_training_exports_by_identity() -> None:
     public_names = (
         "FADA_CHECKPOINT_SCHEMA_VERSION",
+        "FADA_TRAINING_SCHEDULE",
         "FADA_SOURCE_BATCH_SCHEMA_VERSION",
         "FADAReplayBuffer",
         "FADATrainer",
         "FADATrainingStats",
-        "FADATrainingPhase",
         "LoadedFADAPlannerIDMPolicy",
         "LoadedFADASourceBatch",
         "evaluate_fada_source_batch",
         "load_fada_checkpoint",
         "load_fada_policy_checkpoint",
-        "load_pretrained_idm_checkpoint",
+        "load_fada_oracle_policy",
         "load_fada_source_batch",
         "save_fada_checkpoint",
         "save_fada_source_batch",

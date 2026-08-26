@@ -21,7 +21,6 @@ from .fada_source_artifact import load_fada_source_batch
 from .fada_source_evaluation import evaluate_fada_source_batch
 from .fada_source_plan import FADAPaperSourcePlan
 from .fada_trainer import FADATrainer
-from .fada_training_phase import FADATrainingPhase
 from .fada_workflow_setup import (
     FADAWorkflowDependencies,
     distill_device,
@@ -74,7 +73,6 @@ def run_fada_persistent_async(
         completed_iterations=start_iteration,
         samples_seen=samples_seen,
         runtime_config=runtime_config,
-        phase_completed=False,
     )
     runtime = dependencies.build_persistent_fada_runtime(
         cfg=cfg,
@@ -102,11 +100,10 @@ def run_fada_persistent_async(
             )
             result = runtime.collect(request)
             loaded = load_fada_source_batch(artifact_path, config=config)
-            if loaded.metadata.get("training_phase") != trainer.phase.value:
+            if loaded.metadata.get("training_schedule") != "alternating_idm_then_planner":
                 raise ValueError(
-                    "FADA async artifact training phase mismatch: "
-                    f"expected={trainer.phase.value!r} "
-                    f"observed={loaded.metadata.get('training_phase')!r}"
+                    "FADA async artifact training schedule mismatch: "
+                    f"observed={loaded.metadata.get('training_schedule')!r}"
                 )
             if int(loaded.batch.command.shape[0]) != result.num_samples:
                 raise ValueError(
@@ -127,15 +124,12 @@ def run_fada_persistent_async(
             last_stats = trainer.update_from_replay(
                 replay,
                 batch_size=int(fada_cfg.batch_size),
-                updates=int(
-                    fada_cfg.idm_updates
-                    if trainer.phase is FADATrainingPhase.IDM_PRETRAIN
-                    else fada_cfg.planner_updates
-                ),
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=int(fada_cfg.planner_updates),
                 device=distill_device(cfg),
                 planner_scenario_ratios=(
                     planner_ratios
-                    if v005_enabled and trainer.phase is FADATrainingPhase.PLANNER
+                    if v005_enabled
                     else None
                 ),
                 planner_walk_cold_start_ratio=walk_cold_start_ratio,
@@ -181,7 +175,6 @@ def run_fada_persistent_async(
                 samples_seen=samples_seen,
                 runtime_config=runtime_config,
                 quality_metrics=last_quality_metrics,
-                phase_completed=iteration + 1 == iterations,
             )
             if iteration + 1 < iterations:
                 weight_version = runtime.activate_checkpoint(checkpoint_path)
@@ -190,8 +183,8 @@ def run_fada_persistent_async(
 
     replay_role_counts = replay.source_role_counts()
     return {
-        "mode": f"fada_{trainer.phase.value}_training",
-        "training_phase": trainer.phase.value,
+        "mode": "fada_alternating_training",
+        "training_schedule": "alternating_idm_then_planner",
         "execution_mode": "persistent_async",
         "checkpoint_path": str(checkpoint_path),
         "completed_iterations": iterations,

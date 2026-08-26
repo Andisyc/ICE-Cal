@@ -24,7 +24,6 @@ from .fada_async_runtime import FADA_ASYNC_SCENARIO, allocate_fada_command_scena
 from .fada_checkpoint import (
     load_fada_checkpoint,
     load_fada_policy_checkpoint,
-    load_pretrained_idm_checkpoint,
     save_fada_checkpoint,
 )
 from .fada_collector import FADACollectionSpec, collect_fada_source_windows
@@ -40,18 +39,17 @@ from .fada_source_artifact import load_fada_source_batch
 from .fada_source_evaluation import evaluate_fada_source_batch
 from .fada_source_plan import FADAPaperSourcePlan, build_fada_paper_source_plan
 from .fada_trainer import FADATrainer
-from .fada_training_phase import FADATrainingPhase
 from .fada_workflow_setup import (
     ROOT_DIR,
     FADAWorkflowDependencies,
     assert_fada_source_route_contract,
+    assert_fada_training_run_contract,
     build_fada_architecture_config,
     distill_device,
     fada_execution_mode,
     fada_v005_replay_settings,
     paper_source_plan,
     resolve_fada_path,
-    resolve_fada_training_phase,
 )
 
 _distill_device = distill_device
@@ -109,7 +107,7 @@ def run_fada_training_owner(
         raise ValueError("run_fada_training requires training.fada.enabled=true")
     config = build_fada_architecture_config(cfg)
     fada_cfg = cfg.training.fada
-    training_phase = resolve_fada_training_phase(cfg)
+    assert_fada_training_run_contract(cfg)
     assert_fada_source_route_contract(cfg, config)
     dependencies.require_teacher_policy_collection_route(cfg)
     dependencies.apply_collect_command_distribution_overrides(cfg)
@@ -129,45 +127,24 @@ def run_fada_training_owner(
     )
     if resolved_teacher is None:
         raise FileNotFoundError(
-            "No SAC Oracle checkpoint resolved for FADA training. Set teacher.checkpoint_path "
+            "No Oracle checkpoint resolved for FADA training. Set teacher.checkpoint_path "
             "or teacher.load_run/teacher.checkpoint."
         )
     teacher_spec = dependencies.build_teacher_spec(cfg)
+    dependencies.load_fada_oracle_policy(resolved_teacher, teacher_spec, device="cpu")
     # B2: cold-path strict-load every intermediate Oracle before env/replay mutation.
     if paper_source_plan.enabled:
         for intermediate_path in paper_source_plan.checkpoint_paths:
             dependencies.load_sac_teacher_policy(intermediate_path, teacher_spec, device="cpu")
     policy = FADAPlannerIDMPolicy(config).to(device)
-    pretrained_idm_sha256 = None
-    if training_phase is FADATrainingPhase.PLANNER:
-        pretrained_idm_path = _fada_path(
-            OmegaConf.select(fada_cfg, "pretrained_idm_path"),
-            field_name="training.fada.pretrained_idm_path",
-            required=True,
-        )
-        if pretrained_idm_path is None or not pretrained_idm_path.is_file():
-            raise FileNotFoundError(
-                f"completed pretrained IDM checkpoint does not exist: {pretrained_idm_path}"
-            )
-        pretrained_idm_sha256 = load_pretrained_idm_checkpoint(
-            pretrained_idm_path,
-            policy,
-            map_location=device,
-        )
-    optimized_module = (
-        policy.idm if training_phase is FADATrainingPhase.IDM_PRETRAIN else policy.planner
-    )
-    learning_rate = (
-        float(fada_cfg.idm_learning_rate)
-        if training_phase is FADATrainingPhase.IDM_PRETRAIN
-        else float(fada_cfg.planner_learning_rate)
-    )
-    optimizer = torch.optim.Adam(optimized_module.parameters(), lr=learning_rate)
     trainer = FADATrainer(
         policy,
-        phase=training_phase,
-        optimizer=optimizer,
-        pretrained_idm_sha256=pretrained_idm_sha256,
+        idm_optimizer=torch.optim.Adam(
+            policy.idm.parameters(), lr=float(fada_cfg.idm_learning_rate)
+        ),
+        planner_optimizer=torch.optim.Adam(
+            policy.planner.parameters(), lr=float(fada_cfg.planner_learning_rate)
+        ),
         max_grad_norm=float(fada_cfg.max_grad_norm),
     )
     start_iteration = 0
@@ -183,7 +160,6 @@ def run_fada_training_owner(
     paper_retention_ratio = (
         int(fada_cfg.suboptimal_data_ratio)
         if execution_mode == "persistent_async"
-        and training_phase is FADATrainingPhase.IDM_PRETRAIN
         and paper_source_plan.enabled
         and bool(OmegaConf.select(fada_cfg, "v005_replay.enabled", default=False))
         else None

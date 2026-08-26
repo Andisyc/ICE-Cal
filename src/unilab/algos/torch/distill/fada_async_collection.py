@@ -15,7 +15,6 @@ from .fada_async_config import curriculum_and_allocations, v005_replay_cfg
 from .fada_collection_contract import FADACollectionResult, FADACollectionSpec
 from .fada_collection_transaction import collect_fada_source_windows
 from .fada_source_artifact import save_fada_source_batch
-from .fada_training_phase import parse_fada_training_phase
 
 FADA_ASYNC_SCENARIO = "fada_iteration"
 
@@ -30,15 +29,14 @@ class FADAAsyncCollectorState(Protocol):
     standing_env: Any
     student: FADAPlannerIDMPolicy
     final_teacher: torch.nn.Module
-    standing_teacher: torch.nn.Module | None
     teacher_spec: Any
     source_allocations: tuple[tuple[str, int], ...]
     intermediate_teacher: torch.nn.Module | None
     intermediate_teacher_checkpoint: str | None
     local_weight_version: int
     weight_sync: Any
-    _teacher_loader: Any
-    _teacher_reloader: Any
+    _intermediate_teacher_loader: Any
+    _intermediate_teacher_reloader: Any
 
     def _collection_spec(self) -> FADACollectionSpec: ...
 
@@ -74,7 +72,9 @@ def _summary(
         "rejected_command_windows": int(collection.rejected_command_windows),
         "rejected_scenario_windows": int(collection.rejected_scenario_windows),
         "command_scenario": collection.command_scenario,
-        "oracle_role": collection.oracle_role,
+        "oracle_role": (
+            "walking" if source == "intermediate_oracle" else collection.oracle_role
+        ),
         "window_profile": collection.window_profile,
         "idm_source_role": (
             "oracle_shadow" if collection.rollout_mode == "oracle" else "trajectory"
@@ -89,7 +89,6 @@ def _collect_cold_start_windows(
     env: Any,
     *,
     teacher_policy: torch.nn.Module,
-    standing_teacher_policy: torch.nn.Module | None,
     rollout_policy: FADAPlannerIDMPolicy | None,
     config: FADAArchitectureConfig,
     num_windows: int,
@@ -109,7 +108,6 @@ def _collect_cold_start_windows(
         result = collect_fada_source_windows(
             env,
             teacher_policy=teacher_policy,
-            standing_teacher_policy=standing_teacher_policy,
             rollout_policy=rollout_policy,
             config=config,
             num_windows=current,
@@ -125,7 +123,7 @@ def _collect_cold_start_windows(
         rejected_command_windows=sum(result.rejected_command_windows for result in results),
         rollout_mode=results[0].rollout_mode,
         command_scenario=command_scenario,
-        oracle_role="walking" if command_scenario == "walk" else "standing",
+        oracle_role="unified",
         rejected_scenario_windows=sum(result.rejected_scenario_windows for result in results),
         window_profile="cold_start",
     )
@@ -157,7 +155,6 @@ def collect_fada_iteration(
     worker.local_weight_version = worker.weight_sync.read_weights_into(worker.student.state_dict())
     sync_finished = time.perf_counter()
     fada_cfg = worker.cfg.training.fada
-    training_phase = parse_fada_training_phase(fada_cfg.phase)
     common = worker._collection_spec()
 
     curriculum, allocations = curriculum_and_allocations(fada_cfg, worker.config)
@@ -173,10 +170,7 @@ def collect_fada_iteration(
             raise ValueError(f"v005 {scenario} cold-start ratio must be finite")
         if v005_enabled and not 0.0 < ratio < 1.0:
             raise ValueError(f"v005 {scenario} cold-start ratio must be strictly between 0 and 1")
-    standing_teacher = getattr(worker, "standing_teacher", None)
     if curriculum_enabled:
-        if standing_teacher is None:
-            raise ValueError("enabled standing curriculum requires a loaded standing Oracle")
         if (
             any(scenario == "static_stand" for scenario, _ in allocations)
             and getattr(worker, "standing_env", None) is None
@@ -213,11 +207,8 @@ def collect_fada_iteration(
                 main = _collect_cold_start_windows(
                     scenario_env,
                     teacher_policy=worker.final_teacher,
-                    standing_teacher_policy=standing_teacher,
                     rollout_policy=(
-                        worker.student
-                        if training_phase.main_rollout_uses_student(iteration=request.iteration)
-                        else None
+                        worker.student if request.iteration > 0 else None
                     ),
                     config=worker.config,
                     num_windows=profile_windows,
@@ -228,11 +219,8 @@ def collect_fada_iteration(
                 main = collect_fada_source_windows(
                     scenario_env,
                     teacher_policy=worker.final_teacher,
-                    standing_teacher_policy=standing_teacher,
                     rollout_policy=(
-                        worker.student
-                        if training_phase.main_rollout_uses_student(iteration=request.iteration)
-                        else None
+                        worker.student if request.iteration > 0 else None
                     ),
                     config=worker.config,
                     num_windows=profile_windows,
@@ -250,21 +238,18 @@ def collect_fada_iteration(
 
     # One resident intermediate Oracle is reused across all source identities. Checkpoint
     # payloads stay CPU-owned and only their weights cross into the resident device model.
-    source_allocations = (
-        worker.source_allocations if training_phase.collect_intermediate_oracles else ()
-    )
-    for source_path, source_windows in source_allocations:
+    for source_path, source_windows in worker.source_allocations:
         intermediate = getattr(worker, "intermediate_teacher", None)
         current_source = getattr(worker, "intermediate_teacher_checkpoint", None)
         if intermediate is None:
-            intermediate = worker._teacher_loader(
+            intermediate = worker._intermediate_teacher_loader(
                 source_path,
                 worker.teacher_spec,
                 device=worker.device,
             )
             worker.intermediate_teacher = intermediate
         elif current_source != source_path:
-            worker._teacher_reloader(intermediate, source_path, worker.teacher_spec)
+            worker._intermediate_teacher_reloader(intermediate, source_path, worker.teacher_spec)
         worker.intermediate_teacher_checkpoint = source_path
         collection = collect_fada_source_windows(
             worker.env,
@@ -297,7 +282,7 @@ def collect_fada_iteration(
         config=worker.config,
         metadata={
             "iteration": request.iteration,
-            "training_phase": training_phase.value,
+            "training_schedule": "alternating_idm_then_planner",
             "main_windows": main_windows,
             "stand_transition_curriculum_enabled": curriculum_enabled,
             "v005_replay_enabled": v005_enabled,

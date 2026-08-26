@@ -18,8 +18,8 @@ from .fada_observation import (
     assert_fada_active_route_contract,
     assert_fada_projection_matches_contract,
 )
+from .fada_oracle import load_fada_oracle_policy as _default_load_fada_oracle_policy
 from .fada_source_plan import FADAPaperSourcePlan, build_fada_paper_source_plan
-from .fada_training_phase import FADATrainingPhase, parse_fada_training_phase
 from .teacher import load_sac_teacher_policy as _default_load_sac_teacher_policy
 
 ROOT_DIR = Path(__file__).resolve().parents[5]
@@ -37,6 +37,7 @@ class FADAWorkflowDependencies:
     ensure_registries: Callable[[], None]
     create_env: Callable[..., Any]
     backend_adapter_cls: Callable[..., Any]
+    load_fada_oracle_policy: Callable[..., torch.nn.Module] = _default_load_fada_oracle_policy
     load_sac_teacher_policy: Callable[..., torch.nn.Module] = _default_load_sac_teacher_policy
 
 
@@ -72,17 +73,19 @@ def build_fada_architecture_config(cfg: DictConfig) -> FADAArchitectureConfig:
     )
 
 
-def resolve_fada_training_phase(cfg: DictConfig) -> FADATrainingPhase:
-    """Validate the complete v010 phase selector before runtime or persistence mutation."""
+def assert_fada_training_run_contract(cfg: DictConfig) -> None:
+    """Validate one fresh v011 alternating run before runtime or persistence mutation."""
 
     fada_cfg = cfg.training.fada
-    phase = parse_fada_training_phase(OmegaConf.select(fada_cfg, "phase"))
+    if OmegaConf.select(fada_cfg, "phase", default=None) is not None:
+        raise ValueError("v011 removed training.fada.phase; one run alternates IDM then Planner")
+    if "pretrained_idm_path" in fada_cfg:
+        raise ValueError("v011 removed training.fada.pretrained_idm_path")
     if any(
         OmegaConf.select(fada_cfg, name, default=None) not in (None, "")
         for name in ("resume_path", "initial_weights_path")
     ):
         raise ValueError("v010 resume_path and initial_weights_path must both be null")
-    pretrained_value = OmegaConf.select(fada_cfg, "pretrained_idm_path", default=None)
     paper_source_enabled = bool(
         OmegaConf.select(fada_cfg, "paper_source_enabled", default=False)
     )
@@ -97,26 +100,8 @@ def resolve_fada_training_phase(cfg: DictConfig) -> FADATrainingPhase:
         raise FileExistsError(
             f"v010 requires a fresh output checkpoint path, found existing: {checkpoint}"
         )
-    if phase is FADATrainingPhase.IDM_PRETRAIN:
-        if pretrained_value not in (None, ""):
-            raise ValueError("idm_pretrain requires pretrained_idm_path to be null")
-        if not paper_source_enabled:
-            raise ValueError("idm_pretrain requires paper_source_enabled=true")
-        return phase
-    if pretrained_value in (None, ""):
-        raise ValueError("planner pretrained_idm_path is required")
-    if paper_source_enabled:
-        raise ValueError("planner requires paper_source_enabled=false")
-    pretrained = _fada_path(
-        pretrained_value,
-        field_name="training.fada.pretrained_idm_path",
-        required=True,
-    )
-    if pretrained is None:
-        raise RuntimeError("FADA Planner paths were not materialized")
-    if checkpoint.expanduser().resolve() == pretrained.expanduser().resolve():
-        raise ValueError("planner checkpoint_path and pretrained_idm_path must differ")
-    return phase
+    if not paper_source_enabled:
+        raise ValueError("v011 alternating training requires paper_source_enabled=true")
 
 
 def assert_fada_source_route_contract(

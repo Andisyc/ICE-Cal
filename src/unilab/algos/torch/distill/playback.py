@@ -45,7 +45,7 @@ def load_distillation_student_policy(
 ) -> LoadedDistillationStudentPolicy:
     """Load the deployable student policy without teacher or privileged observations."""
 
-    raw = torch.load(Path(checkpoint_path), map_location=device, weights_only=False)
+    raw = torch.load(Path(checkpoint_path), map_location=device, weights_only=True)
     runtime_cfg = dict(raw.get("distill_runtime_cfg") or {})
     obs_dim = _required_int(runtime_cfg, "student_obs_dim")
     action_dim = _required_int(runtime_cfg, "student_action_dim")

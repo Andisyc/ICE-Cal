@@ -27,7 +27,6 @@ from tests.algos._fada_training_test_support import (
     _paper_persistent_training_cfg,
     _paper_role_batch,
     _source_batch,
-    _StandingOracle,
     _State,
 )
 from unilab.algos.torch.distill import (
@@ -143,7 +142,6 @@ def test_source_cold_start_characterization_repeats_nonzero_reset_observation() 
     result = collect_fada_source_windows(
         _NonzeroResetEnv(),
         teacher_policy=_Oracle(),
-        standing_teacher_policy=_StandingOracle(),
         config=_curriculum_config(),
         num_windows=1,
         spec=FADACollectionSpec(
@@ -168,7 +166,6 @@ def test_static_collector_builds_exact_reset_aligned_cold_start_window() -> None
     result = collect_fada_source_windows(
         _CommandControlledEnv(),
         teacher_policy=_Oracle(),
-        standing_teacher_policy=_StandingOracle(),
         config=config,
         num_windows=1,
         spec=FADACollectionSpec(
@@ -492,11 +489,10 @@ def test_command_curriculum_allocation_is_exact_and_stable() -> None:
         )
 
 
-def test_static_stand_windows_use_zero_command_and_standing_oracle() -> None:
+def test_static_stand_windows_use_zero_command_and_unified_oracle() -> None:
     result = collect_fada_source_windows(
         _CommandControlledEnv(),
         teacher_policy=_Oracle(),
-        standing_teacher_policy=_StandingOracle(),
         config=_curriculum_config(),
         num_windows=2,
         spec=FADACollectionSpec(
@@ -506,20 +502,22 @@ def test_static_stand_windows_use_zero_command_and_standing_oracle() -> None:
     )
 
     assert result.command_scenario == "static_stand"
-    assert result.oracle_role == "standing"
+    assert result.oracle_role == "unified"
     torch.testing.assert_close(result.batch.command, torch.zeros((2, 3)))
-    torch.testing.assert_close(result.batch.executed_action_chunk[:, 0], torch.full((2, 2), 0.75))
-    torch.testing.assert_close(result.batch.oracle_first_action, torch.full((2, 2), 0.75))
+    torch.testing.assert_close(
+        result.batch.executed_action_chunk[:, 0], result.batch.oracle_first_action
+    )
     assert bool(result.batch.oracle_shadow_valid.all())
-    torch.testing.assert_close(result.batch.oracle_action_chunk[:, 0], torch.full((2, 2), 0.75))
+    torch.testing.assert_close(
+        result.batch.oracle_action_chunk[:, 0], result.batch.oracle_first_action
+    )
 
 
-def test_walk_to_stand_admits_active_history_with_zero_future_and_standing_oracle() -> None:
+def test_walk_to_stand_admits_active_history_with_zero_future_and_unified_oracle() -> None:
     env = _CommandControlledEnv()
     result = collect_fada_source_windows(
         env,
         teacher_policy=_Oracle(),
-        standing_teacher_policy=_StandingOracle(),
         config=_curriculum_config(),
         num_windows=2,
         spec=FADACollectionSpec(
@@ -532,12 +530,12 @@ def test_walk_to_stand_admits_active_history_with_zero_future_and_standing_oracl
     )
 
     assert result.command_scenario == "walk_to_stand"
-    assert result.oracle_role == "standing"
+    assert result.oracle_role == "unified"
     assert result.rejected_command_windows > 0
     assert any(bool(np.any(np.abs(command) > 0.0)) for command in env.command_history)
     assert any(bool(np.all(command == 0.0)) for command in env.command_history)
     torch.testing.assert_close(result.batch.command, torch.zeros((2, 3)))
-    torch.testing.assert_close(result.batch.oracle_first_action, torch.full((2, 2), 0.75))
+    assert torch.isfinite(result.batch.oracle_first_action).all()
 
 
 def test_collector_clears_history_at_episode_boundary() -> None:

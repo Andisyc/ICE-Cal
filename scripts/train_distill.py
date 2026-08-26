@@ -47,6 +47,7 @@ from unilab.algos.torch.distill import (
     load_distillation_checkpoint,
     load_distillation_dataset,
     load_distillation_student_policy,
+    load_fada_oracle_policy,
     load_sac_teacher_policy,
     make_fake_distillation_dataset,
     required_balanced_replay_updates,
@@ -2441,6 +2442,7 @@ def run_fada_training(
         ensure_registries=ensure_registries,
         create_env=create_env,
         backend_adapter_cls=BackendAdapter,
+        load_fada_oracle_policy=load_fada_oracle_policy,
         load_sac_teacher_policy=load_sac_teacher_policy,
     )
     return run_fada_training_owner(

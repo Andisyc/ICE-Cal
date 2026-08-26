@@ -16,7 +16,6 @@ from .fada_replay import FADAReplayBuffer
 from .fada_source_evaluation import evaluate_fada_source_batch
 from .fada_source_plan import FADAPaperSourcePlan
 from .fada_trainer import FADATrainer
-from .fada_training_phase import FADATrainingPhase
 from .fada_workflow_setup import ROOT_DIR, FADAWorkflowDependencies, distill_device
 
 
@@ -46,7 +45,7 @@ def run_fada_legacy(
     iterations = int(fada_cfg.iterations)
     windows_per_iteration = int(fada_cfg.windows_per_iteration)
     batch_size = int(fada_cfg.batch_size)
-    teacher_policy = dependencies.load_sac_teacher_policy(
+    teacher_policy = dependencies.load_fada_oracle_policy(
         resolved_teacher,
         teacher_spec,
         device=device,
@@ -92,11 +91,7 @@ def run_fada_legacy(
                 teacher_policy=teacher_policy,
                 config=config,
                 num_windows=windows_per_iteration,
-                rollout_policy=(
-                    policy
-                    if trainer.phase.main_rollout_uses_student(iteration=iteration)
-                    else None
-                ),
+                rollout_policy=policy if iteration > 0 else None,
                 spec=collection_spec,
             )
             replay.add(collection.batch)
@@ -114,7 +109,7 @@ def run_fada_legacy(
             )
 
             # B5: Appendix B.2 以 2:1 总预算轮转 20 个 intermediate Oracle rollout.
-            if paper_source_enabled and trainer.phase.collect_intermediate_oracles:
+            if paper_source_enabled:
                 for intermediate_path, source_windows in paper_source_plan.source_allocations:
                     intermediate_policy = dependencies.load_sac_teacher_policy(
                         intermediate_path,
@@ -146,11 +141,8 @@ def run_fada_legacy(
             last_stats = trainer.update_from_replay(
                 replay,
                 batch_size=batch_size,
-                updates=int(
-                    fada_cfg.idm_updates
-                    if trainer.phase is FADATrainingPhase.IDM_PRETRAIN
-                    else fada_cfg.planner_updates
-                ),
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=int(fada_cfg.planner_updates),
                 device=device,
             )
             if collect_oracle_shadow:
@@ -191,7 +183,6 @@ def run_fada_legacy(
                 samples_seen=samples_seen,
                 runtime_config=runtime_config,
                 quality_metrics=last_quality_metrics,
-                phase_completed=iteration + 1 == iterations,
             )
     finally:
         close = getattr(env, "close", None)
@@ -199,8 +190,8 @@ def run_fada_legacy(
             close()
 
     return {
-        "mode": f"fada_{trainer.phase.value}_training",
-        "training_phase": trainer.phase.value,
+        "mode": "fada_alternating_training",
+        "training_schedule": "alternating_idm_then_planner",
         "checkpoint_path": str(checkpoint_path),
         "completed_iterations": iterations,
         "samples_seen": samples_seen,

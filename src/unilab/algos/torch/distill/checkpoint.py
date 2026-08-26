@@ -68,7 +68,7 @@ def load_distillation_checkpoint(
 ) -> dict[str, Any]:
     """Load a student-only distillation checkpoint."""
 
-    checkpoint = torch.load(Path(path), map_location=device, weights_only=False)
+    checkpoint = torch.load(Path(path), map_location=device, weights_only=True)
     student_state = checkpoint.get("student_state_dict")
     if student_state is None:
         raise ValueError(f"Checkpoint does not contain student_state_dict: {path}")

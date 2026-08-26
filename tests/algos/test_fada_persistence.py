@@ -60,37 +60,27 @@ from unilab.algos.torch.distill.fada_source_diagnostics import (
     run_fada_coverage_diagnostic,
 )
 from unilab.algos.torch.distill.fada_training import FADAPaperSourcePlan
-from unilab.algos.torch.distill.fada_training_phase import (
-    FADATrainingPhase,
-    canonical_module_sha256,
-)
 
 
-def _trainer(policy: FADAPlannerIDMPolicy, phase: FADATrainingPhase) -> FADATrainer:
-    module = policy.idm if phase is FADATrainingPhase.IDM_PRETRAIN else policy.planner
+def _trainer(policy: FADAPlannerIDMPolicy) -> FADATrainer:
     return FADATrainer(
         policy,
-        phase=phase,
-        optimizer=torch.optim.Adam(module.parameters(), lr=1.0e-3),
-        pretrained_idm_sha256=(
-            canonical_module_sha256(policy.idm)
-            if phase is FADATrainingPhase.PLANNER
-            else None
-        ),
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=1.0e-3),
     )
 
 
-def test_replay_trainer_and_checkpoint_keep_phase_owner(tmp_path: Path) -> None:
+def test_replay_trainer_and_checkpoint_keep_alternating_owner(tmp_path: Path) -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
-    trainer = _trainer(policy, FADATrainingPhase.IDM_PRETRAIN)
+    trainer = _trainer(policy)
     replay = FADAReplayBuffer(config, capacity=5)
     replay.add(_source_batch(config, size=7))
     assert len(replay) == 5
 
-    stats = trainer.update(replay.sample(3), updates=1)
+    stats = trainer.update(replay.sample(3), idm_updates=1, planner_updates=1)
     assert stats.idm_grad_norm is not None and stats.idm_grad_norm > 0.0
-    assert stats.planner_grad_norm is None
+    assert stats.planner_grad_norm > 0.0
 
     checkpoint = tmp_path / "fada.pt"
     save_fada_checkpoint(
@@ -101,16 +91,16 @@ def test_replay_trainer_and_checkpoint_keep_phase_owner(tmp_path: Path) -> None:
         samples_seen=10,
         runtime_config={"enabled": True},
         quality_metrics={"planner_idm_oracle_action_mse": 0.25},
-        phase_completed=True,
     )
     restored_policy = FADAPlannerIDMPolicy(config)
-    restored_trainer = _trainer(restored_policy, FADATrainingPhase.IDM_PRETRAIN)
+    restored_trainer = _trainer(restored_policy)
     restored_before = {
         name: tensor.detach().clone() for name, tensor in restored_policy.state_dict().items()
     }
     with pytest.raises(ValueError, match="resume is disabled"):
         load_fada_checkpoint(checkpoint, restored_policy, restored_trainer)
-    assert not restored_trainer.optimizer.state
+    assert not restored_trainer.idm_optimizer.state
+    assert not restored_trainer.planner_optimizer.state
     for name, tensor in restored_policy.state_dict().items():
         torch.testing.assert_close(tensor, restored_before[name])
 
@@ -128,7 +118,7 @@ def test_fada_resume_checkpoint_uses_weights_only_deserialization(
 ) -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
-    trainer = _trainer(policy, FADATrainingPhase.IDM_PRETRAIN)
+    trainer = _trainer(policy)
     checkpoint = tmp_path / "safe-resume.pt"
     save_fada_checkpoint(
         checkpoint,
@@ -137,7 +127,6 @@ def test_fada_resume_checkpoint_uses_weights_only_deserialization(
         completed_iterations=0,
         samples_seen=0,
         runtime_config={},
-        phase_completed=False,
     )
     original_load = torch.load
     weights_only_values: list[object] = []
@@ -200,12 +189,12 @@ def test_v4_source_artifacts_require_explicit_idm_source_role(
             load_fada_source_batch(artifact, config=config)
 
 
-def test_v4_checkpoint_requires_observation_contract_but_legacy_v2_is_loadable(
+def test_v5_checkpoint_requires_observation_contract_but_legacy_v2_is_loadable(
     tmp_path: Path,
 ) -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
-    trainer = _trainer(policy, FADATrainingPhase.IDM_PRETRAIN)
+    trainer = _trainer(policy)
     checkpoint = tmp_path / "checkpoint.pt"
     save_fada_checkpoint(
         checkpoint,
@@ -214,10 +203,9 @@ def test_v4_checkpoint_requires_observation_contract_but_legacy_v2_is_loadable(
         completed_iterations=0,
         samples_seen=0,
         runtime_config={},
-        phase_completed=False,
     )
     payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
-    assert FADA_CHECKPOINT_SCHEMA_VERSION == 4
+    assert FADA_CHECKPOINT_SCHEMA_VERSION == 5
     assert payload["architecture"]["observation_contract"] == "legacy_actor_obs_v1"
 
     payload["architecture"].pop("observation_contract")
@@ -302,7 +290,7 @@ def test_official_v2_offline_transaction_collects_persists_and_plays_back(
     assert len(replay) == 1
 
     policy = FADAPlannerIDMPolicy(config)
-    trainer = _trainer(policy, FADATrainingPhase.IDM_PRETRAIN)
+    trainer = _trainer(policy)
     checkpoint = tmp_path / "idm-v4.pt"
     save_fada_checkpoint(
         checkpoint,
@@ -311,19 +299,18 @@ def test_official_v2_offline_transaction_collects_persists_and_plays_back(
         completed_iterations=0,
         samples_seen=1,
         runtime_config={"observation_contract": "g1_fada_state_v2"},
-        phase_completed=False,
     )
     loaded = load_fada_policy_checkpoint(checkpoint, device="cpu")
     controller = FADAPlaybackController(loaded.policy, device="cpu")
     actions = controller.act(torch.zeros(1, 98), torch.from_numpy(command.copy()))
     assert actions.shape == (1, 29)
-    assert loaded.checkpoint["schema_version"] == 4
+    assert loaded.checkpoint["schema_version"] == 5
 
 
 def test_v005_checkpoint_serializer_requires_finite_scenario_metrics(tmp_path: Path) -> None:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
-    trainer = _trainer(policy, FADATrainingPhase.PLANNER)
+    trainer = _trainer(policy)
     runtime_config = {"v005_replay": {"enabled": True}}
     required = {
         "scenario/walk/planner_idm_oracle_action_mse": 0.1,
@@ -346,7 +333,6 @@ def test_v005_checkpoint_serializer_requires_finite_scenario_metrics(tmp_path: P
             samples_seen=1,
             runtime_config=runtime_config,
             quality_metrics={},
-            phase_completed=True,
         )
     with pytest.raises(ValueError, match="walk/steady_state_planner_mse"):
         save_fada_checkpoint(
@@ -361,7 +347,6 @@ def test_v005_checkpoint_serializer_requires_finite_scenario_metrics(tmp_path: P
                 for name, value in required.items()
                 if name != "scenario/walk/steady_state_planner_mse"
             },
-            phase_completed=True,
         )
     with pytest.raises(ValueError, match="non-finite"):
         save_fada_checkpoint(
@@ -372,7 +357,6 @@ def test_v005_checkpoint_serializer_requires_finite_scenario_metrics(tmp_path: P
             samples_seen=1,
             runtime_config=runtime_config,
             quality_metrics={**required, "extra": float("nan")},
-            phase_completed=True,
         )
 
     checkpoint = tmp_path / "valid.pt"
@@ -384,7 +368,6 @@ def test_v005_checkpoint_serializer_requires_finite_scenario_metrics(tmp_path: P
         samples_seen=1,
         runtime_config=runtime_config,
         quality_metrics=required,
-        phase_completed=True,
     )
     payload = load_fada_checkpoint(checkpoint, FADAPlannerIDMPolicy(config))
     assert payload["quality_metrics"] == required

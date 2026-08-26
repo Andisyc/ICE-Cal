@@ -4,8 +4,8 @@ Default recall reads only the active contracts listed here.
 
 | Contract | Category | Status | Scope |
 |---|---|---|---|
-| [FADA-METHOD-v010](active/method/FADA-METHOD-v010.md) | method | active | Paper-ordered IDM pretraining followed by Planner training through a permanently frozen IDM |
-| [FADA-TRAIN-v010](active/training/FADA-TRAIN-v010.md) | training | active / implementation | Two separate persistent-async phases with schema-4 phase identity; launch still requires formal audit and separate authorization |
+| [FADA-METHOD-v011](active/method/FADA-METHOD-v011.md) | method | active | One unified final Oracle with per-iteration IDM-then-Planner optimization |
+| [FADA-TRAIN-v011](active/training/FADA-TRAIN-v011.md) | training | active / implementation | Fresh persistent-async alternating campaign with schema-5 schedule identity; launch still requires formal audit and separate authorization |
 | [FADA-ADAPT-METHOD-v002](active/method/FADA-ADAPT-METHOD-v002.md) | method | active | IDM LoRA adaptation from non-leaking v2 target windows |
 | [FADA-ADAPT-TRAIN-v002](active/training/FADA-ADAPT-TRAIN-v002.md) | training | active | v2 target split, LoRA-only optimization, adapted checkpoint, and admission |
 | [FADA-CONTEXT-METHOD-v009](active/method/FADA-CONTEXT-METHOD-v009.md) | method | active | Data-driven task-relevant correction basis, frozen Tracker injection and coefficient readout |

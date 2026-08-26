@@ -134,19 +134,19 @@ def test_official_source_config_enables_exact_source_campaign_but_has_no_assets(
     cfg = OmegaConf.load(Path(__file__).resolve().parents[2] / "conf" / "distill" / "config.yaml")
 
     assert cfg.training.fada.enabled is False
-    assert cfg.training.fada.phase == "idm_pretrain"
+    assert "phase" not in cfg.training.fada
     assert cfg.training.fada.paper_source_enabled is True
     assert cfg.training.fada.oracle_shadow_enabled is True
     assert cfg.training.fada.stand_transition_curriculum.enabled is True
     assert cfg.training.fada.v005_replay.enabled is True
     assert cfg.training.fada.v005_replay.walk_cold_start_ratio == 0.5
     assert cfg.training.fada.intermediate_oracle_checkpoint_paths == []
-    assert cfg.training.fada.stand_transition_curriculum.standing_teacher_checkpoint_path is None
+    assert "standing_teacher_checkpoint_path" not in cfg.training.fada.stand_transition_curriculum
     assert cfg.training.fada.initial_weights_path is None
     assert cfg.training.fada.resume_path is None
-    assert cfg.training.fada.pretrained_idm_path is None
-    assert cfg.training.fada.async_artifact_dir == "logs/fada/idm_pretrain_v010/source_batches"
-    assert cfg.training.fada.checkpoint_path == "logs/fada/idm_pretrain_v010.pt"
+    assert "pretrained_idm_path" not in cfg.training.fada
+    assert cfg.training.fada.async_artifact_dir == "logs/fada/planner_idm_v011/source_batches"
+    assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_v011.pt"
 
     cfg.training.fada.obs_dim = 98
     cfg.training.fada.observation_contract = "legacy_actor_obs_v1"

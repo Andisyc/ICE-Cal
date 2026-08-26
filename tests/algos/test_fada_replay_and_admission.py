@@ -489,7 +489,7 @@ def test_v005_replay_settings_reject_contract_ratio_drift() -> None:
         fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=8)
 
 
-def test_parent_curriculum_artifact_guard_rejects_oracle_role_drift() -> None:
+def test_parent_curriculum_artifact_guard_requires_unified_main_oracle_role() -> None:
     cfg = OmegaConf.create(
         {
             "training": {
@@ -512,19 +512,19 @@ def test_parent_curriculum_artifact_guard_rejects_oracle_role_drift() -> None:
             {
                 "source": "optimal_or_current_policy",
                 "command_scenario": "walk",
-                "oracle_role": "walking",
+                "oracle_role": "unified",
                 "windows": 2,
             },
             {
                 "source": "optimal_or_current_policy",
                 "command_scenario": "static_stand",
-                "oracle_role": "standing",
+                "oracle_role": "unified",
                 "windows": 1,
             },
             {
                 "source": "optimal_or_current_policy",
                 "command_scenario": "walk_to_stand",
-                "oracle_role": "standing",
+                "oracle_role": "unified",
                 "windows": 1,
             },
             {
@@ -536,7 +536,7 @@ def test_parent_curriculum_artifact_guard_rejects_oracle_role_drift() -> None:
         ],
     }
     fada_artifact_admission.require_fada_curriculum_artifact(cfg, metadata)
-    metadata["collections"][2]["oracle_role"] = "walking"
+    metadata["collections"][2]["oracle_role"] = "standing"
     with pytest.raises(ValueError, match="Oracle role mismatch"):
         fada_artifact_admission.require_fada_curriculum_artifact(cfg, metadata)
 
@@ -548,7 +548,6 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
             "student": {"obs_dim": config.obs_dim, "action_dim": config.action_dim},
             "training": {
                 "fada": {
-                    "phase": "planner",
                     "windows_per_iteration": 8,
                     "batch_size": 8,
                     "command_dim": config.command_dim,
@@ -591,7 +590,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                 "iteration": 1,
                 "source": "optimal_or_current_policy",
                 "command_scenario": "walk",
-                "oracle_role": "walking",
+                "oracle_role": "unified",
                 "window_profile": "cold_start",
                 "windows": 2,
             },
@@ -599,7 +598,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                 "iteration": 1,
                 "source": "optimal_or_current_policy",
                 "command_scenario": "walk",
-                "oracle_role": "walking",
+                "oracle_role": "unified",
                 "window_profile": "steady_state",
                 "windows": 2,
             },
@@ -607,7 +606,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                 "iteration": 1,
                 "source": "optimal_or_current_policy",
                 "command_scenario": "static_stand",
-                "oracle_role": "standing",
+                "oracle_role": "unified",
                 "window_profile": "cold_start",
                 "windows": 1,
             },
@@ -615,7 +614,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                 "iteration": 1,
                 "source": "optimal_or_current_policy",
                 "command_scenario": "static_stand",
-                "oracle_role": "standing",
+                "oracle_role": "unified",
                 "window_profile": "steady_state",
                 "windows": 1,
             },
@@ -623,7 +622,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                 "iteration": 1,
                 "source": "optimal_or_current_policy",
                 "command_scenario": "walk_to_stand",
-                "oracle_role": "standing",
+                "oracle_role": "unified",
                 "window_profile": "steady_state",
                 "windows": 2,
             },
@@ -648,15 +647,6 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
     )
 
     fada_artifact_admission.require_fada_curriculum_artifact(cfg, metadata, batch)
-    cfg.training.fada.phase = "idm_pretrain"
-    idm_roles = batch.idm_source_role.clone()
-    idm_roles[:8] = FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
-    fada_artifact_admission.require_fada_curriculum_artifact(
-        cfg,
-        metadata,
-        replace(batch, idm_source_role=idm_roles),
-    )
-    cfg.training.fada.phase = "planner"
     planner_only_roles = batch.idm_source_role.clone()
     planner_only_roles[2] = FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
     planner_only_valid = batch.oracle_shadow_valid.clone()

@@ -66,10 +66,10 @@ from .fada_async_runtime import (
 )
 from .fada_checkpoint import (
     FADA_CHECKPOINT_SCHEMA_VERSION,
+    FADA_TRAINING_SCHEDULE,
     LoadedFADAPlannerIDMPolicy,
     load_fada_checkpoint,
     load_fada_policy_checkpoint,
-    load_pretrained_idm_checkpoint,
     save_fada_checkpoint,
 )
 from .fada_collector import (
@@ -91,6 +91,7 @@ from .fada_observation import (
     projection_for_fada_observation_contract,
     raw_observation_dim_for_fada_contract,
 )
+from .fada_oracle import load_fada_oracle_policy
 from .fada_replay import FADAReplayBuffer
 from .fada_source_artifact import (
     FADA_SOURCE_BATCH_SCHEMA_VERSION,
@@ -117,12 +118,6 @@ from .fada_target_data import (
     save_fada_target_artifact,
 )
 from .fada_trainer import FADATrainer, FADATrainingStats
-from .fada_training_phase import (
-    FADATrainingPhase,
-    canonical_module_sha256,
-    canonical_state_dict_sha256,
-    parse_fada_training_phase,
-)
 from .models import MLPStudentPolicy
 from .moe_diagnostics import (
     MoEExpertDiagnostics,
@@ -246,11 +241,8 @@ __all__ = [
     "FADAReplayBuffer",
     "FADATrainer",
     "FADATrainingStats",
-    "FADATrainingPhase",
+    "FADA_TRAINING_SCHEDULE",
     "evaluate_fada_source_batch",
-    "canonical_module_sha256",
-    "canonical_state_dict_sha256",
-    "parse_fada_training_phase",
     "LoadedFADAPlannerIDMPolicy",
     "LoadedFADASourceBatch",
     "LoadedFADATargetArtifact",
@@ -294,7 +286,7 @@ __all__ = [
     "load_fada_adapted_checkpoint",
     "load_fada_deployable_policy_checkpoint",
     "load_fada_policy_checkpoint",
-    "load_pretrained_idm_checkpoint",
+    "load_fada_oracle_policy",
     "load_fada_source_batch",
     "load_fada_target_artifact",
     "load_distillation_dataset",

@@ -84,12 +84,11 @@ training:
   online_dagger: false
   fada:
     enabled: false
-    phase: idm_pretrain
     obs_dim: 66
     observation_contract: g1_fada_state_v2
     execution_mode: persistent_async
     async_request_timeout_seconds: 3600.0
-    async_artifact_dir: logs/fada/idm_pretrain_v010/source_batches
+    async_artifact_dir: logs/fada/planner_idm_v011/source_batches
     paper_source_enabled: true
     oracle_shadow_enabled: true
     intermediate_oracle_checkpoint_paths: []
@@ -122,13 +121,11 @@ training:
     student_drop_index: null
     command_info_keys: [commands]
     max_env_steps: null
-    checkpoint_path: logs/fada/idm_pretrain_v010.pt
-    pretrained_idm_path: null
+    checkpoint_path: logs/fada/planner_idm_v011.pt
     resume_path: null
     initial_weights_path: null
     stand_transition_curriculum:
       enabled: true
-      standing_teacher_checkpoint_path: null
       standing_task: g1_stand_still/mujoco
       walk_ratio: 0.5
       static_stand_ratio: 0.25

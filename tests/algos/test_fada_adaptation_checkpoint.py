@@ -13,6 +13,17 @@ from unilab.algos.torch.distill import (
     FADAPlannerIDMPolicy,
     load_fada_policy_checkpoint,
 )
+from unilab.algos.torch.distill.fada_adaptation_checkpoint import (
+    assert_fada_adaptation_source_checkpoint,
+)
+
+
+@pytest.mark.parametrize("schema_version", [1, 2, 4, 5])
+def test_adaptation_source_contract_rejects_non_schema3(schema_version: int) -> None:
+    with pytest.raises(ValueError, match="requires schema-3"):
+        assert_fada_adaptation_source_checkpoint(
+            type("Loaded", (), {"checkpoint": {"schema_version": schema_version}})()
+        )
 
 
 def _owners() -> tuple[Any, Any]:

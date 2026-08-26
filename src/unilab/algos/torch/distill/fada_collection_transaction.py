@@ -41,7 +41,6 @@ def collect_fada_source_windows(
     num_windows: int,
     rollout_policy: FADAPlannerIDMPolicy | None = None,
     rollout_teacher_policy: torch.nn.Module | None = None,
-    standing_teacher_policy: torch.nn.Module | None = None,
     spec: FADACollectionSpec | None = None,
 ) -> FADACollectionResult:
     """产出 command-scenario 对齐的 causal windows 与 same-state Oracle labels.
@@ -85,8 +84,6 @@ def collect_fada_source_windows(
         raise ValueError(f"unsupported FADA command_scenario: {command_scenario!r}")
     if command_scenario != "walk" and rollout_teacher_policy is not None:
         raise ValueError("intermediate Oracle rollouts support only the walk scenario")
-    if command_scenario != "walk" and standing_teacher_policy is None:
-        raise ValueError(f"{command_scenario} requires standing_teacher_policy")
     if cold_start_windows and command_scenario == "walk_to_stand":
         raise ValueError("cold_start_windows does not support command_scenario='walk_to_stand'")
     walking_recovery = bool(cold_start_windows and command_scenario == "walk")
@@ -201,28 +198,22 @@ def collect_fada_source_windows(
             expected_rows=num_envs,
             expected_dim=config.command_dim,
         )
-        standing_phase = command_scenario == "static_stand" or (
-            command_scenario == "walk_to_stand" and transition_phase_step >= transition_pre_steps
-        )
-        authoritative_teacher = standing_teacher_policy if standing_phase else teacher_policy
-        if authoritative_teacher is None:
-            raise RuntimeError("standing curriculum teacher authority was not materialized")
         authoritative_teacher_obs, _ = project_teacher_obs(
             source,
             projection=teacher_projection,
             expected_teacher_obs_dim=int(
-                getattr(authoritative_teacher, "obs_dim", source.shape[1])
+                getattr(teacher_policy, "obs_dim", source.shape[1])
             ),
         )
         oracle_actions = _policy_actions(
-            authoritative_teacher,
+            teacher_policy,
             authoritative_teacher_obs,
             action_dim=config.action_dim,
         )
         if collect_oracle_shadow:
             oracle_future, oracle_action_chunk, oracle_shadow_valid = _oracle_shadow_pair(
                 env,
-                teacher_policy=authoritative_teacher,
+                teacher_policy=teacher_policy,
                 initial_oracle_actions=oracle_actions,
                 initial_command=command,
                 config=config,
@@ -422,7 +413,7 @@ def collect_fada_source_windows(
             else ("oracle" if rollout_policy is None else "planner_idm")
         ),
         command_scenario=command_scenario,
-        oracle_role=("standing" if command_scenario != "walk" else "walking"),
+        oracle_role="unified",
         rejected_scenario_windows=rejected_scenario,
         window_profile=("cold_start" if cold_start_windows else "steady_state"),
     )

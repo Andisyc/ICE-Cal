@@ -292,7 +292,6 @@ def _paper_persistent_training_cfg(tmp_path: Path) -> OmegaConf:
                 "sim_backend": "mujoco",
                 "fada": {
                     "enabled": True,
-                    "phase": "idm_pretrain",
                     "execution_mode": "persistent_async",
                     "async_artifact_dir": str(tmp_path / "artifacts"),
                     "async_request_timeout_seconds": 10.0,
@@ -330,13 +329,11 @@ def _paper_persistent_training_cfg(tmp_path: Path) -> OmegaConf:
                     "command_info_keys": ["commands"],
                     "max_env_steps": 12,
                     "quality_eval_max_windows": 12,
-                    "checkpoint_path": str(tmp_path / "planner_idm_v007r1.pt"),
-                    "pretrained_idm_path": None,
+                    "checkpoint_path": str(tmp_path / "planner_idm_v011.pt"),
                     "resume_path": None,
                     "initial_weights_path": None,
                     "stand_transition_curriculum": {
                         "enabled": True,
-                        "standing_teacher_checkpoint_path": str(tmp_path / "standing.pt"),
                         "standing_task": "FakeStandTask",
                         "walk_ratio": 0.5,
                         "static_stand_ratio": 0.25,

@@ -17,7 +17,6 @@ from .fada import (
 )
 from .fada_async_runtime import allocate_fada_command_scenarios
 from .fada_replay import FADAReplayBuffer
-from .fada_training_phase import parse_fada_training_phase
 from .fada_workflow_setup import (
     build_fada_architecture_config,
 )
@@ -103,14 +102,13 @@ def _require_fada_curriculum_artifact(
         )
     for item in main:
         scenario = str(item.get("command_scenario"))
-        expected_role = "walking" if scenario == "walk" else "standing"
-        if item.get("oracle_role") != expected_role:
+        if item.get("oracle_role") != "unified":
             raise ValueError(
                 "FADA async artifact Oracle role mismatch: "
-                f"scenario={scenario!r} expected={expected_role!r} "
+                f"scenario={scenario!r} expected='unified' "
                 f"observed={item.get('oracle_role')!r}"
             )
-    # B3: 拒绝 standing authority 漂移和 intermediate Oracle 越权, 再允许 replay consumer.
+    # B3: 拒绝 unified final-Oracle 漂移和 intermediate Oracle 越权, 再允许 replay consumer.
     if any(
         item.get("command_scenario") != "walk" or item.get("oracle_role") != "walking"
         for item in summaries
@@ -198,8 +196,7 @@ def _require_fada_curriculum_artifact(
     ):
         raise ValueError("FADA walking recovery IDM role must be oracle_shadow")
     ordinary_main_mask = main_mask & ~walking_recovery_mask
-    training_phase = parse_fada_training_phase(OmegaConf.select(cfg, "training.fada.phase"))
-    if not training_phase.main_rollout_uses_student(iteration=iteration):
+    if iteration == 0:
         valid_ordinary_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
     else:
         trajectory_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["trajectory"]
@@ -208,7 +205,7 @@ def _require_fada_curriculum_artifact(
         ) & ~batch.oracle_shadow_valid
         valid_ordinary_role = trajectory_role | planner_only_terminal
     if bool((ordinary_main_mask & ~valid_ordinary_role).any()):
-        raise ValueError("FADA main-source IDM role does not match training phase and iteration")
+        raise ValueError("FADA main-source IDM role does not match alternating iteration")
 
 
 slice_fada_batch = _slice_fada_batch

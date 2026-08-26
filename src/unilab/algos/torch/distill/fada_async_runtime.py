@@ -27,6 +27,7 @@ from .fada_async_config import (
 )
 from .fada_checkpoint import load_fada_policy_checkpoint
 from .fada_collection_contract import FADACollectionSpec
+from .fada_oracle import load_fada_oracle_policy
 from .fada_source_plan import FADAPaperSourcePlan
 from .persistent_runtime import PersistentDistillationRuntime
 from .teacher import load_sac_teacher_policy, reload_sac_teacher_policy_
@@ -51,7 +52,6 @@ class PersistentFADACollectorWorker:
         standing_cfg_payload: Mapping[str, Any] | None,
         architecture: Mapping[str, Any],
         final_teacher_checkpoint: str,
-        standing_teacher_checkpoint: str | None,
         source_allocations: Sequence[tuple[str, int]],
         initial_checkpoint_path: str,
         device: str,
@@ -59,8 +59,9 @@ class PersistentFADACollectorWorker:
         weight_sync_lock: Any,
         weight_param_shapes: Mapping[str, torch.Size],
         env_factory: Callable[..., Any] = create_env,
-        teacher_loader: Callable[..., torch.nn.Module] = load_sac_teacher_policy,
-        teacher_reloader: Callable[..., None] = reload_sac_teacher_policy_,
+        oracle_loader: Callable[..., torch.nn.Module] = load_fada_oracle_policy,
+        intermediate_teacher_loader: Callable[..., torch.nn.Module] = load_sac_teacher_policy,
+        intermediate_teacher_reloader: Callable[..., None] = reload_sac_teacher_policy_,
     ) -> None:
         # B1: 解析 worker-owned config 与 source identity, 产出不可变 collection 配置.
         self.weight_sync: SharedWeightSync | None = None
@@ -77,8 +78,9 @@ class PersistentFADACollectorWorker:
             (str(path), int(windows)) for path, windows in source_allocations
         )
         self.teacher_spec = _teacher_spec(self.cfg)
-        self._teacher_loader = teacher_loader
-        self._teacher_reloader = teacher_reloader
+        self._oracle_loader = oracle_loader
+        self._intermediate_teacher_loader = intermediate_teacher_loader
+        self._intermediate_teacher_reloader = intermediate_teacher_reloader
         self.intermediate_teacher: torch.nn.Module | None = None
         self.intermediate_teacher_checkpoint: str | None = None
 
@@ -96,21 +98,11 @@ class PersistentFADACollectorWorker:
             self.local_weight_version = self.weight_sync.read_weights_into(
                 self.student.state_dict()
             )
-            self.final_teacher = self._teacher_loader(
+            self.final_teacher = self._oracle_loader(
                 final_teacher_checkpoint,
                 self.teacher_spec,
                 device=self.device,
             )
-            self.standing_teacher = (
-                None
-                if standing_teacher_checkpoint is None
-                else self._teacher_loader(
-                    standing_teacher_checkpoint,
-                    self.teacher_spec,
-                    device=self.device,
-                )
-            )
-
             # A spawned worker starts with an empty registry. FADA owns the G1 route, so
             # importing unrelated optional robot families here would make their extras
             # accidental hard dependencies of Planner-IDM training.
@@ -228,19 +220,8 @@ def build_persistent_fada_runtime(
         return load_fada_policy_checkpoint(path, device="cpu").policy
 
     curriculum, _ = _curriculum_and_allocations(cfg.training.fada, architecture)
-    standing_teacher_checkpoint: str | None = None
     standing_cfg_payload: dict[str, Any] | None = None
     if bool(curriculum.enabled):
-        configured = OmegaConf.select(curriculum, "standing_teacher_checkpoint_path")
-        if configured in (None, ""):
-            raise ValueError(
-                "training.fada.stand_transition_curriculum.standing_teacher_checkpoint_path "
-                "is required when the curriculum is enabled"
-            )
-        standing_path = Path(str(configured)).expanduser().resolve()
-        if not standing_path.is_file():
-            raise FileNotFoundError(f"standing Oracle checkpoint does not exist: {standing_path}")
-        standing_teacher_checkpoint = str(standing_path)
         standing_cfg = _standing_owner_cfg(
             root_dir=root_dir,
             cfg=cfg,
@@ -260,7 +241,6 @@ def build_persistent_fada_runtime(
             "standing_cfg_payload": standing_cfg_payload,
             "architecture": asdict(architecture),
             "final_teacher_checkpoint": str(Path(final_teacher_checkpoint).resolve()),
-            "standing_teacher_checkpoint": standing_teacher_checkpoint,
             "source_allocations": [
                 (str(path.resolve()), windows)
                 for path, windows in paper_source_plan.source_allocations

@@ -79,7 +79,6 @@ def stand_transition_curriculum_cfg(fada_cfg: DictConfig) -> DictConfig:
     defaults = OmegaConf.create(
         {
             "enabled": False,
-            "standing_teacher_checkpoint_path": None,
             "standing_task": "g1_stand_still/mujoco",
             "walk_ratio": 1.0,
             "static_stand_ratio": 0.0,

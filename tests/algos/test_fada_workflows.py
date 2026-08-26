@@ -27,7 +27,6 @@ from tests.algos._fada_training_test_support import (
     _paper_persistent_training_cfg,
     _paper_role_batch,
     _source_batch,
-    _StandingOracle,
     _State,
 )
 from unilab.algos.torch.distill import (
@@ -60,25 +59,6 @@ from unilab.algos.torch.distill.fada_source_diagnostics import (
     run_fada_coverage_diagnostic,
 )
 from unilab.algos.torch.distill.fada_training import FADAPaperSourcePlan
-from unilab.algos.torch.distill.fada_training_phase import FADATrainingPhase
-
-
-def _write_completed_idm(path: Path, config: FADAArchitectureConfig) -> None:
-    policy = FADAPlannerIDMPolicy(config)
-    trainer = FADATrainer(
-        policy,
-        phase=FADATrainingPhase.IDM_PRETRAIN,
-        optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
-    )
-    save_fada_checkpoint(
-        path,
-        policy,
-        trainer,
-        completed_iterations=1,
-        samples_seen=1,
-        runtime_config={},
-        phase_completed=True,
-    )
 
 
 def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
@@ -105,11 +85,10 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
                 "sim_backend": "mujoco",
                 "fada": {
                     "enabled": True,
-                    "phase": "planner",
                     "execution_mode": "persistent_async",
                     "async_artifact_dir": str(artifact_dir),
                     "async_request_timeout_seconds": 10.0,
-                    "paper_source_enabled": False,
+                    "paper_source_enabled": True,
                     "oracle_shadow_enabled": True,
                     "history_length": 2,
                     "prediction_horizon": 2,
@@ -139,7 +118,6 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
                     "max_env_steps": 12,
                     "quality_eval_max_windows": 1,
                     "checkpoint_path": str(checkpoint),
-                    "pretrained_idm_path": str(tmp_path / "pretrained-idm.pt"),
                     "initial_weights_path": None,
                     "resume_path": None,
                 },
@@ -147,7 +125,6 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
         }
     )
     config = _config()
-    _write_completed_idm(tmp_path / "pretrained-idm.pt", config)
 
     class _Runtime:
         def __init__(self) -> None:
@@ -175,7 +152,7 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
                 config=config,
                 metadata={
                     "iteration": request.iteration,
-                    "training_phase": "planner",
+                    "training_schedule": "alternating_idm_then_planner",
                     "main_windows": 1,
                     "collections": [summary],
                 },
@@ -190,8 +167,14 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
             self.closed = True
 
     runtime = _Runtime()
+    monkeypatch.setattr(
+        fada_workflow,
+        "_paper_source_plan",
+        lambda _cfg: FADAPaperSourcePlan(enabled=False, source_allocations=()),
+    )
     monkeypatch.setattr(module, "_require_teacher_policy_collection_route", lambda _cfg: None)
     monkeypatch.setattr(module, "_apply_collect_command_distribution_overrides", lambda _cfg: {})
+    monkeypatch.setattr(module, "load_fada_oracle_policy", lambda *_args, **_kwargs: _Oracle())
     monkeypatch.setattr(module, "build_persistent_fada_runtime", lambda **_kwargs: runtime)
 
     result = module.run_fada_training(cfg, teacher_checkpoint=tmp_path / "oracle.pt")
@@ -206,24 +189,12 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
     assert runtime.closed is True
 
 
-@pytest.mark.parametrize(
-    ("phase", "expected_ratio"),
-    [("idm_pretrain", 2), ("planner", None)],
-)
 def test_fada_workflow_activates_role_retention_only_for_paper_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    phase: str,
-    expected_ratio: int | None,
 ) -> None:
     module = _load_train_distill()
     cfg = _paper_persistent_training_cfg(tmp_path)
-    cfg.training.fada.phase = phase
-    cfg.training.fada.paper_source_enabled = phase == "idm_pretrain"
-    if phase == "planner":
-        cfg.training.fada.intermediate_oracle_checkpoint_paths = []
-        cfg.training.fada.pretrained_idm_path = str(tmp_path / "pretrained-idm.pt")
-        _write_completed_idm(Path(cfg.training.fada.pretrained_idm_path), _curriculum_config())
 
     captured: dict[str, object] = {}
     original_replay = fada_workflow.FADAReplayBuffer
@@ -242,12 +213,13 @@ def test_fada_workflow_activates_role_retention_only_for_paper_source(
     )
     monkeypatch.setattr(module, "_require_teacher_policy_collection_route", lambda _cfg: None)
     monkeypatch.setattr(module, "_apply_collect_command_distribution_overrides", lambda _cfg: {})
+    monkeypatch.setattr(module, "load_fada_oracle_policy", lambda *_args, **_kwargs: _Oracle())
     monkeypatch.setattr(module, "load_sac_teacher_policy", lambda *_args, **_kwargs: _Oracle())
 
     result = module.run_fada_training(cfg, teacher_checkpoint=tmp_path / "oracle.pt")
 
-    assert captured.get("suboptimal_retention_ratio") == expected_ratio
-    assert result["suboptimal_retention_ratio"] == expected_ratio
+    assert captured.get("suboptimal_retention_ratio") == 2
+    assert result["suboptimal_retention_ratio"] == 2
 
 
 def test_fada_official_persistent_route_consumes_balanced_paper_replay(
@@ -269,12 +241,14 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
 
         def collect(self, request):
             batch = _paper_role_batch(config, main_rows=12, intermediate_rows=24)
+            main_roles = (
+                [1] * 12
+                if request.iteration == 0
+                else [1] * 3 + [0] * 9
+            )
             batch = replace(
                 batch,
-                idm_source_role=torch.tensor(
-                    [1] * 12 + [0] * 24,
-                    dtype=torch.int64,
-                ),
+                idm_source_role=torch.tensor(main_roles + [0] * 24, dtype=torch.int64),
             )
             scenario = torch.tensor(
                 [
@@ -299,7 +273,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "iteration": request.iteration,
                     "source": "optimal_or_current_policy",
                     "command_scenario": "walk",
-                    "oracle_role": "walking",
+                    "oracle_role": "unified",
                     "window_profile": "cold_start",
                     "windows": 3,
                     "env_steps": 3,
@@ -310,7 +284,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "iteration": request.iteration,
                     "source": "optimal_or_current_policy",
                     "command_scenario": "walk",
-                    "oracle_role": "walking",
+                    "oracle_role": "unified",
                     "window_profile": "steady_state",
                     "windows": 3,
                     "env_steps": 3,
@@ -321,7 +295,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "iteration": request.iteration,
                     "source": "optimal_or_current_policy",
                     "command_scenario": "static_stand",
-                    "oracle_role": "standing",
+                    "oracle_role": "unified",
                     "window_profile": "cold_start",
                     "windows": 2,
                     "env_steps": 2,
@@ -332,7 +306,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "iteration": request.iteration,
                     "source": "optimal_or_current_policy",
                     "command_scenario": "static_stand",
-                    "oracle_role": "standing",
+                    "oracle_role": "unified",
                     "window_profile": "steady_state",
                     "windows": 1,
                     "env_steps": 1,
@@ -343,7 +317,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "iteration": request.iteration,
                     "source": "optimal_or_current_policy",
                     "command_scenario": "walk_to_stand",
-                    "oracle_role": "standing",
+                    "oracle_role": "unified",
                     "window_profile": "steady_state",
                     "windows": 3,
                     "env_steps": 3,
@@ -372,7 +346,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                 config=config,
                 metadata={
                     "iteration": request.iteration,
-                    "training_phase": "idm_pretrain",
+                    "training_schedule": "alternating_idm_then_planner",
                     "main_windows": 12,
                     "stand_transition_curriculum_enabled": True,
                     "v005_replay_enabled": True,
@@ -392,6 +366,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
     runtime = _PaperRuntime()
     monkeypatch.setattr(module, "_require_teacher_policy_collection_route", lambda _cfg: None)
     monkeypatch.setattr(module, "_apply_collect_command_distribution_overrides", lambda _cfg: {})
+    monkeypatch.setattr(module, "load_fada_oracle_policy", lambda *_args, **_kwargs: _Oracle())
     monkeypatch.setattr(module, "load_sac_teacher_policy", lambda *_args, **_kwargs: _Oracle())
     monkeypatch.setattr(module, "build_persistent_fada_runtime", lambda **_kwargs: runtime)
 
@@ -447,8 +422,6 @@ def test_unilab_fada_workflow_bootstraps_then_uses_planner_idm(
 ) -> None:
     module = _load_train_distill()
     checkpoint = tmp_path / "fada.pt"
-    pretrained_idm = tmp_path / "pretrained-idm.pt"
-    _write_completed_idm(pretrained_idm, _config())
     cfg = OmegaConf.create(
         {
             "student": {"obs_dim": 3, "action_dim": 2},
@@ -466,8 +439,7 @@ def test_unilab_fada_workflow_bootstraps_then_uses_planner_idm(
                 "sim_backend": "mujoco",
                 "fada": {
                     "enabled": True,
-                    "phase": "planner",
-                    "paper_source_enabled": False,
+                    "paper_source_enabled": True,
                     "oracle_shadow_enabled": True,
                     "history_length": 2,
                     "prediction_horizon": 2,
@@ -497,7 +469,6 @@ def test_unilab_fada_workflow_bootstraps_then_uses_planner_idm(
                     "max_env_steps": 12,
                     "quality_eval_max_windows": 1,
                     "checkpoint_path": str(checkpoint),
-                    "pretrained_idm_path": str(pretrained_idm),
                     "initial_weights_path": None,
                     "resume_path": None,
                 },
@@ -506,7 +477,13 @@ def test_unilab_fada_workflow_bootstraps_then_uses_planner_idm(
     )
     monkeypatch.setattr(module, "_require_teacher_policy_collection_route", lambda _cfg: None)
     monkeypatch.setattr(module, "_apply_collect_command_distribution_overrides", lambda _cfg: {})
+    monkeypatch.setattr(module, "load_fada_oracle_policy", lambda *_args, **_kwargs: _Oracle())
     monkeypatch.setattr(module, "load_sac_teacher_policy", lambda *_args, **_kwargs: _Oracle())
+    monkeypatch.setattr(
+        fada_workflow,
+        "_paper_source_plan",
+        lambda _cfg: FADAPaperSourcePlan(enabled=False, source_allocations=()),
+    )
     env = _FakeEnv()
 
     result = module.run_fada_training(
