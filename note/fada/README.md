@@ -5,11 +5,12 @@ engineering transition, and the superseded Support–Query implementation lineag
 
 ## Current semantic boundary
 
-Active `FADA-METHOD-v012` and `FADA-TRAIN-v012` own source-policy construction. They require an
-ICE-Cal-trained privileged SAC Oracle on one G1WalkFlat/MuJoCo task, forbid Gait/feet-phase Reward,
-bind one 20+1 checkpoint lineage, and define Planner input as state66 + previous-action29 history
-with command3 separate and an action-free K×66 future. The v011 distilled-teacher and mixed-scenario
-route is historical and cannot be used by the active source campaign.
+Active `FADA-METHOD-v013` and `FADA-TRAIN-v013` own source-policy construction. They require one
+ICE-Cal-trained privileged SAC Oracle on one G1WalkFlat/MuJoCo task. Zero command receives standing
+support/stability Reward and nonzero command receives walking tracking Reward; the command is the
+mode authority, while Gait/feet-phase Reward and gait constraints remain disabled. They bind one
+20+1 checkpoint lineage and keep Planner input as state66 + previous-action29 history with command3
+separate and an action-free K×66 future. v012 and earlier source routes are historical.
 
 Active `FADA-CONTEXT-METHOD-v008` and `FADA-CONTEXT-TRAIN-v007` define a frozen Planner and Tracker,
 an axis direction bank, a 30-frame State/Action coefficient encoder, and serial S1/S2/S3 training.
@@ -28,8 +29,8 @@ evidence, and policy quality have not run.
 2. `../architecture/08_in_context_execution_calibration.html`
 3. `../architecture/09_in_context_execution_calibration_design_inspector.html`
 4. `contracts/README.md` for active semantic authority
-5. `plans/2026-08-26-fada-paper-aligned-source-training-v012.md` and
-   `testing/v012_module_test_cards.md` for the pending source-training transition
+5. `plans/2026-08-27-fada-no-gait-dual-reward-v013.md` and
+   `testing/v013_module_test_cards.md` for the current source-training transition
 6. `plans/2026-08-23-configurable-axis-training-refactor.md`, `../testing/module_test_cards.md`, and
    `task_canvas.md` for the implemented calibration-side transition
 

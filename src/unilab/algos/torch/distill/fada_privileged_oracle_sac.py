@@ -12,8 +12,8 @@ from unilab.algos.torch.distill.fada_privileged_oracle import (
     FADAOracleCheckpointContract,
     FADAOracleCheckpointGateway,
     canonical_fada_config_sha256,
+    validate_fada_no_gait_dual_reward,
     validate_fada_oracle_checkpoint_payload,
-    validate_no_gait_reward,
 )
 from unilab.algos.torch.hora.sac_learner import HoraSACLearner
 from unilab.algos.torch.offpolicy.runtime import OffPolicyRuntime
@@ -223,20 +223,11 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
         if bool(getattr(curriculum_cfg, "enabled", True)):
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
-        validate_no_gait_reward(_object_items(cfg.reward.scales))
-        reward_mode = getattr(cfg.reward, "mode", None)
-        if bool(getattr(reward_mode, "enabled", False)):
-            raise ValueError("privileged_locomotion_sac forbids reward.mode")
-        gait_constraint = getattr(cfg.reward, "gait_constraint", None)
-        penalty_scale = (
-            gait_constraint.get("penalty_scale", 0.0)
-            if isinstance(gait_constraint, dict)
-            else getattr(gait_constraint, "penalty_scale", 0.0)
+        validate_fada_no_gait_dual_reward(
+            reward_scales=_object_items(cfg.reward.scales),
+            reward_mode=_object_items(getattr(cfg.reward, "mode", None)),
+            gait_constraint=_object_items(getattr(cfg.reward, "gait_constraint", None)),
         )
-        if float(penalty_scale) != 0.0:
-            raise ValueError("privileged_locomotion_sac requires gait constraint penalty_scale=0")
-        if bool(getattr(gait_constraint, "enabled", False)):
-            raise ValueError("privileged_locomotion_sac forbids gait constraint mode")
 
 
 def resolve_privileged_locomotion_sac_runtime(

@@ -10,7 +10,7 @@ repositories.
 | Layer | Current artifact | Status |
 |---|---|---|
 | Concept Figure | `architecture/08_in_context_execution_calibration.html` | Synchronized with ICA-DP-08 |
-| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed v012 source construction + axis-bank calibration |
+| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed v013 source construction + axis-bank calibration |
 | Active FADA Contract lineage | `fada/contracts/README.md` | Source v012 plus active Context v008/v007 |
 | Source engineering transition | `fada/plans/2026-08-26-fada-paper-aligned-source-training-v012.md` | Design-confirmed; code not authorized |
 | Calibration engineering transition | `fada/plans/2026-08-23-configurable-axis-training-refactor.md` | Offline implemented and independently reviewed |

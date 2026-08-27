@@ -1,6 +1,6 @@
 ---
 contract_id: FADA-METHOD-v012
-status: active
+status: historical
 effective_date: 2026-08-26
 supersedes: FADA-METHOD-v011
 scope: paper-aligned single-task privileged-Oracle Planner-IDM source training

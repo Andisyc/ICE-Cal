@@ -20,6 +20,7 @@ from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
     FADAPrivilegedSACLearner,
 )
 from unilab.algos.torch.offpolicy.double_buffer_runner import DoubleBufferOffPolicyRunner
+from unilab.base.observations import split_obs_dict
 from unilab.base.registry import ensure_registries
 from unilab.ipc.replay_buffer import ReplayBuffer
 from unilab.training import BackendAdapter, create_env
@@ -27,7 +28,7 @@ from unilab.training import BackendAdapter, create_env
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _compose_offline_oracle_config():
+def _compose_offline_oracle_config(*, num_envs: int = 1, batch_size: int = 4):
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
         return compose(
@@ -37,8 +38,8 @@ def _compose_offline_oracle_config():
                 "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
                 "training.device=cpu",
                 "training.use_amp=false",
-                "algo.num_envs=1",
-                "algo.batch_size=4",
+                f"algo.num_envs={num_envs}",
+                f"algo.batch_size={batch_size}",
                 "algo.algo_params.use_compile=false",
             ],
         )
@@ -101,9 +102,7 @@ def test_v012_privileged_oracle_official_offline_transaction(
     actor_after = learner.actor.state_dict()
     assert all(torch.isfinite(torch.tensor(value)) for value in critic_metrics.values())
     assert all(torch.isfinite(torch.tensor(value)) for value in actor_metrics.values())
-    assert any(
-        not torch.equal(actor_before[name], actor_after[name]) for name in actor_before
-    )
+    assert any(not torch.equal(actor_before[name], actor_after[name]) for name in actor_before)
 
     full_checkpoint = tmp_path / "full" / "model_240.pt"
     runner._save_checkpoint(full_checkpoint, iteration=240)
@@ -188,5 +187,112 @@ def test_v012_official_env_steps_through_first_velocity_push(
         assert np.isfinite(state.obs["obs"]).all()
         assert np.isfinite(state.obs["critic"]).all()
         assert np.isfinite(state.reward).all()
+    finally:
+        env.close()
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
+def test_v013_real_dual_reward_reaches_production_sac_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v013")
+    rows = 32
+    cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
+    runner = build_runner("sac", cfg)
+    assert isinstance(runner, DoubleBufferOffPolicyRunner)
+    assert isinstance(runner.learner, FADAPrivilegedSACLearner)
+    override = BackendAdapter(cfg, root_dir=ROOT, algo_name="sac").build_task_env_cfg_override()
+    np.random.seed(20260827)
+    env = create_env(
+        cfg,
+        num_envs=rows,
+        env_cfg_override=override,
+        sim_backend="mujoco",
+    )
+    try:
+        before = env.init_state()
+        actor_before, critic_before = (
+            np.asarray(value, dtype=np.float32).copy() for value in split_obs_dict(before.obs)
+        )
+        commands = np.asarray(before.info["commands"], dtype=np.float32).copy()
+        actions = np.zeros((rows, env.action_space.shape[0]), dtype=np.float32)
+        after = env.step(actions)
+        actor_after, critic_after = (
+            np.asarray(value, dtype=np.float32).copy() for value in split_obs_dict(after.obs)
+        )
+        rewards = np.asarray(after.reward, dtype=np.float32).copy()
+        stand_mask = np.all(commands == 0.0, axis=1)
+        walk_mask = ~stand_mask
+        assert np.any(stand_mask)
+        assert np.any(walk_mask)
+        assert after.info["log"]["reward/mode_stand_frac"] > 0.0
+        assert after.info["log"]["reward/mode_walk_frac"] > 0.0
+        assert np.isfinite(rewards).all()
+
+        replay = ReplayBuffer(
+            capacity=rows,
+            obs_dim=actor_before.shape[1],
+            critic_dim=critic_before.shape[1],
+            action_dim=actions.shape[1],
+            device="cpu",
+        )
+        replay.add(
+            torch.from_numpy(actor_before),
+            torch.from_numpy(actions),
+            torch.from_numpy(rewards),
+            torch.from_numpy(actor_after),
+            torch.from_numpy(after.terminated | after.truncated),
+            torch.from_numpy(after.truncated),
+            critic=torch.from_numpy(critic_before),
+            next_critic=torch.from_numpy(critic_after),
+        )
+        torch.manual_seed(20260827)
+        batch = replay.sample(128)
+        source_obs = torch.from_numpy(actor_before)
+        source_rewards = torch.from_numpy(rewards)
+        sampled_source_rows: list[int] = []
+        for sampled_obs, sampled_reward in zip(batch["obs"], batch["rewards"], strict=True):
+            matches = torch.all(source_obs == sampled_obs.cpu(), dim=1)
+            assert torch.any(matches)
+            assert torch.all(source_rewards[matches] == sampled_reward.cpu())
+            sampled_source_rows.append(int(torch.nonzero(matches, as_tuple=False)[0, 0]))
+        assert np.any(stand_mask[sampled_source_rows])
+        assert np.any(walk_mask[sampled_source_rows])
+
+        actor_parameters_before = {
+            name: value.detach().clone()
+            for name, value in runner.learner.actor.state_dict().items()
+        }
+        critic_metrics = runner.learner.update_critic(batch)
+        actor_metrics = runner.learner.update_actor(batch)
+        assert all(np.isfinite(value) for value in critic_metrics.values())
+        assert all(np.isfinite(value) for value in actor_metrics.values())
+        assert any(
+            not torch.equal(actor_parameters_before[name], value)
+            for name, value in runner.learner.actor.state_dict().items()
+        )
+        print(
+            json.dumps(
+                {
+                    "identity": {
+                        "obs_dim": actor_before.shape[1],
+                        "critic_obs_dim": critic_before.shape[1],
+                        "action_dim": actions.shape[1],
+                    },
+                    "reward_route": {
+                        "stand_rows": int(np.sum(stand_mask)),
+                        "walk_rows": int(np.sum(walk_mask)),
+                        "sampled_rows": len(sampled_source_rows),
+                        "replay_reward_identity": True,
+                    },
+                    "updates": {
+                        "critic_metric_count": len(critic_metrics),
+                        "actor_metric_count": len(actor_metrics),
+                        "actor_parameter_changed": True,
+                    },
+                },
+                sort_keys=True,
+            )
+        )
     finally:
         env.close()
