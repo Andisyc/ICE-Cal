@@ -36,6 +36,24 @@ def test_hora_sac_actor_shapes_and_stable_module_names() -> None:
     assert log_std.shape == (6, 2)
 
 
+def test_hora_sac_actor_fixed_privileged_input_ignores_runtime_values() -> None:
+    from unilab.algos.torch.hora.sac_models import HoraSACActor
+
+    actor = HoraSACActor(
+        obs_dim=4,
+        priv_info_dim=3,
+        action_dim=2,
+        priv_info_embed_dim=2,
+        priv_mlp_hidden_dims=(4, 2),
+        fixed_privileged_input=True,
+    )
+
+    first = actor.encode_privileged_info(torch.zeros(5, 3))
+    second = actor.encode_privileged_info(torch.randn(5, 3) * 100.0)
+
+    torch.testing.assert_close(first, second)
+
+
 def test_hora_sac_learner_derives_priv_info_from_critic_contract() -> None:
     from unilab.algos.torch.hora.sac_learner import derive_priv_info_from_critic_obs
 

@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle
+  - _self_
+
+# Diagnostic only: preserve the privileged Actor architecture while removing
+# privileged-value and actuator-fault variation, then restore penalty curriculum.
+algo:
+  max_iterations: 500
+  save_interval: 100
+  actor:
+    fixed_privileged_input: true
+
+env:
+  curriculum:
+    enabled: true
+    initial_scale: 0.5
+    min_scale: 0.5
+    max_scale: 1.0
+    level_down_threshold: 150.0
+    level_up_threshold: 750.0
+    degree: 0.001
+  domain_rand:
+    actuator_strength:
+      enabled: false

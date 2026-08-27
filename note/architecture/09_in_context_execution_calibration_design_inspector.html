@@ -283,7 +283,7 @@
         "id": "train-source-oracle",
         "phase": "pre",
         "label": "ICE-Cal 训练 Privileged Oracle",
-      "detail": "在单一 G1WalkFlat locomotion 任务内，先用 nominal standard SAC 验证 phase-neutral 单一 locomotion Reward，再用类型化特权观测和定向域随机化训练 privileged SAC Oracle；Command 只改变速度跟踪目标，不选择站立/行走/恢复 Reward 家族；两个 legacy gait-phase 槽恒为零，禁止相位 Reward/constraint；只有 privileged Oracle 同一次训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000），共享 oracle_lineage_id"
+      "detail": "在单一 G1WalkFlat locomotion 任务的标称动力学上训练 privileged SAC Oracle：Actor 使用部署观测，Critic 使用类型化特权状态，但 Oracle 训练不注入左膝 Gain、执行延迟、偏置或任何校准故障/域随机化；Command 只改变速度跟踪目标，不选择站立/行走/恢复 Reward 家族；两个 legacy gait-phase 槽恒为零，禁止相位 Reward/constraint；同一次标称 Oracle 训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000），共享 oracle_lineage_id；所有故障只在源主干冻结后的失败轨迹采集阶段注入"
       },
       {
         "id": "distill-source",
@@ -363,7 +363,7 @@
       "details": [
         {
           "heading": "1. 源策略来自 ICE-Cal Privileged Oracle",
-          "text": "Oracle 在单一 G1WalkFlat locomotion 任务内由任务 Reward、类型化特权观测和定向域随机化直接训练；首轮源分布只包含标称样本与左膝执行增益衰减（index=3，g∈[0.8,1.0]，标称概率0.3），摩擦、质量、COM、独立Kp/Kd、偏置、延迟、推力等无关扰动关闭。Actor 不读取增益，Critic 通过既有特权 Kp/Kd scale 读取；20 个 intermediate checkpoints 与 final checkpoint 必须来自同一次训练并共享 oracle_lineage_id。"
+          "text": "Oracle 在单一 G1WalkFlat locomotion 任务的标称动力学上由任务 Reward 与类型化特权 Critic 直接训练。Actor 只读取部署观测；Critic 可读取类型化特权状态，但 Oracle 训练中的执行增益、Kp/Kd、摩擦、质量、COM、偏置、延迟、推力等均保持标称，不采样任何后续校准故障。20 个 intermediate checkpoints 与 final checkpoint 必须来自同一次标称训练并共享 oracle_lineage_id。左膝 Gain 仅是源主干冻结后失败轨迹采集的首个 smoke case，不属于 Oracle 分布。"
         },
         {
           "heading": "2. Gait Phase 完全退出控制权",

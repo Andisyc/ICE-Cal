@@ -51,6 +51,7 @@ class HoraSACLearner(FastSACLearner):
         use_layer_norm: bool = True,
         obs_normalization: bool = False,
         priv_info_normalization: bool = False,
+        fixed_privileged_input: bool = False,
         actor_lr: float = 3e-4,
         weight_decay: float = 0.001,
         use_symmetry: bool = False,
@@ -96,6 +97,7 @@ class HoraSACLearner(FastSACLearner):
             use_tanh=use_tanh,
             use_layer_norm=use_layer_norm,
             priv_info_normalization=priv_info_normalization,
+            fixed_privileged_input=fixed_privileged_input,
             device=device,
         )
         _fused = isinstance(device, str) and device.startswith("cuda")

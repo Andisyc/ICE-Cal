@@ -56,6 +56,7 @@ class HoraSACActor(nn.Module):
         use_tanh: bool = True,
         use_layer_norm: bool = True,
         priv_info_normalization: bool = False,
+        fixed_privileged_input: bool = False,
         device: str | torch.device = "cpu",
         action_scale: torch.Tensor | None = None,
         action_bias: torch.Tensor | None = None,
@@ -68,6 +69,7 @@ class HoraSACActor(nn.Module):
         self.log_std_max = float(log_std_max)
         self.log_std_min = float(log_std_min)
         self.use_tanh = bool(use_tanh)
+        self.fixed_privileged_input = bool(fixed_privileged_input)
 
         self.priv_info_normalizer: EmpiricalNormalization | nn.Identity
         if priv_info_normalization:
@@ -124,6 +126,8 @@ class HoraSACActor(nn.Module):
             if isinstance(self.priv_info_normalizer, EmpiricalNormalization)
             else priv_info
         )
+        if self.fixed_privileged_input:
+            normalized = torch.zeros_like(normalized)
         encoded = self.priv_encoder(normalized)
         return torch.tanh(self.priv_projection(encoded))
 

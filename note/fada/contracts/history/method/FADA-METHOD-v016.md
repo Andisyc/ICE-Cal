@@ -1,12 +1,13 @@
 ---
 contract_id: FADA-METHOD-v016
-status: active
+status: superseded
 effective_date: 2026-08-27
 supersedes: FADA-METHOD-v015
-scope: single-Reward phase-neutral gain-targeted privileged-Oracle Planner-IDM source training
+superseded_by: FADA-METHOD-v017
+scope: historical single-Reward phase-neutral gain-targeted privileged-Oracle Planner-IDM source training
 ---
 
-# FADA Planner–IDM Method Contract v016
+# FADA Planner–IDM Method Contract v016 — Historical
 
 ## Source task and Reward authority
 
@@ -38,10 +39,8 @@ Planner–IDM tensor layout, causal future–action pairing, IDM-before-Planner 
 Planner gradients, Oracle-shadow, first-action supervision, receding horizon, and exact 20+1
 privileged-Oracle lineage remain unchanged.
 
-## Retired interpretation and evidence boundary
+## Supersession reason
 
-Dual Reward is permanently retired from the active source route. v013–v015 routing, module tests,
-formal audits, and checkpoints are historical and cannot authorize v016 execution. Offline tests may
-prove config identity, absence of retired terms, constant-zero compatibility slots, tensor dimensions,
-and fail-closed preflight. Only a separately authorized policy-quality campaign can establish that
-the single Reward learns standing and walking.
+v016 incorrectly allowed the downstream left-knee Gain calibration variable to own the upstream
+Oracle training distribution. This context pollution invalidated the meaning of a perfect nominal
+Oracle. v017 separates nominal teacher construction from later failed-rollout perturbation.

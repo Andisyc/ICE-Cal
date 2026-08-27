@@ -1,6 +1,6 @@
 # FADA v016 Single-Reward Migration Plan
 
-> Status: IMPLEMENTED / MODULE-CORRECT; formal runtime not executed.
+> Status: SUPERSEDED / HISTORICAL. v017 removes Gain from Oracle training.
 
 ## Objective
 

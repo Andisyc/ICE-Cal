@@ -166,6 +166,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 self.actor_cfg.get("priv_mlp_hidden_dims", (256, 128, 32))
             ),
             "priv_info_normalization": bool(self.actor_cfg.get("priv_info_normalization", True)),
+            "fixed_privileged_input": bool(
+                self.actor_cfg.get("fixed_privileged_input", False)
+            ),
             "oracle_lineage_id": str(self.actor_cfg.get("oracle_lineage_id", "")),
             "privileged_schema": FADA_PRIVILEGED_SCHEMA,
         }
@@ -236,14 +239,27 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         return FADAOracleCheckpointGateway(contract).save
 
     def validate_training_config(self, cfg: Any) -> None:
+        fixed_input_diagnostic = bool(
+            _object_items(getattr(cfg.algo, "actor", None)).get(
+                "fixed_privileged_input", False
+            )
+        )
         if getattr(cfg.training, "task_name", None) != "G1WalkFlat":
             raise ValueError("privileged_locomotion_sac requires task G1WalkFlat")
         if getattr(cfg.training, "sim_backend", None) != "mujoco":
             raise ValueError("privileged_locomotion_sac Unit A requires MuJoCo")
-        if int(getattr(cfg.algo, "max_iterations", -1)) != 5000:
-            raise ValueError("privileged_locomotion_sac requires max_iterations=5000")
-        if int(getattr(cfg.algo, "save_interval", -1)) != 240:
-            raise ValueError("privileged_locomotion_sac requires save_interval=240")
+        expected_iterations = 500 if fixed_input_diagnostic else 5000
+        if int(getattr(cfg.algo, "max_iterations", -1)) != expected_iterations:
+            raise ValueError(
+                "privileged_locomotion_sac requires "
+                f"max_iterations={expected_iterations}"
+            )
+        expected_save_interval = 100 if fixed_input_diagnostic else 240
+        if int(getattr(cfg.algo, "save_interval", -1)) != expected_save_interval:
+            raise ValueError(
+                "privileged_locomotion_sac requires "
+                f"save_interval={expected_save_interval}"
+            )
         if bool(getattr(cfg.algo, "use_symmetry", True)):
             raise ValueError("privileged_locomotion_sac requires use_symmetry=false")
         if float(getattr(cfg.algo, "gamma", 0.0)) != 0.99:
@@ -289,9 +305,16 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
             raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
-        if bool(getattr(curriculum_cfg, "enabled", True)):
+        if bool(getattr(curriculum_cfg, "enabled", True)) != fixed_input_diagnostic:
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
-        _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
+        if fixed_input_diagnostic:
+            strength = getattr(cfg.env.domain_rand, "actuator_strength", None)
+            if strength is None or bool(getattr(strength, "enabled", True)):
+                raise ValueError(
+                    "fixed-input diagnostic requires actuator strength randomization disabled"
+                )
+        else:
+            _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
         _validate_oracle_noise_profile(cfg.env.noise_config)
         validate_fada_single_reward(
             reward_scales=_object_items(cfg.reward.scales),
