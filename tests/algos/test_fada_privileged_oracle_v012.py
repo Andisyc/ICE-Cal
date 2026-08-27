@@ -142,6 +142,37 @@ def _apply_valid_privileged_oracle_profile(cfg: SimpleNamespace) -> None:
     cfg.env.commands.resampling_time = 0.0
     cfg.env.commands.heading_command = False
     cfg.env.curriculum = SimpleNamespace(enabled=False)
+    cfg.env.noise_config = SimpleNamespace(
+        level=1.0,
+        scale_gyro=0.0,
+        scale_gravity=0.0,
+        scale_joint_angle=0.01,
+        scale_joint_vel=0.1,
+        scale_linvel=0.0,
+    )
+    cfg.env.domain_rand = SimpleNamespace(
+        randomize_ground_friction=False,
+        random_com=False,
+        randomize_base_mass=False,
+        randomize_body_mass=False,
+        randomize_gravity=False,
+        randomize_dof_armature=False,
+        randomize_kp=False,
+        randomize_kd=False,
+        randomize_dof_position_bias=False,
+        torque_rfi_fraction=0.0,
+        randomize_control_delay=False,
+        push_robots=False,
+        actuator_strength=SimpleNamespace(
+            enabled=True,
+            sampling_mode="single_candidate",
+            candidate_actuator_indices=[3],
+            multiplier_range=[0.8, 1.0],
+            nominal_probability=0.3,
+            include_in_critic_obs=False,
+            multipliers=[],
+        ),
+    )
 
 
 def _apply_valid_no_gait_dual_reward_profile(cfg: SimpleNamespace) -> None:
@@ -407,8 +438,28 @@ def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_fre
     assert cfg.reward.scales.feet_phase == 0.0
     assert cfg.reward.scales.feet_phase_contrast == pytest.approx(0.0)
     assert cfg.reward.scales.feet_phase_contact == pytest.approx(0.0)
-    assert cfg.env.domain_rand.dof_position_bias_range == [-0.025, 0.025]
-    assert cfg.env.domain_rand.torque_rfi_fraction == 0.05
+    domain_rand = cfg.env.domain_rand
+    assert domain_rand.randomize_ground_friction is False
+    assert domain_rand.random_com is False
+    assert domain_rand.randomize_base_mass is False
+    assert domain_rand.randomize_body_mass is False
+    assert domain_rand.randomize_gravity is False
+    assert domain_rand.randomize_dof_armature is False
+    assert domain_rand.randomize_kp is False
+    assert domain_rand.randomize_kd is False
+    assert domain_rand.randomize_dof_position_bias is False
+    assert domain_rand.torque_rfi_fraction == pytest.approx(0.0)
+    assert domain_rand.randomize_control_delay is False
+    assert domain_rand.push_robots is False
+    strength = domain_rand.actuator_strength
+    assert strength.enabled is True
+    assert strength.sampling_mode == "single_candidate"
+    assert strength.candidate_actuator_indices == [3]
+    assert strength.multiplier_range == [0.8, 1.0]
+    assert strength.nominal_probability == pytest.approx(0.3)
+    assert strength.include_in_critic_obs is False
+    assert cfg.env.noise_config.scale_joint_angle == pytest.approx(0.01)
+    assert cfg.env.noise_config.scale_joint_vel == pytest.approx(0.1)
 
     from unilab.training import BackendAdapter
 
@@ -416,7 +467,8 @@ def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_fre
         cfg, root_dir=Path.cwd(), algo_name="sac"
     ).build_task_env_cfg_override()
     assert override["fada_privileged_observation"]["schema"] == "g1_fada_privileged_v1"
-    assert override["domain_rand"]["randomize_control_delay"] is True
+    assert override["domain_rand"]["randomize_control_delay"] is False
+    assert override["domain_rand"]["actuator_strength"]["candidate_actuator_indices"] == [3]
     assert override["mode_observation"] is False
     assert override["commands"]["rel_standing_envs"] == 0.3
     assert override["commands"]["rel_transition_envs"] == 0.0
@@ -470,6 +522,102 @@ def test_privileged_oracle_preflight_rejects_unsealed_training_profile(
                 "algo=sac",
                 "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
             ],
+        )
+    OmegaConf.update(cfg, path, value, merge=False, force_add=True)
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        OmegaConf.to_container(cfg.algo, resolve=True)
+    )
+
+    with pytest.raises(ValueError, match=message):
+        runtime.validate_training_config(cfg)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        ("env.domain_rand.randomize_ground_friction", True, "ground friction"),
+        ("env.domain_rand.random_com", True, "COM"),
+        ("env.domain_rand.randomize_base_mass", True, "base mass"),
+        ("env.domain_rand.randomize_body_mass", True, "body mass"),
+        ("env.domain_rand.randomize_gravity", True, "gravity"),
+        ("env.domain_rand.randomize_dof_armature", True, "armature"),
+        ("env.domain_rand.randomize_kp", True, "independent Kp"),
+        ("env.domain_rand.randomize_kd", True, "independent Kd"),
+        ("env.domain_rand.randomize_dof_position_bias", True, "position bias"),
+        ("env.domain_rand.torque_rfi_fraction", 0.01, "torque RFI"),
+        ("env.domain_rand.randomize_control_delay", True, "control delay"),
+        ("env.domain_rand.push_robots", True, "push"),
+        ("env.domain_rand.actuator_strength.enabled", False, "actuator strength"),
+        ("env.domain_rand.actuator_strength.sampling_mode", "fixed", "sampling mode"),
+        ("env.domain_rand.actuator_strength.candidate_actuator_indices", [9], "index 3"),
+        ("env.domain_rand.actuator_strength.multiplier_range", [0.7, 1.0], r"\[0.8, 1.0\]"),
+        ("env.domain_rand.actuator_strength.nominal_probability", 0.5, "probability 0.3"),
+        ("env.domain_rand.actuator_strength.include_in_critic_obs", True, "duplicate"),
+    ],
+)
+def test_privileged_oracle_preflight_rejects_non_targeted_domain_randomization(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    value: object,
+    message: str,
+) -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    from omegaconf import OmegaConf
+
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        resolve_privileged_locomotion_sac_runtime,
+    )
+
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-lineage")
+    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle"],
+        )
+    OmegaConf.update(cfg, path, value, merge=False, force_add=True)
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        OmegaConf.to_container(cfg.algo, resolve=True)
+    )
+
+    with pytest.raises(ValueError, match=message):
+        runtime.validate_training_config(cfg)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        ("env.noise_config.level", 0.5, "noise level"),
+        ("env.noise_config.scale_gyro", 0.01, "gyro noise"),
+        ("env.noise_config.scale_gravity", 0.01, "gravity noise"),
+        ("env.noise_config.scale_joint_angle", 0.02, "joint-angle noise"),
+        ("env.noise_config.scale_joint_vel", 0.2, "joint-velocity noise"),
+        ("env.noise_config.scale_linvel", 0.01, "linear-velocity noise"),
+    ],
+)
+def test_privileged_oracle_preflight_rejects_observation_noise_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    value: float,
+    message: str,
+) -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    from omegaconf import OmegaConf
+
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        resolve_privileged_locomotion_sac_runtime,
+    )
+
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-lineage")
+    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle"],
         )
     OmegaConf.update(cfg, path, value, merge=False, force_add=True)
     runtime = resolve_privileged_locomotion_sac_runtime(

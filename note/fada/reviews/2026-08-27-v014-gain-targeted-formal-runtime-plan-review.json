@@ -1,0 +1,57 @@
+{
+  "schema_version": "code-review-expert/v1",
+  "review_id": "CRE-FADA-V014-GAIN-TARGETED-FORMAL-20260827",
+  "mode": "plan",
+  "profiles": ["standard", "module-boundary", "repository-discipline", "research-ml"],
+  "verdict": "READY",
+  "scope": {
+    "requested": ["execute one formal runtime audit for the v014 gain-targeted privileged Oracle"],
+    "preserved": ["official Hydra/build_runner composition, real MuJoCo reset and Reward, production replay and SAC updates, strict checkpoint and 20+1 lineage"],
+    "forbidden": ["copied Gain sampler, Reward, or learner; private-state mutation; test-only production hooks; long training; policy-quality or server CUDA claims"]
+  },
+  "identities": {
+    "project": "ICE-Cal/FADA",
+    "design": "FADA-METHOD-v014:FADA-TRAIN-v014:UNIT-A",
+    "contract": "FADA-METHOD-v014/FADA-TRAIN-v014",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+v014-local-diff:26650420c393a655e7829b90c618002dec08e7b022c3f34a161a24e31029a527",
+    "review_object": "2026-08-27-v014-gain-targeted-formal-runtime-audit@sha256:b46bc348af7bb5ff895b2145b64178cc5dbf9b3ed5705511f6ff94b95c324a94"
+  },
+  "authority": {
+    "review": {"status": "read-only", "scope": "global-test fidelity, ownership, lifecycle, and evidence boundary"},
+    "source_edits": {"status": "approved", "receipt": "USER-FORMAL-RUNTIME-AUDIT-V014-20260827", "scope": "local formal test and evidence only; no production behavior"},
+    "report_write": {"status": "approved", "receipt": "USER-FORMAL-RUNTIME-AUDIT-V014-20260827", "scope": "local plan, review, and formal-audit evidence"}
+  },
+  "review_object": {
+    "kind": "plan",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/plans/2026-08-27-v014-gain-targeted-formal-runtime-audit.md",
+    "content_hash": "sha256:b46bc348af7bb5ff895b2145b64178cc5dbf9b3ed5705511f6ff94b95c324a94",
+    "current": true
+  },
+  "repository_discipline": {
+    "status": "active",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/AGENTS.md",
+    "content_hash": "sha256:885fe8aaa811cf762ed3d6bc182c7e50b12369b719a36dd5194ec22ce0841022",
+    "current": true,
+    "rationale": "The test depends one-way on existing production owners and introduces no script, backend, sampler, Reward, runner, or checkpoint behavior."
+  },
+  "dimensions": [
+    {"name": "responsibility-ownership", "disposition": "pass", "evidence": "The rig orchestrates only; Hydra, G1 reset provider, MuJoCo backend, RewardModeConfig, ReplayBuffer, learner, runner, and checkpoint gateway retain decisions."},
+    {"name": "public-interface", "disposition": "pass", "evidence": "Only build_runner, BackendAdapter, create_env, NpEnvState, ReplayBuffer, learner update, runner saver, strict load, and gateway interfaces are used."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "Test code imports production; production imports no test code and exposes no audit flag or alternate composition root."},
+    {"name": "state-lifecycle", "disposition": "pass", "evidence": "Reset creates Gain strata, one transition creates Reward, replay later consumes it, updates execute once, and persistence crosses save/load/finalize."},
+    {"name": "change-surface", "disposition": "pass", "evidence": "The current formal test file already contains the complete v014 transaction; this audit adds evidence only and no production or test-code change."},
+    {"name": "evidence-boundary", "disposition": "pass", "evidence": "Local CPU/MuJoCo integration remains separate from server collector/CUDA, convergence, policy quality, IDM/Planner readiness, and deployment."},
+    {"name": "proof-route", "disposition": "pass", "evidence": "Every critical point has a Gain identity witness, branch activation witness, Reward-carrier equality, update witness, persistence witness, and explicit falsifier."},
+    {"name": "tensor-provenance", "disposition": "pass", "evidence": "Real env Actor/Critic observations and Reward enter replay under 98/303/29 while index-3 strength appears only through reset physics and privileged Kp/Kd scales."},
+    {"name": "gradient-update-boundary", "disposition": "pass", "evidence": "Production Critic and Actor updates execute once; Actor parameter delta is observed and no audit-specific optimizer exists."},
+    {"name": "persistence-evaluation", "disposition": "pass", "evidence": "Full-state strict round trip and exact 20+1 gateway finalization remain inside one temporary formal campaign."},
+    {"name": "repository-discipline", "disposition": "pass", "evidence": "Config-first, owner-layer, backend-isolation, and scripts-assembly-only rules are preserved."}
+  ],
+  "findings": [],
+  "residual_risks": [
+    {"risk_id": "CRE-FADA-V014-FORMAL-CUDA", "severity": "P2", "status": "open", "description": "The local rig cannot prove the server collector subprocess, CPU-pinned transfer, and CUDA learner lifecycle.", "disposition": "After all local edges close, retain exactly one LIVE_REQUIRED fact and do not start training."}
+  ],
+  "blockers": [],
+  "claims": {"maintainability": "reviewed", "semantic_correctness": "not-claimed", "module_correctness": "not-claimed", "runtime_root_cause": "not-claimed", "formal_route": "not-claimed", "policy_quality": "not-claimed"},
+  "dependencies": []
+}

@@ -46,11 +46,11 @@ def _compose_offline_oracle_config(*, num_envs: int = 1, batch_size: int = 4):
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v012_privileged_oracle_official_offline_transaction(
+def test_v014_privileged_oracle_official_offline_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v012")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v014")
     cfg = _compose_offline_oracle_config()
 
     runner = build_runner("sac", cfg)
@@ -131,7 +131,7 @@ def test_v012_privileged_oracle_official_offline_transaction(
     for iteration in (*FADA_ORACLE_INTERMEDIATE_ITERATIONS, FADA_ORACLE_FINAL_ITERATION):
         gateway.save(tiny_learner, lineage_root / f"model_{iteration}.pt", iteration)
     lineage = json.loads((lineage_root / "fada_oracle_lineage.json").read_text())
-    assert lineage["oracle_lineage_id"] == "formal-offline-v012"
+    assert lineage["oracle_lineage_id"] == "formal-offline-v014"
     assert len(lineage["checkpoint_sha256"]) == 21
     assert lineage["final_iteration"] == 5000
 
@@ -161,29 +161,38 @@ def test_v012_privileged_oracle_official_offline_transaction(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v012_official_env_steps_through_first_velocity_push(
+def test_v014_official_env_exposes_only_left_knee_gain_strata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-push-v012")
-    cfg = _compose_offline_oracle_config()
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v014")
+    rows = 32
+    cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     ensure_registries()
     override = BackendAdapter(cfg, root_dir=ROOT, algo_name="sac").build_task_env_cfg_override()
+    np.random.seed(20260827)
     env = create_env(
         cfg,
-        num_envs=1,
+        num_envs=rows,
         env_cfg_override=override,
         sim_backend="mujoco",
     )
     try:
         state = env.init_state()
-        actions = np.zeros((1, env.action_space.shape[0]), dtype=np.float32)
-        interval_steps = round(
-            float(cfg.env.domain_rand.fada_push_interval_seconds) / env.cfg.ctrl_dt
-        )
-        for _ in range(interval_steps + 1):
-            state = env.step(actions)
+        kp_scale = np.asarray(state.info["fada_kp_scale"], dtype=np.float32)
+        kd_scale = np.asarray(state.info["fada_kd_scale"], dtype=np.float32)
+        assert kp_scale.shape == (rows, 29)
+        np.testing.assert_allclose(kp_scale, kd_scale)
+        np.testing.assert_allclose(kp_scale[:, :3], 1.0)
+        np.testing.assert_allclose(kp_scale[:, 4:], 1.0)
+        assert np.all((kp_scale[:, 3] >= 0.8) & (kp_scale[:, 3] <= 1.0))
+        assert np.any(kp_scale[:, 3] < 1.0)
+        assert np.any(kp_scale[:, 3] == 1.0)
+        assert state.obs["obs"].shape == (rows, 98)
+        assert state.obs["critic"].shape == (rows, 303)
 
-        assert env.step_counter == interval_steps + 1
+        actions = np.zeros((rows, env.action_space.shape[0]), dtype=np.float32)
+        state = env.step(actions)
+        assert env.step_counter == 1
         assert np.isfinite(state.obs["obs"]).all()
         assert np.isfinite(state.obs["critic"]).all()
         assert np.isfinite(state.reward).all()
@@ -192,10 +201,10 @@ def test_v012_official_env_steps_through_first_velocity_push(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v013_real_dual_reward_reaches_production_sac_update(
+def test_v014_real_dual_reward_reaches_production_sac_update(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v013")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v014")
     rows = 32
     cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     runner = build_runner("sac", cfg)

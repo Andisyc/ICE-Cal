@@ -1,0 +1,57 @@
+{
+  "schema_version": "one-shot-execution/v1",
+  "unit_id": "OSE-FADA-V014-GAIN-TARGETED-ORACLE-20260827",
+  "closure_mode": "engineering",
+  "terminal_outcome": "one locally verified gain-targeted Oracle source profile without training or policy-quality claims",
+  "admission": "COMPLETE",
+  "scope": {
+    "requested": ["replace full physical Oracle DR with the confirmed nominal-plus-left-knee-gain distribution"],
+    "preserved": [
+      "single G1WalkFlat/MuJoCo task and privileged SAC Oracle",
+      "98-D deployable Actor and typed privileged Critic tail",
+      "v013 command-conditioned no-gait Reward",
+      "20+1 lineage and all Planner-IDM semantics"
+    ],
+    "forbidden": [
+      "new sampler, trainer, backend API, observation/checkpoint schema, or script behavior",
+      "unrelated DR, direct gain input to Actor, or duplicate gain tail",
+      "simulator launch, server operation, training, deployment, commit, push, or branch creation"
+    ]
+  },
+  "identities": {
+    "design": "FADA-GAIN-TARGETED-ORACLE-V014",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt+v014-local-diff",
+    "entrypoint": "scripts/train_offpolicy.py -> privileged_locomotion_sac -> G1WalkFlat/MuJoCo",
+    "effective_config": "left-knee index 3, g=[0.8,1.0], nominal probability 0.3, unrelated DR disabled, sealed observation noise",
+    "checkpoint": "cold-start; no checkpoint mutation"
+  },
+  "authority": {
+    "local_reversible": {"status": "approved", "scope": "local config, source, tests, Contracts, Inspector, and evidence", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827"},
+    "git_actions": {"status": "not-requested", "scope": "no commit, push, merge, branch creation, or remote mutation"},
+    "external_operations": {"status": "not-requested", "scope": "no server or network operation"},
+    "bounded_live": {"status": "not-requested", "scope": "no simulator or GUI"},
+    "long_run": {"status": "not-requested", "scope": "no Oracle, IDM, or Planner training"},
+    "destructive": {"status": "approved", "scope": "retire v013 active Contracts into history", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827"}
+  },
+  "causal_closure": {
+    "required": true,
+    "status": "POLICY_MECHANISM",
+    "rationale": "The prior Oracle faced broad physical randomization before acquiring stable stand/walk behavior; targeted DR reduces the source information and control burden without changing downstream model contracts.",
+    "owner_or_invariant": "Hydra owns the source distribution, G1 reset code owns actuator-strength application, and Oracle preflight owns exact-profile admission.",
+    "evidence_ref": "USER-GAIN-TARGETED-CONFIRMATION-20260827 plus recorded v013 policy-quality failure",
+    "falsifier": "the resolved profile admits unrelated DR, another actuator identity, another gain range, noise drift, Actor gain leakage, or a duplicate Critic strength tail"
+  },
+  "dependencies": [],
+  "next_action": {
+    "class": "none",
+    "description": "The local engineering unit is complete; formal runtime audit and any training are separate governed units.",
+    "reversible": true,
+    "costly": false,
+    "externally_visible": false,
+    "destroys_evidence": false,
+    "decision_boundary": {"kind": "none"}
+  },
+  "offline_gaps": [],
+  "live_only_unknowns": [],
+  "attempts": []
+}

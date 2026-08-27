@@ -1,6 +1,6 @@
 # FADA v013 No-Gait Dual-Reward Oracle Plan
 
-> Status: human-approved for local construction. Training, simulation, server, and Git actions remain out of scope.
+> Status: SUPERSEDED by the v014 gain-targeted Oracle plan. Retained as historical v013 evidence.
 
 ## Outcome
 

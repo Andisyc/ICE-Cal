@@ -1,7 +1,7 @@
 # FADA v013 Module Test Cards
 
-Status: command-conditioned no-gait dual-Reward config and preflight locally implemented; formal
-runtime and policy-quality evidence pending.
+Status: HISTORICAL under v014. The command-conditioned no-gait Reward cases remain regression
+evidence, but v013 distribution and formal/policy-quality admissions cannot authorize v014.
 
 ## MTC-A — command-conditioned Reward admission
 

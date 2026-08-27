@@ -65,28 +65,27 @@ env:
     scale_joint_vel: 0.1
     scale_linvel: 0.0
   domain_rand:
-    randomize_ground_friction: true
-    ground_friction_multiplier_range: [0.1, 2.0]
-    random_com: true
-    com_offset_x: [-0.1, 0.1]
-    com_offset_y: [-0.1, 0.1]
-    com_offset_z: [-0.1, 0.1]
-    randomize_base_mass: true
-    added_mass_range: [-3.0, 6.0]
-    randomize_body_mass: true
-    body_mass_multiplier_range: [0.8, 1.3]
-    randomize_kp: true
-    kp_multiplier_range: [0.8, 1.2]
-    randomize_kd: true
-    kd_multiplier_range: [0.8, 1.2]
-    randomize_dof_position_bias: true
-    dof_position_bias_range: [-0.025, 0.025]
-    torque_rfi_fraction: 0.05
-    randomize_control_delay: true
-    push_robots: true
-    fada_push_interval_seconds: 7.5
-    fada_max_push_velocity: 0.8
-    push_body_name: pelvis
+    # v014 source distribution: nominal plus left-knee execution attenuation only.
+    randomize_ground_friction: false
+    random_com: false
+    randomize_base_mass: false
+    randomize_body_mass: false
+    randomize_gravity: false
+    randomize_dof_armature: false
+    randomize_kp: false
+    randomize_kd: false
+    randomize_dof_position_bias: false
+    torque_rfi_fraction: 0.0
+    randomize_control_delay: false
+    push_robots: false
+    actuator_strength:
+      enabled: true
+      sampling_mode: single_candidate
+      candidate_actuator_indices: [3]
+      multiplier_range: [0.8, 1.0]
+      nominal_probability: 0.3
+      # The typed privileged Kp/Kd scales already expose the applied strength.
+      include_in_critic_obs: false
 reward:
   scales:
     tracking_lin_vel: 2.0

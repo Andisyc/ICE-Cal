@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "design_identity": "FADA-METHOD-v014:FADA-TRAIN-v014:UNIT-A",
+  "checkout_identity": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+v014-local-diff:26650420c393a655e7829b90c618002dec08e7b022c3f34a161a24e31029a527",
+  "entrypoint_identity": "scripts/train_offpolicy.py:build_runner+privileged_locomotion_sac",
+  "effective_config_sha256": "aac4810defea8c4dda6c2a46d5b4c1e6e20c7cb881e9eebf4b663260f9ed67ef",
+  "checkpoint_identity": "schema-2-cold-start+lineage=formal-offline-v014",
+  "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py",
+  "exit_code": 0,
+  "result": "3 passed in 1.11s",
+  "observations": {
+    "gain_reset": {
+      "rows": 32,
+      "only_candidate_actuator_index": 3,
+      "multiplier_range": [0.8, 1.0],
+      "nominal_rows_present": true,
+      "attenuated_rows_present": true,
+      "all_other_actuator_scales_equal_one": true,
+      "actor_obs_dim": 98,
+      "critic_obs_dim": 303
+    },
+    "reward_update": {
+      "stand_rows": 11,
+      "walk_rows": 21,
+      "sampled_rows": 128,
+      "replay_reward_identity": true,
+      "critic_metric_count": 6,
+      "actor_metric_count": 4,
+      "all_metrics_finite": true,
+      "actor_parameter_changed": true
+    },
+    "persistence": {
+      "obs_dim": 98,
+      "critic_obs_dim": 303,
+      "action_dim": 29,
+      "body_count": 31,
+      "joint_count": 29,
+      "full_checkpoint_restored": true,
+      "lineage_checkpoint_count": 21,
+      "final_iteration": 5000
+    }
+  },
+  "negative_scope": [
+    "No server collector subprocess or CUDA transfer was executed.",
+    "No long training, convergence, policy quality, IDM/Planner readiness, robustness, deployment, commit, or push is claimed."
+  ]
+}
+

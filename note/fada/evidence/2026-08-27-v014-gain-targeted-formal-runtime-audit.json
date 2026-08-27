@@ -1,0 +1,203 @@
+{
+  "schema_version": "formal-runtime-audit/v3",
+  "audit_id": "FRA-FADA-V014-GAIN-TARGETED-20260827",
+  "identities": {
+    "design": "FADA-METHOD-v014:FADA-TRAIN-v014:UNIT-A",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+v014-local-diff:26650420c393a655e7829b90c618002dec08e7b022c3f34a161a24e31029a527",
+    "entrypoint": "scripts/train_offpolicy.py:build_runner+privileged_locomotion_sac",
+    "effective_config": "sha256:aac4810defea8c4dda6c2a46d5b4c1e6e20c7cb881e9eebf4b663260f9ed67ef",
+    "checkpoint": "schema-2-cold-start+lineage=formal-offline-v014"
+  },
+  "module_admission": {
+    "status": "MODULE-CORRECT",
+    "manifest_path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/evidence/2026-08-27-v014-gain-targeted-module-test.json",
+    "manifest_hash": "sha256:303c3d25b5031a35382693aaca7dcc3cd6291e79cf70bd83f945a6e64f664071",
+    "design_identity": "FADA-METHOD-v014:FADA-TRAIN-v014:UNIT-A",
+    "checkout_identity": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+v014-local-diff:26650420c393a655e7829b90c618002dec08e7b022c3f34a161a24e31029a527",
+    "current": true
+  },
+  "maintainability_admission": {
+    "plan": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/plans/2026-08-27-v014-gain-targeted-formal-runtime-audit.md",
+    "plan_hash": "sha256:b46bc348af7bb5ff895b2145b64178cc5dbf9b3ed5705511f6ff94b95c324a94",
+    "review": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/reviews/2026-08-27-v014-gain-targeted-formal-runtime-plan-review.json",
+    "review_hash": "sha256:0de34e919a30f2e8cba52a840c84bceb1ba386c63d3cf0fe40840f530b6cb29b",
+    "verdict": "READY",
+    "current": true
+  },
+  "authority": {
+    "human_long_run_status": "not-requested",
+    "training_started": false,
+    "simulation_started": true,
+    "admission_owner": "human"
+  },
+  "offline_gaps": [],
+  "design_probes": [
+    {
+      "probe_id": "PROBE-FADA-V014-GAIN-RESET",
+      "design_id": "FADA-V014-GAIN-DISTRIBUTION",
+      "design_claim": "The official v014 config materializes only nominal and left-knee attenuation rows without changing the deployable Actor input.",
+      "necessary_capability": "Compose the official profile, apply the existing reset-time actuator-strength owner in real MuJoCo, and expose the applied multiplier only through physics and typed privileged Kp/Kd scales.",
+      "minimal_case": "32 real MuJoCo rows and one reset under a fixed seed.",
+      "path_class": "official-entry",
+      "preserved_production_owners": ["Hydra Oracle profile", "BackendAdapter", "G1WalkDomainRandomizationProvider", "MuJoCoBackend", "G1 FADA privileged observation"],
+      "simplifications": ["CPU device", "32 environments", "one reset", "fixed seed", "no collector subprocess"],
+      "falsifier": "Any non-index-3 actuator varies, multiplier escapes [0.8,1.0], nominal or attenuated stratum is absent, or Actor/Critic identity changes from 98/303.",
+      "success_witness": "Both nominal and attenuated index-3 rows were observed; every other actuator scale was one; Actor/Critic remained 98/303.",
+      "construction_status": "ready",
+      "uncertainties": [],
+      "status": "passed",
+      "minimum_horizon": {"unit": "environment-resets", "required": 1, "observed": 1},
+      "required_effect_observations": 4,
+      "observed_effect_observations": 4,
+      "evidence_receipt": "note/fada/evidence/2026-08-27-v014-gain-targeted-formal-route-evidence.json",
+      "current": true
+    },
+    {
+      "probe_id": "PROBE-FADA-V014-REAL-REWARD-UPDATE",
+      "design_id": "FADA-V014-DUAL-REWARD-UPDATE",
+      "design_claim": "The official v014 route carries real stand/walk MuJoCo Reward through production replay into finite privileged SAC updates.",
+      "necessary_capability": "Activate both command modes, preserve Reward identity in ReplayBuffer, consume both modes, and update the production Critic and Actor once.",
+      "minimal_case": "32 real MuJoCo rows, one zero-action control transition, 128 replay samples, one Critic update, and one Actor update.",
+      "path_class": "official-entry",
+      "preserved_production_owners": ["scripts/train_offpolicy.py build_runner", "G1WalkEnv RewardModeConfig", "MuJoCoBackend", "ReplayBuffer", "FADAPrivilegedSACLearner"],
+      "simplifications": ["CPU device", "32 environments", "one transition", "zero external action", "compile disabled", "no collector subprocess"],
+      "falsifier": "Wrong 98/303/29 identity, absent stand or walk rows, missing telemetry, non-finite Reward, replay mismatch, non-finite update, or unchanged Actor.",
+      "success_witness": "11 stand rows, 21 walk rows, 128 reward-identical samples, six finite Critic metrics, four finite Actor metrics, and an Actor parameter delta.",
+      "construction_status": "ready",
+      "uncertainties": [],
+      "status": "passed",
+      "minimum_horizon": {"unit": "control-transitions", "required": 1, "observed": 1},
+      "required_effect_observations": 5,
+      "observed_effect_observations": 5,
+      "evidence_receipt": "note/fada/evidence/2026-08-27-v014-gain-targeted-formal-route-evidence.json",
+      "current": true
+    },
+    {
+      "probe_id": "PROBE-FADA-V014-PERSISTENCE",
+      "design_id": "FADA-V014-ORACLE-LINEAGE",
+      "design_claim": "The v014 effective config identity is sealed into strict full-state checkpoints and one exact 20+1 Oracle lineage.",
+      "necessary_capability": "Round-trip full learner state after deliberate mutation and finalize iterations 240 through 4800 plus 5000 through the production gateway.",
+      "minimal_case": "One full model_240 state save/reload and 21 tiny-payload lifecycle saves through the bound gateway.",
+      "path_class": "official-entry",
+      "preserved_production_owners": ["DoubleBufferOffPolicyRunner checkpoint dispatch", "FADAPrivilegedSACLearner strict reader", "FADAOracleCheckpointGateway"],
+      "simplifications": ["temporary directory", "one full-state payload", "tiny state payload for remaining lineage files"],
+      "falsifier": "Post-validation mutation, failed restoration, config identity mismatch, missing/extra/mixed checkpoint, or wrong final iteration.",
+      "success_witness": "A deliberately mutated Actor restored exactly and one manifest recorded 21 checkpoint hashes with final_iteration 5000.",
+      "construction_status": "ready",
+      "uncertainties": [],
+      "status": "passed",
+      "minimum_horizon": {"unit": "persistence-transitions", "required": 22, "observed": 22},
+      "required_effect_observations": 2,
+      "observed_effect_observations": 2,
+      "evidence_receipt": "note/fada/evidence/2026-08-27-v014-gain-targeted-formal-route-evidence.json",
+      "current": true
+    },
+    {
+      "probe_id": "PROBE-FADA-V014-SERVER-CUDA",
+      "design_id": "FADA-V014-SERVER-RUNTIME",
+      "design_claim": "The production server collector subprocess and CUDA learner carry the admitted v014 identities through the first live update.",
+      "necessary_capability": "Complete one MuJoCo collector to CPU-pinned double-buffer to CUDA learner transaction with both command modes and gain strata represented.",
+      "minimal_case": "32 environments and the first finite live update, bounded by 120 seconds.",
+      "path_class": "official-entry",
+      "preserved_production_owners": ["scripts/train_offpolicy.py main", "DoubleBufferOffPolicyRunner", "MuJoCo collector subprocess", "CPU-pinned replay transfer", "CUDA FADAPrivilegedSACLearner"],
+      "simplifications": ["32 environments", "learning_starts=1", "fresh isolated log directory", "stop after first finite update"],
+      "falsifier": "Any collector, Gain stratum, command mode, tensor, transfer, CUDA, child-lifecycle, numeric, or write-boundary failure.",
+      "success_witness": "One finite CUDA learner update whose collected batch contains both command modes and v014 gain strata.",
+      "construction_status": "ready",
+      "uncertainties": [],
+      "status": "live-required",
+      "live_unknown_id": "LIVE-V014-CUDA-COLLECTOR",
+      "minimum_horizon": {"unit": "live-updates", "required": 1, "observed": 0},
+      "required_effect_observations": 1,
+      "observed_effect_observations": 0,
+      "evidence_receipt": "LIVE-V014-CUDA-COLLECTOR",
+      "current": true
+    }
+  ],
+  "route_edges": [
+    {
+      "edge_id": "EDGE-V014-01",
+      "design_id": "FADA-V014-GAIN-DISTRIBUTION",
+      "producer": "resolved v014 Oracle Hydra profile",
+      "carrier": "BackendAdapter, G1 reset plan, and MuJoCo actuator gains",
+      "consumer": "real G1WalkEnv physics and typed privileged Kp/Kd scales",
+      "required_level": "R3",
+      "observed_level": "R3",
+      "evidence": {"path_class": "official-entry", "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py", "exit_code": 0, "identity_receipt": "only actuator index 3 varies in [0.8,1.0]; Actor/Critic 98/303", "effect_receipt": "real reset produced both nominal and attenuated rows and all unrelated actuator scales remained one", "persistence_receipt": "reset info retained applied Kp/Kd scales for the observation consumer", "live_attempt_id": "LIVE-ATTEMPT-V014-LOCAL-MUJOCO-1", "current": true}
+    },
+    {
+      "edge_id": "EDGE-V014-02",
+      "design_id": "FADA-V014-DUAL-REWARD-UPDATE",
+      "producer": "real MuJoCo NpEnvState transition Reward",
+      "carrier": "production ReplayBuffer add and sample",
+      "consumer": "production privileged SAC Critic and Actor updates",
+      "required_level": "R3",
+      "observed_level": "R3",
+      "evidence": {"path_class": "official-entry", "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py", "exit_code": 0, "identity_receipt": "128 sampled rows map exactly to source observation and Reward; 11 stand and 21 walk rows", "effect_receipt": "six finite Critic metrics, four finite Actor metrics, and Actor parameter change", "persistence_receipt": "ReplayBuffer retained Reward and observation identity until update", "live_attempt_id": "LIVE-ATTEMPT-V014-LOCAL-MUJOCO-1", "current": true}
+    },
+    {
+      "edge_id": "EDGE-V014-03",
+      "design_id": "FADA-V014-ORACLE-LINEAGE",
+      "producer": "full learner and optimizer state with v014 config hash",
+      "carrier": "runner saver and torch checkpoint",
+      "consumer": "strict FADAPrivilegedSACLearner reader",
+      "required_level": "R2",
+      "observed_level": "R2",
+      "evidence": {"path_class": "official-entry", "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py", "exit_code": 0, "identity_receipt": "schema-2 v014 identity validated before superclass mutation", "effect_receipt": "deliberately mutated Actor restored exactly", "persistence_receipt": "temporary full/model_240.pt strict round trip", "current": true}
+    },
+    {
+      "edge_id": "EDGE-V014-04",
+      "design_id": "FADA-V014-ORACLE-LINEAGE",
+      "producer": "iterations 240 through 4800 and final 5000",
+      "carrier": "production FADAOracleCheckpointGateway",
+      "consumer": "atomic Oracle lineage manifest",
+      "required_level": "R2",
+      "observed_level": "R2",
+      "evidence": {"path_class": "official-entry", "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py", "exit_code": 0, "identity_receipt": "one formal-offline-v014 config and lineage identity", "effect_receipt": "manifest finalized only after exact 21 expected files", "persistence_receipt": "fada_oracle_lineage.json records 21 hashes and final_iteration=5000", "current": true}
+    },
+    {
+      "edge_id": "EDGE-V014-05",
+      "design_id": "FADA-V014-SERVER-RUNTIME",
+      "producer": "server MuJoCo collector subprocess under the v014 config",
+      "carrier": "CPU-pinned double-buffer CUDA transfer",
+      "consumer": "CUDA privileged SAC first update",
+      "required_level": "R3",
+      "observed_level": "R2",
+      "evidence": {"path_class": "official-entry", "command": "not executed; see LIVE-V014-CUDA-COLLECTOR", "exit_code": 0, "identity_receipt": "all local tensor, Gain, Reward, update, and persistence identities are current", "effect_receipt": "server CUDA collector transaction remains open", "persistence_receipt": "R2 passed independently", "current": true}
+    }
+  ],
+  "live_only_unknowns": [
+    {
+      "id": "LIVE-V014-CUDA-COLLECTOR",
+      "status": "open",
+      "fact": "On the server, the official v014 MuJoCo collector, CPU-pinned double buffer, and CUDA learner complete the first finite privileged SAC update while carrying both command modes and gain strata.",
+      "why_offline_impossible": "The local machine has no server CUDA device and the local formal test directly fills ReplayBuffer rather than starting the production collector subprocess; it cannot prove CUDA compilation, pinned transfer, child lifecycle, or the first live update.",
+      "falsifier": "Collector startup failure, missing command mode or gain stratum, wrong 98/303/29 tensors, pinned-transfer failure, non-finite metrics, child death, or write outside the fresh audit directory.",
+      "cost": "One server GPU, 32 MuJoCo environments, a fresh isolated directory, and at most 120 seconds; stop after the first finite update or first invariant failure.",
+      "stop_condition": "Stop immediately after the first finite collector-to-CUDA-learner update, at 120 seconds, or on the first identity, lifecycle, distribution, or numeric failure; never continue the Oracle campaign.",
+      "bounded_command": "cd /ssd1/cyx/ICE-Cal && AUDIT_DIR=$(mktemp -d /ssd1/cyx/ICE-Cal/.v014-formal-XXXXXX) && timeout 120s env CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 ICE_CAL_ORACLE_LINEAGE_ID=formal-live-v014 PYTHONPATH=/ssd1/cyx/ICE-Cal/src uv run --no-sync python scripts/train_offpolicy.py algo=sac task=sac/g1_walk_flat/mujoco_fada_privileged_oracle training.device=cuda:0 training.log_dir=$AUDIT_DIR algo.num_envs=32 algo.batch_size=32 algo.learning_starts=1 algo.max_iterations=5000",
+      "output_path": "/ssd1/cyx/ICE-Cal/.v014-formal-*/train.log plus captured terminal output",
+      "zero_write_boundary": "Only the newly created /ssd1/cyx/ICE-Cal/.v014-formal-* directory may be written; no existing checkpoint, log, config, source, or repository file may change."
+    }
+  ],
+  "live_attempts": [
+    {
+      "attempt_id": "LIVE-ATTEMPT-V014-LOCAL-MUJOCO-1",
+      "ordinal": 1,
+      "bounded_command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py",
+      "result": "passed",
+      "evidence_receipt": "note/fada/evidence/2026-08-27-v014-gain-targeted-formal-route-evidence.json"
+    }
+  ],
+  "claims": [
+    {"kind": "formal-integration", "evidence_level": "R3", "scope": "The official local v014 config materializes the gain-targeted MuJoCo reset and carries real dual Reward through production replay into one finite privileged SAC Critic and Actor update."},
+    {"kind": "formal-persistence", "evidence_level": "R2", "scope": "The v014 resolved config identity strictly round-trips full state and the production gateway finalizes one exact 20+1 lineage."},
+    {"kind": "bounded-runtime-fact", "evidence_level": "R3", "scope": "One local MuJoCo reset produced only nominal and left-knee attenuation strata while Actor/Critic remained 98/303."}
+  ],
+  "admission": "LIVE_REQUIRED",
+  "negative_scope": [
+    "No server CUDA collector transaction, long training, convergence, locomotion quality, IDM/Planner readiness, commit, push, or deployment is claimed.",
+    "Local R1-R3 evidence does not prove 5000-iteration stability or privileged Oracle policy quality.",
+    "The remaining LIVE_REQUIRED probe is a bounded audit only and is not permission to continue training."
+  ]
+}

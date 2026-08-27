@@ -1,6 +1,6 @@
 ---
 contract_id: FADA-TRAIN-v013
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-TRAIN-v012
 method_contract: FADA-METHOD-v013
@@ -40,3 +40,4 @@ the v013 final Oracle and its twenty same-lineage intermediate checkpoints.
 
 Training, simulation, server operation, Git publication, deployment, and policy-quality evaluation
 remain separate explicit actions. Local module evidence cannot authorize a long run.
+

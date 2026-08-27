@@ -1,0 +1,73 @@
+{
+  "schema_version": "code-review-expert/v1",
+  "review_id": "CRE-FADA-V014-GAIN-TARGETED-FINAL-20260827",
+  "mode": "final-gate",
+  "profiles": ["standard", "module-boundary", "repository-discipline", "research-ml"],
+  "verdict": "FINAL_GATE_PASS",
+  "scope": {
+    "requested": ["implement the confirmed gain-targeted Oracle source profile in one maintainable local transaction"],
+    "preserved": [
+      "single G1WalkFlat/MuJoCo task and privileged SAC Oracle",
+      "98-D Actor and existing typed privileged Critic tail",
+      "v013 command-conditioned no-gait Reward",
+      "20+1 lineage and all Planner-IDM contracts"
+    ],
+    "forbidden": [
+      "new sampler, trainer, backend API, observation/checkpoint schema, or script-owned rule",
+      "unrelated DR, direct gain input to Actor, duplicate Critic strength tail, training, Git, or policy-quality claim"
+    ]
+  },
+  "identities": {
+    "project": "ICE-Cal/FADA",
+    "design": "FADA-GAIN-TARGETED-ORACLE-V014",
+    "contract": "FADA-METHOD-v014/FADA-TRAIN-v014",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt+v014-local-diff",
+    "review_object": "2026-08-27-fada-gain-targeted-oracle-v014@sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b"
+  },
+  "authority": {
+    "review": {"status": "read-only", "scope": "fresh maintainability review of the complete local v014 diff"},
+    "source_edits": {"status": "approved", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827", "scope": "local config, preflight, tests, Contracts, Inspector, and evidence"},
+    "report_write": {"status": "approved", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827", "scope": "local governance, plan, Module Test Card, execution, and review receipts"}
+  },
+  "review_object": {
+    "kind": "diff",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/plans/2026-08-27-fada-gain-targeted-oracle-v014.md",
+    "content_hash": "sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b",
+    "current": true
+  },
+  "repository_discipline": {
+    "status": "active",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/AGENTS.md",
+    "content_hash": "sha256:885fe8aaa811cf762ed3d6bc182c7e50b12369b719a36dd5194ec22ce0841022",
+    "current": true,
+    "rationale": "The final diff keeps distribution identity in Hydra, reset sampling in the G1 provider, and resolved-config admission in the Oracle runtime."
+  },
+  "dimensions": [
+    {"name": "responsibility-ownership", "disposition": "pass", "evidence": "Hydra owns the exact distribution, existing G1 reset code owns application, and one Oracle preflight helper owns fail-closed profile validation."},
+    {"name": "public-interface", "disposition": "pass", "evidence": "Only existing resolved-config, actuator-strength, typed privileged observation, and OffPolicyRuntime interfaces are used."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "No script, environment-private, or backend-private dependency was introduced; runtime preflight reads public config only."},
+    {"name": "state-lifecycle", "disposition": "pass", "evidence": "Gain remains reset-scoped and checkpoint identity remains sealed by the existing resolved config hashes; no new mutable curriculum state exists."},
+    {"name": "change-surface", "disposition": "pass", "evidence": "The production diff is one YAML profile and two local validation helpers; it adds no wrapper, schema, second path, or speculative abstraction."},
+    {"name": "evidence-boundary", "disposition": "pass", "evidence": "209 focused tests, Ruff, Inspector synchronization, and validated receipts support offline semantics only; learned quality is explicitly unclaimed."},
+    {"name": "tensor-provenance", "disposition": "pass", "evidence": "The formal offline route observes Actor/Critic/action dimensions 98/303/29; gain changes existing privileged Kp/Kd scales and is not appended to Actor or duplicated."},
+    {"name": "gradient-update-boundary", "disposition": "pass", "evidence": "Oracle SAC optimizer and downstream IDM-before-Planner update ownership are unchanged."},
+    {"name": "persistence-evaluation", "disposition": "pass", "evidence": "Existing checkpoint config hashes capture DR and observation-noise identity; v013 checkpoints are documented as historical and cannot authorize v014."},
+    {"name": "repository-discipline", "disposition": "pass", "evidence": "Config-first, owner-layer, backend isolation, cold-path asset, branch, and evidence-only disciplines are preserved."}
+  ],
+  "findings": [],
+  "residual_risks": [
+    {"risk_id": "CRE-FADA-V014-INDEPENDENT-REVIEW", "severity": "P2", "status": "open", "description": "No independent sub-agent review was performed because delegation was not authorized for this task.", "disposition": "Retain the validated self-review receipt and require formal runtime audit before training."},
+    {"risk_id": "CRE-FADA-V014-LIVE-DISTRIBUTION", "severity": "P2", "status": "open", "description": "Local MuJoCo connectivity does not prove the production server collector uses the same resolved distribution.", "disposition": "Run a separately authorized formal runtime audit on the synced server checkout."},
+    {"risk_id": "CRE-FADA-V014-POLICY-QUALITY", "severity": "P2", "status": "open", "description": "Reduced DR is a learnability intervention, not evidence that Oracle, IDM, or Planner will converge.", "disposition": "Use staged Oracle, IDM, and Planner policy-quality gates after formal admission."}
+  ],
+  "blockers": [],
+  "claims": {
+    "maintainability": "reviewed",
+    "semantic_correctness": "not-claimed",
+    "module_correctness": "not-claimed",
+    "runtime_root_cause": "not-claimed",
+    "formal_route": "not-claimed",
+    "policy_quality": "not-claimed"
+  },
+  "dependencies": []
+}

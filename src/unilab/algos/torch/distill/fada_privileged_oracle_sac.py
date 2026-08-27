@@ -82,6 +82,59 @@ def _object_items(value: Any) -> dict[str, Any]:
         return {}
 
 
+def _validate_gain_targeted_domain_randomization(domain_rand: Any) -> None:
+    forbidden_flags = (
+        ("randomize_ground_friction", "ground friction"),
+        ("random_com", "COM"),
+        ("randomize_base_mass", "base mass"),
+        ("randomize_body_mass", "body mass"),
+        ("randomize_gravity", "gravity"),
+        ("randomize_dof_armature", "armature"),
+        ("randomize_kp", "independent Kp"),
+        ("randomize_kd", "independent Kd"),
+        ("randomize_dof_position_bias", "position bias"),
+        ("randomize_control_delay", "control delay"),
+        ("push_robots", "push"),
+    )
+    for field_name, label in forbidden_flags:
+        if bool(getattr(domain_rand, field_name, False)):
+            raise ValueError(f"privileged_locomotion_sac forbids {label} randomization")
+    if float(getattr(domain_rand, "torque_rfi_fraction", 0.0)) != 0.0:
+        raise ValueError("privileged_locomotion_sac forbids torque RFI")
+
+    strength = getattr(domain_rand, "actuator_strength", None)
+    if strength is None or not bool(getattr(strength, "enabled", False)):
+        raise ValueError("privileged_locomotion_sac requires actuator strength randomization")
+    if str(getattr(strength, "sampling_mode", "")) != "single_candidate":
+        raise ValueError("privileged_locomotion_sac requires single_candidate sampling mode")
+    if list(getattr(strength, "candidate_actuator_indices", [])) != [3]:
+        raise ValueError("privileged_locomotion_sac requires left-knee actuator index 3")
+    if list(getattr(strength, "multiplier_range", [])) != [0.8, 1.0]:
+        raise ValueError("privileged_locomotion_sac requires multiplier range [0.8, 1.0]")
+    if float(getattr(strength, "nominal_probability", -1.0)) != 0.3:
+        raise ValueError("privileged_locomotion_sac requires nominal probability 0.3")
+    if bool(getattr(strength, "include_in_critic_obs", True)):
+        raise ValueError(
+            "privileged_locomotion_sac forbids duplicate actuator-strength Critic tail"
+        )
+    if list(getattr(strength, "multipliers", [])):
+        raise ValueError("privileged_locomotion_sac forbids fixed actuator strength multipliers")
+
+
+def _validate_oracle_noise_profile(noise_config: Any) -> None:
+    expected = (
+        ("level", 1.0, "noise level"),
+        ("scale_gyro", 0.0, "gyro noise"),
+        ("scale_gravity", 0.0, "gravity noise"),
+        ("scale_joint_angle", 0.01, "joint-angle noise"),
+        ("scale_joint_vel", 0.1, "joint-velocity noise"),
+        ("scale_linvel", 0.0, "linear-velocity noise"),
+    )
+    for field_name, expected_value, label in expected:
+        if float(getattr(noise_config, field_name, float("nan"))) != expected_value:
+            raise ValueError(f"privileged_locomotion_sac requires sealed {label} profile")
+
+
 @dataclass(frozen=True)
 class FADAPrivilegedSACRuntime(OffPolicyRuntime):
     learner_cls: type[Any] | None = FADAPrivilegedSACLearner
@@ -223,6 +276,8 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
         if bool(getattr(curriculum_cfg, "enabled", True)):
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
+        _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
+        _validate_oracle_noise_profile(cfg.env.noise_config)
         validate_fada_no_gait_dual_reward(
             reward_scales=_object_items(cfg.reward.scales),
             reward_mode=_object_items(getattr(cfg.reward, "mode", None)),

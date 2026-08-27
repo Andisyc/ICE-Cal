@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "design_identity": "FADA-METHOD-v014:FADA-TRAIN-v014:UNIT-A",
+  "checkout_identity": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+v014-local-diff:26650420c393a655e7829b90c618002dec08e7b022c3f34a161a24e31029a527",
+  "modules": [
+    {
+      "id": "FADA-V014-GAIN-TARGETED-PREFLIGHT",
+      "owner": "FADAPrivilegedSACRuntime.validate_training_config consuming the Oracle Hydra profile",
+      "public_boundary": "resolved privileged_locomotion_sac config to admission or fail-closed ValueError before environment creation",
+      "card": {
+        "status": "confirmed",
+        "identity": "FADA-v014-MTC-A@USER-GAIN-TARGETED-ONE-SHOT-20260827"
+      },
+      "required": {
+        "s_tiers": ["S1"],
+        "case_families": ["C1", "C2", "C3", "C4"],
+        "t_kinds": ["T-value", "T-role", "T-dist", "T-diff"]
+      },
+      "cases": [
+        {
+          "id": "V014-GAIN-C1-VALID",
+          "case_family": "C1",
+          "s_tier": "S1",
+          "t_kinds": ["T-value", "T-role", "T-dist"],
+          "invokes_production_public_boundary": true,
+          "fixture": {
+            "semantic_roles": ["nominal left knee", "attenuated left knee", "unrelated nominal actuators"],
+            "units_and_axes": "29 actuator multipliers in G1 action order; left knee is index 3; dimensionless gain",
+            "validity_semantics": "single-candidate [3], range [0.8,1.0], probability 0.3, with all unrelated DR disabled"
+          },
+          "oracle": {"kind": "human-confirmed-golden", "independent_from_production": true},
+          "sensitivity": {"kind": "pre-fix", "observed_failure": true},
+          "evidence": {
+            "class": "contract-confirmed",
+            "command": "uv run --no-sync pytest -q tests/algos/test_fada_privileged_oracle_v012.py::test_runtime_preflight_requires_no_gait_dual_reward_mechanism tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_free",
+            "exit_code": 0,
+            "identity": "v014-valid-profile-admitted-and-composed-20260827"
+          }
+        },
+        {
+          "id": "V014-GAIN-C2-BOUNDARY",
+          "case_family": "C2",
+          "s_tier": "S1",
+          "t_kinds": ["T-value", "T-dist", "T-diff"],
+          "invokes_production_public_boundary": true,
+          "fixture": {
+            "semantic_roles": ["lower attenuation endpoint", "nominal upper endpoint", "nominal atom"],
+            "units_and_axes": "dimensionless g endpoints 0.8 and 1.0; nominal probability 0.3",
+            "validity_semantics": "exact sealed endpoints and probability are valid; any drift is invalid"
+          },
+          "oracle": {"kind": "human-confirmed-golden", "independent_from_production": true},
+          "sensitivity": {"kind": "controlled-counterexample", "observed_failure": true},
+          "evidence": {
+            "class": "contract-confirmed",
+            "command": "uv run --no-sync pytest -q tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_free tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_preflight_rejects_non_targeted_domain_randomization",
+            "exit_code": 0,
+            "identity": "exact-range-and-probability-accepted-drift-rejected-20260827"
+          }
+        },
+        {
+          "id": "V014-GAIN-C3-UNRELATED-DR",
+          "case_family": "C3",
+          "s_tier": "S1",
+          "t_kinds": ["T-role", "T-dist", "T-diff"],
+          "invokes_production_public_boundary": true,
+          "fixture": {
+            "semantic_roles": ["friction", "COM", "mass", "gravity", "armature", "independent PD", "bias", "torque RFI", "delay", "push", "observation noise"],
+            "units_and_axes": "one resolved Hydra domain-randomization field changed per case",
+            "validity_semantics": "each unrelated mechanism is forbidden even when individually well-formed"
+          },
+          "oracle": {"kind": "human-confirmed-golden", "independent_from_production": true},
+          "sensitivity": {"kind": "pre-fix", "observed_failure": true},
+          "evidence": {
+            "class": "contract-confirmed",
+            "command": "uv run --no-sync pytest -q tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_preflight_rejects_non_targeted_domain_randomization tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_preflight_rejects_observation_noise_drift",
+            "exit_code": 0,
+            "identity": "24-one-field-invalid-profiles-fail-closed-20260827"
+          }
+        },
+        {
+          "id": "V014-GAIN-C4-ACTUATOR-IDENTITY",
+          "case_family": "C4",
+          "s_tier": "S1",
+          "t_kinds": ["T-role", "T-diff"],
+          "invokes_production_public_boundary": true,
+          "fixture": {
+            "semantic_roles": ["left-knee index 3", "equal-shaped right-knee index 9"],
+            "units_and_axes": "G1 action-order actuator index",
+            "validity_semantics": "index 3 is valid and index 9 is an invalid identity substitution"
+          },
+          "oracle": {"kind": "human-confirmed-golden", "independent_from_production": true},
+          "sensitivity": {"kind": "controlled-counterexample", "observed_failure": true},
+          "evidence": {
+            "class": "contract-confirmed",
+            "command": "uv run --no-sync pytest -q tests/algos/test_fada_privileged_oracle_v012.py::test_privileged_oracle_preflight_rejects_non_targeted_domain_randomization",
+            "exit_code": 0,
+            "identity": "left-versus-right-knee-identity-discriminator-20260827"
+          }
+        }
+      ],
+      "status": "MODULE-CORRECT"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": "code-review-expert/v1",
+  "review_id": "CRE-FADA-V014-GAIN-TARGETED-PLAN-20260827",
+  "mode": "plan",
+  "profiles": ["standard", "module-boundary", "repository-discipline", "research-ml"],
+  "verdict": "READY",
+  "scope": {
+    "requested": ["replace full Oracle DR with the confirmed nominal-plus-left-knee-gain source distribution"],
+    "preserved": [
+      "single G1WalkFlat/MuJoCo task and privileged SAC Oracle",
+      "98-D deployable Actor observation and typed privileged Critic tail",
+      "v013 command-conditioned no-gait Reward",
+      "20+1 lineage and Planner-IDM tensor, gradient, and execution contracts"
+    ],
+    "forbidden": [
+      "new trainer, environment, backend API, observation schema, checkpoint schema, or script-owned behavior",
+      "unrelated domain randomization, gait mechanism, simulator, training, Git, server, or policy-quality claim"
+    ]
+  },
+  "identities": {
+    "project": "ICE-Cal/FADA",
+    "design": "FADA-GAIN-TARGETED-ORACLE-V014",
+    "contract": "human-confirmed v014 proposal",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt",
+    "review_object": "2026-08-27-fada-gain-targeted-oracle-v014@sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b"
+  },
+  "authority": {
+    "review": {"status": "read-only", "scope": "v014 plan responsibility, distribution semantics, proof route, and maintainability"},
+    "source_edits": {"status": "approved", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827", "scope": "local config, preflight, tests, Contracts, Inspector, and receipts"},
+    "report_write": {"status": "approved", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827", "scope": "local plan, Contracts, Module Test Cards, governance, evidence, and review receipts"}
+  },
+  "review_object": {
+    "kind": "plan",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/plans/2026-08-27-fada-gain-targeted-oracle-v014.md",
+    "content_hash": "sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b",
+    "current": true
+  },
+  "repository_discipline": {
+    "status": "active",
+    "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/AGENTS.md",
+    "content_hash": "sha256:885fe8aaa811cf762ed3d6bc182c7e50b12369b719a36dd5194ec22ce0841022",
+    "current": true,
+    "rationale": "Hydra owns task distribution, the existing G1 reset provider owns actuator strength, and the Oracle runtime owns resolved-config admission."
+  },
+  "dimensions": [
+    {"name": "responsibility-ownership", "disposition": "pass", "evidence": "One Oracle Hydra profile owns the distribution; existing G1 actuator-strength reset code owns sampling/application; Oracle preflight owns fail-closed admission."},
+    {"name": "public-interface", "disposition": "pass", "evidence": "The plan reuses G1ActuatorStrengthConfig, resolved Hydra config, typed privileged Kp/Kd scales, and OffPolicyRuntime validation without new surfaces."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "Preflight consumes public resolved config only; scripts, environment-private state, and backend-private capabilities remain untouched."},
+    {"name": "state-lifecycle", "disposition": "pass", "evidence": "Strength is sampled at the existing reset transaction and sealed by existing config hashes; no new mutable schedule or resume state is introduced."},
+    {"name": "change-surface", "disposition": "pass", "evidence": "One owner YAML and one same-module validator are sufficient; no abstraction, compatibility branch, or duplicate sampler is admitted."},
+    {"name": "evidence-boundary", "disposition": "pass", "evidence": "The plan claims distribution and admission correctness only; runtime reachability and learned policy quality remain separate gates."},
+    {"name": "proof-route", "disposition": "pass", "evidence": "RED tests cover valid composition and one-field invalid distributions; focused owner, config, formal-offline, lint, and Inspector checks form the GREEN route."},
+    {"name": "tensor-provenance", "disposition": "pass", "evidence": "Actor remains 98-D; applied strength reaches the existing privileged Kp/Kd scale fields, while the duplicate explicit 29-D strength tail is disabled."},
+    {"name": "gradient-update-boundary", "disposition": "pass", "evidence": "Oracle SAC optimizer ownership and downstream IDM-before-Planner ordering remain unchanged; only the sampling distribution changes."},
+    {"name": "persistence-evaluation", "disposition": "pass", "evidence": "Existing canonical config hashes make v014 checkpoints incompatible with v013 distribution identity without changing checkpoint schema."},
+    {"name": "repository-discipline", "disposition": "pass", "evidence": "Config-first, owner-layer, backend isolation, cold-path asset, and scripts-assembly-only rules are preserved."}
+  ],
+  "findings": [],
+  "residual_risks": [
+    {"risk_id": "CRE-FADA-V014-RUNTIME", "severity": "P2", "status": "open", "description": "Offline construction cannot prove the production collector observes the intended reset distribution.", "disposition": "Require a separate formal runtime audit before training."},
+    {"risk_id": "CRE-FADA-V014-POLICY-QUALITY", "severity": "P2", "status": "open", "description": "A learnable-looking distribution does not prove Oracle, IDM, or Planner convergence.", "disposition": "Require staged policy-quality gates after separately authorized training."}
+  ],
+  "blockers": [],
+  "claims": {
+    "maintainability": "reviewed",
+    "semantic_correctness": "not-claimed",
+    "module_correctness": "not-claimed",
+    "runtime_root_cause": "not-claimed",
+    "formal_route": "not-claimed",
+    "policy_quality": "not-claimed"
+  },
+  "dependencies": []
+}

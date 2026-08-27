@@ -1,6 +1,6 @@
 ---
 contract_id: FADA-METHOD-v013
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-METHOD-v012
 scope: single-task privileged-Oracle Planner-IDM source training with command-conditioned no-gait dual Reward
@@ -43,3 +43,4 @@ Reward/config identity.
 
 Config composition and module tests do not prove Oracle convergence, standing or walking quality,
 formal-route reachability, Planner-IDM readiness, transfer, or calibration efficacy.
+

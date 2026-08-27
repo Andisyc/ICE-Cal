@@ -1,0 +1,64 @@
+{
+  "schema_version": "workflow-governance/v1",
+  "governance_id": "ICE-CAL-FADA-V014-GAIN-TARGETED-20260827",
+  "scope": {
+    "requested": ["activate and locally implement the human-confirmed nominal-plus-gain Oracle source distribution"],
+    "preserved": ["single task and Oracle, 98-D Actor input, v013 no-gait dual Reward, 20+1 lineage, and Planner-IDM semantics"],
+    "forbidden": ["unrelated DR, gain leakage into Actor, new trainer or backend route, training, simulator, server, Git, deployment, or policy-quality claim"]
+  },
+  "lifecycle_phase": "design-proposal",
+  "target_phase": "contract-active",
+  "admission": "DESIGN-CONFIRMED",
+  "identities": {
+    "project": "ICE-Cal/FADA",
+    "design": "FADA-GAIN-TARGETED-ORACLE-V014",
+    "contract": "FADA-METHOD-v014+FADA-TRAIN-v014",
+    "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt",
+    "entrypoint": "scripts/train_offpolicy.py -> privileged_locomotion_sac -> G1WalkFlat/MuJoCo",
+    "effective_config": "left-knee index 3, g=[0.8,1.0], nominal probability 0.3, unrelated DR disabled",
+    "checkpoint": "cold-start; no v014 training or checkpoint mutation"
+  },
+  "authority": {
+    "semantic": {"status": "approved", "scope": "replace full source DR with nominal plus task-relevant gain DR", "receipt": "USER-GAIN-TARGETED-CONFIRMATION-20260827"},
+    "local_reversible": {"status": "approved", "scope": "local config, source preflight, tests, Contracts, Inspector, and receipts", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827"},
+    "git_actions": {"status": "not-requested", "scope": "no Git mutation"},
+    "external_operations": {"status": "not-requested", "scope": "no server or network mutation"},
+    "bounded_live": {"status": "not-requested", "scope": "no simulator or GUI"},
+    "long_run": {"status": "not-requested", "scope": "no training"},
+    "destructive": {"status": "approved", "scope": "retire v013 active Contract paths while preserving full content in history", "receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827"}
+  },
+  "artifacts": [
+    {"kind": "contract-proposal", "artifact_id": "FADA-METHOD-v014", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/contracts/active/method/FADA-METHOD-v014.md", "lifecycle": "volatile", "status": "proposal", "content_hash": "sha256:0ec5586b81558b4dc07dc77d42917b13a73c5c85ee6854722201b7af845bbf75", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014"}},
+    {"kind": "training-contract-proposal", "artifact_id": "FADA-TRAIN-v014", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/contracts/active/training/FADA-TRAIN-v014.md", "lifecycle": "volatile", "status": "proposal", "content_hash": "sha256:5e6633062e28bc32cb217a370db8579a383ef7134cb554ddac0e61eb541c0bcf", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014", "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt"}},
+    {"kind": "implementation-plan", "artifact_id": "FADA-V014-GAIN-TARGETED-PLAN", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/plans/2026-08-27-fada-gain-targeted-oracle-v014.md", "lifecycle": "volatile", "status": "confirmed", "content_hash": "sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014", "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt"}},
+    {"kind": "module-test-cards", "artifact_id": "FADA-V014-MODULE-TEST-CARDS", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/testing/v014_module_test_cards.md", "lifecycle": "current", "status": "confirmed", "content_hash": "sha256:b3cde9e0c3ee78f0345d89bae40395fb5b11effd0e273e7cbfe15323b65e39cc", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014", "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt"}},
+    {"kind": "design-inspector", "artifact_id": "ICA-DP-01-FADA-SOURCE-V014", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/architecture/concept/09_in_context_execution_calibration_design_inspector.data.json", "lifecycle": "current", "status": "confirmed", "content_hash": "sha256:2d041701d16043a858cefe06f2fe0b3252dee2ea4ca594b636430e5ed5c5a083", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014", "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt"}},
+    {"kind": "concept-figure", "artifact_id": "ICE-Cal-concept-figure-current", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/architecture/concept/08_trajectory_conditioned_execution_alignment.data.json", "lifecycle": "current", "status": "active", "content_hash": "sha256:db54963c84ffc35b1ce9144728308ab9211c9d6f64d22ac6f90af480810d7df9", "current": true, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-GAIN-TARGETED-ORACLE-V014", "contract": "FADA-METHOD-v014+FADA-TRAIN-v014", "checkout": "main@614dce69ec4ec58c9654b7e644b1d0985c77415b+preserved-model_5000.pt"}},
+    {"kind": "historical-contract", "artifact_id": "FADA-METHOD-v013", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/contracts/history/method/FADA-METHOD-v013.md", "lifecycle": "historical", "status": "historical", "content_hash": "sha256:fc52e4c644cb5dc0e3c5101272019ab20a7f31837edaf845208718ee063dae49", "current": false, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-NO-GAIT-DUAL-REWARD-V013", "contract": "FADA-METHOD-v013+FADA-TRAIN-v013", "checkout": "historical-main@614dce69ec4ec58c9654b7e644b1d0985c77415b"}},
+    {"kind": "historical-contract", "artifact_id": "FADA-TRAIN-v013", "path": "/Users/chengyuxuan/ArtiIntComVis/ICE-Cal/note/fada/contracts/history/training/FADA-TRAIN-v013.md", "lifecycle": "historical", "status": "historical", "content_hash": "sha256:f5cd492626b0ed27569bf3d7e96bf9b71019d9fb091a70f634afefbe759f51ec", "current": false, "identities": {"project": "ICE-Cal/FADA", "design": "FADA-NO-GAIT-DUAL-REWARD-V013", "contract": "FADA-METHOD-v013+FADA-TRAIN-v013", "checkout": "historical-main@614dce69ec4ec58c9654b7e644b1d0985c77415b"}}
+  ],
+  "dependencies": [],
+  "design_review": {
+    "semantic_change": true,
+    "status": "confirmed",
+    "mapping_complete": true,
+    "receipt": "USER-GAIN-TARGETED-CONFIRMATION-20260827",
+    "rationale": "The human confirmed nominal plus gain-targeted source DR and authorized one-shot local implementation.",
+    "proposal_hash": "sha256:a23726a3c03bc94714286c8ae3d6e9ef9a41411dfad5c32b12ca11d4d3d4e81b",
+    "inspector_hash": "sha256:2d041701d16043a858cefe06f2fe0b3252dee2ea4ca594b636430e5ed5c5a083"
+  },
+  "open_boundaries": [],
+  "invalidations": [
+    {"id": "V013-FULL-DR-RETIRE-001", "trigger": "v014 gain-targeted source distribution activated", "affected_artifact_ids": ["FADA-METHOD-v013", "FADA-TRAIN-v013"], "status": "resolved", "resolution_receipt": "USER-GAIN-TARGETED-ONE-SHOT-20260827"}
+  ],
+  "recovery": {"default_recall": "note/fada/contracts/README.md -> FADA-METHOD-v014 + FADA-TRAIN-v014", "historical_context": "v013 Contracts remain under note/fada/contracts/history"},
+  "closeout": {
+    "evidence_complete": false,
+    "atlas_synchronized": true,
+    "stale_interpretations_named": true,
+    "volatile_artifacts_closed": false,
+    "maintainability": {"status": "deferred", "rationale": "final construction review follows implementation"},
+    "formal_route": {"status": "deferred", "rationale": "formal runtime is a separate governed action"},
+    "next_decision": "run formal runtime audit before any Oracle training"
+  }
+}
