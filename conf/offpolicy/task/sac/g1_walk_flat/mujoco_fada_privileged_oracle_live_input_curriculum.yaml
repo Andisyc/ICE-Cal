@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_fixed_input_curriculum
+  - _self_
+
+# Matched control: identical curriculum and nominal environment, but restore
+# the live privileged values consumed by both collector and learner Actors.
+algo:
+  actor:
+    fixed_privileged_input: false

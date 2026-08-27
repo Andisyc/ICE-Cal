@@ -6,8 +6,10 @@ defaults:
 # Diagnostic only: preserve the privileged Actor architecture while removing
 # privileged-value and actuator-fault variation, then restore penalty curriculum.
 algo:
+  privileged_input_diagnostic: true
   max_iterations: 500
-  save_interval: 100
+  # Diagnostic checkpoints do not satisfy the sealed 5000-iteration Oracle lineage.
+  save_interval: 0
   actor:
     fixed_privileged_input: true
 

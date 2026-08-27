@@ -428,12 +428,50 @@ def test_privileged_oracle_fixed_input_curriculum_diagnostic_profile(
 
     assert runtime is not None
     assert cfg.algo.actor.fixed_privileged_input is True
+    assert cfg.algo.privileged_input_diagnostic is True
     assert runtime.build_model_kwargs(obs_dim=98, critic_obs_dim=303)[
         "fixed_privileged_input"
     ] is True
     assert cfg.algo.max_iterations == 500
+    assert cfg.algo.save_interval == 0
     assert cfg.env.curriculum.enabled is True
     assert cfg.env.curriculum.initial_scale == pytest.approx(0.5)
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    runtime.validate_training_config(cfg)
+
+
+def test_privileged_oracle_live_input_curriculum_control_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    from omegaconf import OmegaConf
+
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        resolve_privileged_locomotion_sac_runtime,
+    )
+
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-live-control")
+    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=[
+                "algo=sac",
+                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_curriculum",
+            ],
+        )
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        OmegaConf.to_container(cfg.algo, resolve=True)
+    )
+
+    assert runtime is not None
+    assert cfg.algo.privileged_input_diagnostic is True
+    assert cfg.algo.actor.fixed_privileged_input is False
+    assert cfg.algo.max_iterations == 500
+    assert cfg.algo.save_interval == 0
+    assert cfg.env.curriculum.enabled is True
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     runtime.validate_training_config(cfg)
 
