@@ -1195,7 +1195,7 @@ def test_distill_playback_resolves_explicit_student_checkpoint_path(
         fail_resolve_task_checkpoint_path,
     )
 
-    resolved = interactive_playback._resolve_distill_checkpoint_from_playback_cfg(
+    resolved = interactive_playback._resolve_task_checkpoint_from_playback_cfg(
         RslRlPlaybackConfig(
             task="G1WalkFlat",
             load_run="-1",
@@ -1658,6 +1658,92 @@ def test_sac_playback_rejects_checkpoint_obs_dim_mismatch(
             device="cpu",
             log=lambda message: None,
         )
+
+
+def test_sac_playback_prefers_explicit_checkpoint_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import train_offpolicy
+    from omegaconf import OmegaConf
+
+    import unilab.algos.torch.common.actor_factory as actor_factory
+
+    checkpoint = tmp_path / "explicit_model.pt"
+    actor_state = {"net.0.weight": torch.zeros((4, 3))}
+    torch.save({"actor": actor_state}, checkpoint)
+    captured: dict[str, Any] = {}
+
+    class FakeEnv:
+        obs_groups_spec = {"obs": 3}
+        action_space = SimpleNamespace(shape=(2,))
+        state = SimpleNamespace(info={})
+
+    class FakeActor:
+        def eval(self):
+            return self
+
+        def load_state_dict(self, state_dict):
+            captured["loaded_actor"] = state_dict
+
+    cfg = OmegaConf.create(
+        {
+            "training": {"task_name": "Task", "device": None},
+            "algo": {
+                "algo_log_name": "fast_sac",
+                "load_run": "run-that-must-not-be-resolved",
+                "actor_hidden_dim": 16,
+                "use_layer_norm": False,
+                "runtime_impl": "sac",
+                "obs_normalization": False,
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        train_offpolicy, "default_device", lambda torch_module, preferred=None: "cpu"
+    )
+    monkeypatch.setattr(train_offpolicy, "resolve_play_obs_dims", lambda spec: (3, 3))
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_play_actor_spec",
+        lambda algo_name, cfg, *, obs_dim, critic_obs_dim: ("sac", {}),
+    )
+    monkeypatch.setattr(
+        train_offpolicy,
+        "resolve_checkpoint_path",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("explicit checkpoint path must bypass load_run resolution")
+        ),
+    )
+    monkeypatch.setattr(actor_factory, "build_actor", lambda *args, **kwargs: FakeActor())
+
+    session, policy_obs_mode, resolved_checkpoint = create_sac_playback_session(
+        playback_cfg=RslRlPlaybackConfig(
+            task="Task",
+            load_run="run-that-must-not-be-resolved",
+            checkpoint=None,
+            checkpoint_path=str(checkpoint),
+            action_mode="policy",
+            policy_obs_mode="actor",
+            algo_log_name="fast_sac",
+            log_root=None,
+        ),
+        cfg=cfg,
+        env_factory=lambda num_envs: FakeEnv(),
+        root_dir=tmp_path,
+        device="cpu",
+        log=lambda message: None,
+    )
+
+    assert session.actor is not None
+    assert policy_obs_mode == "actor"
+    assert resolved_checkpoint == str(checkpoint)
+    assert captured["loaded_actor"].keys() == actor_state.keys()
+    torch.testing.assert_close(
+        captured["loaded_actor"]["net.0.weight"],
+        actor_state["net.0.weight"],
+    )
 
 
 def test_sac_playback_uses_fada_oracle_checkpoint_obs_dim() -> None:

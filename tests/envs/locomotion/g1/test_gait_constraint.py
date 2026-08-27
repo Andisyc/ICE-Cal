@@ -484,6 +484,24 @@ def test_g1_reset_info_writes_gait_enabled_from_sampled_command() -> None:
     )
 
 
+def test_phase_neutral_reset_writes_constant_zero_compatibility_slots() -> None:
+    provider = G1WalkDomainRandomizationProvider()
+    env = SimpleNamespace(
+        cfg=SimpleNamespace(
+            commands=SimpleNamespace(heading_command=False),
+            gait_phase_enabled=False,
+            gait_phase_init_mode="offset_phase",
+            reward_config=SimpleNamespace(gait_constraint=GaitConstraintConfig(enabled=False)),
+        )
+    )
+    commands = np.asarray([[0.0, 0.0, 0.0], [0.3, 0.0, 0.0]], dtype=np.float32)
+
+    updates = provider._build_extra_info_updates_for_commands(env, 2, commands)
+
+    assert updates["gait_phase"].shape == (2, 2)
+    np.testing.assert_array_equal(updates["gait_phase"], np.zeros((2, 2), dtype=np.float32))
+
+
 def test_common_small_xy_threshold_zeroes_low_speed_xy_commands() -> None:
     commands = np.asarray(
         [[0.04, 0.0, 0.0], [0.1, 0.0, 0.0]],
@@ -1991,6 +2009,21 @@ def test_stand_phase_replaces_observation_phase_for_inactive_command() -> None:
     np.testing.assert_allclose(phase[1], np.asarray([3.0, 4.0], dtype=np.float32))
 
 
+def test_phase_neutral_observation_ignores_stale_phase_state() -> None:
+    reward_cfg = _reward_config()
+    reward_cfg.gait_constraint.enabled = False
+    env = _fake_env(reward_cfg, num_envs=2)
+    env._cfg.gait_phase_enabled = False
+    info = {
+        "commands": np.asarray([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=np.float32),
+        "gait_phase": np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+    }
+
+    phase = env._gait_phase_for_observation(info)
+
+    np.testing.assert_array_equal(phase, np.zeros((2, 2), dtype=np.float32))
+
+
 def test_apply_action_freezes_stand_phase_and_advances_active_phase() -> None:
     reward_cfg = _reward_config(
         freeze_phase_in_stand_mode=True,
@@ -2013,6 +2046,27 @@ def test_apply_action_freezes_stand_phase_and_advances_active_phase() -> None:
     np.testing.assert_allclose(ctrl, np.zeros((2, 29), dtype=np.float32))
     np.testing.assert_allclose(state.info["gait_phase"][0], np.asarray([np.pi, np.pi]))
     np.testing.assert_allclose(state.info["gait_phase"][1], np.asarray([3.1, 4.1]))
+
+
+def test_phase_neutral_apply_action_preserves_zero_compatibility_slots() -> None:
+    reward_cfg = _reward_config()
+    reward_cfg.gait_constraint.enabled = False
+    env = _fake_env(reward_cfg, num_envs=2)
+    env._cfg.gait_phase_enabled = False
+    state = NpEnvState(
+        obs={},
+        reward=np.zeros((2,), dtype=np.float32),
+        terminated=np.zeros((2,), dtype=bool),
+        truncated=np.zeros((2,), dtype=bool),
+        info={
+            "commands": np.asarray([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=np.float32),
+            "gait_phase": np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+        },
+    )
+
+    env.apply_action(np.zeros((2, 29), dtype=np.float32), state)
+
+    np.testing.assert_array_equal(state.info["gait_phase"], np.zeros((2, 2), dtype=np.float32))
 
 
 def test_apply_action_freezes_phase_after_external_command_is_zeroed() -> None:

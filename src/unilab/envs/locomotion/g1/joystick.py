@@ -493,6 +493,7 @@ class G1WalkEnvCfg(G1BaseCfg):
     commands: Commands = field(default_factory=Commands)
     reward_config: G1RewardConfig | None = None
     domain_rand: G1DomainRandConfig = field(default_factory=G1DomainRandConfig)
+    gait_phase_enabled: bool = True
     gait_phase_init_mode: str = "offset_phase"
     mode_observation: bool = False
     reset_base_qvel_limit: float = 0.5
@@ -848,6 +849,8 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         return sample_g1_walk_commands(env, num_reset)
 
     def _sample_gait_phase(self, env: Any, num_reset: int) -> np.ndarray:
+        if not bool(getattr(env.cfg, "gait_phase_enabled", True)):
+            return np.zeros((num_reset, 2), dtype=get_global_dtype())
         mode = env.cfg.gait_phase_init_mode
         if mode == "independent":
             left = np.random.uniform(0.0, 2.0 * np.pi, size=(num_reset,))
@@ -1707,6 +1710,8 @@ class G1WalkEnv(G1BaseEnv):
             info.get("gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())),
             dtype=get_global_dtype(),
         )
+        if not bool(getattr(self._cfg, "gait_phase_enabled", True)):
+            return np.zeros_like(gait_phase, dtype=get_global_dtype())
         cfg = self._gait_constraint_cfg()
         if not (cfg.enabled and cfg.freeze_phase_in_stand_mode):
             return gait_phase
@@ -2414,15 +2419,22 @@ class G1WalkEnv(G1BaseEnv):
         gait_phase = state.info.get(
             "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
         )
-        cfg = self._gait_constraint_cfg()
-        if cfg.enabled and cfg.freeze_phase_in_stand_mode:
-            active = self._dynamic_mode_mask(state.info).astype(bool)
-            gait_phase[active, 0] = (gait_phase[active, 0] + self._gait_phase_delta) % (2 * np.pi)
-            gait_phase[active, 1] = (gait_phase[active, 1] + self._gait_phase_delta) % (2 * np.pi)
-            gait_phase[~active, :] = self._stand_phase_array()
+        if not bool(getattr(self._cfg, "gait_phase_enabled", True)):
+            gait_phase = np.zeros_like(gait_phase, dtype=get_global_dtype())
         else:
-            gait_phase[:, 0] = (gait_phase[:, 0] + self._gait_phase_delta) % (2 * np.pi)
-            gait_phase[:, 1] = (gait_phase[:, 1] + self._gait_phase_delta) % (2 * np.pi)
+            cfg = self._gait_constraint_cfg()
+            if cfg.enabled and cfg.freeze_phase_in_stand_mode:
+                active = self._dynamic_mode_mask(state.info).astype(bool)
+                gait_phase[active, 0] = (gait_phase[active, 0] + self._gait_phase_delta) % (
+                    2 * np.pi
+                )
+                gait_phase[active, 1] = (gait_phase[active, 1] + self._gait_phase_delta) % (
+                    2 * np.pi
+                )
+                gait_phase[~active, :] = self._stand_phase_array()
+            else:
+                gait_phase[:, 0] = (gait_phase[:, 0] + self._gait_phase_delta) % (2 * np.pi)
+                gait_phase[:, 1] = (gait_phase[:, 1] + self._gait_phase_delta) % (2 * np.pi)
         state.info["gait_phase"] = gait_phase
 
         authority_actions = self._actions_for_execution(actions, state.info)

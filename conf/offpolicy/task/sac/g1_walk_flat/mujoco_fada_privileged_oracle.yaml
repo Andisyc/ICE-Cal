@@ -1,14 +1,12 @@
 # @package _global_
 defaults:
-  - /task/sac/g1_walk_flat/mujoco
+  - /task/sac/g1_walk_flat/mujoco_no_gait_dual_reward
   - _self_
 
 training:
   task_name: G1WalkFlat
   sim_backend: mujoco
-interactive:
-  action_mode: policy
-  keyboard: true
+
 algo:
   runtime_impl: privileged_locomotion_sac
   runtime_resolver: unilab.algos.torch.distill.fada_privileged_oracle_sac:resolve_privileged_locomotion_sac_runtime
@@ -30,146 +28,16 @@ algo:
   algo_params:
     alpha_init: 0.001
     target_entropy_ratio: 0.0
+
 env:
-  ctrl_dt: 0.02
-  # Command already exposes stand/walk intent; keep the v012 actor at 98D.
-  mode_observation: false
   fada_privileged_observation:
     enabled: true
     schema: g1_fada_privileged_v1
-  commands:
-    # Zero command is an ordinary atom in the locomotion command distribution.
-    rel_standing_envs: 0.3
-    rel_transition_envs: 0.0
-    small_xy_threshold: 0.0
-    vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
-    resampling_time: 0.0
-    heading_command: false
-  control_config:
-    action_scale: 1.0
-  gait_phase_init_mode: offset_phase
-  reset_base_qvel_limit: 0.5
-  curriculum:
-    enabled: false
-    initial_scale: 0.5
-    min_scale: 0.5
-    max_scale: 1.0
-    level_down_threshold: 150.0
-    level_up_threshold: 750.0
-    degree: 0.001
-  noise_config:
-    level: 1.0
-    scale_gyro: 0.0
-    scale_gravity: 0.0
-    scale_joint_angle: 0.01
-    scale_joint_vel: 0.1
-    scale_linvel: 0.0
   domain_rand:
-    # v014 source distribution: nominal plus left-knee execution attenuation only.
-    randomize_ground_friction: false
-    random_com: false
-    randomize_base_mass: false
-    randomize_body_mass: false
-    randomize_gravity: false
-    randomize_dof_armature: false
-    randomize_kp: false
-    randomize_kd: false
-    randomize_dof_position_bias: false
-    torque_rfi_fraction: 0.0
-    randomize_control_delay: false
-    push_robots: false
     actuator_strength:
       enabled: true
       sampling_mode: single_candidate
       candidate_actuator_indices: [3]
       multiplier_range: [0.8, 1.0]
       nominal_probability: 0.3
-      # The typed privileged Kp/Kd scales already expose the applied strength.
       include_in_critic_obs: false
-reward:
-  scales:
-    tracking_lin_vel: 2.0
-    tracking_ang_vel: 1.5
-    penalty_ang_vel_xy: -1.0
-    penalty_orientation: -10.0
-    penalty_action_rate: -4.0
-    pose: -0.5
-    penalty_feet_ori: -20.0
-    feet_phase: 0.0
-    feet_phase_contrast: 0.0
-    feet_phase_contact: 0.0
-    alive: 10.0
-    upright: 4.0
-    base_height: -80.0
-    upper_body_pose: -0.5
-    stand_dof_vel_l2: -0.05
-    stand_lin_vel_xy_l2: -20.0
-    stand_yaw_vel_l2: -5.0
-    stand_tilt_l2: -40.0
-    stand_tilt_margin_l2: -120.0
-    stand_fall_l2: -500.0
-    stand_base_height_deficit_l1: -120.0
-    stand_support_height_margin_l2: -800.0
-    stand_both_feet_contact: -5.0
-    stand_foot_contact_balance: -2.0
-    stand_feet_x_l2: -20.0
-    stand_feet_y_width_l2: -10.0
-    stand_feet_yaw_l2: -8.0
-    stand_base_feet_center_x_l2: -30.0
-    stand_base_feet_center_y_l2: -10.0
-  tracking_sigma: 0.25
-  base_height_target: 0.754
-  min_base_height: 0.3
-  max_tilt_deg: 65.0
-  gait_frequency: 1.5
-  feet_phase_swing_height: 0.09
-  feet_phase_tracking_sigma: 0.04
-  close_feet_threshold: 0.15
-  stand_recovery_lin_vel_xy_threshold: 0.2
-  stand_recovery_tilt_deg_threshold: 8.0
-  stand_feet_x_target: 0.0
-  stand_feet_y_width_target: 0.21
-  stand_base_feet_center_x_target: 0.0
-  stand_base_feet_center_y_target: 0.0
-  stand_foot_contact_balance_epsilon: 1.0e-6
-  stand_support_height_margin: 0.02
-  mode:
-    enabled: true
-    standing_enabled: true
-    balance_common_terms:
-      - penalty_orientation
-      - penalty_ang_vel_xy
-      - penalty_action_rate
-      - penalty_feet_ori
-      - alive
-    stand_terms: &oracle_stand_terms
-      - upright
-      - base_height
-      - upper_body_pose
-      - stand_dof_vel_l2
-      - stand_lin_vel_xy_l2
-      - stand_yaw_vel_l2
-      - stand_tilt_l2
-      - stand_tilt_margin_l2
-      - stand_fall_l2
-      - stand_base_height_deficit_l1
-      - stand_support_height_margin_l2
-      - stand_both_feet_contact
-      - stand_foot_contact_balance
-      - stand_feet_x_l2
-      - stand_feet_y_width_l2
-      - stand_feet_yaw_l2
-      - stand_base_feet_center_x_l2
-      - stand_base_feet_center_y_l2
-    stand_recovery_terms: *oracle_stand_terms
-    walk_terms:
-      - tracking_lin_vel
-      - tracking_ang_vel
-      - pose
-  gait_constraint:
-    enabled: false
-    penalty_scale: 0.0
-    apply_in_stand_mode: false
-    apply_when_tracking: false
-    freeze_phase_in_stand_mode: false
-  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]

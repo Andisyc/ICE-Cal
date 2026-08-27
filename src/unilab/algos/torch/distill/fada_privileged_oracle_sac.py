@@ -73,7 +73,9 @@ class FADAPrivilegedSACLearner(HoraSACLearner):
 def _object_items(value: Any) -> dict[str, Any]:
     if OmegaConf.is_config(value):
         resolved = OmegaConf.to_container(value, resolve=True)
-        return dict(resolved) if isinstance(resolved, dict) else {}
+        return (
+            {str(key): item for key, item in resolved.items()} if isinstance(resolved, dict) else {}
+        )
     if isinstance(value, dict):
         return dict(value)
     try:
@@ -261,6 +263,8 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             raise ValueError("g1_fada_privileged_v1 schema mismatch")
         if bool(getattr(cfg.env, "mode_observation", False)):
             raise ValueError("privileged_locomotion_sac forbids mode observation")
+        if bool(getattr(cfg.env, "gait_phase_enabled", True)):
+            raise ValueError("privileged_locomotion_sac requires gait phase to be disabled")
         commands_cfg = getattr(cfg.env, "commands", None)
         if float(getattr(cfg.env, "ctrl_dt", 0.0)) != 0.02:
             raise ValueError("privileged_locomotion_sac requires ctrl_dt=0.02")

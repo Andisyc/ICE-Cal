@@ -1,8 +1,9 @@
 ---
 contract_id: FADA-METHOD-v014
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-METHOD-v013
+superseded_by: FADA-METHOD-v015
 scope: gain-targeted privileged-Oracle Planner-IDM source training with command-conditioned no-gait dual Reward
 ---
 
@@ -44,4 +45,3 @@ lineage and the same resolved gain-targeted config identity.
 Config composition and module tests can prove the distribution and information boundary. They do
 not prove Oracle convergence, downstream IDM/Planner learning, formal runtime reachability,
 transfer, or calibration efficacy.
-

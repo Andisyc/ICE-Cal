@@ -14,7 +14,7 @@
         "id": "train-source-oracle",
         "phase": "pre",
         "label": "ICE-Cal 训练 Privileged Oracle",
-        "detail": "在单一 G1WalkFlat locomotion 任务内，用类型化特权观测和域随机化直接训练通用 privileged SAC Oracle；Command 是唯一模式权威：零指令使用站立支撑/稳定 Reward，非零指令使用行走跟踪 Reward；禁止 Gait/feet-phase Reward 与 gait constraint；同一次训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000），共享 oracle_lineage_id"
+        "detail": "在单一 G1WalkFlat locomotion 任务内，先用 nominal standard SAC 验证 phase-neutral 双 Reward，再用类型化特权观测和定向域随机化训练 privileged SAC Oracle；Command 是唯一模式权威，两个 legacy gait-phase 槽恒为零，禁止相位 Reward/constraint；只有 privileged Oracle 同一次训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000），共享 oracle_lineage_id"
       },
       {
         "id": "distill-source",
@@ -97,8 +97,8 @@
           "text": "Oracle 在单一 G1WalkFlat locomotion 任务内由任务 Reward、类型化特权观测和定向域随机化直接训练；首轮源分布只包含标称样本与左膝执行增益衰减（index=3，g∈[0.8,1.0]，标称概率0.3），摩擦、质量、COM、独立Kp/Kd、偏置、延迟、推力等无关扰动关闭。Actor 不读取增益，Critic 通过既有特权 Kp/Kd scale 读取；20 个 intermediate checkpoints 与 final checkpoint 必须来自同一次训练并共享 oracle_lineage_id。"
         },
         {
-          "heading": "2. 禁止 Gait/feet-phase Reward",
-          "text": "Command 是 98 维可部署观测内的唯一模式权威，不新增 mode bit：零指令进入站立支撑/稳定 Reward，非零指令进入行走跟踪 Reward。步态相位可保留为观测，但 feet_phase、feet_phase_contrast、feet_phase_contact 与等价相位驱动奖励必须为 0 或缺省，gait constraint 必须关闭；预检发现越界即拒绝启动。"
+          "heading": "2. Gait Phase 完全退出控制权",
+          "text": "Command 是 98 维可部署观测内的唯一模式权威，不新增 mode bit：零指令进入站立支撑/稳定 Reward，非零指令进入行走跟踪 Reward。原有两维 gait-phase 槽只为保持 98→66/29/3 契约而保留，reset、observation 与 step 中恒为零；不采样、不推进，不参与 Reward 或 constraint。feet_phase、feet_phase_contrast、feet_phase_contact 必须为 0，gait constraint 必须关闭；预检发现越界即拒绝启动。"
         },
         {
           "heading": "3. Planner 看历史动作，但 future 不含动作",

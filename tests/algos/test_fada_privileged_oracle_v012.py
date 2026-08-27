@@ -132,6 +132,7 @@ def _apply_valid_privileged_oracle_profile(cfg: SimpleNamespace) -> None:
     else:
         cfg.algo.actor.priv_info_normalization = True
     cfg.env.mode_observation = False
+    cfg.env.gait_phase_enabled = False
     cfg.env.ctrl_dt = 0.02
     cfg.env.commands = getattr(
         cfg.env,
@@ -334,6 +335,64 @@ def test_runtime_preflight_requires_no_gait_dual_reward_mechanism() -> None:
         runtime.validate_training_config(cfg)
 
 
+def test_runtime_preflight_rejects_enabled_gait_clock() -> None:
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        resolve_privileged_locomotion_sac_runtime,
+    )
+
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        {"runtime_impl": "privileged_locomotion_sac"}
+    )
+    cfg = SimpleNamespace(
+        training=SimpleNamespace(task_name="G1WalkFlat", sim_backend="mujoco"),
+        algo=SimpleNamespace(
+            max_iterations=5000,
+            save_interval=240,
+            use_symmetry=False,
+            actor={"oracle_lineage_id": "test-lineage"},
+        ),
+        env=SimpleNamespace(
+            gait_phase_enabled=True,
+            mode_observation=False,
+            commands=SimpleNamespace(rel_transition_envs=0.0),
+            fada_privileged_observation=SimpleNamespace(
+                enabled=True, schema="g1_fada_privileged_v1"
+            ),
+        ),
+        reward=SimpleNamespace(scales=SimpleNamespace(feet_phase=0.0)),
+    )
+    _apply_valid_privileged_oracle_profile(cfg)
+    _apply_valid_no_gait_dual_reward_profile(cfg)
+    cfg.env.gait_phase_enabled = True
+
+    with pytest.raises(ValueError, match="gait phase"):
+        runtime.validate_training_config(cfg)
+
+
+def test_nominal_no_gait_dual_reward_profile_is_phase_neutral_and_unprivileged() -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_no_gait_dual_reward"],
+        )
+
+    assert cfg.algo.get("runtime_impl") is None
+    assert cfg.env.gait_phase_enabled is False
+    assert cfg.env.fada_privileged_observation.enabled is False
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    assert cfg.reward.mode.enabled is True
+    assert cfg.reward.mode.standing_enabled is True
+    assert cfg.reward.gait_constraint.enabled is False
+    assert cfg.reward.scales.feet_phase == pytest.approx(0.0)
+    assert cfg.reward.scales.feet_phase_contrast == pytest.approx(0.0)
+    assert cfg.reward.scales.feet_phase_contact == pytest.approx(0.0)
+
+
 def test_runtime_preflight_rejects_hydra_gait_reward_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -392,6 +451,7 @@ def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_fre
     assert cfg.algo.value_support_max == pytest.approx(30.0)
     assert cfg.algo.obs_normalization is True
     assert cfg.algo.actor.priv_info_normalization is True
+    assert cfg.env.gait_phase_enabled is False
     assert cfg.env.mode_observation is False
     assert cfg.env.ctrl_dt == pytest.approx(0.02)
     assert cfg.env.commands.rel_standing_envs == 0.3

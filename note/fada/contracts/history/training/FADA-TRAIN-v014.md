@@ -1,8 +1,9 @@
 ---
 contract_id: FADA-TRAIN-v014
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-TRAIN-v013
+superseded_by: FADA-TRAIN-v015
 method_contract: FADA-METHOD-v014
 scope: serial gain-targeted privileged-Oracle lineage then fresh single-task Planner-IDM training
 ---

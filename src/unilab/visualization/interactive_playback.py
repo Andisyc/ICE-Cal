@@ -1044,12 +1044,20 @@ def create_sac_playback_session(
             **actor_kwargs,
         )
         actor.eval()
-        checkpoint_path, _checkpoint_dir = resolve_checkpoint_path(
-            Path(root_dir),
-            cfg.algo.algo_log_name,
-            cfg.training.task_name,
-            cfg.algo.load_run,
-        )
+        if playback_cfg.checkpoint_path not in (None, ""):
+            checkpoint = _resolve_task_checkpoint_from_playback_cfg(
+                playback_cfg,
+                cfg,
+                root_dir,
+            )
+            checkpoint_path = str(checkpoint) if checkpoint is not None else None
+        else:
+            checkpoint_path, _checkpoint_dir = resolve_checkpoint_path(
+                Path(root_dir),
+                cfg.algo.algo_log_name,
+                cfg.training.task_name,
+                cfg.algo.load_run,
+            )
         if checkpoint_path is None or not os.path.exists(checkpoint_path):
             log(
                 f"WARNING: no {algo_name} checkpoint found for "
@@ -1234,7 +1242,7 @@ def create_hora_distill_playback_session(
     return session, policy_obs_mode, checkpoint_path
 
 
-def _resolve_distill_checkpoint_from_playback_cfg(
+def _resolve_task_checkpoint_from_playback_cfg(
     playback_cfg: RslRlPlaybackConfig,
     cfg: Any,
     root_dir: str | Path,
@@ -1325,7 +1333,7 @@ def _default_distill_playback_deps(root_dir: str | Path) -> dict[str, Any]:
         ).build_task_env_cfg_override(),
         "create_env": create_env,
         "load_student_policy": load_distillation_student_policy,
-        "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
+        "resolve_checkpoint": _resolve_task_checkpoint_from_playback_cfg,
         "wrapper_cls": HoraRslRlVecEnvWrapper,
     }
 
@@ -1345,7 +1353,7 @@ def _default_fada_playback_deps(root_dir: str | Path) -> dict[str, Any]:
         ).build_task_env_cfg_override(),
         "create_env": create_env,
         "load_fada_policy": load_fada_deployable_policy_checkpoint,
-        "resolve_checkpoint": _resolve_distill_checkpoint_from_playback_cfg,
+        "resolve_checkpoint": _resolve_task_checkpoint_from_playback_cfg,
         "wrapper_cls": HoraRslRlVecEnvWrapper,
     }
 

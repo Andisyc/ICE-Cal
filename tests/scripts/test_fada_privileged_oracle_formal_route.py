@@ -46,11 +46,11 @@ def _compose_offline_oracle_config(*, num_envs: int = 1, batch_size: int = 4):
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v014_privileged_oracle_official_offline_transaction(
+def test_v015_privileged_oracle_official_offline_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v014")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v015")
     cfg = _compose_offline_oracle_config()
 
     runner = build_runner("sac", cfg)
@@ -119,7 +119,7 @@ def test_v014_privileged_oracle_official_offline_transaction(
         for name, value in restored_actor.items()
     )
 
-    gateway = runner.checkpoint_saver.__self__
+    gateway = getattr(runner.checkpoint_saver, "__self__", None)
     assert isinstance(gateway, FADAOracleCheckpointGateway)
     tiny_learner = SimpleNamespace(
         get_state_dict=lambda: {
@@ -131,7 +131,7 @@ def test_v014_privileged_oracle_official_offline_transaction(
     for iteration in (*FADA_ORACLE_INTERMEDIATE_ITERATIONS, FADA_ORACLE_FINAL_ITERATION):
         gateway.save(tiny_learner, lineage_root / f"model_{iteration}.pt", iteration)
     lineage = json.loads((lineage_root / "fada_oracle_lineage.json").read_text())
-    assert lineage["oracle_lineage_id"] == "formal-offline-v014"
+    assert lineage["oracle_lineage_id"] == "formal-offline-v015"
     assert len(lineage["checkpoint_sha256"]) == 21
     assert lineage["final_iteration"] == 5000
 
@@ -161,10 +161,10 @@ def test_v014_privileged_oracle_official_offline_transaction(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v014_official_env_exposes_only_left_knee_gain_strata(
+def test_v015_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_strata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v014")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v015")
     rows = 32
     cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     ensure_registries()
@@ -176,8 +176,11 @@ def test_v014_official_env_exposes_only_left_knee_gain_strata(
         env_cfg_override=override,
         sim_backend="mujoco",
     )
+    assert env.action_space is not None
+    assert env.action_space.shape is not None
     try:
         state = env.init_state()
+        assert state.obs is not None
         kp_scale = np.asarray(state.info["fada_kp_scale"], dtype=np.float32)
         kd_scale = np.asarray(state.info["fada_kd_scale"], dtype=np.float32)
         assert kp_scale.shape == (rows, 29)
@@ -189,10 +192,12 @@ def test_v014_official_env_exposes_only_left_knee_gain_strata(
         assert np.any(kp_scale[:, 3] == 1.0)
         assert state.obs["obs"].shape == (rows, 98)
         assert state.obs["critic"].shape == (rows, 303)
+        np.testing.assert_array_equal(state.obs["obs"][:, -2:], 0.0)
 
         actions = np.zeros((rows, env.action_space.shape[0]), dtype=np.float32)
         state = env.step(actions)
-        assert env.step_counter == 1
+        assert state.obs is not None
+        np.testing.assert_array_equal(state.obs["obs"][:, -2:], 0.0)
         assert np.isfinite(state.obs["obs"]).all()
         assert np.isfinite(state.obs["critic"]).all()
         assert np.isfinite(state.reward).all()
@@ -201,10 +206,10 @@ def test_v014_official_env_exposes_only_left_knee_gain_strata(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v014_real_dual_reward_reaches_production_sac_update(
+def test_v015_real_dual_reward_reaches_production_sac_update(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v014")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v015")
     rows = 32
     cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     runner = build_runner("sac", cfg)
@@ -218,17 +223,25 @@ def test_v014_real_dual_reward_reaches_production_sac_update(
         env_cfg_override=override,
         sim_backend="mujoco",
     )
+    assert env.action_space is not None
+    assert env.action_space.shape is not None
     try:
         before = env.init_state()
+        assert before.obs is not None
+        assert before.info is not None
         actor_before, critic_before = (
             np.asarray(value, dtype=np.float32).copy() for value in split_obs_dict(before.obs)
         )
+        np.testing.assert_array_equal(actor_before[:, -2:], 0.0)
         commands = np.asarray(before.info["commands"], dtype=np.float32).copy()
         actions = np.zeros((rows, env.action_space.shape[0]), dtype=np.float32)
         after = env.step(actions)
+        assert after.obs is not None
+        assert after.info is not None
         actor_after, critic_after = (
             np.asarray(value, dtype=np.float32).copy() for value in split_obs_dict(after.obs)
         )
+        np.testing.assert_array_equal(actor_after[:, -2:], 0.0)
         rewards = np.asarray(after.reward, dtype=np.float32).copy()
         stand_mask = np.all(commands == 0.0, axis=1)
         walk_mask = ~stand_mask
