@@ -182,6 +182,65 @@ def test_external_command_mask_is_discrete_nonzero_signal() -> None:
     np.testing.assert_array_equal(mask, np.asarray([0.0, 1.0, 1.0], dtype=np.float32))
 
 
+def test_v016_single_reward_prefers_tracking_and_survival_without_command_dispatch() -> None:
+    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
+        cfg = compose(
+            config_name="config",
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_no_gait_single_reward"],
+        )
+
+    reward_payload = OmegaConf.to_container(cfg.reward, resolve=True)
+    assert isinstance(reward_payload, dict)
+    gait_payload = reward_payload.pop("gait_constraint")
+    assert isinstance(gait_payload, dict)
+    reward_cfg = G1WalkRewardConfig(
+        **reward_payload,
+        gait_constraint=GaitConstraintConfig(**gait_payload),
+    )
+    env = _fake_env(reward_cfg, num_envs=4)
+    commands = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.4, 0.0, 0.0],
+            [0.4, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    linvel = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.4, 0.0, 0.0],
+            [0.4, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    info = {
+        "commands": commands,
+        "current_actions": np.zeros((4, 29), dtype=np.float32),
+        "last_actions": np.zeros((4, 29), dtype=np.float32),
+        "steps": np.zeros((4,), dtype=np.uint32),
+    }
+
+    reward = env._compute_reward(
+        info,
+        linvel=linvel,
+        gyro=np.zeros((4, 3), dtype=np.float32),
+        gravity=np.tile(np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32), (4, 1)),
+        dof_pos=np.zeros((4, 29), dtype=np.float32),
+        dof_vel=np.zeros((4, 29), dtype=np.float32),
+    )
+
+    assert reward[0] > reward[1]
+    assert reward[2] > reward[3]
+    assert reward[0] > 0.0
+    one_step_return = float(reward[0])
+    two_step_return = float(reward[0] + cfg.algo.gamma * reward[0])
+    assert two_step_return > one_step_return
+    assert "log" not in info or "reward/mode_stand_frac" not in info["log"]
+
+
 def test_stand_feet_geometry_rewards_penalize_staggered_toe_in_stance() -> None:
     env = _fake_env(_reward_config())
     env._backend._values["left_foot_pos"] = np.asarray([[0.08, 0.105, 0.0]], dtype=np.float32)
@@ -251,77 +310,6 @@ def test_stand_base_feet_center_reward_disables_in_walk_mode() -> None:
 
     np.testing.assert_allclose(env._reward_stand_base_feet_center_x_l2(ctx), 0.0)
     np.testing.assert_allclose(env._reward_stand_base_feet_center_y_l2(ctx), 0.0)
-
-
-def test_fada_oracle_reward_preserves_confirmed_partial_order() -> None:
-    with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
-        cfg = compose(
-            config_name="config",
-            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle"],
-        )
-    reward_cfg = G1WalkRewardConfig(**OmegaConf.to_container(cfg.reward, resolve=True))
-    labels = {
-        "clean_stand": 0,
-        "rear_shift": 1,
-        "toe_in": 2,
-        "low_support": 3,
-        "missing_contact": 4,
-        "walk_tracking": 5,
-        "walk_not_tracking": 6,
-    }
-    rows = len(labels)
-    env = _fake_env(reward_cfg, num_envs=rows)
-    env._backend._values["left_foot_pos"] = np.tile(
-        np.asarray([[0.0, 0.105, 0.0]], dtype=np.float32), (rows, 1)
-    )
-    env._backend._values["right_foot_pos"] = np.tile(
-        np.asarray([[0.0, -0.105, 0.0]], dtype=np.float32), (rows, 1)
-    )
-    base_pos = np.tile(np.asarray([[0.0, 0.0, 0.754]], dtype=np.float32), (rows, 1))
-    base_pos[labels["rear_shift"], 0] = -0.10
-    base_pos[labels["low_support"], 2] = 0.65
-    env._backend._values["base_pos"] = base_pos
-    env._backend._values["left_foot_quat"][labels["toe_in"]] = _yaw_quat(15.0)
-    env._backend._values["right_foot_quat"][labels["toe_in"]] = _yaw_quat(-15.0)
-    for side in ("left", "right"):
-        for index in range(4):
-            env._backend._values[f"{side}_foot_contact_{index}"] = np.ones(
-                (rows,), dtype=np.float32
-            )
-    for index in range(4):
-        env._backend._values[f"left_foot_contact_{index}"][labels["missing_contact"]] = 0.0
-    commands = np.zeros((rows, 3), dtype=np.float32)
-    commands[labels["walk_tracking"] :, 0] = 0.5
-    linvel = np.zeros((rows, 3), dtype=np.float32)
-    linvel[labels["walk_tracking"], 0] = 0.5
-    zeros_29 = np.zeros((rows, 29), dtype=np.float32)
-    ctx = RewardContext(
-        info={
-            "commands": commands,
-            "current_actions": zeros_29,
-            "last_actions": zeros_29,
-            "steps": np.zeros((rows,), dtype=np.uint32),
-        },
-        linvel=linvel,
-        gyro=np.zeros((rows, 3), dtype=np.float32),
-        dof_pos=zeros_29,
-        dof_vel=zeros_29,
-        num_envs=rows,
-        default_angles=np.zeros((29,), dtype=np.float32),
-        tracking_sigma=reward_cfg.tracking_sigma,
-        base_height_target=reward_cfg.base_height_target,
-        base_height=base_pos[:, 2],
-        gravity=np.tile(np.asarray([[0.0, 0.0, 1.0]], dtype=np.float32), (rows, 1)),
-        pose_weights=np.asarray(reward_cfg.pose_weights, dtype=np.float32),
-    )
-
-    total = env._compute_mode_reward(ctx, reward_cfg)
-
-    clean = total[labels["clean_stand"]]
-    for defect in ("rear_shift", "toe_in", "low_support", "missing_contact"):
-        assert clean > total[labels[defect]], defect
-    assert total[labels["walk_tracking"]] > total[labels["walk_not_tracking"]]
-    np.testing.assert_allclose(clean - total[labels["rear_shift"]], 0.006, rtol=1.0e-5)
 
 
 def test_stand_tilt_reward_only_applies_in_stand_mode() -> None:

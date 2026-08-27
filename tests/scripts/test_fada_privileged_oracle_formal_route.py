@@ -46,11 +46,11 @@ def _compose_offline_oracle_config(*, num_envs: int = 1, batch_size: int = 4):
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v015_privileged_oracle_official_offline_transaction(
+def test_v016_privileged_oracle_official_offline_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v015")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-offline-v016")
     cfg = _compose_offline_oracle_config()
 
     runner = build_runner("sac", cfg)
@@ -131,7 +131,7 @@ def test_v015_privileged_oracle_official_offline_transaction(
     for iteration in (*FADA_ORACLE_INTERMEDIATE_ITERATIONS, FADA_ORACLE_FINAL_ITERATION):
         gateway.save(tiny_learner, lineage_root / f"model_{iteration}.pt", iteration)
     lineage = json.loads((lineage_root / "fada_oracle_lineage.json").read_text())
-    assert lineage["oracle_lineage_id"] == "formal-offline-v015"
+    assert lineage["oracle_lineage_id"] == "formal-offline-v016"
     assert len(lineage["checkpoint_sha256"]) == 21
     assert lineage["final_iteration"] == 5000
 
@@ -161,10 +161,10 @@ def test_v015_privileged_oracle_official_offline_transaction(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v015_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_strata(
+def test_v016_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_strata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v015")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v016")
     rows = 32
     cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     ensure_registries()
@@ -206,10 +206,10 @@ def test_v015_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_stra
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v015_real_dual_reward_reaches_production_sac_update(
+def test_v016_real_single_reward_reaches_production_sac_update(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v015")
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-reward-v016")
     rows = 32
     cfg = _compose_offline_oracle_config(num_envs=rows, batch_size=rows)
     runner = build_runner("sac", cfg)
@@ -247,8 +247,8 @@ def test_v015_real_dual_reward_reaches_production_sac_update(
         walk_mask = ~stand_mask
         assert np.any(stand_mask)
         assert np.any(walk_mask)
-        assert after.info["log"]["reward/mode_stand_frac"] > 0.0
-        assert after.info["log"]["reward/mode_walk_frac"] > 0.0
+        assert "reward/mode_stand_frac" not in after.info["log"]
+        assert "reward/mode_walk_frac" not in after.info["log"]
         assert np.isfinite(rewards).all()
 
         replay = ReplayBuffer(
@@ -301,9 +301,9 @@ def test_v015_real_dual_reward_reaches_production_sac_update(
                         "critic_obs_dim": critic_before.shape[1],
                         "action_dim": actions.shape[1],
                     },
-                    "reward_route": {
-                        "stand_rows": int(np.sum(stand_mask)),
-                        "walk_rows": int(np.sum(walk_mask)),
+                    "single_reward_route": {
+                        "zero_command_rows": int(np.sum(stand_mask)),
+                        "nonzero_command_rows": int(np.sum(walk_mask)),
                         "sampled_rows": len(sampled_source_rows),
                         "replay_reward_identity": True,
                     },

@@ -5,6 +5,10 @@ ICE-Cal architecture, contracts, plans, reviews, and evidence; general UniLab, G
 RoboJudo deployment, AMP, and unrelated distillation documentation belong to their source
 repositories.
 
+This registry owns research authority and dated evidence. Stable engineering explanations and
+repeatable operator procedures live under [`docs/`](../docs/); they must link back here rather than
+copying active Contract semantics.
+
 ## Current authority state
 
 | Layer | Current artifact | Status |

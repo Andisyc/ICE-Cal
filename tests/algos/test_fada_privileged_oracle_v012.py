@@ -14,7 +14,6 @@ from unilab.algos.torch.distill.fada_privileged_oracle import (
     G1FADAPrivilegedObservation,
     build_g1_fada_privileged_layout,
     pack_g1_fada_privileged_observation,
-    validate_fada_no_gait_dual_reward,
     validate_fada_oracle_lineage,
     validate_no_gait_reward,
 )
@@ -176,78 +175,21 @@ def _apply_valid_privileged_oracle_profile(cfg: SimpleNamespace) -> None:
     )
 
 
-def _apply_valid_no_gait_dual_reward_profile(cfg: SimpleNamespace) -> None:
-    common_terms = [
-        "penalty_orientation",
-        "penalty_ang_vel_xy",
-        "penalty_action_rate",
-        "penalty_feet_ori",
-        "alive",
-    ]
-    stand_terms = [
-        "upright",
-        "base_height",
-        "upper_body_pose",
-        "stand_dof_vel_l2",
-        "stand_lin_vel_xy_l2",
-        "stand_yaw_vel_l2",
-        "stand_tilt_l2",
-        "stand_tilt_margin_l2",
-        "stand_fall_l2",
-        "stand_base_height_deficit_l1",
-        "stand_support_height_margin_l2",
-        "stand_both_feet_contact",
-        "stand_foot_contact_balance",
-        "stand_feet_x_l2",
-        "stand_feet_y_width_l2",
-        "stand_feet_yaw_l2",
-        "stand_base_feet_center_x_l2",
-        "stand_base_feet_center_y_l2",
-    ]
-    walk_terms = ["tracking_lin_vel", "tracking_ang_vel", "pose"]
-    positive_terms = {"alive", "upright", "tracking_lin_vel", "tracking_ang_vel"}
-    scales = {
-        name: (1.0 if name in positive_terms else -1.0)
-        for name in [*common_terms, *stand_terms, *walk_terms]
-    }
-    scales["feet_phase"] = 0.0
-    cfg.reward.scales = SimpleNamespace(**scales)
-    cfg.reward.mode = SimpleNamespace(
-        enabled=True,
-        standing_enabled=True,
-        balance_common_terms=common_terms,
-        stand_terms=stand_terms,
-        stand_recovery_terms=stand_terms,
-        walk_terms=walk_terms,
+def _apply_valid_single_reward_profile(cfg: SimpleNamespace) -> None:
+    cfg.reward.scales = SimpleNamespace(
+        tracking_lin_vel=2.0,
+        tracking_ang_vel=1.5,
+        penalty_ang_vel_xy=-1.0,
+        penalty_orientation=-10.0,
+        penalty_action_rate=-4.0,
+        pose=-0.5,
+        penalty_feet_ori=-20.0,
+        alive=10.0,
+        feet_phase=0.0,
+        feet_phase_contrast=0.0,
+        feet_phase_contact=0.0,
     )
     cfg.reward.gait_constraint = SimpleNamespace(enabled=False, penalty_scale=0.0)
-
-
-@pytest.mark.parametrize(
-    ("mutation", "match"),
-    [
-        (lambda mode, scales: mode.stand_terms.append("tracking_lin_vel"), "walk-only"),
-        (lambda mode, scales: mode.walk_terms.append("base_height"), "stand-only"),
-        (
-            lambda mode, scales: (
-                mode.stand_terms.append("stand_action_l2"),
-                mode.stand_recovery_terms.append("stand_action_l2"),
-            ),
-            "stand_action_l2",
-        ),
-    ],
-)
-def test_no_gait_dual_reward_guard_rejects_cross_branch_leakage(mutation, match: str) -> None:
-    cfg = SimpleNamespace(reward=SimpleNamespace())
-    _apply_valid_no_gait_dual_reward_profile(cfg)
-    mutation(cfg.reward.mode, cfg.reward.scales)
-
-    with pytest.raises(ValueError, match=match):
-        validate_fada_no_gait_dual_reward(
-            reward_scales=vars(cfg.reward.scales),
-            reward_mode=vars(cfg.reward.mode),
-            gait_constraint=vars(cfg.reward.gait_constraint),
-        )
 
 
 def test_runtime_preflight_rejects_gait_reward_before_env_creation() -> None:
@@ -279,59 +221,13 @@ def test_runtime_preflight_rejects_gait_reward_before_env_creation() -> None:
         runtime.validate_training_config(cfg)
 
     cfg.reward.scales.feet_phase = 0.0
-    _apply_valid_no_gait_dual_reward_profile(cfg)
+    _apply_valid_single_reward_profile(cfg)
     cfg.reward.gait_constraint = SimpleNamespace(enabled=True, penalty_scale=0.5)
     with pytest.raises(ValueError, match="gait constraint penalty"):
         runtime.validate_training_config(cfg)
 
     cfg.reward.gait_constraint.penalty_scale = 0.0
     with pytest.raises(ValueError, match="gait constraint mode"):
-        runtime.validate_training_config(cfg)
-
-
-def test_runtime_preflight_requires_no_gait_dual_reward_mechanism() -> None:
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        {"runtime_impl": "privileged_locomotion_sac"}
-    )
-    cfg = SimpleNamespace(
-        training=SimpleNamespace(task_name="G1WalkFlat", sim_backend="mujoco"),
-        algo=SimpleNamespace(
-            max_iterations=5000,
-            save_interval=240,
-            use_symmetry=False,
-            actor={"oracle_lineage_id": "test-lineage"},
-        ),
-        env=SimpleNamespace(
-            mode_observation=False,
-            commands=SimpleNamespace(rel_transition_envs=0.0),
-            fada_privileged_observation=SimpleNamespace(
-                enabled=True, schema="g1_fada_privileged_v1"
-            ),
-        ),
-        reward=SimpleNamespace(scales=SimpleNamespace(feet_phase=0.0)),
-    )
-
-    _apply_valid_privileged_oracle_profile(cfg)
-    _apply_valid_no_gait_dual_reward_profile(cfg)
-
-    runtime.validate_training_config(cfg)
-
-    cfg.reward.mode.enabled = False
-    with pytest.raises(ValueError, match="reward.mode.*enabled"):
-        runtime.validate_training_config(cfg)
-
-    cfg.reward.mode.enabled = True
-    cfg.reward.mode.stand_terms.remove("stand_base_feet_center_x_l2")
-    with pytest.raises(ValueError, match="stand_base_feet_center_x_l2"):
-        runtime.validate_training_config(cfg)
-
-    cfg.reward.mode.stand_terms.append("stand_base_feet_center_x_l2")
-    cfg.env.commands.rel_transition_envs = 0.2
-    with pytest.raises(ValueError, match="transition"):
         runtime.validate_training_config(cfg)
 
 
@@ -362,35 +258,11 @@ def test_runtime_preflight_rejects_enabled_gait_clock() -> None:
         reward=SimpleNamespace(scales=SimpleNamespace(feet_phase=0.0)),
     )
     _apply_valid_privileged_oracle_profile(cfg)
-    _apply_valid_no_gait_dual_reward_profile(cfg)
+    _apply_valid_single_reward_profile(cfg)
     cfg.env.gait_phase_enabled = True
 
     with pytest.raises(ValueError, match="gait phase"):
         runtime.validate_training_config(cfg)
-
-
-def test_nominal_no_gait_dual_reward_profile_is_phase_neutral_and_unprivileged() -> None:
-    from hydra import compose, initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-
-    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
-        cfg = compose(
-            "config",
-            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_no_gait_dual_reward"],
-        )
-
-    assert cfg.algo.get("runtime_impl") is None
-    assert cfg.env.gait_phase_enabled is False
-    assert cfg.env.fada_privileged_observation.enabled is False
-    assert cfg.env.domain_rand.actuator_strength.enabled is False
-    assert cfg.reward.mode.enabled is True
-    assert cfg.reward.mode.standing_enabled is True
-    assert cfg.reward.gait_constraint.enabled is False
-    assert cfg.reward.scales.feet_phase == pytest.approx(0.0)
-    assert cfg.reward.scales.feet_phase_contrast == pytest.approx(0.0)
-    assert cfg.reward.scales.feet_phase_contact == pytest.approx(0.0)
 
 
 def test_runtime_preflight_rejects_hydra_gait_reward_override(
@@ -424,7 +296,7 @@ def test_runtime_preflight_rejects_hydra_gait_reward_override(
         runtime.validate_training_config(cfg)
 
 
-def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_free(
+def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_free(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from hydra import compose, initialize_config_dir
@@ -472,27 +344,11 @@ def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_fre
     )
     assert ideal_return_upper == pytest.approx(27.0)
     assert cfg.algo.value_support_max >= ideal_return_upper
-    assert cfg.reward.mode.enabled is True
-    assert cfg.reward.mode.standing_enabled is True
-    common_terms = set(OmegaConf.to_container(cfg.reward.mode.balance_common_terms, resolve=True))
-    stand_terms = set(OmegaConf.to_container(cfg.reward.mode.stand_terms, resolve=True))
-    recovery_terms = set(OmegaConf.to_container(cfg.reward.mode.stand_recovery_terms, resolve=True))
-    walk_terms = set(OmegaConf.to_container(cfg.reward.mode.walk_terms, resolve=True))
-    assert {"penalty_orientation", "penalty_ang_vel_xy", "alive"} <= common_terms
-    assert {
-        "upright",
-        "base_height",
-        "upper_body_pose",
-        "stand_support_height_margin_l2",
-        "stand_both_feet_contact",
-        "stand_base_feet_center_x_l2",
-    } <= stand_terms
-    assert stand_terms == recovery_terms
-    assert {"tracking_lin_vel", "tracking_ang_vel", "pose"} <= walk_terms
-    assert "stand_action_l2" not in stand_terms
-    assert "stand_still" not in stand_terms
-    assert not any(name.startswith("stand_") for name in walk_terms)
-    assert "feet_phase" not in common_terms | stand_terms | recovery_terms | walk_terms
+    assert not bool(cfg.reward.get("mode", {}).get("enabled", False))
+    reward_payload = OmegaConf.to_container(cfg.reward, resolve=True)
+    assert isinstance(reward_payload, dict)
+    assert not any(str(key).startswith("stand_") for key in reward_payload)
+    assert not any(str(key).startswith("stand_") for key in reward_payload["scales"])
     assert cfg.reward.gait_constraint.enabled is False
     assert cfg.reward.gait_constraint.penalty_scale == pytest.approx(0.0)
     assert cfg.reward.scales.feet_phase == 0.0
@@ -540,7 +396,7 @@ def test_privileged_oracle_hydra_profile_is_single_task_dual_reward_and_gait_fre
     assert override["commands"]["heading_command"] is False
     assert override["ctrl_dt"] == pytest.approx(0.02)
     assert override["curriculum"]["enabled"] is False
-    assert override["reward_config"]["mode"]["enabled"] is True
+    assert "mode" not in override["reward_config"]
     assert override["reward_config"]["gait_constraint"]["enabled"] is False
 
 

@@ -20,6 +20,7 @@ training, or evaluation under the per-window design.
 3. [Design Inspector](note/architecture/09_in_context_execution_calibration_design_inspector.html)
 4. [FADA research registry](note/fada/README.md)
 5. [Machine-readable governance state](note/governance.json)
+6. [Engineering documentation and runbooks](docs/README.md)
 
 The two Architecture HTML pages are self-contained for direct local opening. For their optional
 loopback server and provenance, see [the Architecture README](note/architecture/README.md).
@@ -33,6 +34,8 @@ loopback server and provenance, see [the Architecture README](note/architecture/
 - Do not infer policy quality from smoke tests, gradient checks, or lifecycle evidence.
 - Training, live simulation, Git publication, and semantic contract activation require explicit
   authorization.
+- Repeatable server operations belong to [engineering runbooks](docs/runbooks/), while research
+  authority, dated plans, and evidence remain under [`note/`](note/).
 
 For the upstream general-purpose RL framework and its documentation, use
 [UniLab](https://github.com/unilabsim/UniLab). They are intentionally not mirrored here.

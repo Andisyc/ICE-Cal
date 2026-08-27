@@ -1,12 +1,13 @@
 ---
 contract_id: FADA-METHOD-v015
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-METHOD-v014
+superseded_by: FADA-METHOD-v016
 scope: phase-neutral gain-targeted privileged-Oracle Planner-IDM source training
 ---
 
-# FADA Planner–IDM Method Contract v015
+# FADA Planner–IDM Method Contract v015 — Historical
 
 ## Source task and phase authority
 
@@ -43,3 +44,9 @@ run alone supplies checkpoints `240…4800` plus final `5000` under one sealed l
 Offline tests can prove constant-zero phase slots, dimensions, Reward dispatch, profile isolation,
 and preflight rejection. They cannot prove nominal or privileged policy quality, formal runtime
 reachability, Planner–IDM learning, transfer, or calibration efficacy.
+
+## Historical disposition
+
+The v015 live run showed 100% termination while episode length collapsed as reported Reward became
+less negative. v016 therefore retires the dual-Reward objective. This Contract is preserved only as
+history and grants no implementation or training authority.

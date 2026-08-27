@@ -14,6 +14,8 @@ human-confirmed design to the active Contract, implementation owner, and executa
 
 - Always use `uv run`; do not invoke Python directly.
 - Preserve env/backend/config/async invariants in [AGENTS.md](AGENTS.md).
+- Read the [engineering documentation](docs/README.md) and the applicable runbook before operating
+  a server-side training or playback workflow.
 - Keep backend-specific behavior behind the `SimBackend` contract.
 - Keep asset and XML metadata off hot paths.
 - Preserve unrelated dirty-worktree changes.
@@ -24,6 +26,10 @@ human-confirmed design to the active Contract, implementation owner, and executa
 Run focused tests nearest the changed owner first. Before a PR, follow the PR gate in
 [AGENTS.md](AGENTS.md), including `make test-all`. Documentation-only changes must at minimum pass
 the Architecture structural checks when those pages are affected and `git diff --check`.
+
+Server-side foreground training must follow the resource envelope in
+[docs/runbooks/server-training.md](docs/runbooks/server-training.md); task-specific Hydra profiles
+remain the authority for algorithm and method semantics.
 
 Use Conventional Commit prefixes such as `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, and
 `chore:`. Do not stage, commit, push, or open a PR without the corresponding user authorization.

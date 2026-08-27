@@ -98,4 +98,6 @@ gh pr create --title "fix: xxx" --body "Fixes #174" --base main
 - Concept Figure 与 Design Inspector：[note/architecture/README.md](note/architecture/README.md)
 - 当前实现 Contract、证据与历史：[note/fada/README.md](note/fada/README.md)
 - 开发者入口（环境、命令、提交规范）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 稳定工程说明与操作手册：[docs/README.md](docs/README.md)
+- 单卡服务器训练资源控制：[docs/runbooks/server-training.md](docs/runbooks/server-training.md)
 - 通用 UniLab 框架文档不在本仓库维护；需要时查阅上游仓库。

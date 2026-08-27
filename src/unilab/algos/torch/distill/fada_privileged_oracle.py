@@ -264,102 +264,39 @@ def validate_no_gait_reward(reward_scales: Mapping[str, object]) -> None:
             raise ValueError(f"gait reward {name!r} must be disabled, got {scale}")
 
 
-_FADA_ORACLE_COMMON_REWARD_TERMS = frozenset(
-    {
-        "penalty_orientation",
-        "penalty_ang_vel_xy",
-        "penalty_action_rate",
-        "penalty_feet_ori",
-        "alive",
-    }
-)
-_FADA_ORACLE_STAND_REWARD_TERMS = frozenset(
-    {
-        "upright",
-        "base_height",
-        "upper_body_pose",
-        "stand_dof_vel_l2",
-        "stand_lin_vel_xy_l2",
-        "stand_yaw_vel_l2",
-        "stand_tilt_l2",
-        "stand_tilt_margin_l2",
-        "stand_fall_l2",
-        "stand_base_height_deficit_l1",
-        "stand_support_height_margin_l2",
-        "stand_both_feet_contact",
-        "stand_foot_contact_balance",
-        "stand_feet_x_l2",
-        "stand_feet_y_width_l2",
-        "stand_feet_yaw_l2",
-        "stand_base_feet_center_x_l2",
-        "stand_base_feet_center_y_l2",
-    }
-)
-_FADA_ORACLE_WALK_REWARD_TERMS = frozenset({"tracking_lin_vel", "tracking_ang_vel", "pose"})
-_FADA_ORACLE_FORBIDDEN_STAND_TERMS = frozenset({"stand_action_l2", "stand_still"})
+def _reject_stand_reward_authority(value: object, *, path: str = "reward") -> None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            child_path = f"{path}.{key}"
+            if key.startswith("stand_"):
+                raise ValueError(f"FADA Oracle single Reward forbids {child_path}")
+            _reject_stand_reward_authority(child, path=child_path)
+        return
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for index, child in enumerate(value):
+            _reject_stand_reward_authority(child, path=f"{path}[{index}]")
+        return
+    if isinstance(value, str) and value.startswith("stand_"):
+        raise ValueError(f"FADA Oracle single Reward forbids term {value!r} at {path}")
 
 
-def validate_fada_no_gait_dual_reward(
+def validate_fada_single_reward(
     *,
     reward_scales: Mapping[str, object],
-    reward_mode: Mapping[str, object],
-    gait_constraint: Mapping[str, object],
+    reward_config: Mapping[str, object],
 ) -> None:
-    """Validate the v013 command-conditioned stand/walk Reward contract."""
+    """Validate the v016 phase-neutral single locomotion Reward contract."""
 
     validate_no_gait_reward(reward_scales)
-    if not bool(reward_mode.get("enabled", False)):
-        raise ValueError("FADA Oracle reward.mode must be enabled")
-    if not bool(reward_mode.get("standing_enabled", False)):
-        raise ValueError("FADA Oracle reward.mode standing_enabled must be true")
+    reward_mode = reward_config.get("mode")
+    if isinstance(reward_mode, Mapping) and reward_mode:
+        raise ValueError("FADA Oracle single Reward forbids reward.mode dispatcher")
+    _reject_stand_reward_authority(reward_config)
 
-    common = set(reward_mode.get("balance_common_terms", ()))
-    stand = set(reward_mode.get("stand_terms", ()))
-    recovery = set(reward_mode.get("stand_recovery_terms", ()))
-    walk = set(reward_mode.get("walk_terms", ()))
-    required_by_branch = {
-        "balance_common_terms": _FADA_ORACLE_COMMON_REWARD_TERMS,
-        "stand_terms": _FADA_ORACLE_STAND_REWARD_TERMS,
-        "stand_recovery_terms": _FADA_ORACLE_STAND_REWARD_TERMS,
-        "walk_terms": _FADA_ORACLE_WALK_REWARD_TERMS,
-    }
-    actual_by_branch = {
-        "balance_common_terms": common,
-        "stand_terms": stand,
-        "stand_recovery_terms": recovery,
-        "walk_terms": walk,
-    }
-    for branch, required in required_by_branch.items():
-        missing = sorted(required - actual_by_branch[branch])
-        if missing:
-            raise ValueError(f"FADA Oracle reward.mode {branch} missing {missing}")
-
-    if stand != recovery:
-        raise ValueError("FADA Oracle stand and stand-recovery Reward terms must match")
-    forbidden_stand = sorted(_FADA_ORACLE_FORBIDDEN_STAND_TERMS & (stand | recovery))
-    if forbidden_stand:
-        raise ValueError(f"FADA Oracle standing Reward forbids {forbidden_stand}")
-    tracking_in_stand = sorted(_FADA_ORACLE_WALK_REWARD_TERMS & (stand | recovery | common))
-    if tracking_in_stand:
-        raise ValueError(f"FADA Oracle standing Reward contains walk-only {tracking_in_stand}")
-    stand_in_walk = sorted(_FADA_ORACLE_STAND_REWARD_TERMS & (walk | common))
-    if stand_in_walk:
-        raise ValueError(f"FADA Oracle walking Reward contains stand-only {stand_in_walk}")
-
-    active_terms = common | stand | recovery | walk
-    for name in sorted(active_terms):
-        if name not in reward_scales:
-            raise ValueError(f"FADA Oracle active Reward term {name!r} has no scale")
-        try:
-            scale = float(reward_scales[name])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"FADA Oracle Reward scale {name!r} must be numeric") from exc
-        if not math.isfinite(scale) or scale == 0.0:
-            raise ValueError(f"FADA Oracle active Reward scale {name!r} must be finite and nonzero")
-
-    for name in _FADA_ORACLE_FORBIDDEN_STAND_TERMS:
-        if float(reward_scales.get(name, 0.0)) != 0.0:
-            raise ValueError(f"FADA Oracle Reward scale {name!r} must be absent or zero")
+    gait_constraint = reward_config.get("gait_constraint", {})
+    if not isinstance(gait_constraint, Mapping):
+        raise ValueError("FADA Oracle gait_constraint must be a mapping")
     if float(gait_constraint.get("penalty_scale", 0.0)) != 0.0:
         raise ValueError("FADA Oracle gait constraint penalty_scale must be zero")
     if bool(gait_constraint.get("enabled", False)):
@@ -440,7 +377,7 @@ __all__ = [
     "canonical_fada_config_sha256",
     "pack_g1_fada_privileged_observation",
     "seal_fada_oracle_checkpoint",
-    "validate_fada_no_gait_dual_reward",
+    "validate_fada_single_reward",
     "validate_fada_oracle_checkpoint_payload",
     "validate_fada_oracle_lineage",
     "validate_no_gait_reward",

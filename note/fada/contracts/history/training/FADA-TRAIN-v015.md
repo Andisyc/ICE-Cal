@@ -1,13 +1,14 @@
 ---
 contract_id: FADA-TRAIN-v015
-status: active
+status: historical
 effective_date: 2026-08-27
 supersedes: FADA-TRAIN-v014
+superseded_by: FADA-TRAIN-v016
 method_contract: FADA-METHOD-v015
 scope: phase-neutral nominal validation followed by privileged gain-targeted Oracle and Planner-IDM
 ---
 
-# FADA Source Training Contract v015
+# FADA Source Training Contract v015 — Historical
 
 ## Gate N — nominal phase-neutral dual Reward
 
@@ -38,3 +39,8 @@ IDM-before-Planner order, frozen-IDM Planner gradients, and checkpoint semantics
 
 This Contract authorizes no simulation, training, server operation, Git publication, deployment, or
 policy-quality claim. Those remain separate explicit actions.
+
+## Historical disposition
+
+The live campaign invalidated the dual-Reward objective through 100% termination and shrinking
+episodes. All v015 module/formal receipts remain wiring evidence only and cannot authorize v016.

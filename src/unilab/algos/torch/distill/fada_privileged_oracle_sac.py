@@ -12,8 +12,8 @@ from unilab.algos.torch.distill.fada_privileged_oracle import (
     FADAOracleCheckpointContract,
     FADAOracleCheckpointGateway,
     canonical_fada_config_sha256,
-    validate_fada_no_gait_dual_reward,
     validate_fada_oracle_checkpoint_payload,
+    validate_fada_single_reward,
 )
 from unilab.algos.torch.hora.sac_learner import HoraSACLearner
 from unilab.algos.torch.offpolicy.runtime import OffPolicyRuntime
@@ -72,16 +72,27 @@ class FADAPrivilegedSACLearner(HoraSACLearner):
 
 def _object_items(value: Any) -> dict[str, Any]:
     if OmegaConf.is_config(value):
-        resolved = OmegaConf.to_container(value, resolve=True)
-        return (
-            {str(key): item for key, item in resolved.items()} if isinstance(resolved, dict) else {}
-        )
+        value = OmegaConf.to_container(value, resolve=True)
     if isinstance(value, dict):
-        return dict(value)
+        return {str(key): _plain_value(item) for key, item in value.items()}
     try:
-        return dict(vars(value))
+        return {str(key): _plain_value(item) for key, item in vars(value).items()}
     except TypeError:
         return {}
+
+
+def _plain_value(value: Any) -> Any:
+    if OmegaConf.is_config(value):
+        value = OmegaConf.to_container(value, resolve=True)
+    if isinstance(value, dict):
+        return {str(key): _plain_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_value(item) for item in value]
+    try:
+        fields = vars(value)
+    except TypeError:
+        return value
+    return {str(key): _plain_value(item) for key, item in fields.items()}
 
 
 def _validate_gain_targeted_domain_randomization(domain_rand: Any) -> None:
@@ -282,10 +293,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
         _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
         _validate_oracle_noise_profile(cfg.env.noise_config)
-        validate_fada_no_gait_dual_reward(
+        validate_fada_single_reward(
             reward_scales=_object_items(cfg.reward.scales),
-            reward_mode=_object_items(getattr(cfg.reward, "mode", None)),
-            gait_constraint=_object_items(getattr(cfg.reward, "gait_constraint", None)),
+            reward_config=_object_items(cfg.reward),
         )
 
 
