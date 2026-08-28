@@ -188,6 +188,15 @@ class HoraSACLearner(FastSACLearner):
         actor = cast(HoraSACActor, self.actor)
         return actor.get_actions_and_log_probs(actor_obs, priv_info)
 
+    def _normalize_critic_obs_for_q(self, critic_obs: torch.Tensor) -> torch.Tensor:
+        actor = cast(HoraSACActor, self.actor)
+        normalizer = actor.priv_info_normalizer
+        if isinstance(normalizer, nn.Identity):
+            return critic_obs
+        base = critic_obs[..., : -self.priv_info_dim]
+        privileged = critic_obs[..., -self.priv_info_dim :]
+        return torch.cat([base, normalizer(privileged, update=False)], dim=-1)
+
     def _get_actions_and_log_probs_for_actor(
         self,
         actor_obs: torch.Tensor,

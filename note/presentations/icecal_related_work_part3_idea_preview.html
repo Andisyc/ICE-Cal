@@ -226,17 +226,7 @@
     .serial { margin-top: 34px; color: #d1dde3; font: 700 17px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .serial span { color: var(--cyan); }
 
-    /* Hooke / spring page */
-    .hooke { display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center; margin-top: 46px; }
-    .spring-figure { background: var(--panel); border: 1.5px solid var(--line); border-radius: 6px; padding: 18px 14px 8px; }
-    .spring-figure svg { width: 100%; height: auto; display: block; }
-    .spring-caption { color: var(--muted); font-size: 12.5px; padding: 8px 6px 6px; text-align: center; }
-    .formula-stack { display: flex; flex-direction: column; gap: 18px; }
-    .formula-card { padding: 20px 24px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--panel); }
-    .formula-card.springy { border-color: rgba(101, 229, 232, .55); }
-    .formula-card .f-label { color: var(--muted); font: 700 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
-    .formula-card .f-main { margin-top: 12px; font: 700 30px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.02em; }
-    .formula-card .f-note { margin-top: 10px; color: #aebbc4; font-size: 13px; line-height: 1.5; }
+    /* Formula page term legend */
     .map-table { margin-top: 28px; max-width: 900px; }
     .map-row { display: grid; grid-template-columns: 1fr 44px 1.5fr; padding: 11px 4px; border-top: 1px solid var(--line); font-size: 14px; color: #c6d6df; align-items: baseline; }
     .map-row:last-child { border-bottom: 1px solid var(--line); }
@@ -263,69 +253,31 @@
       .arrow, .track-arrow, .branch-arrow { transform: rotate(90deg); padding: 8px 0; }
       .dynamics { gap: 14px; }
       .dynamics .inverse, .dynamics .forward { border-top: 0; border-left: 2px solid currentColor; padding: 0 0 0 12px; text-align: left; }
-      .objects, .stages, .hooke, .examples { grid-template-columns: 1fr; }
+      .objects, .stages, .examples { grid-template-columns: 1fr; }
       .module, .node { min-height: auto; }
     }
   </style>
 </head>
 <body>
   <main>
-    <section class="viewport" aria-labelledby="hooke-title">
+    <section class="viewport" aria-labelledby="formula-title">
       <div class="wrap">
         <div class="eyebrow">ICE-CAL / METHOD IDEA 01</div>
-        <h1 id="hooke-title">修正就是一根<span style="color:var(--cyan)">弹簧</span></h1>
-        <p class="sub">故障把执行拉偏，修正把它拉回。理想弹簧的拉力是 F=−kx，弹力系数出厂恒定；真实执行里的"弹力系数"随工况变化，必须实测。</p>
+        <h1 id="formula-title">精确修正 = <span style="color:var(--orange)">真机系数</span> × <span style="color:var(--violet)">归一化修正量</span></h1>
+        <p class="sub">执行失配不改变修正的<strong>方向</strong>，只改变需要的<strong>剂量</strong>。归一化修正量 Δzᵢ 事先在仿真训练好并冻结；部署时真机数据只用来读出一个标量系数 ĉ，经实测映射 σ 换算成剂量，乘上冻结的修正量。<strong>真机不更新任何权重。</strong></p>
 
-        <div class="hooke">
-          <div class="spring-figure">
-            <svg viewBox="0 0 540 300" role="img" aria-label="弹簧类比：拉伸量 x 与回拉力 F">
-              <defs>
-                <marker id="hk-arr-o" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0,0 L10,5 L0,10 z" fill="#ff9d59"></path>
-                </marker>
-                <marker id="hk-arr-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0,0 L10,5 L0,10 z" fill="#65e5e8"></path>
-                </marker>
-              </defs>
-              <line x1="20" y1="252" x2="520" y2="252" stroke="rgba(201,224,236,.25)" stroke-width="2"/>
-              <line x1="46" y1="90" x2="46" y2="252" stroke="#8d9aa6" stroke-width="4"/>
-              <line x1="46" y1="110" x2="28" y2="96" stroke="#8d9aa6" stroke-width="2"/>
-              <line x1="46" y1="150" x2="28" y2="136" stroke="#8d9aa6" stroke-width="2"/>
-              <line x1="46" y1="190" x2="28" y2="176" stroke="#8d9aa6" stroke-width="2"/>
-              <line x1="46" y1="230" x2="28" y2="216" stroke="#8d9aa6" stroke-width="2"/>
-              <rect x="216" y="118" width="84" height="84" fill="none" stroke="#8d9aa6" stroke-width="1.5" stroke-dasharray="6 5"/>
-              <text x="258" y="226" fill="#8d9aa6" font-size="12" text-anchor="middle">标称位置</text>
-              <polyline points="46,160 60,160 74,128 88,192 102,128 116,192 130,128 144,192 158,128 172,192 186,128 200,192 214,128 228,192 242,128 256,192 270,128 284,192 292,160 306,160"
-                fill="none" stroke="#65e5e8" stroke-width="3" stroke-linejoin="round"/>
-              <rect x="306" y="118" width="84" height="84" fill="#101a21" stroke="#eef3f7" stroke-width="2" rx="4"/>
-              <text x="348" y="165" fill="#eef3f7" font-size="13" text-anchor="middle">执行</text>
-              <line x1="300" y1="60" x2="300" y2="80" stroke="#ff9d59" stroke-width="2"/>
-              <line x1="300" y1="70" x2="390" y2="70" stroke="#ff9d59" stroke-width="2.5" marker-end="url(#hk-arr-o)"/>
-              <text x="345" y="52" fill="#ff9d59" font-size="14" text-anchor="middle" font-weight="700">x（被拉偏）</text>
-              <line x1="440" y1="160" x2="398" y2="160" stroke="#65e5e8" stroke-width="2.5" marker-end="url(#hk-arr-c)"/>
-              <text x="456" y="165" fill="#65e5e8" font-size="17" font-weight="700">F</text>
-            </svg>
-            <div class="spring-caption">虚线 = 标称位置；故障把执行拉偏 x，弹簧回拉 F</div>
-          </div>
-          <div class="formula-stack">
-            <div class="formula-card">
-              <div class="f-label">理想弹簧 · 胡克定律</div>
-              <div class="f-main">F = −k·x</div>
-              <div class="f-note">k 是常数，出厂给定，终身不变</div>
-            </div>
-            <div class="formula-card springy">
-              <div class="f-label">ICE-Cal · 非线性弹簧</div>
-              <div class="f-main">F = <span style="color:var(--cyan)">k(x)</span>·<span style="color:var(--violet)">Δzᵢ</span></div>
-              <div class="f-note">k(x) ≈ σ(c)：随读数变化的实测映射；x ≈ c：故障比率读数；Δzᵢ：方向 + 满刻度基准</div>
-            </div>
-          </div>
+        <div class="equation" aria-label="校准公式">
+          z̄ = z + <span class="accent">Σᵢ</span> <span style="color:var(--orange)">σᵢ(ĉᵢ)</span> · <span style="color:var(--violet)">Δzᵢ</span>
         </div>
 
-        <div class="map-table" aria-label="弹簧与 ICE-Cal 对照表">
-          <div class="map-row"><span>拉伸量 x</span><span class="map-arrow">↔</span><span>故障比率读数 c</span></div>
-          <div class="map-row"><span>弹力系数 k（恒定）</span><span class="map-arrow">↔</span><span>σ(c)：实测换算映射，真机可重画</span></div>
-          <div class="map-row"><span>弹簧轴方向</span><span class="map-arrow">↔</span><span>Δzᵢ：基准修正向量，冻结 ❄</span></div>
+        <div class="map-table" aria-label="公式各项含义">
+          <div class="map-row"><span>Δzᵢ · 归一化修正量</span><span class="map-arrow">—</span><span>仿真训练：方向 + 满刻度基准，冻结 ❄，真机不重训</span></div>
+          <div class="map-row"><span>ĉᵢ · 真机系数</span><span class="map-arrow">—</span><span>部署时从 30 帧 State/Action 历史读出的比率，真机唯一需要提供的东西</span></div>
+          <div class="map-row"><span>σᵢ(ĉᵢ) · 剂量换算</span><span class="map-arrow">—</span><span>实测映射：读数是几成 → 该上几倍修正量</span></div>
+          <div class="map-row"><span>z̄ · 校准后 latent</span><span class="map-arrow">—</span><span>送入冻结的 Tracker Decoder 生成动作</span></div>
         </div>
+
+        <div class="thesis"><strong>真机数据的角色变了：</strong>不是微调的训练集，而是校准的读数。</div>
       </div>
     </section>
 

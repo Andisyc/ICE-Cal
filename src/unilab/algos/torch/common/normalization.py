@@ -47,13 +47,13 @@ class EmpiricalNormalization(nn.Module):
 
         new_count = self.count + batch_size
 
-        # Welford's online algorithm
+        # Parallel Welford merge: the correction must use the difference
+        # between the two pre-merge means.
         delta = batch_mean - self._mean
         self._mean.copy_(self._mean + delta * (batch_size / new_count))
-        delta2 = batch_mean - self._mean
         m_a = self._var * self.count
         m_b = batch_var * batch_size
-        M2 = m_a + m_b + delta2.pow(2) * (self.count * batch_size / new_count)
+        M2 = m_a + m_b + delta.pow(2) * (self.count * batch_size / new_count)
         self._var.copy_(M2 / new_count)
         self._std.copy_(self._var.sqrt())
         self.count.copy_(new_count)

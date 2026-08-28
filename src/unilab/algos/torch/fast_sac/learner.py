@@ -581,6 +581,10 @@ class FastSACLearner:
         del critic_obs
         return self.actor.get_actions_and_log_probs(actor_obs)
 
+    def _normalize_critic_obs_for_q(self, critic_obs: torch.Tensor) -> torch.Tensor:
+        """Return the Q-network input; specialized runtimes may normalize owned tails."""
+        return critic_obs
+
     def _critic_loss_tensors(
         self,
         critic_obs: torch.Tensor,
@@ -606,14 +610,18 @@ class FastSACLearner:
 
             with self._autocast():
                 target_distributions = self.qnet_target.projection(
-                    critic_next_obs, next_actions, adjusted_rewards, bootstrap, discount
+                    self._normalize_critic_obs_for_q(critic_next_obs),
+                    next_actions,
+                    adjusted_rewards,
+                    bootstrap,
+                    discount,
                 )
                 target_values = self.qnet_target.get_value(target_distributions)
                 target_q_max = target_values.max()
                 target_q_min = target_values.min()
 
         with self._autocast():
-            q_outputs = self.qnet(critic_obs, actions)
+            q_outputs = self.qnet(self._normalize_critic_obs_for_q(critic_obs), actions)
             critic_log_probs = F.log_softmax(q_outputs, dim=-1).clamp(min=-30.0)
             critic_losses = -torch.sum(target_distributions * critic_log_probs, dim=-1)
             qf_loss = critic_losses.mean(dim=1).sum(dim=0)
@@ -636,7 +644,7 @@ class FastSACLearner:
             policy_entropy = -log_probs.mean()
 
         with self._autocast():
-            q_outputs = self.qnet(critic_obs, actions)
+            q_outputs = self.qnet(self._normalize_critic_obs_for_q(critic_obs), actions)
             q_probs = F.softmax(q_outputs, dim=-1)
             q_values = self.qnet.get_value(q_probs)
             qf_value = q_values.mean(dim=0)

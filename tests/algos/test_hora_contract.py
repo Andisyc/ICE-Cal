@@ -10,6 +10,26 @@ import torch
 from tensordict import TensorDict
 
 
+def _build_tiny_privileged_sac_learner():
+    from unilab.algos.torch.hora.sac_learner import HoraSACLearner
+
+    return HoraSACLearner(
+        obs_dim=2,
+        critic_obs_dim=4,
+        priv_info_dim=2,
+        action_dim=1,
+        device="cpu",
+        actor_hidden_dim=8,
+        critic_hidden_dim=8,
+        priv_info_embed_dim=2,
+        priv_mlp_hidden_dims=(4, 2),
+        num_atoms=5,
+        use_layer_norm=False,
+        use_compile=False,
+        priv_info_normalization=True,
+    )
+
+
 def test_hora_sac_actor_shapes_and_stable_module_names() -> None:
     from unilab.algos.torch.hora.sac_models import HoraSACActor
 
@@ -110,6 +130,137 @@ def test_hora_sac_learner_updates_with_privileged_tail() -> None:
 
     assert torch.isfinite(torch.tensor(list(critic_metrics.values()))).all()
     assert torch.isfinite(torch.tensor(list(actor_metrics.values()))).all()
+
+
+def test_hora_sac_q_input_normalizes_only_privileged_tail() -> None:
+    learner = _build_tiny_privileged_sac_learner()
+    learner.actor.update_privileged_normalizer(
+        torch.tensor([[0.0, 10.0], [2.0, 14.0]])
+    )
+    critic_obs = torch.tensor([[7.0, -3.0, 2.0, 14.0]])
+
+    normalized = learner._normalize_critic_obs_for_q(critic_obs)
+
+    torch.testing.assert_close(normalized[:, :2], critic_obs[:, :2])
+    torch.testing.assert_close(
+        normalized[:, 2:],
+        learner.actor.priv_info_normalizer(critic_obs[:, 2:], update=False),
+    )
+    assert not torch.equal(normalized[:, 2:], critic_obs[:, 2:])
+    torch.testing.assert_close(critic_obs, torch.tensor([[7.0, -3.0, 2.0, 14.0]]))
+
+
+def test_fast_sac_q_input_normalization_defaults_to_identity() -> None:
+    from unilab.algos.torch.fast_sac.learner import FastSACLearner
+
+    learner = FastSACLearner(
+        obs_dim=2,
+        critic_obs_dim=3,
+        action_dim=1,
+        device="cpu",
+        actor_hidden_dim=8,
+        critic_hidden_dim=8,
+        num_atoms=5,
+        use_layer_norm=False,
+        use_compile=False,
+    )
+    critic_obs = torch.tensor([[1.0, 2.0, 30.0]])
+
+    torch.testing.assert_close(
+        learner._normalize_critic_obs_for_q(critic_obs),
+        critic_obs,
+    )
+
+
+def test_hora_actor_loss_keeps_actor_privilege_raw_and_normalizes_q_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    learner = _build_tiny_privileged_sac_learner()
+    learner.actor.update_privileged_normalizer(
+        torch.tensor([[0.0, 10.0], [2.0, 14.0]])
+    )
+    obs = torch.tensor([[0.25, -0.5]])
+    critic_obs = torch.tensor([[7.0, -3.0, 2.0, 14.0]])
+    captured: dict[str, torch.Tensor] = {}
+    original_actor_call = learner.actor.get_actions_and_log_probs
+
+    def capture_actor_call(
+        actor_obs: torch.Tensor,
+        priv_info: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        captured["actor_privilege"] = priv_info.detach().clone()
+        return original_actor_call(actor_obs, priv_info)
+
+    def capture_q_input(
+        _module: torch.nn.Module,
+        inputs: tuple[torch.Tensor, ...],
+    ) -> None:
+        captured["q_input"] = inputs[0].detach().clone()
+
+    monkeypatch.setattr(learner.actor, "get_actions_and_log_probs", capture_actor_call)
+    hook = learner.qnet.register_forward_pre_hook(capture_q_input)
+    try:
+        learner._actor_loss_tensors(obs, critic_obs)
+    finally:
+        hook.remove()
+
+    torch.testing.assert_close(captured["actor_privilege"], critic_obs[:, 2:])
+    torch.testing.assert_close(captured["q_input"][:, :2], critic_obs[:, :2])
+    torch.testing.assert_close(
+        captured["q_input"][:, 2:],
+        learner.actor.priv_info_normalizer(critic_obs[:, 2:], update=False),
+    )
+
+
+def test_hora_critic_loss_normalizes_current_and_target_q_privilege(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    learner = _build_tiny_privileged_sac_learner()
+    learner.actor.update_privileged_normalizer(
+        torch.tensor([[0.0, 10.0], [2.0, 14.0]])
+    )
+    critic_obs = torch.tensor([[7.0, -3.0, 2.0, 14.0]])
+    next_critic_obs = torch.tensor([[8.0, -4.0, 0.0, 10.0]])
+    captured: dict[str, torch.Tensor] = {}
+    original_projection = learner.qnet_target.projection
+
+    def capture_projection(
+        target_obs: torch.Tensor,
+        *args: torch.Tensor,
+    ) -> torch.Tensor:
+        captured["target_q_input"] = target_obs.detach().clone()
+        return original_projection(target_obs, *args)
+
+    def capture_current_q_input(
+        _module: torch.nn.Module,
+        inputs: tuple[torch.Tensor, ...],
+    ) -> None:
+        captured["current_q_input"] = inputs[0].detach().clone()
+
+    monkeypatch.setattr(learner.qnet_target, "projection", capture_projection)
+    hook = learner.qnet.register_forward_pre_hook(capture_current_q_input)
+    try:
+        learner._critic_loss_tensors(
+            critic_obs,
+            torch.zeros(1, 1),
+            torch.ones(1),
+            torch.tensor([[0.5, -0.25]]),
+            next_critic_obs,
+            torch.zeros(1),
+            torch.zeros(1),
+        )
+    finally:
+        hook.remove()
+
+    for key, raw in (
+        ("current_q_input", critic_obs),
+        ("target_q_input", next_critic_obs),
+    ):
+        torch.testing.assert_close(captured[key][:, :2], raw[:, :2])
+        torch.testing.assert_close(
+            captured[key][:, 2:],
+            learner.actor.priv_info_normalizer(raw[:, 2:], update=False),
+        )
 
 
 def test_hora_sac_distilled_student_forward_does_not_require_priv_info() -> None:
