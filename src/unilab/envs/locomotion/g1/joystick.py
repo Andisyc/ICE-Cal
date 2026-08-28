@@ -78,6 +78,7 @@ class G1ActuatorStrengthConfig:
     curriculum_iteration_boundaries: list[int] = field(default_factory=list)
     curriculum_max_termination_rate: float = 0.1
     curriculum_brake_cooldown_steps: int = 100
+    curriculum_recovery_hold_steps: int = 500
 
 
 @dataclass
@@ -565,6 +566,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self._actuator_strength_curriculum_level = 0
         self._actuator_strength_curriculum_pending_episodes = 0
         self._actuator_strength_curriculum_last_brake_step = -10**9
+        self._actuator_strength_curriculum_resume_after_step = 0
 
     def _get_base_actuator_gains(self, env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self._base_kp, self._base_kd
@@ -717,6 +719,8 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                     raise ValueError("curriculum_max_termination_rate must be in [0, 1]")
                 if int(strength_cfg.curriculum_brake_cooldown_steps) <= 0:
                     raise ValueError("curriculum_brake_cooldown_steps must be positive")
+                if int(strength_cfg.curriculum_recovery_hold_steps) < 0:
+                    raise ValueError("curriculum_recovery_hold_steps must be non-negative")
         return strength_cfg
 
     def actuator_strength_curriculum_profile(self, env: Any) -> tuple[int, float, float]:
@@ -766,15 +770,22 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             if int(iteration) - self._actuator_strength_curriculum_last_brake_step >= cooldown:
                 self._actuator_strength_curriculum_level = max(previous - 1, 0)
                 self._actuator_strength_curriculum_last_brake_step = int(iteration)
-        elif previous < target:
+                self._actuator_strength_curriculum_resume_after_step = int(iteration) + int(
+                    strength_cfg.curriculum_recovery_hold_steps
+                )
+        elif (
+            int(iteration) >= self._actuator_strength_curriculum_resume_after_step
+            and previous < target
+        ):
             self._actuator_strength_curriculum_level = previous + 1
         return self._actuator_strength_curriculum_level != previous
 
-    def capture_actuator_strength_curriculum_state(self) -> tuple[int, int, int]:
+    def capture_actuator_strength_curriculum_state(self) -> tuple[int, int, int, int]:
         return (
             self._actuator_strength_curriculum_level,
             self._actuator_strength_curriculum_pending_episodes,
             self._actuator_strength_curriculum_last_brake_step,
+            self._actuator_strength_curriculum_resume_after_step,
         )
 
     def restore_actuator_strength_curriculum_state(self, state: tuple[int, ...]) -> None:
@@ -782,6 +793,9 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self._actuator_strength_curriculum_pending_episodes = int(state[1])
         self._actuator_strength_curriculum_last_brake_step = (
             int(state[2]) if len(state) > 2 else -10**9
+        )
+        self._actuator_strength_curriculum_resume_after_step = (
+            int(state[3]) if len(state) > 3 else 0
         )
 
     @staticmethod

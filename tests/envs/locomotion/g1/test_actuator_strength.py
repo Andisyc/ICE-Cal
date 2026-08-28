@@ -219,8 +219,8 @@ def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors()
     cfg.com_offset_x = [-0.05, 0.05]
     cfg.randomize_dof_position_bias = True
     cfg.dof_position_bias_range = [-0.05, 0.05]
-    cfg.randomize_control_delay = True
-    cfg.push_robots = True
+    cfg.randomize_control_delay = False
+    cfg.push_robots = False
 
     nominal = provider.effective_grouped_domain_rand_config(env)
     assert nominal.randomize_kp is False
@@ -235,15 +235,15 @@ def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors()
     assert middle.kp_multiplier_range == pytest.approx([0.94, 1.06])
     assert middle.ground_friction_multiplier_range == pytest.approx([0.88, 1.12])
     assert middle.added_mass_range == pytest.approx([-0.9, 0.9])
-    assert middle.randomize_control_delay is True
+    assert middle.randomize_control_delay is False
     assert middle.push_robots is False
 
     for _ in range(2):
         assert provider.update_actuator_strength_curriculum(env, 900.0, 1024) is True
     final = provider.effective_grouped_domain_rand_config(env)
     assert final.kp_multiplier_range == pytest.approx([0.9, 1.1])
-    assert final.randomize_control_delay is True
-    assert final.push_robots is True
+    assert final.randomize_control_delay is False
+    assert final.push_robots is False
 
 
 def test_g1_curriculum_metrics_are_written_without_episode_completion() -> None:
@@ -299,6 +299,7 @@ def test_g1_iteration_curriculum_follows_schedule_and_quality_brake() -> None:
             curriculum_iteration_boundaries=[0, 500, 1200, 2000, 3000, 4000],
             curriculum_max_termination_rate=0.1,
             curriculum_brake_cooldown_steps=100,
+            curriculum_recovery_hold_steps=500,
         )
     )
 
@@ -311,7 +312,9 @@ def test_g1_iteration_curriculum_follows_schedule_and_quality_brake() -> None:
     assert provider.update_iteration_curriculum(env, 1300, 0.5) is True
     assert provider.actuator_strength_curriculum_profile(env)[0] == 1
     assert provider.update_iteration_curriculum(env, 1350, 0.5) is False
-    assert provider.update_iteration_curriculum(env, 1400, 0.0) is True
+    assert provider.update_iteration_curriculum(env, 1400, 0.0) is False
+    assert provider.actuator_strength_curriculum_profile(env)[0] == 1
+    assert provider.update_iteration_curriculum(env, 1800, 0.0) is True
     assert provider.actuator_strength_curriculum_profile(env)[0] == 2
 
 

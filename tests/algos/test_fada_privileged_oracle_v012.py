@@ -550,6 +550,8 @@ def test_privileged_oracle_live_input_dr_curriculum_profile(
     assert strength.curriculum_multiplier_lows == [1.0, 0.98, 0.95, 0.9, 0.85, 0.8]
     assert strength.curriculum_nominal_probabilities == [1.0, 0.8, 0.7, 0.5, 0.4, 0.3]
     assert strength.group_curriculum_enabled is True
+    assert cfg.env.domain_rand.randomize_control_delay is False
+    assert cfg.env.domain_rand.push_robots is False
     assert runtime.build_checkpoint_saver(SimpleNamespace()) is None
     runtime.validate_training_config(cfg)
 

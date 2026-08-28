@@ -25,6 +25,7 @@ env:
       curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
       curriculum_max_termination_rate: 0.1
       curriculum_brake_cooldown_steps: 100
+      curriculum_recovery_hold_steps: 500
     randomize_kp: true
     kp_multiplier_range: [0.9, 1.1]
     randomize_kd: true
@@ -41,6 +42,5 @@ env:
     com_offset_z: [-0.05, 0.05]
     randomize_dof_position_bias: true
     dof_position_bias_range: [-0.025, 0.025]
-    randomize_control_delay: true
-    push_robots: true
-    push_body_name: pelvis
+    randomize_control_delay: false
+    push_robots: false
