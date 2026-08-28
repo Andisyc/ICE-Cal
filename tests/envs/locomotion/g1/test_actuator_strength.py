@@ -280,6 +280,41 @@ def test_g1_curriculum_metrics_are_written_without_episode_completion() -> None:
     }
 
 
+def test_g1_iteration_curriculum_follows_schedule_and_quality_brake() -> None:
+    provider = G1WalkDomainRandomizationProvider(
+        base_kp=np.ones((29,), dtype=np.float64),
+        base_kd=np.ones((29,), dtype=np.float64),
+    )
+    env = _fake_env(
+        G1ActuatorStrengthConfig(
+            enabled=True,
+            sampling_mode="single_candidate",
+            candidate_actuator_indices=[3],
+            multiplier_range=[0.8, 1.0],
+            nominal_probability=0.3,
+            curriculum_enabled=True,
+            curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
+            curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
+            curriculum_progress_mode="iterations",
+            curriculum_iteration_boundaries=[0, 500, 1200, 2000, 3000, 4000],
+            curriculum_max_termination_rate=0.1,
+            curriculum_brake_cooldown_steps=100,
+        )
+    )
+
+    provider.validate(env, _capabilities())
+    assert provider.update_iteration_curriculum(env, 499, 0.0) is False
+    assert provider.update_iteration_curriculum(env, 500, 0.0) is True
+    assert provider.actuator_strength_curriculum_profile(env)[0] == 1
+    assert provider.update_iteration_curriculum(env, 1200, 0.0) is True
+    assert provider.actuator_strength_curriculum_profile(env)[0] == 2
+    assert provider.update_iteration_curriculum(env, 1300, 0.5) is True
+    assert provider.actuator_strength_curriculum_profile(env)[0] == 1
+    assert provider.update_iteration_curriculum(env, 1350, 0.5) is False
+    assert provider.update_iteration_curriculum(env, 1400, 0.0) is True
+    assert provider.actuator_strength_curriculum_profile(env)[0] == 2
+
+
 def _observation_only_env(*, include_privileged_strength: bool) -> G1WalkEnv:
     env = object.__new__(G1WalkEnv)
     env._cfg = SimpleNamespace(

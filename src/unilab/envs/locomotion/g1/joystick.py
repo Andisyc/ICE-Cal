@@ -74,6 +74,10 @@ class G1ActuatorStrengthConfig:
     curriculum_update_episodes: int = 1024
     group_curriculum_enabled: bool = False
     group_curriculum_scales: list[float] = field(default_factory=list)
+    curriculum_progress_mode: str = "episode_quality"
+    curriculum_iteration_boundaries: list[int] = field(default_factory=list)
+    curriculum_max_termination_rate: float = 0.1
+    curriculum_brake_cooldown_steps: int = 100
 
 
 @dataclass
@@ -560,6 +564,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self._ground_geom_id = ground_geom_id
         self._actuator_strength_curriculum_level = 0
         self._actuator_strength_curriculum_pending_episodes = 0
+        self._actuator_strength_curriculum_last_brake_step = -10**9
 
     def _get_base_actuator_gains(self, env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self._base_kp, self._base_kd
@@ -690,6 +695,28 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                     or np.any(np.diff(scales) < 0.0)
                 ):
                     raise ValueError("group curriculum scales must ascend from 0 to 1")
+            progress_mode = str(
+                getattr(strength_cfg, "curriculum_progress_mode", "episode_quality")
+            )
+            if progress_mode not in {"episode_quality", "iterations"}:
+                raise ValueError("unsupported actuator strength curriculum progress mode")
+            if progress_mode == "iterations":
+                boundaries = np.asarray(
+                    strength_cfg.curriculum_iteration_boundaries, dtype=np.int64
+                )
+                if (
+                    boundaries.shape != lows.shape
+                    or boundaries[0] != 0
+                    or np.any(np.diff(boundaries) <= 0)
+                ):
+                    raise ValueError(
+                        "iteration curriculum boundaries must align and strictly increase from 0"
+                    )
+                max_rate = float(strength_cfg.curriculum_max_termination_rate)
+                if not np.isfinite(max_rate) or not 0.0 <= max_rate <= 1.0:
+                    raise ValueError("curriculum_max_termination_rate must be in [0, 1]")
+                if int(strength_cfg.curriculum_brake_cooldown_steps) <= 0:
+                    raise ValueError("curriculum_brake_cooldown_steps must be positive")
         return strength_cfg
 
     def actuator_strength_curriculum_profile(self, env: Any) -> tuple[int, float, float]:
@@ -721,15 +748,41 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             self._actuator_strength_curriculum_level = max(previous - 1, 0)
         return self._actuator_strength_curriculum_level != previous
 
-    def capture_actuator_strength_curriculum_state(self) -> tuple[int, int]:
+    def update_iteration_curriculum(
+        self, env: Any, iteration: int, terminated_fraction: float
+    ) -> bool:
+        strength_cfg = self._validated_actuator_strength_config(env)
+        if strength_cfg is None or str(
+            getattr(strength_cfg, "curriculum_progress_mode", "episode_quality")
+        ) != "iterations":
+            return False
+        boundaries = np.asarray(
+            strength_cfg.curriculum_iteration_boundaries, dtype=np.int64
+        )
+        target = int(np.searchsorted(boundaries, int(iteration), side="right") - 1)
+        previous = self._actuator_strength_curriculum_level
+        if float(terminated_fraction) > float(strength_cfg.curriculum_max_termination_rate):
+            cooldown = int(strength_cfg.curriculum_brake_cooldown_steps)
+            if int(iteration) - self._actuator_strength_curriculum_last_brake_step >= cooldown:
+                self._actuator_strength_curriculum_level = max(previous - 1, 0)
+                self._actuator_strength_curriculum_last_brake_step = int(iteration)
+        elif previous < target:
+            self._actuator_strength_curriculum_level = previous + 1
+        return self._actuator_strength_curriculum_level != previous
+
+    def capture_actuator_strength_curriculum_state(self) -> tuple[int, int, int]:
         return (
             self._actuator_strength_curriculum_level,
             self._actuator_strength_curriculum_pending_episodes,
+            self._actuator_strength_curriculum_last_brake_step,
         )
 
-    def restore_actuator_strength_curriculum_state(self, state: tuple[int, int]) -> None:
+    def restore_actuator_strength_curriculum_state(self, state: tuple[int, ...]) -> None:
         self._actuator_strength_curriculum_level = int(state[0])
         self._actuator_strength_curriculum_pending_episodes = int(state[1])
+        self._actuator_strength_curriculum_last_brake_step = (
+            int(state[2]) if len(state) > 2 else -10**9
+        )
 
     @staticmethod
     def _scale_symmetric_range(values: Any, center: float, scale: float) -> list[float]:
@@ -1472,6 +1525,16 @@ class G1WalkEnv(G1BaseEnv):
         obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 
+        strength_cfg = getattr(self._cfg.domain_rand, "actuator_strength", None)
+        iteration_mode = str(
+            getattr(strength_cfg, "curriculum_progress_mode", "episode_quality")
+        ) == "iterations"
+        if iteration_mode:
+            self._fada_dr_provider.update_iteration_curriculum(
+                self,
+                self.step_counter + 1,
+                float(np.mean(terminated.astype(get_global_dtype()))),
+            )
         done = state.terminated | state.truncated
         if self._episode_tracker is not None and np.any(done):
             done_indices = np.where(done)[0]
@@ -1479,9 +1542,10 @@ class G1WalkEnv(G1BaseEnv):
             self._episode_tracker.update(episode_lengths)
             if self._penalty_curriculum is not None:
                 self._penalty_curriculum.update(self._episode_tracker.average_length)
-            self._fada_dr_provider.update_actuator_strength_curriculum(
-                self, self._episode_tracker.average_length, len(done_indices)
-            )
+            if not iteration_mode:
+                self._fada_dr_provider.update_actuator_strength_curriculum(
+                    self, self._episode_tracker.average_length, len(done_indices)
+                )
         self._write_curriculum_log(state.info)
         return state
 
@@ -1509,6 +1573,10 @@ class G1WalkEnv(G1BaseEnv):
                 log["curriculum/domain_randomization_scale"] = float(
                     strength_cfg.group_curriculum_scales[level]
                 )
+            if str(
+                getattr(strength_cfg, "curriculum_progress_mode", "episode_quality")
+            ) == "iterations":
+                log["curriculum/training_iteration"] = float(self.step_counter + 1)
 
     def _capture_task_rollout_state(self) -> dict[str, Any]:
         """Capture G1 curriculum state that may change on a shadow termination."""
