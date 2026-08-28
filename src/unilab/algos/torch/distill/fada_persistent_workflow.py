@@ -22,6 +22,7 @@ from .fada_source_artifact import load_fada_source_batch
 from .fada_source_evaluation import evaluate_fada_source_batch
 from .fada_source_plan import FADAPaperSourcePlan
 from .fada_trainer import FADATrainer
+from .fada_training_diagnostics import print_fada_training_diagnostic
 from .fada_workflow_setup import (
     FADAWorkflowDependencies,
     distill_device,
@@ -180,6 +181,21 @@ def run_fada_persistent_async(
                 samples_seen=samples_seen,
                 runtime_config=runtime_config,
                 quality_metrics=last_quality_metrics,
+            )
+            print_fada_training_diagnostic(
+                schedule=training_schedule,
+                iteration=iteration,
+                iterations=iterations,
+                stats=last_stats,
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=(
+                    0 if training_schedule == "idm_pretrain" else int(fada_cfg.planner_updates)
+                ),
+                replay_size=len(replay),
+                samples_seen=samples_seen,
+                collection_summaries=cast(list[dict[str, Any]], summaries),
+                collector_metrics=cast(dict[str, Any], getattr(result, "metrics", {})),
+                checkpoint_path=checkpoint_path,
             )
             if iteration + 1 < iterations:
                 weight_version = runtime.activate_checkpoint(checkpoint_path)

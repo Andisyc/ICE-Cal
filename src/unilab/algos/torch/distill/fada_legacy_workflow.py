@@ -16,6 +16,7 @@ from .fada_replay import FADAReplayBuffer
 from .fada_source_evaluation import evaluate_fada_source_batch
 from .fada_source_plan import FADAPaperSourcePlan
 from .fada_trainer import FADATrainer
+from .fada_training_diagnostics import print_fada_training_diagnostic
 from .fada_workflow_setup import ROOT_DIR, FADAWorkflowDependencies, distill_device
 
 
@@ -183,6 +184,24 @@ def run_fada_legacy(
                 samples_seen=samples_seen,
                 runtime_config=runtime_config,
                 quality_metrics=last_quality_metrics,
+            )
+            iteration_collections = [
+                summary
+                for summary in collection_summaries
+                if int(summary["iteration"]) == iteration
+            ]
+            print_fada_training_diagnostic(
+                schedule="alternating_idm_then_planner",
+                iteration=iteration,
+                iterations=iterations,
+                stats=last_stats,
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=int(fada_cfg.planner_updates),
+                replay_size=len(replay),
+                samples_seen=samples_seen,
+                collection_summaries=iteration_collections,
+                collector_metrics={},
+                checkpoint_path=checkpoint_path,
             )
     finally:
         close = getattr(env, "close", None)

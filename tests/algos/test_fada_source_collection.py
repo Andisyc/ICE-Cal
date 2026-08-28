@@ -54,6 +54,9 @@ from unilab.algos.torch.distill.fada_async_runtime import (
     allocate_fada_command_scenarios,
     build_persistent_fada_runtime,
 )
+from unilab.algos.torch.distill.fada_collection_transaction import (
+    _default_collection_step_limit,
+)
 from unilab.algos.torch.distill.fada_source_diagnostics import (
     classify_fada_coverage,
     run_fada_coverage_diagnostic,
@@ -79,6 +82,36 @@ def test_collector_builds_causal_oracle_bootstrap_windows() -> None:
     expected_next[:, :2] += result.batch.executed_action_chunk[:, 0]
     expected_next[:, 2] += 1.0
     torch.testing.assert_close(result.batch.realized_future[:, 0], expected_next)
+
+
+def test_default_collection_budget_does_not_assume_ten_percent_acceptance() -> None:
+    # Production regression: 48,219/65,536 windows were still making progress when
+    # the old 10x ideal-parallel-step heuristic stopped at 10,275 env steps.
+    assert (
+        _default_collection_step_limit(
+            num_windows=65_536,
+            num_envs=64,
+            record_count=35,
+        )
+        == 65_571
+    )
+
+
+def test_collection_limit_error_reports_rejection_diagnostics() -> None:
+    with pytest.raises(RuntimeError) as error:
+        collect_fada_source_windows(
+            _FakeEnv(done_steps=(1,)),
+            teacher_policy=_Oracle(),
+            config=_config(),
+            num_windows=1,
+            spec=FADACollectionSpec(max_env_steps=1),
+        )
+
+    message = str(error.value)
+    assert "acceptance=0.00%" in message
+    assert "rejected_done=1" in message
+    assert "rejected_command=0" in message
+    assert "rejected_scenario=0" in message
 
 
 def test_source_collector_characterization_maps_every_causal_index() -> None:

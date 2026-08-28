@@ -32,6 +32,21 @@ from .fada_collection_windows import (
     _window_from_records,
 )
 from .fada_observation import assert_fada_projection_matches_contract
+from .fada_training_diagnostics import FADACollectionProgressReporter
+
+
+def _default_collection_step_limit(
+    *,
+    num_windows: int,
+    num_envs: int,
+    record_count: int,
+) -> int:
+    """Return a conservative cap without assuming >=10% row acceptance."""
+
+    ideal_parallel_steps = int(np.ceil(int(num_windows) / max(int(num_envs), 1)))
+    legacy_headroom = int(record_count) + ideal_parallel_steps * 10
+    one_window_per_vector_step = int(record_count) + int(num_windows)
+    return max(legacy_headroom, one_window_per_vector_step, 1)
 
 
 def collect_fada_source_windows(
@@ -171,17 +186,55 @@ def collect_fada_source_windows(
     rejected_command = 0
     rejected_scenario = 0
     env_steps = 0
+    rollout_mode = (
+        "intermediate_oracle"
+        if rollout_teacher_policy is not None
+        else ("oracle" if rollout_policy is None else "planner_idm")
+    )
     step_limit = (
         int(max_env_steps)
         if max_env_steps is not None
-        else max(record_count + int(np.ceil(num_windows / max(num_envs, 1))) * 10, 1)
+        else _default_collection_step_limit(
+            num_windows=int(num_windows),
+            num_envs=num_envs,
+            record_count=record_count,
+        )
+    )
+    reporter = FADACollectionProgressReporter(
+        scenario=command_scenario,
+        window_profile=("cold_start" if cold_start_windows else "steady_state"),
+        rollout_mode=rollout_mode,
+        target_windows=int(num_windows),
+        num_envs=num_envs,
+    )
+    reporter.report(
+        windows=0,
+        env_steps=0,
+        rejected_done=0,
+        rejected_command=0,
+        rejected_scenario=0,
     )
     # B2: 每步先查询同状态 Oracle label, 再执行 Oracle bootstrap 或当前 Planner-IDM 动作.
     while len(batches) < int(num_windows):
         if env_steps >= step_limit:
+            reporter.report(
+                windows=len(batches),
+                env_steps=env_steps,
+                rejected_done=rejected_done,
+                rejected_command=rejected_command,
+                rejected_scenario=rejected_scenario,
+                force=True,
+            )
+            attempted_rows = env_steps * num_envs
+            acceptance = (
+                0.0 if attempted_rows <= 0 else 100.0 * len(batches) / attempted_rows
+            )
             raise RuntimeError(
                 f"FADA collector produced {len(batches)}/{num_windows} windows after "
-                f"{env_steps} env steps; increase max_env_steps or inspect command resets"
+                f"{env_steps} env steps (acceptance={acceptance:.2f}%, "
+                f"rejected_done={rejected_done}, rejected_command={rejected_command}, "
+                f"rejected_scenario={rejected_scenario}); increase max_env_steps or "
+                "inspect command resets"
             )
         source = _obs_array(obs, observation_key)
         teacher_obs, _ = project_teacher_obs(
@@ -255,6 +308,13 @@ def collect_fada_source_windows(
                         )
                     )
             if len(batches) >= int(num_windows):
+                reporter.report(
+                    windows=len(batches),
+                    env_steps=env_steps,
+                    rejected_done=rejected_done,
+                    rejected_command=rejected_command,
+                    rejected_scenario=rejected_scenario,
+                )
                 break
         if rollout_teacher_policy is not None:
             actions = _oracle_actions(
@@ -396,6 +456,14 @@ def collect_fada_source_windows(
                     if len(batches) >= int(num_windows):
                         break
 
+        reporter.report(
+            windows=len(batches),
+            env_steps=env_steps,
+            rejected_done=rejected_done,
+            rejected_command=rejected_command,
+            rejected_scenario=rejected_scenario,
+        )
+
         observation_history = np.roll(observation_history, shift=-1, axis=1)
         observation_history[:, -1] = next_student_obs
         action_history = np.roll(action_history, shift=-1, axis=1)
@@ -412,11 +480,7 @@ def collect_fada_source_windows(
         env_steps=env_steps,
         rejected_done_transitions=rejected_done,
         rejected_command_windows=rejected_command,
-        rollout_mode=(
-            "intermediate_oracle"
-            if rollout_teacher_policy is not None
-            else ("oracle" if rollout_policy is None else "planner_idm")
-        ),
+        rollout_mode=rollout_mode,
         command_scenario=command_scenario,
         oracle_role="unified",
         rejected_scenario_windows=rejected_scenario,
