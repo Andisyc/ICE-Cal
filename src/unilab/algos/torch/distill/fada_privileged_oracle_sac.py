@@ -267,11 +267,15 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         privileged_dr_curriculum_validation = bool(
             getattr(cfg.algo, "privileged_dr_curriculum_validation", False)
         )
+        privileged_grouped_dr_lineage = bool(
+            getattr(cfg.algo, "privileged_grouped_dr_lineage", False)
+        )
         if sum(
             (
                 privileged_input_diagnostic,
                 privileged_nominal_validation,
                 privileged_dr_curriculum_validation,
+                privileged_grouped_dr_lineage,
             )
         ) > 1:
             raise ValueError("privileged validation modes are mutually exclusive")
@@ -301,6 +305,10 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 "privileged_locomotion_sac requires "
                 f"save_interval={expected_save_interval}"
             )
+        if privileged_grouped_dr_lineage and (
+            str(getattr(cfg.algo, "checkpoint_mode", "sealed")) != "sealed"
+        ):
+            raise ValueError("grouped DR Oracle lineage requires checkpoint_mode=sealed")
         if bool(getattr(cfg.algo, "use_symmetry", True)):
             raise ValueError("privileged_locomotion_sac requires use_symmetry=false")
         if float(getattr(cfg.algo, "gamma", 0.0)) != 0.99:
@@ -346,7 +354,8 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
             raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
-        if bool(getattr(curriculum_cfg, "enabled", True)) != unsealed_validation:
+        curriculum_required = unsealed_validation or privileged_grouped_dr_lineage
+        if bool(getattr(curriculum_cfg, "enabled", True)) != curriculum_required:
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
         if privileged_input_diagnostic or privileged_nominal_validation:
             strength = getattr(cfg.env.domain_rand, "actuator_strength", None)
@@ -355,14 +364,17 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                     "nominal privileged validation requires actuator strength randomization disabled"
                 )
         else:
+            grouped_dr = (
+                privileged_dr_curriculum_validation or privileged_grouped_dr_lineage
+            )
             _validate_gain_targeted_domain_randomization(
                 cfg.env.domain_rand,
-                allow_grouped=privileged_dr_curriculum_validation,
+                allow_grouped=grouped_dr,
             )
             curriculum_enabled = bool(
                 getattr(cfg.env.domain_rand.actuator_strength, "curriculum_enabled", False)
             )
-            if curriculum_enabled != privileged_dr_curriculum_validation:
+            if curriculum_enabled != grouped_dr:
                 raise ValueError("actuator strength curriculum mode mismatch")
         _validate_oracle_noise_profile(cfg.env.noise_config)
         validate_fada_single_reward(

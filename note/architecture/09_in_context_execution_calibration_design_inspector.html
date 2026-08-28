@@ -283,7 +283,7 @@
         "id": "train-source-oracle",
         "phase": "pre",
         "label": "ICE-Cal 训练 Privileged Oracle",
-      "detail": "在单一 G1WalkFlat locomotion 任务的标称动力学上训练 privileged SAC Oracle：Actor 使用部署观测，Critic 使用类型化特权状态，但 Oracle 训练不注入左膝 Gain、执行延迟、偏置或任何校准故障/域随机化；Command 只改变速度跟踪目标，不选择站立/行走/恢复 Reward 家族；两个 legacy gait-phase 槽恒为零，禁止相位 Reward/constraint；同一次标称 Oracle 训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000），共享 oracle_lineage_id；所有故障只在源主干冻结后的失败轨迹采集阶段注入"
+        "detail": "在单一 G1WalkFlat/MuJoCo locomotion 任务上训练 live-privileged SAC teacher：Actor 与 Critic 都消费经同一统计量归一化的 g1_fada_privileged_v1 信息；训练从近标称动力学开始，按迭代 0/500/1200/2000/3000/4000 将左膝强度与 Kp/Kd、摩擦、质量、COM、DoF 偏置 grouped DR 扩展到 0/0.2/0.4/0.6/0.8/1.0，delay 与 push 保持关闭；Command 只改变速度跟踪目标，两个 legacy gait-phase 槽恒为零。可供 IDM 的正式 lineage 必须由同一次 sealed 训练产生 20 个 intermediate checkpoints（240…4800）与 final checkpoint（5000）；当前 v022 validation run 的高 Reward/Ep Len 仅证明训练链可学，因每 1000 轮保存且不 seal，尚不是该 lineage"
       },
       {
         "id": "distill-source",
@@ -363,11 +363,11 @@
       "details": [
         {
           "heading": "1. 源策略来自 ICE-Cal Privileged Oracle",
-          "text": "Oracle 在单一 G1WalkFlat locomotion 任务的标称动力学上由任务 Reward 与类型化特权 Critic 直接训练。Actor 只读取部署观测；Critic 可读取类型化特权状态，但 Oracle 训练中的执行增益、Kp/Kd、摩擦、质量、COM、偏置、延迟、推力等均保持标称，不采样任何后续校准故障。20 个 intermediate checkpoints 与 final checkpoint 必须来自同一次标称训练并共享 oracle_lineage_id。左膝 Gain 仅是源主干冻结后失败轨迹采集的首个 smoke case，不属于 Oracle 分布。"
+          "text": "v022 teacher 在单一 G1WalkFlat/MuJoCo 任务上训练。Actor 读取 98-D 任务观测以及类型化特权向量的 32-D embedding，Critic 读取同一特权尾部；Collector 与 Learner 共用并持久化特权归一化统计。训练使用按迭代推进的 grouped DR：左膝执行器强度、Kp/Kd、摩擦、质量、COM 与 DoF 偏置逐级展开，delay 与 push 关闭。20 个 intermediate checkpoints 与 final checkpoint 仍必须来自同一次 sealed 训练并共享 oracle_lineage_id。当前 G1WalkFlat_live_priv_grouped_dr_v022 是成功的 validation run，但只按 1000 轮保存且不 seal，因此不能直接进入 IDM。"
         },
         {
           "heading": "2. Gait Phase 完全退出控制权",
-          "text": "整个任务只使用一套 locomotion Reward：Command 只改变速度跟踪目标，零指令不进入独立站立/恢复 Reward，非零指令也不进入独立行走 Reward；mode dispatcher 与全部 stand_* Reward 永久退役。原有两维 gait-phase 槽只为保持 98→66/29/3 契约而保留，reset、observation 与 step 中恒为零；不采样、不推进，不参与 Reward 或 constraint。feet_phase、feet_phase_contrast、feet_phase_contact 必须为 0，gait constraint 必须关闭；预检发现越界即拒绝启动。"
+          "text": "整个任务只使用一套 locomotion Reward：Command 只改变速度跟踪目标，零指令不进入独立站立/恢复 Reward，非零指令也不进入独立行走 Reward；mode dispatcher 与全部 stand_* Reward 永久退役。禁止 Gait/feet-phase Reward。原有两维 gait-phase 槽只为保持 98→66/29/3 契约而保留，reset、observation 与 step 中恒为零；不采样、不推进，不参与 Reward 或 constraint。feet_phase、feet_phase_contrast、feet_phase_contact 必须为 0，gait constraint 必须关闭；预检发现越界即拒绝启动。"
         },
         {
           "heading": "3. Planner 看历史动作，但 future 不含动作",

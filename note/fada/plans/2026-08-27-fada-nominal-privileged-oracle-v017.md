@@ -1,6 +1,7 @@
 # FADA v017 Nominal Privileged Oracle — Documentation Transition Plan
 
-> Status: DESIGN-CONFIRMED / ENGINEERING-BLOCKED. This unit changes documentation only.
+> Status: SUPERSEDED / HISTORICAL. v022 restores a live-privileged grouped-DR teacher with an
+> iteration curriculum.
 
 ## Objective
 

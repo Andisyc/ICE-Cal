@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_dr_curriculum
+  - _self_
+
+# Sealed v022 source lineage. Preserve the successful live-privileged grouped
+# DR curriculum while saving the 20 IDM intermediates plus model_5000.pt.
+algo:
+  privileged_dr_curriculum_validation: false
+  privileged_grouped_dr_lineage: true
+  save_interval: 240
+  checkpoint_mode: sealed

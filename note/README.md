@@ -14,15 +14,16 @@ copying active Contract semantics.
 | Layer | Current artifact | Status |
 |---|---|---|
 | Concept Figure | `architecture/08_in_context_execution_calibration.html` | Synchronized with ICA-DP-08 |
-| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed v013 source construction + axis-bank calibration |
-| Active FADA Contract lineage | `fada/contracts/README.md` | Source v012 plus active Context v008/v007 |
-| Source engineering transition | `fada/plans/2026-08-26-fada-paper-aligned-source-training-v012.md` | Design-confirmed; code not authorized |
+| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed v022 privileged source teacher + axis-bank calibration |
+| Active FADA Contract lineage | `fada/contracts/README.md` | Source v022 plus active Context v009/v008 |
+| Source engineering transition | `fada/plans/2026-08-29-fada-v022-grouped-dr-lineage.md` | Grouped-DR policy validated; sealed 20+1 lineage pending |
 | Calibration engineering transition | `fada/plans/2026-08-23-configurable-axis-training-refactor.md` | Offline implemented and independently reviewed |
-| Governance | `governance.json` | CLOSED / OFFLINE EVIDENCE ONLY |
+| Source governance | `fada/governance/2026-08-29-v022-privileged-teacher-design-confirmed.json` | v022 DESIGN-CONFIRMED; sealed lineage pending |
+| Context governance | `governance.json` | CLOSED / OFFLINE EVIDENCE ONLY |
 
-The Concept Figure and Inspector retain the three-axis catalog as the default example, while source
-v012 defines how the frozen Planner–Tracker is created and active Context Contracts define one
-ordered active subset per calibration transaction. Fresh v008/v007
+The Concept Figure and Inspector retain the data-driven perturbation basis, while source v022
+defines how the privileged teacher and frozen Planner–Tracker are created and active Context
+Contracts define one ordered active subset per calibration transaction. Fresh v008/v007
 module evidence covers the local implementation; v007/v006 receipts remain historical. No offline
 document authorizes training, simulation, deployment, or policy-quality claims.
 

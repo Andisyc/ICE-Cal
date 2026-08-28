@@ -556,6 +556,48 @@ def test_privileged_oracle_live_input_dr_curriculum_profile(
     runtime.validate_training_config(cfg)
 
 
+def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+    from omegaconf import OmegaConf
+
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        resolve_privileged_locomotion_sac_runtime,
+    )
+
+    lineage_id = "unit-test-grouped-dr-lineage"
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", lineage_id)
+    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=[
+                "algo=sac",
+                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage",
+            ],
+        )
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        OmegaConf.to_container(cfg.algo, resolve=True)
+    )
+
+    assert runtime is not None
+    assert cfg.algo.privileged_dr_curriculum_validation is False
+    assert cfg.algo.privileged_grouped_dr_lineage is True
+    assert cfg.algo.save_interval == 240
+    assert cfg.algo.checkpoint_mode == "sealed"
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
+    runtime.validate_training_config(cfg)
+    saver = runtime.build_checkpoint_saver(
+        SimpleNamespace(
+            checkpoint_contract=_sealed_checkpoint_contract(lineage_id=lineage_id)
+        )
+    )
+    assert callable(saver)
+
+
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
