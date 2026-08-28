@@ -1473,25 +1473,26 @@ class G1WalkEnv(G1BaseEnv):
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 
         done = state.terminated | state.truncated
-        if self._episode_tracker is None or not np.any(done):
-            return state
+        if self._episode_tracker is not None and np.any(done):
+            done_indices = np.where(done)[0]
+            episode_lengths = state.info["steps"][done_indices] + 1
+            self._episode_tracker.update(episode_lengths)
+            if self._penalty_curriculum is not None:
+                self._penalty_curriculum.update(self._episode_tracker.average_length)
+            self._fada_dr_provider.update_actuator_strength_curriculum(
+                self, self._episode_tracker.average_length, len(done_indices)
+            )
+        self._write_curriculum_log(state.info)
+        return state
 
-        done_indices = np.where(done)[0]
-        episode_lengths = state.info["steps"][done_indices] + 1
-        self._episode_tracker.update(episode_lengths)
+    def _write_curriculum_log(self, info: dict[str, Any]) -> None:
+        log = info.setdefault("log", {})
+        if self._episode_tracker is not None:
+            log["curriculum/average_episode_length"] = float(
+                self._episode_tracker.average_length
+            )
         if self._penalty_curriculum is not None:
-            self._penalty_curriculum.update(self._episode_tracker.average_length)
-        self._fada_dr_provider.update_actuator_strength_curriculum(
-            self, self._episode_tracker.average_length, len(done_indices)
-        )
-
-        if "log" not in state.info:
-            state.info["log"] = {}
-        state.info["log"]["curriculum/average_episode_length"] = float(
-            self._episode_tracker.average_length
-        )
-        if self._penalty_curriculum is not None:
-            state.info["log"]["curriculum/penalty_scale"] = float(
+            log["curriculum/penalty_scale"] = float(
                 self._penalty_curriculum.current_scale
             )
         strength_cfg = getattr(self._cfg.domain_rand, "actuator_strength", None)
@@ -1499,16 +1500,15 @@ class G1WalkEnv(G1BaseEnv):
             level, low, nominal_probability = (
                 self._fada_dr_provider.actuator_strength_curriculum_profile(self)
             )
-            state.info["log"]["curriculum/actuator_strength_level"] = float(level)
-            state.info["log"]["curriculum/actuator_strength_low"] = low
-            state.info["log"]["curriculum/actuator_strength_nominal_probability"] = (
+            log["curriculum/actuator_strength_level"] = float(level)
+            log["curriculum/actuator_strength_low"] = low
+            log["curriculum/actuator_strength_nominal_probability"] = (
                 nominal_probability
             )
             if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
-                state.info["log"]["curriculum/domain_randomization_scale"] = float(
+                log["curriculum/domain_randomization_scale"] = float(
                     strength_cfg.group_curriculum_scales[level]
                 )
-        return state
 
     def _capture_task_rollout_state(self) -> dict[str, Any]:
         """Capture G1 curriculum state that may change on a shadow termination."""
