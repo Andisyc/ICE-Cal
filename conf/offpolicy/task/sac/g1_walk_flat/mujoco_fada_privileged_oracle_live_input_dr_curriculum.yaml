@@ -19,3 +19,24 @@ env:
       curriculum_promote_threshold: 800.0
       curriculum_demote_threshold: 500.0
       curriculum_update_episodes: 1024
+      group_curriculum_enabled: true
+      group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    randomize_kp: true
+    kp_multiplier_range: [0.9, 1.1]
+    randomize_kd: true
+    kd_multiplier_range: [0.9, 1.1]
+    randomize_ground_friction: true
+    ground_friction_multiplier_range: [0.8, 1.2]
+    randomize_base_mass: true
+    added_mass_range: [-1.5, 1.5]
+    randomize_body_mass: true
+    body_mass_multiplier_range: [0.9, 1.1]
+    random_com: true
+    com_offset_x: [-0.05, 0.05]
+    com_offset_y: [-0.05, 0.05]
+    com_offset_z: [-0.05, 0.05]
+    randomize_dof_position_bias: true
+    dof_position_bias_range: [-0.025, 0.025]
+    randomize_control_delay: true
+    push_robots: true
+    push_body_name: pelvis

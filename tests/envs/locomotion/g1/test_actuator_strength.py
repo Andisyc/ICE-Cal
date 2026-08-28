@@ -189,6 +189,63 @@ def test_g1_actuator_strength_curriculum_starts_with_nominal_sampling() -> None:
     np.testing.assert_allclose(plan.info_updates["privileged_actuator_strength"], 1.0)
 
 
+def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors() -> None:
+    provider = G1WalkDomainRandomizationProvider()
+    strength = G1ActuatorStrengthConfig(
+        enabled=True,
+        sampling_mode="single_candidate",
+        candidate_actuator_indices=[3],
+        multiplier_range=[0.8, 1.0],
+        nominal_probability=0.3,
+        curriculum_enabled=True,
+        curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
+        curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
+        group_curriculum_enabled=True,
+        group_curriculum_scales=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+    )
+    env = _fake_env(strength)
+    cfg = env.cfg.domain_rand
+    cfg.randomize_kp = True
+    cfg.kp_multiplier_range = [0.9, 1.1]
+    cfg.randomize_kd = True
+    cfg.kd_multiplier_range = [0.9, 1.1]
+    cfg.randomize_ground_friction = True
+    cfg.ground_friction_multiplier_range = [0.8, 1.2]
+    cfg.randomize_base_mass = True
+    cfg.added_mass_range = [-1.5, 1.5]
+    cfg.randomize_body_mass = True
+    cfg.body_mass_multiplier_range = [0.9, 1.1]
+    cfg.random_com = True
+    cfg.com_offset_x = [-0.05, 0.05]
+    cfg.randomize_dof_position_bias = True
+    cfg.dof_position_bias_range = [-0.05, 0.05]
+    cfg.randomize_control_delay = True
+    cfg.push_robots = True
+
+    nominal = provider.effective_grouped_domain_rand_config(env)
+    assert nominal.randomize_kp is False
+    assert nominal.randomize_ground_friction is False
+    assert nominal.randomize_control_delay is False
+    assert nominal.push_robots is False
+
+    for _ in range(3):
+        assert provider.update_actuator_strength_curriculum(env, 900.0, 1024) is True
+    middle = provider.effective_grouped_domain_rand_config(env)
+    assert middle.randomize_kp is True
+    assert middle.kp_multiplier_range == pytest.approx([0.94, 1.06])
+    assert middle.ground_friction_multiplier_range == pytest.approx([0.88, 1.12])
+    assert middle.added_mass_range == pytest.approx([-0.9, 0.9])
+    assert middle.randomize_control_delay is True
+    assert middle.push_robots is False
+
+    for _ in range(2):
+        assert provider.update_actuator_strength_curriculum(env, 900.0, 1024) is True
+    final = provider.effective_grouped_domain_rand_config(env)
+    assert final.kp_multiplier_range == pytest.approx([0.9, 1.1])
+    assert final.randomize_control_delay is True
+    assert final.push_robots is True
+
+
 def _observation_only_env(*, include_privileged_strength: bool) -> G1WalkEnv:
     env = object.__new__(G1WalkEnv)
     env._cfg = SimpleNamespace(

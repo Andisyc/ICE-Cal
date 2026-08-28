@@ -9,5 +9,5 @@ algo:
   privileged_input_diagnostic: false
   privileged_nominal_validation: true
   max_iterations: 5000
-  save_interval: 0
-
+  save_interval: 1000
+  checkpoint_mode: validation

@@ -30,6 +30,16 @@ COLLECTOR_TIMING_KEYS = (
 )
 
 
+def dashboard_components(log_info: dict[str, object]) -> dict[str, object]:
+    """Select environment metrics intended for the live training dashboard."""
+
+    return {
+        key: value
+        for key, value in log_info.items()
+        if key.startswith(("reward/", "curriculum/"))
+    }
+
+
 def offpolicy_actor_requires_priv_info(algo_type: str) -> bool:
     return algo_type in {
         "hora_sac",
@@ -677,9 +687,8 @@ def _run_collector(
         # Extract reward components from env info
         log_info = state.info.get("log", {})
         if log_info:
-            for k, v in log_info.items():
-                if k.startswith("reward/"):
-                    ep_reward_components[k].append(v)
+            for k, v in dashboard_components(log_info).items():
+                ep_reward_components[k].append(v)
 
         # Send metrics periodically
         if metrics_queue is not None and total_steps % (num_envs * 10) == 0:

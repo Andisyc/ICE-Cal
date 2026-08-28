@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 import pytest
+
+
+def test_dashboard_components_include_reward_and_curriculum_metrics() -> None:
+    from unilab.algos.torch.offpolicy.worker import dashboard_components
+
+    assert dashboard_components(
+        {
+            "reward/alive": 10.0,
+            "curriculum/actuator_strength_level": 4.0,
+            "debug/internal": 99.0,
+        }
+    ) == {
+        "reward/alive": 10.0,
+        "curriculum/actuator_strength_level": 4.0,
+    }
 import torch
 
 from unilab.algos.torch.offpolicy.worker import (

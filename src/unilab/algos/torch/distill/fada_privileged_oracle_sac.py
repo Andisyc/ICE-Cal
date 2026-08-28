@@ -95,7 +95,9 @@ def _plain_value(value: Any) -> Any:
     return {str(key): _plain_value(item) for key, item in fields.items()}
 
 
-def _validate_gain_targeted_domain_randomization(domain_rand: Any) -> None:
+def _validate_gain_targeted_domain_randomization(
+    domain_rand: Any, *, allow_grouped: bool = False
+) -> None:
     forbidden_flags = (
         ("randomize_ground_friction", "ground friction"),
         ("random_com", "COM"),
@@ -110,6 +112,18 @@ def _validate_gain_targeted_domain_randomization(domain_rand: Any) -> None:
         ("push_robots", "push"),
     )
     for field_name, label in forbidden_flags:
+        if allow_grouped and field_name in {
+            "randomize_ground_friction",
+            "random_com",
+            "randomize_base_mass",
+            "randomize_body_mass",
+            "randomize_kp",
+            "randomize_kd",
+            "randomize_dof_position_bias",
+            "randomize_control_delay",
+            "push_robots",
+        }:
+            continue
         if bool(getattr(domain_rand, field_name, False)):
             raise ValueError(f"privileged_locomotion_sac forbids {label} randomization")
     if float(getattr(domain_rand, "torque_rfi_fraction", 0.0)) != 0.0:
@@ -154,6 +168,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
     algo_type: str | None = FADA_PRIVILEGED_SAC_RUNTIME_IMPL
     supports_symmetry: bool = False
     actor_cfg: dict[str, Any] = field(default_factory=dict)
+    checkpoint_mode: str = "sealed"
 
     def build_model_kwargs(self, *, obs_dim: int, critic_obs_dim: int) -> dict[str, Any]:
         priv_info_dim = int(critic_obs_dim - obs_dim)
@@ -233,6 +248,10 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         return kwargs
 
     def build_checkpoint_saver(self, learner: Any) -> Any:
+        if self.checkpoint_mode == "validation":
+            return None
+        if self.checkpoint_mode != "sealed":
+            raise ValueError(f"unsupported privileged checkpoint mode: {self.checkpoint_mode}")
         contract = learner.checkpoint_contract
         if not isinstance(contract, FADAOracleCheckpointContract):
             raise ValueError("privileged_locomotion_sac learner lacks checkpoint contract")
@@ -271,7 +290,12 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             or privileged_nominal_validation
             or privileged_dr_curriculum_validation
         )
-        expected_save_interval = 0 if unsealed_validation else 240
+        if privileged_input_diagnostic:
+            expected_save_interval = 0
+        elif unsealed_validation:
+            expected_save_interval = 1000
+        else:
+            expected_save_interval = 240
         if int(getattr(cfg.algo, "save_interval", -1)) != expected_save_interval:
             raise ValueError(
                 "privileged_locomotion_sac requires "
@@ -331,7 +355,10 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                     "nominal privileged validation requires actuator strength randomization disabled"
                 )
         else:
-            _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
+            _validate_gain_targeted_domain_randomization(
+                cfg.env.domain_rand,
+                allow_grouped=privileged_dr_curriculum_validation,
+            )
             curriculum_enabled = bool(
                 getattr(cfg.env.domain_rand.actuator_strength, "curriculum_enabled", False)
             )
@@ -351,7 +378,8 @@ def resolve_privileged_locomotion_sac_runtime(
         return None
     actor_cfg = rl_cfg.get("actor", {})
     return FADAPrivilegedSACRuntime(
-        actor_cfg=dict(actor_cfg) if isinstance(actor_cfg, dict) else {}
+        actor_cfg=dict(actor_cfg) if isinstance(actor_cfg, dict) else {},
+        checkpoint_mode=str(rl_cfg.get("checkpoint_mode", "sealed")),
     )
 
 

@@ -507,7 +507,7 @@ def test_privileged_oracle_live_input_nominal_5k_validation_profile(
     assert cfg.algo.privileged_nominal_validation is True
     assert cfg.algo.actor.fixed_privileged_input is False
     assert cfg.algo.max_iterations == 5000
-    assert cfg.algo.save_interval == 0
+    assert cfg.algo.save_interval == 1000
     assert cfg.env.curriculum.enabled is True
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     runtime.validate_training_config(cfg)
@@ -543,12 +543,14 @@ def test_privileged_oracle_live_input_dr_curriculum_profile(
     assert runtime is not None
     assert cfg.algo.privileged_dr_curriculum_validation is True
     assert cfg.algo.max_iterations == 5000
-    assert cfg.algo.save_interval == 0
+    assert cfg.algo.save_interval == 1000
     assert cfg.env.curriculum.enabled is True
     assert strength.enabled is True
     assert strength.curriculum_enabled is True
     assert strength.curriculum_multiplier_lows == [1.0, 0.98, 0.95, 0.9, 0.85, 0.8]
     assert strength.curriculum_nominal_probabilities == [1.0, 0.8, 0.7, 0.5, 0.4, 0.3]
+    assert strength.group_curriculum_enabled is True
+    assert runtime.build_checkpoint_saver(SimpleNamespace()) is None
     runtime.validate_training_config(cfg)
 
 

@@ -72,6 +72,8 @@ class G1ActuatorStrengthConfig:
     curriculum_promote_threshold: float = 800.0
     curriculum_demote_threshold: float = 500.0
     curriculum_update_episodes: int = 1024
+    group_curriculum_enabled: bool = False
+    group_curriculum_scales: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -573,7 +575,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             getattr(getattr(env.cfg, "fada_privileged_observation", None), "enabled", False)
         ):
             return super().build_interval_randomization_plan(env, step_counter)
-        cfg = env.cfg.domain_rand
+        cfg = self.effective_grouped_domain_rand_config(env)
         interval_steps = max(1, round(float(cfg.fada_push_interval_seconds) / env.cfg.ctrl_dt))
         if not cfg.push_robots or step_counter <= 0 or step_counter % interval_steps:
             return None
@@ -674,6 +676,20 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                 raise ValueError("actuator strength curriculum thresholds must satisfy down < up")
             if int(strength_cfg.curriculum_update_episodes) <= 0:
                 raise ValueError("actuator strength curriculum_update_episodes must be positive")
+            if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
+                scales = np.asarray(strength_cfg.group_curriculum_scales, dtype=np.float64)
+                if scales.shape != lows.shape or not np.isfinite(scales).all():
+                    raise ValueError(
+                        "group curriculum scales must align with actuator strength levels"
+                    )
+                if (
+                    scales[0] != 0.0
+                    or scales[-1] != 1.0
+                    or np.any(scales < 0.0)
+                    or np.any(scales > 1.0)
+                    or np.any(np.diff(scales) < 0.0)
+                ):
+                    raise ValueError("group curriculum scales must ascend from 0 to 1")
         return strength_cfg
 
     def actuator_strength_curriculum_profile(self, env: Any) -> tuple[int, float, float]:
@@ -714,6 +730,62 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
     def restore_actuator_strength_curriculum_state(self, state: tuple[int, int]) -> None:
         self._actuator_strength_curriculum_level = int(state[0])
         self._actuator_strength_curriculum_pending_episodes = int(state[1])
+
+    @staticmethod
+    def _scale_symmetric_range(values: Any, center: float, scale: float) -> list[float]:
+        low, high = (float(value) for value in values)
+        return [center + (low - center) * scale, center + (high - center) * scale]
+
+    def effective_grouped_domain_rand_config(self, env: Any) -> Any:
+        cfg = env.cfg.domain_rand
+        strength_cfg = self._validated_actuator_strength_config(env)
+        if strength_cfg is None or not bool(
+            getattr(strength_cfg, "group_curriculum_enabled", False)
+        ):
+            return cfg
+        level, _, _ = self.actuator_strength_curriculum_profile(env)
+        scale = float(strength_cfg.group_curriculum_scales[level])
+        effective = copy.copy(cfg)
+        static_enabled = scale > 0.0
+        for field_name in (
+            "randomize_kp",
+            "randomize_kd",
+            "randomize_ground_friction",
+            "randomize_base_mass",
+            "randomize_body_mass",
+            "random_com",
+        ):
+            setattr(effective, field_name, bool(getattr(cfg, field_name, False)) and static_enabled)
+        effective.kp_multiplier_range = self._scale_symmetric_range(
+            cfg.kp_multiplier_range, 1.0, scale
+        )
+        effective.kd_multiplier_range = self._scale_symmetric_range(
+            cfg.kd_multiplier_range, 1.0, scale
+        )
+        effective.ground_friction_multiplier_range = self._scale_symmetric_range(
+            cfg.ground_friction_multiplier_range, 1.0, scale
+        )
+        effective.added_mass_range = self._scale_symmetric_range(
+            cfg.added_mass_range, 0.0, scale
+        )
+        effective.body_mass_multiplier_range = self._scale_symmetric_range(
+            cfg.body_mass_multiplier_range, 1.0, scale
+        )
+        effective.com_offset_x = self._scale_symmetric_range(cfg.com_offset_x, 0.0, scale)
+        effective.com_offset_y = self._scale_symmetric_range(cfg.com_offset_y, 0.0, scale)
+        effective.com_offset_z = self._scale_symmetric_range(cfg.com_offset_z, 0.0, scale)
+        effective.randomize_dof_position_bias = bool(cfg.randomize_dof_position_bias) and (
+            scale >= 0.6
+        )
+        effective.dof_position_bias_range = self._scale_symmetric_range(
+            cfg.dof_position_bias_range, 0.0, scale
+        )
+        effective.randomize_control_delay = bool(cfg.randomize_control_delay) and scale >= 0.6
+        effective.push_robots = bool(cfg.push_robots) and scale >= 1.0
+        return effective
+
+    def _get_effective_domain_rand_config(self, env: Any) -> Any:
+        return self.effective_grouped_domain_rand_config(env)
 
     def _sample_actuator_strength_multipliers(
         self,
@@ -829,14 +901,15 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         num_reset = len(env_ids)
         payload = plan.randomization or ResetRandomizationPayload()
         dtype = get_global_dtype()
-        low, high = env.cfg.domain_rand.dof_position_bias_range
-        if env.cfg.domain_rand.randomize_dof_position_bias:
+        effective_domain_rand = self.effective_grouped_domain_rand_config(env)
+        low, high = effective_domain_rand.dof_position_bias_range
+        if effective_domain_rand.randomize_dof_position_bias:
             dof_bias = np.random.uniform(low, high, size=(num_reset, env._num_action))
         else:
             dof_bias = np.zeros((num_reset, env._num_action))
         control_delay = (
             np.random.randint(0, 2, size=(num_reset, 1))
-            if env.cfg.domain_rand.randomize_control_delay
+            if effective_domain_rand.randomize_control_delay
             else np.zeros((num_reset, 1))
         )
         if any(
@@ -1431,6 +1504,10 @@ class G1WalkEnv(G1BaseEnv):
             state.info["log"]["curriculum/actuator_strength_nominal_probability"] = (
                 nominal_probability
             )
+            if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
+                state.info["log"]["curriculum/domain_randomization_scale"] = float(
+                    strength_cfg.group_curriculum_scales[level]
+                )
         return state
 
     def _capture_task_rollout_state(self) -> dict[str, Any]:

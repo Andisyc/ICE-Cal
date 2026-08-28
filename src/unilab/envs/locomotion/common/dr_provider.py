@@ -94,6 +94,9 @@ class LocomotionDRProvider(DomainRandomizationProvider):
         """Return the base qvel reset limit.  Override for configurable limits."""
         return 0.5
 
+    def _get_effective_domain_rand_config(self, env: Any) -> Any:
+        return env.cfg.domain_rand
+
     def _build_extra_info_updates(self, env: Any, num_reset: int) -> dict[str, np.ndarray]:
         """Return additional info_updates entries (e.g. gait_phase for G1)."""
         return {}
@@ -136,6 +139,7 @@ class LocomotionDRProvider(DomainRandomizationProvider):
             randomization=build_common_reset_randomization(
                 env,
                 num_reset,
+                domain_rand=self._get_effective_domain_rand_config(env),
                 base_kp=base_kp,
                 base_kd=base_kd,
                 base_body_mass=base_body_mass,

@@ -31,6 +31,7 @@ def build_common_reset_randomization(
     env: Any,
     num_reset: int,
     *,
+    domain_rand: Any | None = None,
     base_kp: np.ndarray | None = None,
     base_kd: np.ndarray | None = None,
     base_body_mass: np.ndarray | None = None,
@@ -38,7 +39,8 @@ def build_common_reset_randomization(
     ground_geom_id: int | None = None,
     base_dof_armature: np.ndarray | None = None,
 ) -> ResetRandomizationPayload | None:
-    domain_rand = getattr(env.cfg, "domain_rand", None)
+    if domain_rand is None:
+        domain_rand = getattr(env.cfg, "domain_rand", None)
     if domain_rand is None:
         return None
 
