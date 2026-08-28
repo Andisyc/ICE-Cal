@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_curriculum
+  - _self_
+
+# Nominal-only policy-quality validation: keep the live privileged Actor and
+# penalty curriculum, but do not seal checkpoints as formal Oracle lineage.
+algo:
+  privileged_input_diagnostic: false
+  privileged_nominal_validation: true
+  max_iterations: 5000
+  save_interval: 0
+

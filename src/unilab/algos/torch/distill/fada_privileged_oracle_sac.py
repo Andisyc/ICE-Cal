@@ -242,6 +242,13 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         privileged_input_diagnostic = bool(
             getattr(cfg.algo, "privileged_input_diagnostic", False)
         )
+        privileged_nominal_validation = bool(
+            getattr(cfg.algo, "privileged_nominal_validation", False)
+        )
+        if privileged_input_diagnostic and privileged_nominal_validation:
+            raise ValueError(
+                "privileged diagnostic and nominal validation modes are mutually exclusive"
+            )
         if getattr(cfg.training, "task_name", None) != "G1WalkFlat":
             raise ValueError("privileged_locomotion_sac requires task G1WalkFlat")
         if getattr(cfg.training, "sim_backend", None) != "mujoco":
@@ -252,7 +259,8 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 "privileged_locomotion_sac requires "
                 f"max_iterations={expected_iterations}"
             )
-        expected_save_interval = 0 if privileged_input_diagnostic else 240
+        nominal_control = privileged_input_diagnostic or privileged_nominal_validation
+        expected_save_interval = 0 if nominal_control else 240
         if int(getattr(cfg.algo, "save_interval", -1)) != expected_save_interval:
             raise ValueError(
                 "privileged_locomotion_sac requires "
@@ -303,13 +311,13 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
             raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
-        if bool(getattr(curriculum_cfg, "enabled", True)) != privileged_input_diagnostic:
+        if bool(getattr(curriculum_cfg, "enabled", True)) != nominal_control:
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
-        if privileged_input_diagnostic:
+        if nominal_control:
             strength = getattr(cfg.env.domain_rand, "actuator_strength", None)
             if strength is None or bool(getattr(strength, "enabled", True)):
                 raise ValueError(
-                    "fixed-input diagnostic requires actuator strength randomization disabled"
+                    "nominal privileged validation requires actuator strength randomization disabled"
                 )
         else:
             _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
