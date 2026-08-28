@@ -66,6 +66,12 @@ class G1ActuatorStrengthConfig:
     multiplier_range: list[float] = field(default_factory=lambda: [1.0, 1.0])
     nominal_probability: float = 0.0
     include_in_critic_obs: bool = False
+    curriculum_enabled: bool = False
+    curriculum_multiplier_lows: list[float] = field(default_factory=list)
+    curriculum_nominal_probabilities: list[float] = field(default_factory=list)
+    curriculum_promote_threshold: float = 800.0
+    curriculum_demote_threshold: float = 500.0
+    curriculum_update_episodes: int = 1024
 
 
 @dataclass
@@ -550,6 +556,8 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self._base_body_mass = base_body_mass
         self._base_geom_friction = base_geom_friction
         self._ground_geom_id = ground_geom_id
+        self._actuator_strength_curriculum_level = 0
+        self._actuator_strength_curriculum_pending_episodes = 0
 
     def _get_base_actuator_gains(self, env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self._base_kp, self._base_kd
@@ -634,7 +642,78 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         nominal_probability = float(strength_cfg.nominal_probability)
         if not np.isfinite(nominal_probability) or not 0.0 <= nominal_probability <= 1.0:
             raise ValueError("actuator strength nominal_probability must be in [0, 1]")
+        if bool(getattr(strength_cfg, "curriculum_enabled", False)):
+            lows = np.asarray(strength_cfg.curriculum_multiplier_lows, dtype=np.float64)
+            probabilities = np.asarray(
+                strength_cfg.curriculum_nominal_probabilities, dtype=np.float64
+            )
+            if lows.ndim != 1 or lows.size == 0 or probabilities.shape != lows.shape:
+                raise ValueError(
+                    "actuator strength curriculum schedules must be non-empty and aligned"
+                )
+            if not np.isfinite(lows).all() or np.any(lows < low) or np.any(lows > high):
+                raise ValueError("actuator strength curriculum multiplier lows are out of range")
+            if np.any(np.diff(lows) > 0.0) or lows[0] != high or lows[-1] != low:
+                raise ValueError(
+                    "actuator strength curriculum multiplier lows must descend from high to low"
+                )
+            if (
+                not np.isfinite(probabilities).all()
+                or np.any(probabilities < nominal_probability)
+                or np.any(probabilities > 1.0)
+                or np.any(np.diff(probabilities) > 0.0)
+                or probabilities[0] != 1.0
+                or probabilities[-1] != nominal_probability
+            ):
+                raise ValueError(
+                    "actuator strength curriculum nominal probabilities must descend from 1"
+                )
+            promote = float(strength_cfg.curriculum_promote_threshold)
+            demote = float(strength_cfg.curriculum_demote_threshold)
+            if not np.isfinite([promote, demote]).all() or not demote < promote:
+                raise ValueError("actuator strength curriculum thresholds must satisfy down < up")
+            if int(strength_cfg.curriculum_update_episodes) <= 0:
+                raise ValueError("actuator strength curriculum_update_episodes must be positive")
         return strength_cfg
+
+    def actuator_strength_curriculum_profile(self, env: Any) -> tuple[int, float, float]:
+        strength_cfg = self._validated_actuator_strength_config(env)
+        if strength_cfg is None or not bool(getattr(strength_cfg, "curriculum_enabled", False)):
+            raise ValueError("actuator strength curriculum is not enabled")
+        lows = list(strength_cfg.curriculum_multiplier_lows)
+        probabilities = list(strength_cfg.curriculum_nominal_probabilities)
+        level = min(self._actuator_strength_curriculum_level, len(lows) - 1)
+        return level, float(lows[level]), float(probabilities[level])
+
+    def update_actuator_strength_curriculum(
+        self, env: Any, average_episode_length: float, num_completed: int
+    ) -> bool:
+        strength_cfg = self._validated_actuator_strength_config(env)
+        if strength_cfg is None or not bool(getattr(strength_cfg, "curriculum_enabled", False)):
+            return False
+        self._actuator_strength_curriculum_pending_episodes += int(num_completed)
+        if self._actuator_strength_curriculum_pending_episodes < int(
+            strength_cfg.curriculum_update_episodes
+        ):
+            return False
+        self._actuator_strength_curriculum_pending_episodes = 0
+        previous = self._actuator_strength_curriculum_level
+        last = len(strength_cfg.curriculum_multiplier_lows) - 1
+        if average_episode_length >= float(strength_cfg.curriculum_promote_threshold):
+            self._actuator_strength_curriculum_level = min(previous + 1, last)
+        elif average_episode_length <= float(strength_cfg.curriculum_demote_threshold):
+            self._actuator_strength_curriculum_level = max(previous - 1, 0)
+        return self._actuator_strength_curriculum_level != previous
+
+    def capture_actuator_strength_curriculum_state(self) -> tuple[int, int]:
+        return (
+            self._actuator_strength_curriculum_level,
+            self._actuator_strength_curriculum_pending_episodes,
+        )
+
+    def restore_actuator_strength_curriculum_state(self, state: tuple[int, int]) -> None:
+        self._actuator_strength_curriculum_level = int(state[0])
+        self._actuator_strength_curriculum_pending_episodes = int(state[1])
 
     def _sample_actuator_strength_multipliers(
         self,
@@ -651,14 +730,17 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             return np.broadcast_to(fixed, (num_reset, expected)).copy()
 
         sampled = np.ones((num_reset, expected), dtype=np.float64)
+        low, high = np.asarray(strength_cfg.multiplier_range, dtype=np.float64).tolist()
+        nominal_probability = float(strength_cfg.nominal_probability)
+        if bool(getattr(strength_cfg, "curriculum_enabled", False)):
+            _, low, nominal_probability = self.actuator_strength_curriculum_profile(env)
         anomaly_rows = np.flatnonzero(
-            np.random.uniform(size=(num_reset,)) >= float(strength_cfg.nominal_probability)
+            np.random.uniform(size=(num_reset,)) >= nominal_probability
         )
         if anomaly_rows.size == 0:
             return sampled
         candidates = np.asarray(strength_cfg.candidate_actuator_indices, dtype=np.int64)
         selected = np.random.choice(candidates, size=anomaly_rows.size, replace=True)
-        low, high = np.asarray(strength_cfg.multiplier_range, dtype=np.float64).tolist()
         sampled[anomaly_rows, selected] = np.random.uniform(low, high, size=anomaly_rows.size)
         return sampled
 
@@ -991,6 +1073,7 @@ class G1WalkEnv(G1BaseEnv):
             base_geom_friction=self._fada_base_geom_friction,
             ground_geom_id=self._fada_ground_geom_id,
         )
+        self._fada_dr_provider = dr_provider
         self._init_domain_randomization(dr_provider)
 
     @property
@@ -1317,22 +1400,37 @@ class G1WalkEnv(G1BaseEnv):
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 
         done = state.terminated | state.truncated
-        if self._episode_tracker is None or self._penalty_curriculum is None or not np.any(done):
+        if self._episode_tracker is None or not np.any(done):
             return state
 
         done_indices = np.where(done)[0]
         episode_lengths = state.info["steps"][done_indices] + 1
         self._episode_tracker.update(episode_lengths)
-        self._penalty_curriculum.update(self._episode_tracker.average_length)
+        if self._penalty_curriculum is not None:
+            self._penalty_curriculum.update(self._episode_tracker.average_length)
+        self._fada_dr_provider.update_actuator_strength_curriculum(
+            self, self._episode_tracker.average_length, len(done_indices)
+        )
 
         if "log" not in state.info:
             state.info["log"] = {}
         state.info["log"]["curriculum/average_episode_length"] = float(
             self._episode_tracker.average_length
         )
-        state.info["log"]["curriculum/penalty_scale"] = float(
-            self._penalty_curriculum.current_scale
-        )
+        if self._penalty_curriculum is not None:
+            state.info["log"]["curriculum/penalty_scale"] = float(
+                self._penalty_curriculum.current_scale
+            )
+        strength_cfg = getattr(self._cfg.domain_rand, "actuator_strength", None)
+        if bool(getattr(strength_cfg, "curriculum_enabled", False)):
+            level, low, nominal_probability = (
+                self._fada_dr_provider.actuator_strength_curriculum_profile(self)
+            )
+            state.info["log"]["curriculum/actuator_strength_level"] = float(level)
+            state.info["log"]["curriculum/actuator_strength_low"] = low
+            state.info["log"]["curriculum/actuator_strength_nominal_probability"] = (
+                nominal_probability
+            )
         return state
 
     def _capture_task_rollout_state(self) -> dict[str, Any]:
@@ -1350,6 +1448,11 @@ class G1WalkEnv(G1BaseEnv):
                 else float(self._penalty_curriculum.current_scale)
             ),
             "reward_scales": copy.deepcopy(self._reward_cfg.scales),
+            "actuator_strength_curriculum": (
+                None
+                if not hasattr(self, "_fada_dr_provider")
+                else self._fada_dr_provider.capture_actuator_strength_curriculum_state()
+            ),
         }
 
     def _restore_task_rollout_state(self, snapshot: Any) -> None:
@@ -1359,6 +1462,7 @@ class G1WalkEnv(G1BaseEnv):
             "episode_average_length",
             "penalty_scale",
             "reward_scales",
+            "actuator_strength_curriculum",
         }:
             raise ValueError("invalid G1 task rollout snapshot")
         if self._episode_tracker is not None:
@@ -1373,6 +1477,9 @@ class G1WalkEnv(G1BaseEnv):
             self._penalty_curriculum.current_scale = float(scale)
         self._reward_cfg.scales.clear()
         self._reward_cfg.scales.update(copy.deepcopy(snapshot["reward_scales"]))
+        strength_state = snapshot["actuator_strength_curriculum"]
+        if hasattr(self, "_fada_dr_provider") and strength_state is not None:
+            self._fada_dr_provider.restore_actuator_strength_curriculum_state(strength_state)
 
     def _compute_obs(
         self,

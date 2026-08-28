@@ -136,6 +136,59 @@ def test_g1_actuator_strength_samples_nominal_and_bilateral_knee_cases() -> None
     np.testing.assert_allclose(plan.randomization.kd, sampled)
 
 
+def test_g1_actuator_strength_curriculum_promotes_and_demotes_one_level() -> None:
+    provider = G1WalkDomainRandomizationProvider(
+        base_kp=np.ones((29,), dtype=np.float64),
+        base_kd=np.ones((29,), dtype=np.float64),
+    )
+    strength = G1ActuatorStrengthConfig(
+        enabled=True,
+        sampling_mode="single_candidate",
+        candidate_actuator_indices=[3],
+        multiplier_range=[0.8, 1.0],
+        nominal_probability=0.3,
+        curriculum_enabled=True,
+        curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
+        curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
+        curriculum_promote_threshold=800.0,
+        curriculum_demote_threshold=500.0,
+        curriculum_update_episodes=4,
+    )
+    env = _fake_env(strength)
+
+    provider.validate(env, _capabilities())
+    assert provider.actuator_strength_curriculum_profile(env) == (0, 1.0, 1.0)
+    assert provider.update_actuator_strength_curriculum(env, 900.0, 3) is False
+    assert provider.update_actuator_strength_curriculum(env, 900.0, 1) is True
+    assert provider.actuator_strength_curriculum_profile(env) == (1, 0.98, 0.8)
+    assert provider.update_actuator_strength_curriculum(env, 400.0, 4) is True
+    assert provider.actuator_strength_curriculum_profile(env) == (0, 1.0, 1.0)
+
+
+def test_g1_actuator_strength_curriculum_starts_with_nominal_sampling() -> None:
+    provider = G1WalkDomainRandomizationProvider(
+        base_kp=np.ones((29,), dtype=np.float64),
+        base_kd=np.ones((29,), dtype=np.float64),
+    )
+    env = _fake_env(
+        G1ActuatorStrengthConfig(
+            enabled=True,
+            sampling_mode="single_candidate",
+            candidate_actuator_indices=[3],
+            multiplier_range=[0.8, 1.0],
+            nominal_probability=0.3,
+            curriculum_enabled=True,
+            curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
+            curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
+        )
+    )
+
+    provider.validate(env, _capabilities())
+    plan = provider.build_reset_plan(env, np.arange(64, dtype=np.int32))
+
+    np.testing.assert_allclose(plan.info_updates["privileged_actuator_strength"], 1.0)
+
+
 def _observation_only_env(*, include_privileged_strength: bool) -> G1WalkEnv:
     env = object.__new__(G1WalkEnv)
     env._cfg = SimpleNamespace(

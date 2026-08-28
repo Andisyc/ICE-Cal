@@ -245,10 +245,17 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         privileged_nominal_validation = bool(
             getattr(cfg.algo, "privileged_nominal_validation", False)
         )
-        if privileged_input_diagnostic and privileged_nominal_validation:
-            raise ValueError(
-                "privileged diagnostic and nominal validation modes are mutually exclusive"
+        privileged_dr_curriculum_validation = bool(
+            getattr(cfg.algo, "privileged_dr_curriculum_validation", False)
+        )
+        if sum(
+            (
+                privileged_input_diagnostic,
+                privileged_nominal_validation,
+                privileged_dr_curriculum_validation,
             )
+        ) > 1:
+            raise ValueError("privileged validation modes are mutually exclusive")
         if getattr(cfg.training, "task_name", None) != "G1WalkFlat":
             raise ValueError("privileged_locomotion_sac requires task G1WalkFlat")
         if getattr(cfg.training, "sim_backend", None) != "mujoco":
@@ -259,8 +266,12 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 "privileged_locomotion_sac requires "
                 f"max_iterations={expected_iterations}"
             )
-        nominal_control = privileged_input_diagnostic or privileged_nominal_validation
-        expected_save_interval = 0 if nominal_control else 240
+        unsealed_validation = (
+            privileged_input_diagnostic
+            or privileged_nominal_validation
+            or privileged_dr_curriculum_validation
+        )
+        expected_save_interval = 0 if unsealed_validation else 240
         if int(getattr(cfg.algo, "save_interval", -1)) != expected_save_interval:
             raise ValueError(
                 "privileged_locomotion_sac requires "
@@ -311,9 +322,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
             raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
-        if bool(getattr(curriculum_cfg, "enabled", True)) != nominal_control:
+        if bool(getattr(curriculum_cfg, "enabled", True)) != unsealed_validation:
             raise ValueError("privileged_locomotion_sac forbids penalty curriculum")
-        if nominal_control:
+        if privileged_input_diagnostic or privileged_nominal_validation:
             strength = getattr(cfg.env.domain_rand, "actuator_strength", None)
             if strength is None or bool(getattr(strength, "enabled", True)):
                 raise ValueError(
@@ -321,6 +332,11 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 )
         else:
             _validate_gain_targeted_domain_randomization(cfg.env.domain_rand)
+            curriculum_enabled = bool(
+                getattr(cfg.env.domain_rand.actuator_strength, "curriculum_enabled", False)
+            )
+            if curriculum_enabled != privileged_dr_curriculum_validation:
+                raise ValueError("actuator strength curriculum mode mismatch")
         _validate_oracle_noise_profile(cfg.env.noise_config)
         validate_fada_single_reward(
             reward_scales=_object_items(cfg.reward.scales),
