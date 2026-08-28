@@ -1,0 +1,64 @@
+# @package _global_
+defaults:
+  - /task/g1_walk_flat/mujoco
+  - _self_
+
+training:
+  fada:
+    training_schedule: idm_pretrain
+    planner_updates: 0
+    async_artifact_dir: logs/fada/idm_pretrain_privileged_v017/source_batches
+    checkpoint_path: logs/fada/idm_pretrain_privileged_v017.pt
+    stand_transition_curriculum:
+      enabled: false
+    v005_replay:
+      enabled: false
+
+env:
+  fada_privileged_observation:
+    enabled: true
+    schema: g1_fada_privileged_v1
+  domain_rand:
+    actuator_strength:
+      enabled: true
+      sampling_mode: single_candidate
+      candidate_actuator_indices: [3]
+      multiplier_range: [0.8, 1.0]
+      nominal_probability: 0.3
+      include_in_critic_obs: false
+      curriculum_enabled: false
+      group_curriculum_enabled: false
+    randomize_kp: true
+    kp_multiplier_range: [0.9, 1.1]
+    randomize_kd: true
+    kd_multiplier_range: [0.9, 1.1]
+    randomize_ground_friction: true
+    ground_friction_multiplier_range: [0.8, 1.2]
+    randomize_base_mass: true
+    added_mass_range: [-1.5, 1.5]
+    randomize_body_mass: true
+    body_mass_multiplier_range: [0.9, 1.1]
+    random_com: true
+    com_offset_x: [-0.05, 0.05]
+    com_offset_y: [-0.05, 0.05]
+    com_offset_z: [-0.05, 0.05]
+    randomize_dof_position_bias: true
+    dof_position_bias_range: [-0.025, 0.025]
+    randomize_control_delay: false
+    push_robots: false
+
+teacher:
+  algo_type: privileged_locomotion_sac
+  task: sac/g1_walk_flat/mujoco_fada_privileged_oracle
+  checkpoint_path: null
+  load_run: "-1"
+  checkpoint: 5000
+  obs_dim: 98
+  critic_obs_dim: null
+  action_dim: 29
+  actor_hidden_dim: 512
+  priv_info_embed_dim: 32
+  priv_mlp_hidden_dims: [256, 128, 32]
+  priv_info_normalization: true
+  use_layer_norm: true
+  obs_normalization: true

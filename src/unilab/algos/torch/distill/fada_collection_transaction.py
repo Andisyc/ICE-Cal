@@ -20,6 +20,7 @@ from .fada_collection_io import (
     _fada_actions,
     _next_after_done,
     _obs_array,
+    _oracle_actions,
     _oracle_shadow_pair,
     _policy_actions,
 )
@@ -160,7 +161,9 @@ def collect_fada_source_windows(
         if cold_start_windows
         else config.history_length + config.prediction_horizon - 1
     )
-    records: list[deque[FADACollectionTransition]] = [deque(maxlen=record_count) for _ in range(num_envs)]
+    records: list[deque[FADACollectionTransition]] = [
+        deque(maxlen=record_count) for _ in range(num_envs)
+    ]
     episode_ids = np.zeros((num_envs,), dtype=np.int64)
     episode_timesteps = np.zeros((num_envs,), dtype=np.int64)
     batches: list[FADASourceBatch] = []
@@ -201,12 +204,12 @@ def collect_fada_source_windows(
         authoritative_teacher_obs, _ = project_teacher_obs(
             source,
             projection=teacher_projection,
-            expected_teacher_obs_dim=int(
-                getattr(teacher_policy, "obs_dim", source.shape[1])
-            ),
+            expected_teacher_obs_dim=int(getattr(teacher_policy, "obs_dim", source.shape[1])),
         )
-        oracle_actions = _policy_actions(
+        oracle_actions = _oracle_actions(
             teacher_policy,
+            obs,
+            info,
             authoritative_teacher_obs,
             action_dim=config.action_dim,
         )
@@ -254,8 +257,10 @@ def collect_fada_source_windows(
             if len(batches) >= int(num_windows):
                 break
         if rollout_teacher_policy is not None:
-            actions = _policy_actions(
+            actions = _oracle_actions(
                 rollout_teacher_policy,
+                obs,
+                info,
                 teacher_obs,
                 action_dim=config.action_dim,
             )

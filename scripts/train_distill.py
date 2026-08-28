@@ -286,6 +286,17 @@ def build_teacher_spec(cfg: DictConfig) -> DistillationTeacherSpec:
         actor_hidden_dim=int(cfg.teacher.actor_hidden_dim),
         use_layer_norm=bool(cfg.teacher.use_layer_norm),
         obs_normalization=bool(cfg.teacher.obs_normalization),
+        critic_obs_dim=OmegaConf.select(cfg, "teacher.critic_obs_dim"),
+        priv_info_embed_dim=int(OmegaConf.select(cfg, "teacher.priv_info_embed_dim", default=32)),
+        priv_mlp_hidden_dims=tuple(
+            int(value)
+            for value in OmegaConf.select(
+                cfg, "teacher.priv_mlp_hidden_dims", default=[256, 128, 32]
+            )
+        ),
+        priv_info_normalization=bool(
+            OmegaConf.select(cfg, "teacher.priv_info_normalization", default=True)
+        ),
     )
 
 
@@ -2443,7 +2454,6 @@ def run_fada_training(
         create_env=create_env,
         backend_adapter_cls=BackendAdapter,
         load_fada_oracle_policy=load_fada_oracle_policy,
-        load_sac_teacher_policy=load_sac_teacher_policy,
     )
     return run_fada_training_owner(
         cfg,

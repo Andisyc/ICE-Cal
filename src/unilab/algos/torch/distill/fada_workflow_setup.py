@@ -12,6 +12,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from .fada import FADAArchitectureConfig
+from .fada_async_config import fada_training_schedule
 from .fada_async_runtime import allocate_fada_command_scenarios
 from .fada_observation import (
     FADA_G1_STATE_OBSERVATION_CONTRACT,
@@ -20,7 +21,6 @@ from .fada_observation import (
 )
 from .fada_oracle import load_fada_oracle_policy as _default_load_fada_oracle_policy
 from .fada_source_plan import FADAPaperSourcePlan, build_fada_paper_source_plan
-from .teacher import load_sac_teacher_policy as _default_load_sac_teacher_policy
 
 ROOT_DIR = Path(__file__).resolve().parents[5]
 
@@ -38,7 +38,6 @@ class FADAWorkflowDependencies:
     create_env: Callable[..., Any]
     backend_adapter_cls: Callable[..., Any]
     load_fada_oracle_policy: Callable[..., torch.nn.Module] = _default_load_fada_oracle_policy
-    load_sac_teacher_policy: Callable[..., torch.nn.Module] = _default_load_sac_teacher_policy
 
 
 def _distill_device(cfg: DictConfig) -> str:
@@ -86,9 +85,8 @@ def assert_fada_training_run_contract(cfg: DictConfig) -> None:
         for name in ("resume_path", "initial_weights_path")
     ):
         raise ValueError("v010 resume_path and initial_weights_path must both be null")
-    paper_source_enabled = bool(
-        OmegaConf.select(fada_cfg, "paper_source_enabled", default=False)
-    )
+    paper_source_enabled = bool(OmegaConf.select(fada_cfg, "paper_source_enabled", default=False))
+    training_schedule = fada_training_schedule(fada_cfg)
     checkpoint = _fada_path(
         OmegaConf.select(fada_cfg, "checkpoint_path"),
         field_name="training.fada.checkpoint_path",
@@ -102,6 +100,11 @@ def assert_fada_training_run_contract(cfg: DictConfig) -> None:
         )
     if not paper_source_enabled:
         raise ValueError("v011 alternating training requires paper_source_enabled=true")
+    if training_schedule == "idm_pretrain":
+        if str(OmegaConf.select(fada_cfg, "execution_mode")) != "persistent_async":
+            raise ValueError("IDM pretraining requires execution_mode='persistent_async'")
+        if int(OmegaConf.select(fada_cfg, "planner_updates", default=-1)) != 0:
+            raise ValueError("IDM pretraining requires planner_updates=0")
 
 
 def assert_fada_source_route_contract(

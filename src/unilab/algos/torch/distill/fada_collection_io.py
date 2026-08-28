@@ -74,6 +74,30 @@ def _policy_actions(policy: torch.nn.Module, obs: np.ndarray, *, action_dim: int
     return result
 
 
+def _oracle_actions(
+    policy: torch.nn.Module,
+    env_obs: Mapping[str, Any],
+    info: Mapping[str, Any],
+    projected_obs: np.ndarray,
+    *,
+    action_dim: int,
+) -> np.ndarray:
+    """Query either a deployable-only or privileged Oracle through one strict seam."""
+
+    privileged_inference = getattr(policy, "actions_from_env_observation", None)
+    if not callable(privileged_inference):
+        return _policy_actions(policy, projected_obs, action_dim=action_dim)
+    result = np.asarray(privileged_inference(env_obs, info), dtype=np.float32)
+    expected = (projected_obs.shape[0], int(action_dim))
+    if result.shape != expected:
+        raise ValueError(
+            f"privileged Oracle action shape mismatch: expected {expected}, got {result.shape}"
+        )
+    if not np.all(np.isfinite(result)):
+        raise ValueError("privileged Oracle produced non-finite actions")
+    return result
+
+
 def _fada_actions(
     policy: FADAPlannerIDMPolicy,
     observation_history: np.ndarray,
@@ -190,8 +214,10 @@ def _oracle_shadow_pair(
                         getattr(teacher_policy, "obs_dim", future.shape[1])
                     ),
                 )
-                oracle_actions = _policy_actions(
+                oracle_actions = _oracle_actions(
                     teacher_policy,
+                    shadow_obs,
+                    shadow_info,
                     teacher_obs,
                     action_dim=config.action_dim,
                 )

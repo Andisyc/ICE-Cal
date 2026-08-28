@@ -11,7 +11,11 @@ import torch
 
 from .async_runtime import DaggerCollectRequest, DaggerCollectResult
 from .fada import FADAArchitectureConfig, FADAPlannerIDMPolicy, FADASourceBatch
-from .fada_async_config import curriculum_and_allocations, v005_replay_cfg
+from .fada_async_config import (
+    curriculum_and_allocations,
+    fada_training_schedule,
+    v005_replay_cfg,
+)
 from .fada_collection_contract import FADACollectionResult, FADACollectionSpec
 from .fada_collection_transaction import collect_fada_source_windows
 from .fada_source_artifact import save_fada_source_batch
@@ -72,9 +76,7 @@ def _summary(
         "rejected_command_windows": int(collection.rejected_command_windows),
         "rejected_scenario_windows": int(collection.rejected_scenario_windows),
         "command_scenario": collection.command_scenario,
-        "oracle_role": (
-            "walking" if source == "intermediate_oracle" else collection.oracle_role
-        ),
+        "oracle_role": ("walking" if source == "intermediate_oracle" else collection.oracle_role),
         "window_profile": collection.window_profile,
         "idm_source_role": (
             "oracle_shadow" if collection.rollout_mode == "oracle" else "trajectory"
@@ -155,6 +157,7 @@ def collect_fada_iteration(
     worker.local_weight_version = worker.weight_sync.read_weights_into(worker.student.state_dict())
     sync_finished = time.perf_counter()
     fada_cfg = worker.cfg.training.fada
+    training_schedule = fada_training_schedule(fada_cfg)
     common = worker._collection_spec()
 
     curriculum, allocations = curriculum_and_allocations(fada_cfg, worker.config)
@@ -208,7 +211,10 @@ def collect_fada_iteration(
                     scenario_env,
                     teacher_policy=worker.final_teacher,
                     rollout_policy=(
-                        worker.student if request.iteration > 0 else None
+                        worker.student
+                        if training_schedule == "alternating_idm_then_planner"
+                        and request.iteration > 0
+                        else None
                     ),
                     config=worker.config,
                     num_windows=profile_windows,
@@ -220,7 +226,10 @@ def collect_fada_iteration(
                     scenario_env,
                     teacher_policy=worker.final_teacher,
                     rollout_policy=(
-                        worker.student if request.iteration > 0 else None
+                        worker.student
+                        if training_schedule == "alternating_idm_then_planner"
+                        and request.iteration > 0
+                        else None
                     ),
                     config=worker.config,
                     num_windows=profile_windows,
@@ -282,7 +291,7 @@ def collect_fada_iteration(
         config=worker.config,
         metadata={
             "iteration": request.iteration,
-            "training_schedule": "alternating_idm_then_planner",
+            "training_schedule": training_schedule,
             "main_windows": main_windows,
             "stand_transition_curriculum_enabled": curriculum_enabled,
             "v005_replay_enabled": v005_enabled,

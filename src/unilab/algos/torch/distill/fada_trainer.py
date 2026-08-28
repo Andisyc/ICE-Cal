@@ -60,7 +60,9 @@ class FADATrainer:
         owner: str,
     ) -> None:
         expected = {id(parameter) for parameter in module.parameters()}
-        actual = [id(parameter) for group in optimizer.param_groups for parameter in group["params"]]
+        actual = [
+            id(parameter) for group in optimizer.param_groups for parameter in group["params"]
+        ]
         if len(actual) != len(set(actual)) or set(actual) != expected:
             raise ValueError(f"{owner} optimizer must own exactly {owner} parameters")
 
@@ -99,8 +101,8 @@ class FADATrainer:
         idm_updates: int = 1,
         planner_updates: int = 1,
     ) -> FADATrainingStats:
-        if int(idm_updates) <= 0 or int(planner_updates) <= 0:
-            raise ValueError("idm_updates and planner_updates must both be positive")
+        if int(idm_updates) <= 0 or int(planner_updates) < 0:
+            raise ValueError("IDM updates must be positive and Planner updates non-negative")
         batch.validate(self.policy.config)
         idm_loss_value = 0.0
         idm_grad_norm = 0.0
@@ -133,8 +135,8 @@ class FADATrainer:
     ) -> FADATrainingStats:
         """Run one phase while drawing a fresh replay sample for every update."""
 
-        if int(idm_updates) <= 0 or int(planner_updates) <= 0:
-            raise ValueError("idm_updates and planner_updates must both be positive")
+        if int(idm_updates) <= 0 or int(planner_updates) < 0:
+            raise ValueError("IDM updates must be positive and Planner updates non-negative")
         idm_loss_value = 0.0
         idm_grad_norm = 0.0
         for _ in range(int(idm_updates)):

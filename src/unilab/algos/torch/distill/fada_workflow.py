@@ -33,6 +33,7 @@ from .fada_observation import (
     assert_fada_active_route_contract,
     assert_fada_projection_matches_contract,
 )
+from .fada_oracle import validate_loaded_fada_oracle_lineage
 from .fada_persistent_workflow import run_fada_persistent_async
 from .fada_replay import FADAReplayBuffer
 from .fada_source_artifact import load_fada_source_batch
@@ -131,11 +132,20 @@ def run_fada_training_owner(
             "or teacher.load_run/teacher.checkpoint."
         )
     teacher_spec = dependencies.build_teacher_spec(cfg)
-    dependencies.load_fada_oracle_policy(resolved_teacher, teacher_spec, device="cpu")
+    loaded_final_oracle = dependencies.load_fada_oracle_policy(
+        resolved_teacher, teacher_spec, device="cpu"
+    )
     # B2: cold-path strict-load every intermediate Oracle before env/replay mutation.
+    loaded_intermediate_oracles: list[torch.nn.Module] = []
     if paper_source_plan.enabled:
         for intermediate_path in paper_source_plan.checkpoint_paths:
-            dependencies.load_sac_teacher_policy(intermediate_path, teacher_spec, device="cpu")
+            loaded_intermediate_oracles.append(
+                dependencies.load_fada_oracle_policy(intermediate_path, teacher_spec, device="cpu")
+            )
+    validate_loaded_fada_oracle_lineage(
+        loaded_final_oracle,
+        loaded_intermediate_oracles,
+    )
     policy = FADAPlannerIDMPolicy(config).to(device)
     trainer = FADATrainer(
         policy,

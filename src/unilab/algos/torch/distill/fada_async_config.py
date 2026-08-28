@@ -3,12 +3,34 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, cast
 
 from omegaconf import DictConfig, OmegaConf
 
 from .fada import FADA_COMMAND_SCENARIOS, FADAArchitectureConfig
 from .teacher import DistillationTeacherSpec
+
+FADA_TRAINING_SCHEDULES = {"idm_pretrain", "alternating_idm_then_planner"}
+
+
+def validate_fada_training_schedule(value: object) -> str:
+    resolved = str(value)
+    if resolved not in FADA_TRAINING_SCHEDULES:
+        raise ValueError(
+            "training.fada.training_schedule must be one of "
+            f"{sorted(FADA_TRAINING_SCHEDULES)}, got {resolved!r}"
+        )
+    return resolved
+
+
+def fada_training_schedule(fada_cfg: DictConfig) -> str:
+    return validate_fada_training_schedule(
+        OmegaConf.select(
+            fada_cfg,
+            "training_schedule",
+            default="alternating_idm_then_planner",
+        )
+    )
 
 
 def fada_runtime_device(cfg: DictConfig) -> str:
@@ -62,15 +84,26 @@ def allocate_fada_command_scenarios(
 
 def teacher_spec(cfg: DictConfig) -> DistillationTeacherSpec:
     algo_type = str(cfg.teacher.algo_type)
-    if algo_type != "sac":
+    if algo_type not in {"sac", "privileged_locomotion_sac"}:
         raise ValueError(f"Unsupported FADA teacher algo_type: {algo_type!r}")
     return DistillationTeacherSpec(
         obs_dim=int(cfg.teacher.obs_dim),
         action_dim=int(cfg.teacher.action_dim),
-        algo_type=cast(Literal["sac"], algo_type),
+        algo_type=cast(Any, algo_type),
         actor_hidden_dim=int(cfg.teacher.actor_hidden_dim),
         use_layer_norm=bool(cfg.teacher.use_layer_norm),
         obs_normalization=bool(cfg.teacher.obs_normalization),
+        critic_obs_dim=OmegaConf.select(cfg, "teacher.critic_obs_dim"),
+        priv_info_embed_dim=int(OmegaConf.select(cfg, "teacher.priv_info_embed_dim", default=32)),
+        priv_mlp_hidden_dims=tuple(
+            int(value)
+            for value in OmegaConf.select(
+                cfg, "teacher.priv_mlp_hidden_dims", default=[256, 128, 32]
+            )
+        ),
+        priv_info_normalization=bool(
+            OmegaConf.select(cfg, "teacher.priv_info_normalization", default=True)
+        ),
     )
 
 

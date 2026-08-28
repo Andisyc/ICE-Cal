@@ -27,10 +27,9 @@ from .fada_async_config import (
 )
 from .fada_checkpoint import load_fada_policy_checkpoint
 from .fada_collection_contract import FADACollectionSpec
-from .fada_oracle import load_fada_oracle_policy
+from .fada_oracle import load_fada_oracle_policy, reload_fada_oracle_policy_
 from .fada_source_plan import FADAPaperSourcePlan
 from .persistent_runtime import PersistentDistillationRuntime
-from .teacher import load_sac_teacher_policy, reload_sac_teacher_policy_
 
 # Compatibility aliases for callers of the former monolithic module.
 _fada_runtime_device = fada_runtime_device
@@ -60,8 +59,8 @@ class PersistentFADACollectorWorker:
         weight_param_shapes: Mapping[str, torch.Size],
         env_factory: Callable[..., Any] = create_env,
         oracle_loader: Callable[..., torch.nn.Module] = load_fada_oracle_policy,
-        intermediate_teacher_loader: Callable[..., torch.nn.Module] = load_sac_teacher_policy,
-        intermediate_teacher_reloader: Callable[..., None] = reload_sac_teacher_policy_,
+        intermediate_teacher_loader: Callable[..., torch.nn.Module] = load_fada_oracle_policy,
+        intermediate_teacher_reloader: Callable[..., None] = reload_fada_oracle_policy_,
     ) -> None:
         # B1: 解析 worker-owned config 与 source identity, 产出不可变 collection 配置.
         self.weight_sync: SharedWeightSync | None = None

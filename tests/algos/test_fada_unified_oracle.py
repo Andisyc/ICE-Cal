@@ -15,6 +15,52 @@ from unilab.algos.torch.distill import (
 )
 
 
+def _save_privileged_oracle(path: Path) -> None:
+    from unilab.algos.torch.distill.fada_privileged_oracle import (
+        FADAOracleCheckpointContract,
+        seal_fada_oracle_checkpoint,
+    )
+    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
+        FADAPrivilegedSACLearner,
+    )
+
+    contract = FADAOracleCheckpointContract(
+        oracle_lineage_id="lineage-idm",
+        privileged_schema="g1_fada_privileged_v1",
+        task_name="G1WalkFlat",
+        backend="mujoco",
+        action_scale=(1.0,),
+        seed=7,
+        obs_dim=3,
+        critic_obs_dim=5,
+        action_dim=2,
+        body_names=("world", "pelvis"),
+        actuated_joint_names=("joint_0", "joint_1"),
+        privileged_field_slices=(("privileged", 0, 2),),
+        asset_sha256="a" * 64,
+        config_hashes=(("algo", "b" * 64),),
+    )
+    learner = FADAPrivilegedSACLearner(
+        obs_dim=3,
+        critic_obs_dim=5,
+        priv_info_dim=2,
+        action_dim=2,
+        actor_hidden_dim=16,
+        critic_hidden_dim=16,
+        priv_info_embed_dim=2,
+        priv_mlp_hidden_dims=(4, 2),
+        num_atoms=5,
+        use_layer_norm=False,
+        use_compile=False,
+        obs_normalization=True,
+        priv_info_normalization=True,
+        oracle_lineage_id="lineage-idm",
+        checkpoint_contract=contract,
+    )
+    payload = seal_fada_oracle_checkpoint(learner.get_state_dict(), contract, iteration=240)
+    torch.save(payload, path)
+
+
 def _save_distilled_oracle(path: Path, *, obs_dim: int = 98, action_dim: int = 29) -> None:
     policy = MLPStudentPolicy(
         obs_dim=obs_dim,
@@ -76,6 +122,96 @@ def test_fada_oracle_loader_rejects_distillation_dimension_mismatch(tmp_path: Pa
         )
 
 
+def test_fada_oracle_loader_runs_privileged_actor_from_env_observation(tmp_path: Path) -> None:
+    from unilab.algos.torch.distill.fada_oracle import load_fada_oracle_policy
+
+    checkpoint = tmp_path / "model_240.pt"
+    _save_privileged_oracle(checkpoint)
+    oracle = load_fada_oracle_policy(
+        checkpoint,
+        DistillationTeacherSpec(
+            obs_dim=3,
+            action_dim=2,
+            algo_type="privileged_locomotion_sac",
+            actor_hidden_dim=16,
+            use_layer_norm=False,
+            obs_normalization=True,
+            priv_info_embed_dim=2,
+            priv_mlp_hidden_dims=(4, 2),
+            priv_info_normalization=True,
+        ),
+        device="cpu",
+    )
+
+    actions = oracle.actions_from_env_observation(
+        {
+            "obs": torch.tensor([[0.1, 0.2, 0.3]]).numpy(),
+            "critic": torch.tensor([[0.1, 0.2, 0.3, 0.4, 0.5]]).numpy(),
+        },
+        {},
+    )
+    assert actions.shape == (1, 2)
+    assert torch.isfinite(torch.from_numpy(actions)).all()
+
+
+def test_fada_collector_supplies_critic_tail_to_privileged_oracle() -> None:
+    class PrivilegedOracle(torch.nn.Module):
+        obs_dim = 3
+        action_dim = 2
+        calls = 0
+
+        def actions_from_env_observation(self, obs, info):
+            del info
+            self.calls += 1
+            assert obs["critic"].shape == (1, 5)
+            return obs["critic"][:, -2:].astype("float32")
+
+    class PrivilegedEnv(_CommandControlledEnv):
+        def _state(self, commands):
+            state = super()._state(commands)
+            state.obs["critic"] = torch.cat(
+                [torch.from_numpy(state.obs["obs"]), torch.ones((1, 2))], dim=1
+            ).numpy()
+            return state
+
+    oracle = PrivilegedOracle()
+    result = collect_fada_source_windows(
+        PrivilegedEnv(),
+        teacher_policy=oracle,
+        config=_curriculum_config(),
+        num_windows=1,
+        spec=FADACollectionSpec(
+            command_info_keys=("commands",),
+            max_env_steps=16,
+            collect_oracle_shadow=True,
+        ),
+    )
+    assert result.batch.command.shape == (1, 3)
+    assert oracle.calls > 0
+
+
+def test_privileged_idm_task_composes_full_static_source_randomization() -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    conf_dir = Path(__file__).resolve().parents[2] / "conf" / "distill"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["task=g1_walk_flat/mujoco_fada_privileged_idm"],
+        )
+
+    assert cfg.training.fada.training_schedule == "idm_pretrain"
+    assert cfg.training.fada.planner_updates == 0
+    assert cfg.env.fada_privileged_observation.enabled is True
+    assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
+    assert list(cfg.env.domain_rand.actuator_strength.multiplier_range) == [0.8, 1.0]
+    assert cfg.env.domain_rand.randomize_kp is True
+    assert cfg.env.domain_rand.randomize_control_delay is False
+    assert cfg.env.domain_rand.push_robots is False
+
+
 def test_walk_to_stand_uses_one_oracle_without_second_policy() -> None:
     class CountingOracle(torch.nn.Module):
         obs_dim = 3
@@ -108,4 +244,3 @@ def test_walk_to_stand_uses_one_oracle_without_second_policy() -> None:
 
     assert result.batch.command.shape == (1, 3)
     assert oracle.calls > 0
-

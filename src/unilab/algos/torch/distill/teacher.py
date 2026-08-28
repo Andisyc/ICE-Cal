@@ -18,10 +18,14 @@ class DistillationTeacherSpec:
 
     obs_dim: int
     action_dim: int
-    algo_type: Literal["sac"] = "sac"
+    algo_type: Literal["sac", "privileged_locomotion_sac"] = "sac"
     actor_hidden_dim: int = 512
     use_layer_norm: bool = True
     obs_normalization: bool = False
+    critic_obs_dim: int | None = None
+    priv_info_embed_dim: int = 32
+    priv_mlp_hidden_dims: tuple[int, ...] = (256, 128, 32)
+    priv_info_normalization: bool = True
 
 
 @dataclass(frozen=True)

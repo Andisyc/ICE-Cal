@@ -207,13 +207,16 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
     ) == (66, 29, 3, 30, 6)
 
     loaded_intermediates: list[Path] = []
+    real_oracle_loader = module.load_fada_oracle_policy
 
     def _load_external_checkpoint(path, _spec, *, device):
         assert device == "cpu"
+        if Path(path) == unified_oracle:
+            return real_oracle_loader(path, _spec, device=device)
         loaded_intermediates.append(Path(path))
         return _FormalIntermediateOracle()
 
-    monkeypatch.setattr(module, "load_sac_teacher_policy", _load_external_checkpoint)
+    monkeypatch.setattr(module, "load_fada_oracle_policy", _load_external_checkpoint)
     monkeypatch.setattr(
         fada_async_runtime,
         "_build_persistent_fada_worker",
@@ -259,16 +262,10 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
         assert loaded.batch.command.shape[0] == 36
         assert int(loaded.batch.planner_eligible.sum()) == 12
         assert int((loaded.batch.command_scenario == FADA_SCENARIO_IDS["walk"]).sum()) == 30
-        assert int(
-            (loaded.batch.command_scenario == FADA_SCENARIO_IDS["static_stand"]).sum()
-        ) == 3
-        assert int(
-            (loaded.batch.command_scenario == FADA_SCENARIO_IDS["walk_to_stand"]).sum()
-        ) == 3
+        assert int((loaded.batch.command_scenario == FADA_SCENARIO_IDS["static_stand"]).sum()) == 3
+        assert int((loaded.batch.command_scenario == FADA_SCENARIO_IDS["walk_to_stand"]).sum()) == 3
         main_roles = loaded.batch.idm_source_role[:12]
-        oracle_shadow_count = int(
-            (main_roles == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]).sum()
-        )
+        oracle_shadow_count = int((main_roles == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]).sum())
         assert oracle_shadow_count == (12 if iteration == 0 else 3)
         summaries = loaded.metadata["collections"]
         main = [item for item in summaries if item["source"] == "optimal_or_current_policy"]

@@ -11,6 +11,7 @@ from typing import Any, Mapping
 import torch
 
 from .fada import FADAPlannerIDMPolicy
+from .fada_async_config import validate_fada_training_schedule
 from .fada_source_artifact import load_architecture_config
 from .fada_trainer import FADATrainer
 
@@ -54,14 +55,15 @@ def _canonical_state_dict_sha256(state_dict: Mapping[str, torch.Tensor]) -> str:
 
 def _validated_idm_state(payload: Mapping[str, Any]) -> Mapping[str, torch.Tensor]:
     state = payload.get("idm_state_dict")
-    if not isinstance(state, dict) or payload.get("idm_sha256") != _canonical_state_dict_sha256(state):
+    if not isinstance(state, dict) or payload.get("idm_sha256") != _canonical_state_dict_sha256(
+        state
+    ):
         raise ValueError("FADA checkpoint IDM identity mismatch")
     return state
 
 
 def _validate_schema5_training_state(payload: Mapping[str, Any]) -> None:
-    if payload.get("training_schedule") != FADA_TRAINING_SCHEDULE:
-        raise ValueError("schema-5 FADA checkpoint training schedule mismatch")
+    validate_fada_training_schedule(payload.get("training_schedule"))
     required = ("idm_optimizer_state_dict", "planner_optimizer_state_dict")
     if any(not isinstance(payload.get(name), dict) for name in required):
         raise ValueError("schema-5 FADA checkpoint requires both optimizer states")
@@ -97,12 +99,15 @@ def save_fada_checkpoint(
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".tmp")
     idm_sha256 = _canonical_state_dict_sha256(policy.idm.state_dict())
+    training_schedule = validate_fada_training_schedule(
+        runtime_config.get("training_schedule", FADA_TRAINING_SCHEDULE)
+    )
     payload = {
         "schema_version": FADA_CHECKPOINT_SCHEMA_VERSION,
         "architecture": asdict(policy.config),
         "planner_state_dict": policy.planner.state_dict(),
         "idm_state_dict": policy.idm.state_dict(),
-        "training_schedule": FADA_TRAINING_SCHEDULE,
+        "training_schedule": training_schedule,
         "planner_optimizer_state_dict": trainer.planner_optimizer.state_dict(),
         "idm_optimizer_state_dict": trainer.idm_optimizer.state_dict(),
         "idm_sha256": idm_sha256,

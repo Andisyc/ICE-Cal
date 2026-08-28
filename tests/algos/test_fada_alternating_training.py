@@ -43,7 +43,29 @@ def test_trainer_orders_idm_then_fixed_idm_planner_updates() -> None:
     assert all(parameter.grad is None for parameter in policy.idm.parameters())
 
 
-def test_trainer_rejects_zero_pass_budget() -> None:
+def test_trainer_allows_idm_only_budget_without_mutating_planner() -> None:
+    policy = FADAPlannerIDMPolicy(_config())
+    trainer = FADATrainer(
+        policy,
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=1.0e-3),
+    )
+    idm_before = _snapshot(policy.idm)
+    planner_before = _snapshot(policy.planner)
+
+    stats = trainer.update(
+        _source_batch(policy.config, size=2),
+        idm_updates=1,
+        planner_updates=0,
+    )
+
+    assert _changed(idm_before, policy.idm)
+    assert not _changed(planner_before, policy.planner)
+    assert stats.idm_grad_norm > 0.0
+    assert stats.planner_grad_norm == 0.0
+
+
+def test_trainer_rejects_missing_idm_budget() -> None:
     policy = FADAPlannerIDMPolicy(_config())
     trainer = FADATrainer(
         policy,
@@ -51,7 +73,7 @@ def test_trainer_rejects_zero_pass_budget() -> None:
         planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=1.0e-3),
     )
 
-    for idm_updates, planner_updates in ((0, 1), (1, 0)):
+    for idm_updates, planner_updates in ((0, 1), (0, 0), (1, -1)):
         try:
             trainer.update(
                 _source_batch(policy.config, size=2),
@@ -59,9 +81,9 @@ def test_trainer_rejects_zero_pass_budget() -> None:
                 planner_updates=planner_updates,
             )
         except ValueError as exc:
-            assert "must both be positive" in str(exc)
+            assert "IDM updates must be positive" in str(exc)
         else:
-            raise AssertionError("zero pass budget must fail closed")
+            raise AssertionError("invalid IDM-only budget must fail closed")
 
 
 def test_schema5_checkpoint_binds_alternating_schedule_and_both_optimizers(
@@ -95,3 +117,30 @@ def test_schema5_checkpoint_binds_alternating_schedule_and_both_optimizers(
     }
     loaded = load_fada_policy_checkpoint(checkpoint, device="cpu")
     assert loaded.checkpoint["completed_iterations"] == 1
+
+
+def test_schema5_checkpoint_binds_idm_pretrain_schedule(tmp_path: Path) -> None:
+    policy = FADAPlannerIDMPolicy(_config())
+    trainer = FADATrainer(
+        policy,
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=2.0e-3),
+    )
+    checkpoint = tmp_path / "idm.pt"
+
+    save_fada_checkpoint(
+        checkpoint,
+        policy,
+        trainer,
+        completed_iterations=1,
+        samples_seen=4,
+        runtime_config={
+            "training_schedule": "idm_pretrain",
+            "v005_replay": {"enabled": False},
+        },
+    )
+
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    assert payload["training_schedule"] == "idm_pretrain"
+    assert payload["idm_sha256"]
+    load_fada_policy_checkpoint(checkpoint, device="cpu")
