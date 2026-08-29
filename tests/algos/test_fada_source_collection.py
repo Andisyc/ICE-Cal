@@ -13,6 +13,7 @@ import torch
 from omegaconf import OmegaConf
 
 import unilab.algos.torch.distill.fada_async_runtime as fada_async_runtime
+import unilab.algos.torch.distill.fada_collection_transaction as fada_collection_transaction
 import unilab.algos.torch.distill.fada_training as fada_training
 import unilab.algos.torch.distill.fada_workflow as fada_workflow
 from tests.algos._fada_training_test_support import (
@@ -83,6 +84,44 @@ def test_collector_builds_causal_oracle_bootstrap_windows() -> None:
     expected_next[:, :2] += result.batch.executed_action_chunk[:, 0]
     expected_next[:, 2] += 1.0
     torch.testing.assert_close(result.batch.realized_future[:, 0], expected_next)
+
+
+def test_collector_compacts_pending_windows_before_final_batch(monkeypatch) -> None:
+    class _ZeroOracle(torch.nn.Module):
+        obs_dim = 3
+
+        def forward(self, obs: torch.Tensor) -> torch.Tensor:
+            return torch.zeros((obs.shape[0], 2), dtype=obs.dtype, device=obs.device)
+
+    original_concat = fada_collection_transaction._concat_batches
+    concat_sizes: list[int] = []
+
+    def recording_concat(batches, config):
+        concat_sizes.append(len(batches))
+        return original_concat(batches, config)
+
+    monkeypatch.setattr(fada_collection_transaction, "_concat_batches", recording_concat)
+
+    compacted = collect_fada_source_windows(
+        _FakeEnv(),
+        teacher_policy=_ZeroOracle(),
+        config=_config(),
+        num_windows=257,
+    )
+    compacted_concat_sizes = concat_sizes.copy()
+
+    monkeypatch.setattr(fada_collection_transaction, "_BATCH_COMPACTION_SIZE", 1_000)
+    baseline = collect_fada_source_windows(
+        _FakeEnv(),
+        teacher_policy=_ZeroOracle(),
+        config=_config(),
+        num_windows=257,
+    )
+
+    assert compacted.batch.observation_history.shape[0] == 257
+    assert max(compacted_concat_sizes) <= 256
+    for field in FADASourceBatch.__dataclass_fields__:
+        torch.testing.assert_close(getattr(compacted.batch, field), getattr(baseline.batch, field))
 
 
 def test_oracle_shadow_stops_driving_rows_after_they_become_invalid() -> None:

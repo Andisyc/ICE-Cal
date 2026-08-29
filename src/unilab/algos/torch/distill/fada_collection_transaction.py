@@ -34,6 +34,8 @@ from .fada_collection_windows import (
 from .fada_observation import assert_fada_projection_matches_contract
 from .fada_training_diagnostics import FADACollectionProgressReporter
 
+_BATCH_COMPACTION_SIZE = 256
+
 
 def _default_collection_step_limit(
     *,
@@ -181,7 +183,18 @@ def collect_fada_source_windows(
     ]
     episode_ids = np.zeros((num_envs,), dtype=np.int64)
     episode_timesteps = np.zeros((num_envs,), dtype=np.int64)
-    batches: list[FADASourceBatch] = []
+    pending_batches: list[FADASourceBatch] = []
+    compacted_batches: list[FADASourceBatch] = []
+    window_count = 0
+
+    def append_window(batch: FADASourceBatch) -> None:
+        nonlocal window_count
+        pending_batches.append(batch)
+        window_count += int(batch.observation_history.shape[0])
+        if len(pending_batches) >= _BATCH_COMPACTION_SIZE:
+            compacted_batches.append(_concat_batches(tuple(pending_batches), config))
+            pending_batches.clear()
+
     rejected_done = 0
     rejected_command = 0
     rejected_scenario = 0
@@ -215,10 +228,10 @@ def collect_fada_source_windows(
         rejected_scenario=0,
     )
     # B2: 每步先查询同状态 Oracle label, 再执行 Oracle bootstrap 或当前 Planner-IDM 动作.
-    while len(batches) < int(num_windows):
+    while window_count < int(num_windows):
         if env_steps >= step_limit:
             reporter.report(
-                windows=len(batches),
+                windows=window_count,
                 env_steps=env_steps,
                 rejected_done=rejected_done,
                 rejected_command=rejected_command,
@@ -227,10 +240,10 @@ def collect_fada_source_windows(
             )
             attempted_rows = env_steps * num_envs
             acceptance = (
-                0.0 if attempted_rows <= 0 else 100.0 * len(batches) / attempted_rows
+                0.0 if attempted_rows <= 0 else 100.0 * window_count / attempted_rows
             )
             raise RuntimeError(
-                f"FADA collector produced {len(batches)}/{num_windows} windows after "
+                f"FADA collector produced {window_count}/{num_windows} windows after "
                 f"{env_steps} env steps (acceptance={acceptance:.2f}%, "
                 f"rejected_done={rejected_done}, rejected_command={rejected_command}, "
                 f"rejected_scenario={rejected_scenario}); increase max_env_steps or "
@@ -289,12 +302,12 @@ def collect_fada_source_windows(
             oracle_shadow_valid = np.zeros((num_envs,), dtype=np.bool_)
         if walking_recovery:
             for index in range(num_envs):
-                if len(batches) >= int(num_windows):
+                if window_count >= int(num_windows):
                     break
                 if int(episode_timesteps[index]) < config.history_length and bool(
                     oracle_shadow_valid[index]
                 ):
-                    batches.append(
+                    append_window(
                         _walking_recovery_window(
                             index=index,
                             observation_history=observation_history,
@@ -307,9 +320,9 @@ def collect_fada_source_windows(
                             planner_eligible=planner_eligible,
                         )
                     )
-            if len(batches) >= int(num_windows):
+            if window_count >= int(num_windows):
                 reporter.report(
-                    windows=len(batches),
+                    windows=window_count,
                     env_steps=env_steps,
                     rejected_done=rejected_done,
                     rejected_command=rejected_command,
@@ -375,12 +388,12 @@ def collect_fada_source_windows(
         for index in range(num_envs):
             if bool(done[index]):
                 if (
-                    len(batches) < int(num_windows)
+                    window_count < int(num_windows)
                     and planner_eligible
                     and not cold_start_windows
                     and int(episode_timesteps[index]) >= config.history_length - 1
                 ):
-                    batches.append(
+                    append_window(
                         _terminal_planner_window(
                             observation_history=observation_history[index : index + 1],
                             action_history=action_history[index : index + 1],
@@ -452,12 +465,12 @@ def collect_fada_source_windows(
                     else:
                         rejected_scenario += 1
                 else:
-                    batches.append(window)
-                    if len(batches) >= int(num_windows):
+                    append_window(window)
+                    if window_count >= int(num_windows):
                         break
 
         reporter.report(
-            windows=len(batches),
+            windows=window_count,
             env_steps=env_steps,
             rejected_done=rejected_done,
             rejected_command=rejected_command,
@@ -476,7 +489,7 @@ def collect_fada_source_windows(
         obs, info = next_obs, next_info
 
     return FADACollectionResult(
-        batch=_concat_batches(batches[: int(num_windows)], config),
+        batch=_concat_batches([*compacted_batches, *pending_batches], config),
         env_steps=env_steps,
         rejected_done_transitions=rejected_done,
         rejected_command_windows=rejected_command,
