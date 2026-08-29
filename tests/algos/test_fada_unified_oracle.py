@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from tests.algos._fada_training_test_support import _CommandControlledEnv, _curriculum_config
 from unilab.algos.torch.distill import (
@@ -204,12 +206,119 @@ def test_privileged_idm_task_composes_full_static_source_randomization() -> None
 
     assert cfg.training.fada.training_schedule == "idm_pretrain"
     assert cfg.training.fada.planner_updates == 0
+    assert cfg.training.fada.async_artifact_dir == (
+        "logs/fada/idm_pretrain_privileged_v022/source_batches"
+    )
+    assert cfg.training.fada.checkpoint_path == "logs/fada/idm_pretrain_privileged_v022.pt"
+    assert cfg.teacher.task.endswith("mujoco_fada_privileged_oracle_grouped_dr_lineage")
     assert cfg.env.fada_privileged_observation.enabled is True
+    assert cfg.env.ctrl_dt == pytest.approx(0.02)
+    assert cfg.env.mode_observation is False
+    assert cfg.env.gait_phase_enabled is False
+    assert cfg.env.commands.rel_standing_envs == pytest.approx(0.3)
+    assert cfg.env.commands.rel_transition_envs == pytest.approx(0.0)
+    assert cfg.env.commands.vel_limit == [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
+    assert cfg.env.commands.resampling_time == pytest.approx(0.0)
+    assert cfg.env.commands.heading_command is False
     assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
     assert list(cfg.env.domain_rand.actuator_strength.multiplier_range) == [0.8, 1.0]
     assert cfg.env.domain_rand.randomize_kp is True
     assert cfg.env.domain_rand.randomize_control_delay is False
     assert cfg.env.domain_rand.push_robots is False
+
+
+def _privileged_collector_contract_fixture():
+    cfg = OmegaConf.create(
+        {
+            "training": {"task_name": "G1WalkFlat", "sim_backend": "mujoco"},
+            "env": {
+                "ctrl_dt": 0.02,
+                "mode_observation": False,
+                "gait_phase_enabled": False,
+                "control_config": {"action_scale": 1.0},
+                "fada_privileged_observation": {
+                    "enabled": True,
+                    "schema": "g1_fada_privileged_v1",
+                },
+                "commands": {
+                    "rel_standing_envs": 0.3,
+                    "rel_transition_envs": 0.0,
+                    "vel_limit": [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]],
+                    "resampling_time": 0.0,
+                    "heading_command": False,
+                },
+            },
+        }
+    )
+    checkpoint_identity = {
+        "privileged_schema": "g1_fada_privileged_v1",
+        "task_name": "G1WalkFlat",
+        "backend": "mujoco",
+        "action_scale": [1.0],
+        "body_names": ["world", "pelvis"],
+        "actuated_joint_names": ["joint_0", "joint_1"],
+        "privileged_field_slices": [["privileged", 0, 2]],
+        "asset_sha256": "a" * 64,
+    }
+    env = SimpleNamespace(
+        get_fada_privileged_checkpoint_identity=lambda: SimpleNamespace(
+            body_names=("world", "pelvis"),
+            actuated_joint_names=("joint_0", "joint_1"),
+            field_slices=(("privileged", 0, 2),),
+            asset_sha256="a" * 64,
+        )
+    )
+    return cfg, checkpoint_identity, env
+
+
+def test_privileged_oracle_collector_contract_accepts_matching_environment() -> None:
+    import unilab.algos.torch.distill.fada_oracle as oracle_module
+
+    validator = getattr(oracle_module, "validate_fada_oracle_environment_contract", None)
+    assert callable(validator), "FADA Oracle environment contract validator is missing"
+    cfg, checkpoint_identity, env = _privileged_collector_contract_fixture()
+
+    validator(checkpoint_identity, env, cfg)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda cfg, _identity, _env: setattr(cfg.env, "gait_phase_enabled", True), "gait"),
+        (
+            lambda _cfg, identity, _env: identity.update({"action_scale": [0.5]}),
+            "action_scale",
+        ),
+        (
+            lambda _cfg, _identity, env: setattr(
+                env.get_fada_privileged_checkpoint_identity(), "asset_sha256", "b" * 64
+            ),
+            "asset_sha256",
+        ),
+    ],
+)
+def test_privileged_oracle_collector_contract_rejects_semantic_mismatch(
+    mutation,
+    match: str,
+) -> None:
+    import unilab.algos.torch.distill.fada_oracle as oracle_module
+
+    validator = getattr(oracle_module, "validate_fada_oracle_environment_contract", None)
+    assert callable(validator), "FADA Oracle environment contract validator is missing"
+    cfg, checkpoint_identity, env = _privileged_collector_contract_fixture()
+    if match == "asset_sha256":
+        mismatched_identity = SimpleNamespace(
+            body_names=("world", "pelvis"),
+            actuated_joint_names=("joint_0", "joint_1"),
+            field_slices=(("privileged", 0, 2),),
+            asset_sha256="b" * 64,
+        )
+        env.get_fada_privileged_checkpoint_identity = lambda: mismatched_identity
+    else:
+        mutation(cfg, checkpoint_identity, env)
+
+    with pytest.raises(ValueError, match=match):
+        validator(checkpoint_identity, env, cfg)
 
 
 def test_walk_to_stand_uses_one_oracle_without_second_policy() -> None:

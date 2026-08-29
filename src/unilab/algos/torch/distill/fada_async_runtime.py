@@ -27,7 +27,11 @@ from .fada_async_config import (
 )
 from .fada_checkpoint import load_fada_policy_checkpoint
 from .fada_collection_contract import FADACollectionSpec
-from .fada_oracle import load_fada_oracle_policy, reload_fada_oracle_policy_
+from .fada_oracle import (
+    load_fada_oracle_policy,
+    reload_fada_oracle_policy_,
+    validate_fada_oracle_environment_contract,
+)
 from .fada_source_plan import FADAPaperSourcePlan
 from .persistent_runtime import PersistentDistillationRuntime
 
@@ -120,6 +124,17 @@ class PersistentFADACollectorWorker:
                 sim_backend=str(self.cfg.training.sim_backend),
                 task_name=str(self.cfg.training.task_name),
             )
+            checkpoint_identity = getattr(self.final_teacher, "checkpoint_identity", None)
+            if self.teacher_spec.algo_type == "privileged_locomotion_sac":
+                if not isinstance(checkpoint_identity, Mapping):
+                    raise ValueError(
+                        "privileged FADA Oracle must expose sealed checkpoint_identity"
+                    )
+                validate_fada_oracle_environment_contract(
+                    checkpoint_identity,
+                    self.env,
+                    self.cfg,
+                )
             if self.standing_cfg is not None:
                 standing_override = BackendAdapter(
                     self.standing_cfg,

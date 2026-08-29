@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -16,6 +17,8 @@ from unilab.algos.torch.hora.observations import split_hora_obs_with_priv_info
 from .fada_privileged_oracle import validate_fada_oracle_lineage
 from .playback import load_distillation_student_policy
 from .teacher import DistillationTeacherSpec, LoadedTeacherPolicy, load_sac_teacher_policy
+
+_FADA_ORACLE_COMMAND_LIMITS = ((-0.6, -0.4, -0.8), (1.0, 0.4, 0.8))
 
 
 def _is_distillation_student_checkpoint(payload: object) -> bool:
@@ -93,6 +96,111 @@ class LoadedFADAPrivilegedOraclePolicy(nn.Module):
         if not np.all(np.isfinite(result)):
             raise ValueError("privileged Oracle produced non-finite actions")
         return result
+
+
+def validate_fada_oracle_environment_contract(
+    checkpoint_identity: Mapping[str, object],
+    env: Any,
+    cfg: Any,
+) -> None:
+    """Reject same-shape Collector environments with different Actor semantics."""
+
+    expected_scalar_fields = {
+        "task_name": str(cfg.training.task_name),
+        "backend": str(cfg.training.sim_backend),
+        "privileged_schema": str(cfg.env.fada_privileged_observation.schema),
+    }
+    for field_name, collector_value in expected_scalar_fields.items():
+        if checkpoint_identity.get(field_name) != collector_value:
+            raise ValueError(
+                f"privileged Oracle Collector {field_name} mismatch: "
+                f"checkpoint={checkpoint_identity.get(field_name)!r} "
+                f"collector={collector_value!r}"
+            )
+
+    if not bool(cfg.env.fada_privileged_observation.enabled):
+        raise ValueError("privileged Oracle Collector requires privileged observation enabled")
+    if not np.isclose(float(cfg.env.ctrl_dt), 0.02):
+        raise ValueError("privileged Oracle Collector requires ctrl_dt=0.02")
+    if bool(cfg.env.mode_observation):
+        raise ValueError("privileged Oracle Collector requires mode_observation=false")
+    if bool(cfg.env.gait_phase_enabled):
+        raise ValueError(
+            "privileged Oracle Collector requires gait_phase_enabled=false; "
+            "same-shape nonzero phase inputs invalidate the checkpoint normalizer"
+        )
+
+    commands = cfg.env.commands
+    command_contract = {
+        "rel_standing_envs": (float(commands.rel_standing_envs), 0.3),
+        "rel_transition_envs": (float(commands.rel_transition_envs), 0.0),
+        "resampling_time": (float(commands.resampling_time), 0.0),
+    }
+    for command_name, (command_value, required_value) in command_contract.items():
+        if not np.isclose(command_value, required_value):
+            raise ValueError(
+                f"privileged Oracle Collector commands.{command_name} mismatch: "
+                f"expected={required_value} observed={command_value}"
+            )
+    if bool(commands.heading_command):
+        raise ValueError("privileged Oracle Collector requires commands.heading_command=false")
+    observed_limits = tuple(tuple(float(value) for value in row) for row in commands.vel_limit)
+    if observed_limits != _FADA_ORACLE_COMMAND_LIMITS:
+        raise ValueError(
+            "privileged Oracle Collector commands.vel_limit mismatch: "
+            f"expected={_FADA_ORACLE_COMMAND_LIMITS} observed={observed_limits}"
+        )
+
+    raw_scale = cfg.env.control_config.action_scale
+    collector_scale = (
+        tuple(float(value) for value in raw_scale)
+        if isinstance(raw_scale, (list, tuple))
+        else (float(raw_scale),)
+    )
+    raw_checkpoint_scale = checkpoint_identity.get("action_scale")
+    if not isinstance(raw_checkpoint_scale, (list, tuple)):
+        raise ValueError("privileged Oracle checkpoint action_scale identity is missing")
+    checkpoint_scale = tuple(float(value) for value in raw_checkpoint_scale)
+    if checkpoint_scale != collector_scale:
+        raise ValueError(
+            "privileged Oracle Collector action_scale mismatch: "
+            f"checkpoint={checkpoint_scale} collector={collector_scale}"
+        )
+
+    identity_getter = getattr(env, "get_fada_privileged_checkpoint_identity", None)
+    if not callable(identity_getter):
+        raise ValueError("Collector environment does not expose FADA checkpoint identity")
+    environment_identity = identity_getter()
+    identity_fields = {
+        "body_names": tuple(environment_identity.body_names),
+        "actuated_joint_names": tuple(environment_identity.actuated_joint_names),
+        "privileged_field_slices": tuple(
+            tuple(row) for row in environment_identity.field_slices
+        ),
+        "asset_sha256": str(environment_identity.asset_sha256),
+    }
+    for identity_name, identity_value in identity_fields.items():
+        raw_checkpoint_value = checkpoint_identity.get(identity_name)
+        checkpoint_value: object
+        if identity_name == "asset_sha256":
+            checkpoint_value = str(raw_checkpoint_value)
+        elif identity_name == "privileged_field_slices":
+            if not isinstance(raw_checkpoint_value, (list, tuple)):
+                raise ValueError(
+                    f"privileged Oracle checkpoint {identity_name} identity is missing"
+                )
+            checkpoint_value = tuple(tuple(row) for row in raw_checkpoint_value)
+        else:
+            if not isinstance(raw_checkpoint_value, (list, tuple)):
+                raise ValueError(
+                    f"privileged Oracle checkpoint {identity_name} identity is missing"
+                )
+            checkpoint_value = tuple(raw_checkpoint_value)
+        if identity_value != checkpoint_value:
+            raise ValueError(
+                f"privileged Oracle Collector {identity_name} mismatch: "
+                f"checkpoint={checkpoint_value!r} collector={identity_value!r}"
+            )
 
 
 def _privileged_checkpoint_metadata(payload: Mapping[str, object]) -> Mapping[str, object]:
@@ -267,5 +375,6 @@ __all__ = [
     "LoadedFADAPrivilegedOraclePolicy",
     "load_fada_oracle_policy",
     "reload_fada_oracle_policy_",
+    "validate_fada_oracle_environment_contract",
     "validate_loaded_fada_oracle_lineage",
 ]

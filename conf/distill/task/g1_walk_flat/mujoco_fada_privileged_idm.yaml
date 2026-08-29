@@ -7,14 +7,23 @@ training:
   fada:
     training_schedule: idm_pretrain
     planner_updates: 0
-    async_artifact_dir: logs/fada/idm_pretrain_privileged_v017/source_batches
-    checkpoint_path: logs/fada/idm_pretrain_privileged_v017.pt
+    async_artifact_dir: logs/fada/idm_pretrain_privileged_v022/source_batches
+    checkpoint_path: logs/fada/idm_pretrain_privileged_v022.pt
     stand_transition_curriculum:
       enabled: false
     v005_replay:
       enabled: false
 
 env:
+  ctrl_dt: 0.02
+  mode_observation: false
+  gait_phase_enabled: false
+  commands:
+    rel_standing_envs: 0.3
+    rel_transition_envs: 0.0
+    vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
+    resampling_time: 0.0
+    heading_command: false
   fada_privileged_observation:
     enabled: true
     schema: g1_fada_privileged_v1
@@ -49,7 +58,7 @@ env:
 
 teacher:
   algo_type: privileged_locomotion_sac
-  task: sac/g1_walk_flat/mujoco_fada_privileged_oracle
+  task: sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage
   checkpoint_path: null
   load_run: "-1"
   checkpoint: 5000
