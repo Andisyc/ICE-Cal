@@ -247,6 +247,7 @@ def test_privileged_planner_task_composes_frozen_idm_stage() -> None:
         "logs/fada/planner_from_privileged_idm_v022/source_batches"
     )
     assert cfg.training.fada.checkpoint_path == ("logs/fada/planner_from_privileged_idm_v022.pt")
+    assert cfg.env.mujoco_num_threads == 1
 
 
 def _privileged_collector_contract_fixture():

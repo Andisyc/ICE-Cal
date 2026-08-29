@@ -280,7 +280,17 @@ class MuJoCoBackend(SimBackend):
         iterations: int | None = None,
         push_body_name: Optional[str] = None,
         post_step_forward_sensor: bool = False,
+        num_threads: int | None = None,
     ):
+        resolved_num_threads = (
+            min(num_envs, cpu_count() * 2) if num_threads is None else int(num_threads)
+        )
+        if resolved_num_threads < 1 or resolved_num_threads > num_envs:
+            raise ValueError(
+                "MuJoCo num_threads must be between 1 and num_envs "
+                f"(got num_threads={resolved_num_threads}, num_envs={num_envs})"
+            )
+
         scene_context = _build_mujoco_scene_context(scene)
         self._scene_artifacts = BackendSceneArtifacts(
             model_file=scene_context.model_file,
@@ -317,7 +327,7 @@ class MuJoCoBackend(SimBackend):
         self._pending_xfrc_applied = np.zeros((num_envs, 6 * self._model.nbody), dtype=np.float64)
 
         # Thread configuration.
-        self._n_threads = min(num_envs, cpu_count() * 2)
+        self._n_threads = resolved_num_threads
 
         self._model_variants: tuple[mujoco.MjModel, ...] = (self._model,)
         self._model_assignments = np.zeros((num_envs,), dtype=np.int32)

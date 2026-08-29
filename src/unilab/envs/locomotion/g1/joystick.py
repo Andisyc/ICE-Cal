@@ -1133,6 +1133,7 @@ class G1WalkEnv(G1BaseEnv):
             cfg.sim_dt,
             base_name=cfg.asset.base_name,
             push_body_name=cfg.domain_rand.push_body_name,
+            mujoco_num_threads=cfg.mujoco_num_threads,
             motrix_max_iterations=cfg.motrix_max_iterations,
             post_step_forward_sensor=cfg.post_step_forward_sensor,
         )

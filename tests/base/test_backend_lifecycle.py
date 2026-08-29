@@ -94,3 +94,17 @@ def test_mujoco_backend_close_cleans_scene_assets_when_pool_close_fails() -> Non
     assert cleanup_handle.cleanup_count == 1
     assert backend._pool is None
     assert backend._scene_cleanup_handle is None
+
+
+def test_mujoco_backend_rejects_invalid_thread_count_before_loading_scene() -> None:
+    pytest.importorskip("mujoco", reason="mujoco not installed")
+    from unilab.base.backend.mujoco.backend import MuJoCoBackend
+    from unilab.base.scene import SceneCfg
+
+    with pytest.raises(ValueError, match="num_threads must be between 1 and num_envs"):
+        MuJoCoBackend(
+            SceneCfg(model_file="intentionally-missing-model.xml"),
+            num_envs=64,
+            sim_dt=0.01,
+            num_threads=0,
+        )

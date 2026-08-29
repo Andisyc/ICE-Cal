@@ -1,15 +1,13 @@
-[fada-collect] scenario=walk profile=steady_state mode=intermediate_oracle progress=10.7% windows=704/6553 env_steps=45 acceptance=24.44% rejected(done=0 command=0 scenario=0)
-[fada-collect] scenario=walk profile=steady_state mode=intermediate_oracle progress=20.5% windows=1344/6553 env_steps=55 acceptance=38.18% rejected(done=0 command=0 scenario=0)
 Fatal Python error: Segmentation fault
 
-Thread 0x00007de829dff640 (most recent call first):
+Thread 0x00007ddb525fd640 (most recent call first):
   File "/usr/lib/python3.10/threading.py", line 320 in wait
   File "/usr/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
   File "/usr/lib/python3.10/threading.py", line 953 in run
   File "/usr/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
   File "/usr/lib/python3.10/threading.py", line 973 in _bootstrap
 
-Current thread 0x00007deb14902480 (most recent call first):
+Current thread 0x00007dde0eb47480 (most recent call first):
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 91 in _wrapreduction_any_all
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 2675 in all
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 69 in _validate_records
@@ -80,4 +78,4 @@ Traceback (most recent call last):
     raise RuntimeError(self._read_collector_error())
 RuntimeError: Collector process killed by signal 11 (SIGSEGV).
   No Python traceback available — killed externally.
-  Common cause: segfault in native code (C++/CUDA)
+  Common cause: segfault in native code (C++/CUDA).

@@ -3,6 +3,10 @@ defaults:
   - /task/g1_walk_flat/mujoco_fada_privileged_idm
   - _self_
 
+env:
+  # Keep 64 rollout environments while serializing native MuJoCo stepping.
+  mujoco_num_threads: 1
+
 training:
   fada:
     training_schedule: planner_from_idm
