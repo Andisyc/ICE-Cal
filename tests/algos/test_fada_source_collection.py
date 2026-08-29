@@ -54,6 +54,7 @@ from unilab.algos.torch.distill.fada_async_runtime import (
     allocate_fada_command_scenarios,
     build_persistent_fada_runtime,
 )
+from unilab.algos.torch.distill.fada_collection_io import _oracle_shadow_pair
 from unilab.algos.torch.distill.fada_collection_transaction import (
     _default_collection_step_limit,
 )
@@ -82,6 +83,48 @@ def test_collector_builds_causal_oracle_bootstrap_windows() -> None:
     expected_next[:, :2] += result.batch.executed_action_chunk[:, 0]
     expected_next[:, 2] += 1.0
     torch.testing.assert_close(result.batch.realized_future[:, 0], expected_next)
+
+
+def test_oracle_shadow_stops_driving_rows_after_they_become_invalid() -> None:
+    class _TwoRowShadowEnv:
+        num_envs = 2
+
+        def __init__(self) -> None:
+            self.obs = np.zeros((2, 3), dtype=np.float32)
+            self.actions: list[np.ndarray] = []
+
+        @contextmanager
+        def preserve_rollout_state(self):
+            yield
+
+        def step(self, actions: np.ndarray) -> _State:
+            self.actions.append(actions.copy())
+            self.obs[:, :2] += actions
+            done = np.asarray([len(self.actions) == 1, False], dtype=np.bool_)
+            return _State(
+                obs={"obs": self.obs.copy()},
+                info={"commands": np.asarray([[0.4, -0.1], [0.4, -0.1]], dtype=np.float32)},
+                terminated=done,
+                truncated=np.zeros_like(done),
+            )
+
+    env = _TwoRowShadowEnv()
+    command = np.asarray([[0.4, -0.1], [0.4, -0.1]], dtype=np.float32)
+    _oracle_shadow_pair(
+        env,
+        teacher_policy=_Oracle(),
+        initial_oracle_actions=np.ones((2, 2), dtype=np.float32),
+        initial_command=command,
+        config=_config(),
+        observation_key="obs",
+        teacher_projection="identity",
+        student_projection="identity",
+        student_drop_index=None,
+        command_info_keys=("commands",),
+    )
+
+    np.testing.assert_array_equal(env.actions[1][0], np.zeros((2,), dtype=np.float32))
+    assert np.any(env.actions[1][1] != 0.0)
 
 
 def test_default_collection_budget_does_not_assume_ten_percent_acceptance() -> None:

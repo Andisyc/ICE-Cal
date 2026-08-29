@@ -221,5 +221,8 @@ def _oracle_shadow_pair(
                     teacher_obs,
                     action_dim=config.action_dim,
                 )
+                if not bool(np.all(valid)):
+                    oracle_actions = oracle_actions.copy()
+                    oracle_actions[~valid] = 0.0
 
     return np.stack(futures, axis=1), np.stack(actions, axis=1), valid

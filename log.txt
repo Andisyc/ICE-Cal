@@ -1,14 +1,52 @@
-(base) chengyuxuan@ubuntu-msi:/ssd1/cyx/ICE-Cal$ tail -f /ssd1/cyx/ICE-Cal/logs/fada/idm_pretrain_v010.log
-nohup: 忽略输入
-/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/gymnasium/spaces/box.py:226: RuntimeWarning: overflow encountered in cast
-  elif low.dtype != self.dtype and np.any(low < dtype_min):
-/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/gymnasium/spaces/box.py:296: RuntimeWarning: overflow encountered in cast
-  elif high.dtype != self.dtype and np.any(dtype_max < high):
-Error executing job with overrides: ['task=g1_walk_flat/mujoco', 'training.device=cuda:0', 'training.fada.enabled=true', 'training.fada.phase=idm_pretrain', 'training.fada.execution_mode=persistent_async', 'teacher.checkpoint_path=/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_5000.pt', 'training.fada.stand_transition_curriculum.standing_teacher_checkpoint_path=/ssd1/cyx/UniLab/model/G1StandStill/model_5000.pt', 'training.fada.intermediate_oracle_checkpoint_paths=[/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_240.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_480.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_720.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_960.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_1200.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_1440.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_1680.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_1920.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_2160.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_2400.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_2640.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_2880.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_3120.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_3360.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_3600.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_3840.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_4080.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_4320.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_4560.pt,/ssd1/cyx/UniLab/model/G1WalkFlat_5k_seed1/model_4800.pt]']
+[fada-collect] scenario=walk profile=steady_state mode=intermediate_oracle progress=10.7% windows=704/6553 env_steps=45 acceptance=24.44% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=intermediate_oracle progress=20.5% windows=1344/6553 env_steps=55 acceptance=38.18% rejected(done=0 command=0 scenario=0)
+Fatal Python error: Segmentation fault
+
+Thread 0x00007de829dff640 (most recent call first):
+  File "/usr/lib/python3.10/threading.py", line 320 in wait
+  File "/usr/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
+  File "/usr/lib/python3.10/threading.py", line 953 in run
+  File "/usr/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
+  File "/usr/lib/python3.10/threading.py", line 973 in _bootstrap
+
+Current thread 0x00007deb14902480 (most recent call first):
+  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 91 in _wrapreduction_any_all
+  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 2675 in all
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 69 in _validate_records
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 100 in build_fada_causal_window
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_windows.py", line 29 in _window_from_records
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_transaction.py", line 429 in collect_fada_source_windows
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_collection.py", line 265 in collect_fada_iteration
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_runtime.py", line 208 in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 120 in _persistent_dagger_collector_entry
+  File "/ssd1/cyx/ICE-Cal/src/unilab/ipc/async_runner.py", line 61 in _collector_entry_wrapper
+  File "/usr/lib/python3.10/multiprocessing/process.py", line 108 in run
+  File "/usr/lib/python3.10/multiprocessing/process.py", line 314 in _bootstrap
+  File "/usr/lib/python3.10/multiprocessing/spawn.py", line 129 in _main
+  File "/usr/lib/python3.10/multiprocessing/spawn.py", line 116 in spawn_main
+  File "<string>", line 1 in <module>
+
+Extension modules: yaml._yaml, numpy._core._multiarray_umath, numpy.linalg._umath_linalg, torch._C, torch._C._dynamo.autograd_compiler, torch._C._dynamo.eval_frame, torch._C._dynamo.guards, torch._C._dynamo.utils, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._special, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator, psutil._psutil_linux, _cffi_backend (total: 25)
+
+[AsyncRunner] Collector exited with code -11:
+Collector process killed by signal 11 (SIGSEGV).
+  No Python traceback available — killed externally.
+  Common cause: segfault in native code (C++/CUDA).
+
+Error executing job with overrides: ['task=g1_walk_flat/mujoco_fada_privileged_planner', 'training.fada.enabled=true', 'teacher.checkpoint_path=/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_5000.pt', 'training.fada.idm_initialization_path=/ssd1/cyx/ICE-Cal/logs/fada/idm_pretrain_privileged_v022.pt', 'training.fada.intermediate_oracle_checkpoint_paths=[/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_240.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_480.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_720.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_960.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1200.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1440.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1680.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1920.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2160.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2400.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2640.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2880.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3120.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3360.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3600.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3840.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4080.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4320.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4560.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4800.pt]']
 Traceback (most recent call last):
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2581, in <module>
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 253, in collect
+    self._result_queue.get(timeout=min(0.1, remaining)),
+  File "/usr/lib/python3.10/multiprocessing/queues.py", line 114, in get
+    raise Empty
+_queue.Empty
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2593, in <module>
     _run_main_with_native_fail_stop()
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2571, in _run_main_with_native_fail_stop
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2583, in _run_main_with_native_fail_stop
     main()
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/hydra/main.py", line 94, in decorated_main
     _run_hydra(
@@ -28,14 +66,18 @@ Traceback (most recent call last):
     raise self._return_value
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 186, in run_job
     ret.return_value = task_function(task_cfg)
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2460, in main
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2472, in main
     print(_format_cli_result(run_fada_training(cfg)))
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2446, in run_fada_training
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2458, in run_fada_training
     return run_fada_training_owner(
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_workflow.py", line 198, in run_fada_training_owner
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_workflow.py", line 200, in run_fada_training_owner
     return _run_fada_persistent_async(
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_persistent_workflow.py", line 122, in run_fada_persistent_async
-    require_fada_curriculum_artifact(cfg, loaded.metadata, loaded.batch)
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_artifact_admission.py", line 209, in _require_fada_curriculum_artifact
-    raise ValueError("FADA main-source IDM role does not match rollout iteration")
-ValueError: FADA main-source IDM role does not match rollout iteration
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_persistent_workflow.py", line 104, in run_fada_persistent_async
+    result = runtime.collect(request)
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/persistent_runtime.py", line 158, in collect
+    return self._runner.collect(request)
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 257, in collect
+    raise RuntimeError(self._read_collector_error())
+RuntimeError: Collector process killed by signal 11 (SIGSEGV).
+  No Python traceback available — killed externally.
+  Common cause: segfault in native code (C++/CUDA)
