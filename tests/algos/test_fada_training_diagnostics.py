@@ -78,3 +78,23 @@ def test_alternating_diagnostic_prints_planner_metrics() -> None:
     )
 
     assert "planner(loss=0.200000 grad=0.400000 updates=64)" in line
+
+
+def test_planner_from_idm_diagnostic_marks_idm_as_frozen() -> None:
+    line = format_fada_training_diagnostic(
+        schedule="planner_from_idm",
+        iteration=0,
+        iterations=8,
+        stats=FADATrainingStats(0.0, 0.2, 0.0, 0.4),
+        idm_updates=0,
+        planner_updates=128,
+        replay_size=65_536,
+        samples_seen=65_536,
+        collection_summaries=[],
+        collector_metrics={},
+        checkpoint_path="/tmp/planner.pt",
+    )
+
+    assert "stage=planner_from_idm" in line
+    assert "idm=frozen" in line
+    assert "planner(loss=0.200000 grad=0.400000 updates=128)" in line

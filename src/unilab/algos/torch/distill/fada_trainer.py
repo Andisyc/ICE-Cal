@@ -94,6 +94,28 @@ class FADATrainer:
             raise RuntimeError("Planner pass accumulated gradients on fixed IDM parameters")
         return float(loss.detach()), grad_norm
 
+    @staticmethod
+    def _sample_planner_replay(
+        replay: FADAReplayBuffer,
+        *,
+        batch_size: int,
+        device: str | torch.device,
+        generator: torch.Generator | None,
+        scenario_ratios: Mapping[str, float] | None,
+        walk_cold_start_ratio: float,
+        static_cold_start_ratio: float,
+    ) -> FADASourceBatch:
+        if scenario_ratios is None:
+            return replay.sample(batch_size, generator=generator, device=device)
+        return replay.sample_planner(
+            batch_size,
+            scenario_ratios=scenario_ratios,
+            walk_cold_start_ratio=walk_cold_start_ratio,
+            static_cold_start_ratio=static_cold_start_ratio,
+            generator=generator,
+            device=device,
+        )
+
     def update(
         self,
         batch: FADASourceBatch,
@@ -145,22 +167,57 @@ class FADATrainer:
         planner_loss_value = 0.0
         planner_grad_norm = 0.0
         for _ in range(int(planner_updates)):
-            batch = (
-                replay.sample(batch_size, generator=generator, device=device)
-                if planner_scenario_ratios is None
-                else replay.sample_planner(
-                    batch_size,
-                    scenario_ratios=planner_scenario_ratios,
-                    walk_cold_start_ratio=planner_walk_cold_start_ratio,
-                    static_cold_start_ratio=planner_static_cold_start_ratio,
-                    generator=generator,
-                    device=device,
-                )
+            batch = self._sample_planner_replay(
+                replay,
+                batch_size=batch_size,
+                device=device,
+                generator=generator,
+                scenario_ratios=planner_scenario_ratios,
+                walk_cold_start_ratio=planner_walk_cold_start_ratio,
+                static_cold_start_ratio=planner_static_cold_start_ratio,
             )
             planner_loss_value, planner_grad_norm = self._update_planner(batch)
         return FADATrainingStats(
             idm_loss=idm_loss_value,
             planner_loss=planner_loss_value,
             idm_grad_norm=idm_grad_norm,
+            planner_grad_norm=planner_grad_norm,
+        )
+
+    def update_planner_from_replay(
+        self,
+        replay: FADAReplayBuffer,
+        *,
+        batch_size: int,
+        planner_updates: int,
+        device: str | torch.device,
+        generator: torch.Generator | None = None,
+        planner_scenario_ratios: Mapping[str, float] | None = None,
+        planner_walk_cold_start_ratio: float = 0.5,
+        planner_static_cold_start_ratio: float = 0.5,
+    ) -> FADATrainingStats:
+        """Update only Planner through an explicitly frozen IDM."""
+
+        if int(planner_updates) <= 0:
+            raise ValueError("Planner-only training requires planner_updates > 0")
+        if any(parameter.requires_grad for parameter in self.policy.idm.parameters()):
+            raise ValueError("Planner-only training requires every IDM parameter to be frozen")
+        planner_loss_value = 0.0
+        planner_grad_norm = 0.0
+        for _ in range(int(planner_updates)):
+            batch = self._sample_planner_replay(
+                replay,
+                batch_size=batch_size,
+                device=device,
+                generator=generator,
+                scenario_ratios=planner_scenario_ratios,
+                walk_cold_start_ratio=planner_walk_cold_start_ratio,
+                static_cold_start_ratio=planner_static_cold_start_ratio,
+            )
+            planner_loss_value, planner_grad_norm = self._update_planner(batch)
+        return FADATrainingStats(
+            idm_loss=0.0,
+            planner_loss=planner_loss_value,
+            idm_grad_norm=0.0,
             planner_grad_norm=planner_grad_norm,
         )

@@ -10,7 +10,11 @@ from omegaconf import DictConfig, OmegaConf
 from .fada import FADA_COMMAND_SCENARIOS, FADAArchitectureConfig
 from .teacher import DistillationTeacherSpec
 
-FADA_TRAINING_SCHEDULES = {"idm_pretrain", "alternating_idm_then_planner"}
+FADA_TRAINING_SCHEDULES = {
+    "idm_pretrain",
+    "alternating_idm_then_planner",
+    "planner_from_idm",
+}
 
 
 def validate_fada_training_schedule(value: object) -> str:

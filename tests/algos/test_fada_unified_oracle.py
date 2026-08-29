@@ -227,6 +227,28 @@ def test_privileged_idm_task_composes_full_static_source_randomization() -> None
     assert cfg.env.domain_rand.push_robots is False
 
 
+def test_privileged_planner_task_composes_frozen_idm_stage() -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    conf_dir = Path(__file__).resolve().parents[2] / "conf" / "distill"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["task=g1_walk_flat/mujoco_fada_privileged_planner"],
+        )
+
+    assert cfg.training.fada.training_schedule == "planner_from_idm"
+    assert cfg.training.fada.idm_updates == 0
+    assert cfg.training.fada.planner_updates == 128
+    assert cfg.training.fada.idm_initialization_path is None
+    assert cfg.training.fada.async_artifact_dir == (
+        "logs/fada/planner_from_privileged_idm_v022/source_batches"
+    )
+    assert cfg.training.fada.checkpoint_path == ("logs/fada/planner_from_privileged_idm_v022.pt")
+
+
 def _privileged_collector_contract_fixture():
     cfg = OmegaConf.create(
         {

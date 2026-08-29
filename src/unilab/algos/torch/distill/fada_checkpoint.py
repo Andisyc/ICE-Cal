@@ -156,6 +156,41 @@ def load_fada_checkpoint(
     return payload
 
 
+def initialize_fada_planner_from_idm(
+    path: str | Path,
+    policy: FADAPlannerIDMPolicy,
+    *,
+    map_location: str | torch.device = "cpu",
+) -> dict[str, Any]:
+    """Load one admitted IDM-pretrain state without importing Planner state."""
+
+    payload = torch.load(Path(path), map_location=map_location, weights_only=True)
+    if not isinstance(payload, dict) or payload.get("schema_version") != 5:
+        raise ValueError("Planner initialization requires a schema-5 FADA checkpoint")
+    observed = load_architecture_config(
+        payload.get("architecture"),
+        schema_version=payload.get("schema_version"),
+        contract_schema_version=FADA_CHECKPOINT_SCHEMA_VERSION,
+        context="FADA IDM initialization checkpoint",
+    )
+    if observed != policy.config:
+        raise ValueError(
+            "FADA IDM initialization architecture mismatch: "
+            f"expected={policy.config} observed={observed}"
+        )
+    _validate_schema5_training_state(payload)
+    if payload.get("training_schedule") != "idm_pretrain":
+        raise ValueError(
+            "Planner initialization requires training_schedule='idm_pretrain', "
+            f"got {payload.get('training_schedule')!r}"
+        )
+    policy.idm.load_state_dict(_validated_idm_state(payload), strict=True)
+    policy.idm.eval()
+    for parameter in policy.idm.parameters():
+        parameter.requires_grad_(False)
+    return payload
+
+
 def load_fada_policy_checkpoint(
     path: str | Path,
     *,

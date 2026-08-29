@@ -12,6 +12,9 @@ from unilab.algos.torch.distill.fada_workflow import (
     assert_fada_source_route_contract,
     build_fada_architecture_config,
 )
+from unilab.algos.torch.distill.fada_workflow_setup import (
+    assert_fada_training_run_contract,
+)
 
 
 def test_g1_fada_state_v2_projects_exact_state_and_excludes_action_command() -> None:
@@ -154,3 +157,49 @@ def test_official_source_config_enables_exact_source_campaign_but_has_no_assets(
     legacy = build_fada_architecture_config(cfg)
     with pytest.raises(ValueError, match="active FADA route"):
         assert_fada_source_route_contract(cfg, legacy)
+
+
+def _planner_from_idm_run_cfg(tmp_path: Path):
+    return OmegaConf.create(
+        {
+            "training": {
+                "fada": {
+                    "execution_mode": "persistent_async",
+                    "paper_source_enabled": True,
+                    "training_schedule": "planner_from_idm",
+                    "checkpoint_path": str(tmp_path / "planner.pt"),
+                    "resume_path": None,
+                    "initial_weights_path": None,
+                    "idm_initialization_path": str(tmp_path / "idm.pt"),
+                    "idm_updates": 0,
+                    "planner_updates": 2,
+                }
+            }
+        }
+    )
+
+
+def test_planner_from_idm_run_contract_requires_exact_stage_combination(tmp_path: Path) -> None:
+    cfg = _planner_from_idm_run_cfg(tmp_path)
+    assert_fada_training_run_contract(cfg)
+
+    cfg.training.fada.idm_initialization_path = None
+    with pytest.raises(ValueError, match="idm_initialization_path"):
+        assert_fada_training_run_contract(cfg)
+
+
+def test_planner_from_idm_run_contract_rejects_idm_updates(tmp_path: Path) -> None:
+    cfg = _planner_from_idm_run_cfg(tmp_path)
+    cfg.training.fada.idm_updates = 1
+
+    with pytest.raises(ValueError, match="idm_updates=0"):
+        assert_fada_training_run_contract(cfg)
+
+
+def test_non_planner_schedule_rejects_idm_initialization_path(tmp_path: Path) -> None:
+    cfg = _planner_from_idm_run_cfg(tmp_path)
+    cfg.training.fada.training_schedule = "idm_pretrain"
+    cfg.training.fada.planner_updates = 0
+
+    with pytest.raises(ValueError, match="only valid"):
+        assert_fada_training_run_contract(cfg)

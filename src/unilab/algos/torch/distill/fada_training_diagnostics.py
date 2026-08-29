@@ -93,9 +93,9 @@ class FADACollectionProgressReporter:
             file=sys.stderr,
             flush=True,
         )
-        self._next_percent = (
-            progress_percent // int(self.interval_percent) + 1
-        ) * int(self.interval_percent)
+        self._next_percent = (progress_percent // int(self.interval_percent) + 1) * int(
+            self.interval_percent
+        )
 
 
 def _sum_collection_field(summaries: Sequence[Mapping[str, Any]], field: str) -> int:
@@ -129,14 +129,20 @@ def format_fada_training_diagnostic(
             f"grad={stats.planner_grad_norm:.6f} updates={planner_updates})"
         )
     )
+    idm = (
+        "idm=frozen"
+        if int(idm_updates) == 0
+        else (
+            f"idm(loss={stats.idm_loss:.6f} grad={stats.idm_grad_norm:.6f} updates={idm_updates})"
+        )
+    )
     collect_seconds = float(collector_metrics.get("collect_seconds", 0.0))
     return (
         "[fada-train] "
         f"stage={schedule} iteration={iteration + 1}/{iterations} "
         f"windows={windows} env_steps={env_steps} replay={replay_size} "
         f"samples_seen={samples_seen} "
-        f"idm(loss={stats.idm_loss:.6f} grad={stats.idm_grad_norm:.6f} "
-        f"updates={idm_updates}) {planner} collect_s={collect_seconds:.2f} "
+        f"{idm} {planner} collect_s={collect_seconds:.2f} "
         f"rejected(done={done} command={command} scenario={scenario}) "
         f"checkpoint={checkpoint_path}"
     )

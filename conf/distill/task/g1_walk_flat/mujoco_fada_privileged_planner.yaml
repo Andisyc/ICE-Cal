@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /task/g1_walk_flat/mujoco_fada_privileged_idm
+  - _self_
+
+training:
+  fada:
+    training_schedule: planner_from_idm
+    idm_updates: 0
+    planner_updates: 128
+    idm_initialization_path: null
+    async_artifact_dir: logs/fada/planner_from_privileged_idm_v022/source_batches
+    checkpoint_path: logs/fada/planner_from_privileged_idm_v022.pt
