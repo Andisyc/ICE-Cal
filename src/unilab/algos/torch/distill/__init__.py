@@ -68,7 +68,6 @@ from .fada_checkpoint import (
     FADA_CHECKPOINT_SCHEMA_VERSION,
     FADA_TRAINING_SCHEDULE,
     LoadedFADAPlannerIDMPolicy,
-    initialize_fada_planner_from_idm,
     load_fada_checkpoint,
     load_fada_policy_checkpoint,
     save_fada_checkpoint,

@@ -159,19 +159,19 @@ def test_official_source_config_enables_exact_source_campaign_but_has_no_assets(
         assert_fada_source_route_contract(cfg, legacy)
 
 
-def _planner_from_idm_run_cfg(tmp_path: Path):
+def _formal_source_run_cfg(tmp_path: Path):
     return OmegaConf.create(
         {
             "training": {
                 "fada": {
                     "execution_mode": "persistent_async",
                     "paper_source_enabled": True,
-                    "training_schedule": "planner_from_idm",
-                    "checkpoint_path": str(tmp_path / "planner.pt"),
+                    "training_schedule": "alternating_idm_then_planner",
+                    "checkpoint_path": str(tmp_path / "source.pt"),
                     "resume_path": None,
                     "initial_weights_path": None,
-                    "idm_initialization_path": str(tmp_path / "idm.pt"),
-                    "idm_updates": 0,
+                    "idm_initialization_path": None,
+                    "idm_updates": 2,
                     "planner_updates": 2,
                 }
             }
@@ -179,27 +179,39 @@ def _planner_from_idm_run_cfg(tmp_path: Path):
     )
 
 
-def test_planner_from_idm_run_contract_requires_exact_stage_combination(tmp_path: Path) -> None:
-    cfg = _planner_from_idm_run_cfg(tmp_path)
-    assert_fada_training_run_contract(cfg)
+@pytest.mark.parametrize("schedule", ["idm_pretrain", "planner_from_idm"])
+def test_formal_source_contract_rejects_split_training_schedules(
+    tmp_path: Path,
+    schedule: str,
+) -> None:
+    cfg = _formal_source_run_cfg(tmp_path)
+    cfg.training.fada.training_schedule = schedule
 
-    cfg.training.fada.idm_initialization_path = None
-    with pytest.raises(ValueError, match="idm_initialization_path"):
+    with pytest.raises(ValueError, match="only supports alternating_idm_then_planner"):
         assert_fada_training_run_contract(cfg)
 
 
-def test_planner_from_idm_run_contract_rejects_idm_updates(tmp_path: Path) -> None:
-    cfg = _planner_from_idm_run_cfg(tmp_path)
-    cfg.training.fada.idm_updates = 1
+@pytest.mark.parametrize(
+    ("idm_updates", "planner_updates", "expected"),
+    [(0, 2, "idm_updates>0"), (2, 0, "planner_updates>0")],
+)
+def test_formal_source_contract_requires_both_optimizer_passes(
+    tmp_path: Path,
+    idm_updates: int,
+    planner_updates: int,
+    expected: str,
+) -> None:
+    cfg = _formal_source_run_cfg(tmp_path)
+    cfg.training.fada.idm_updates = idm_updates
+    cfg.training.fada.planner_updates = planner_updates
 
-    with pytest.raises(ValueError, match="idm_updates=0"):
+    with pytest.raises(ValueError, match=expected):
         assert_fada_training_run_contract(cfg)
 
 
-def test_non_planner_schedule_rejects_idm_initialization_path(tmp_path: Path) -> None:
-    cfg = _planner_from_idm_run_cfg(tmp_path)
-    cfg.training.fada.training_schedule = "idm_pretrain"
-    cfg.training.fada.planner_updates = 0
+def test_formal_source_contract_rejects_retired_idm_initialization(tmp_path: Path) -> None:
+    cfg = _formal_source_run_cfg(tmp_path)
+    cfg.training.fada.idm_initialization_path = str(tmp_path / "idm.pt")
 
-    with pytest.raises(ValueError, match="only valid"):
+    with pytest.raises(ValueError, match="removed training.fada.idm_initialization_path"):
         assert_fada_training_run_contract(cfg)

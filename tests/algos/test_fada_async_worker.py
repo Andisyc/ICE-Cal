@@ -126,7 +126,7 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     ]
 
 
-def test_fada_idm_pretrain_never_rolls_out_student(tmp_path: Path) -> None:
+def test_fada_alternating_rolls_out_student_after_bootstrap(tmp_path: Path) -> None:
     config = _config()
     worker = PersistentFADACollectorWorker.__new__(PersistentFADACollectorWorker)
     worker.config = config
@@ -135,64 +135,7 @@ def test_fada_idm_pretrain_never_rolls_out_student(tmp_path: Path) -> None:
         {
             "training": {
                 "fada": {
-                    "training_schedule": "idm_pretrain",
-                    "windows_per_iteration": 1,
-                    "oracle_shadow_enabled": True,
-                    "observation_key": "obs",
-                    "teacher_projection": "identity",
-                    "student_projection": "identity",
-                    "student_drop_index": None,
-                    "command_info_keys": ["commands"],
-                    "max_env_steps": 12,
-                }
-            }
-        }
-    )
-    worker.env = _FakeEnv()
-    worker.student = FADAPlannerIDMPolicy(config)
-    worker.final_teacher = _Oracle()
-    worker.teacher_spec = object()
-    worker.source_allocations = ((str(tmp_path / "intermediate.pt"), 1),)
-    worker._intermediate_teacher_loader = lambda *_args, **_kwargs: _Oracle()
-    worker._intermediate_teacher_reloader = lambda *_args, **_kwargs: None
-    worker.intermediate_teacher = None
-    worker.intermediate_teacher_checkpoint = None
-
-    class _WeightSync:
-        def read_weights_into(self, _state_dict) -> int:
-            return 7
-
-    worker.weight_sync = _WeightSync()
-    output = tmp_path / "idm-iteration.pt"
-    worker.collect(
-        DaggerCollectRequest(
-            request_id="fada-idm-v7",
-            scenario=FADA_ASYNC_SCENARIO,
-            iteration=3,
-            checkpoint_path=str((tmp_path / "fada.pt").resolve()),
-            output_path=str(output.resolve()),
-            expected_weight_version=7,
-        )
-    )
-
-    loaded = load_fada_source_batch(output, config=config)
-    assert loaded.metadata["training_schedule"] == "idm_pretrain"
-    assert [item["rollout_mode"] for item in loaded.metadata["collections"]] == [
-        "oracle",
-        "intermediate_oracle",
-    ]
-
-
-def test_fada_planner_from_idm_rolls_out_student_after_bootstrap(tmp_path: Path) -> None:
-    config = _config()
-    worker = PersistentFADACollectorWorker.__new__(PersistentFADACollectorWorker)
-    worker.config = config
-    worker.device = "cpu"
-    worker.cfg = OmegaConf.create(
-        {
-            "training": {
-                "fada": {
-                    "training_schedule": "planner_from_idm",
+                    "training_schedule": "alternating_idm_then_planner",
                     "windows_per_iteration": 1,
                     "oracle_shadow_enabled": True,
                     "observation_key": "obs",
@@ -216,20 +159,20 @@ def test_fada_planner_from_idm_rolls_out_student_after_bootstrap(tmp_path: Path)
             return 7
 
     worker.weight_sync = _WeightSync()
-    output = tmp_path / "planner-iteration.pt"
+    output = tmp_path / "alternating-iteration.pt"
     worker.collect(
         DaggerCollectRequest(
-            request_id="fada-planner-v7",
+            request_id="fada-alternating-v7",
             scenario=FADA_ASYNC_SCENARIO,
             iteration=1,
-            checkpoint_path=str((tmp_path / "planner.pt").resolve()),
+            checkpoint_path=str((tmp_path / "alternating.pt").resolve()),
             output_path=str(output.resolve()),
             expected_weight_version=7,
         )
     )
 
     loaded = load_fada_source_batch(output, config=config)
-    assert loaded.metadata["training_schedule"] == "planner_from_idm"
+    assert loaded.metadata["training_schedule"] == "alternating_idm_then_planner"
     assert [item["rollout_mode"] for item in loaded.metadata["collections"]] == ["planner_idm"]
 
 

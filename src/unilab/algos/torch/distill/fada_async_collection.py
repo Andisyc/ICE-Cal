@@ -158,10 +158,7 @@ def collect_fada_iteration(
     sync_finished = time.perf_counter()
     fada_cfg = worker.cfg.training.fada
     training_schedule = fada_training_schedule(fada_cfg)
-    student_rollout_enabled = training_schedule in {
-        "alternating_idm_then_planner",
-        "planner_from_idm",
-    }
+    student_rollout_enabled = training_schedule == "alternating_idm_then_planner"
     common = worker._collection_spec()
 
     curriculum, allocations = curriculum_and_allocations(fada_cfg, worker.config)

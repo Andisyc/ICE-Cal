@@ -9,9 +9,8 @@ env:
 
 training:
   fada:
-    training_schedule: planner_from_idm
-    idm_updates: 0
+    training_schedule: alternating_idm_then_planner
+    idm_updates: 128
     planner_updates: 128
-    idm_initialization_path: null
-    async_artifact_dir: logs/fada/planner_from_privileged_idm_v022/source_batches
-    checkpoint_path: logs/fada/planner_from_privileged_idm_v022.pt
+    async_artifact_dir: logs/fada/planner_idm_privileged_v022/source_batches
+    checkpoint_path: logs/fada/planner_idm_privileged_v022.pt

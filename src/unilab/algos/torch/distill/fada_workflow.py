@@ -20,10 +20,8 @@ from .fada_artifact_admission import (
     require_fada_curriculum_artifact,
     slice_fada_batch,
 )
-from .fada_async_config import fada_training_schedule
 from .fada_async_runtime import FADA_ASYNC_SCENARIO, allocate_fada_command_scenarios
 from .fada_checkpoint import (
-    initialize_fada_planner_from_idm,
     load_fada_checkpoint,
     load_fada_policy_checkpoint,
     save_fada_checkpoint,
@@ -149,20 +147,6 @@ def run_fada_training_owner(
         loaded_intermediate_oracles,
     )
     policy = FADAPlannerIDMPolicy(config).to(device)
-    training_schedule = fada_training_schedule(fada_cfg)
-    if training_schedule == "planner_from_idm":
-        idm_initialization_path = _fada_path(
-            OmegaConf.select(fada_cfg, "idm_initialization_path", default=None),
-            field_name="training.fada.idm_initialization_path",
-            required=True,
-        )
-        if idm_initialization_path is None:
-            raise RuntimeError("IDM initialization path contract was not materialized")
-        initialize_fada_planner_from_idm(
-            idm_initialization_path,
-            policy,
-            map_location=device,
-        )
     trainer = FADATrainer(
         policy,
         idm_optimizer=torch.optim.Adam(

@@ -192,7 +192,7 @@ def test_fada_collector_supplies_critic_tail_to_privileged_oracle() -> None:
     assert oracle.calls > 0
 
 
-def test_privileged_idm_task_composes_full_static_source_randomization() -> None:
+def test_privileged_source_task_composes_alternating_training_and_randomization() -> None:
     from hydra import compose, initialize_config_dir
     from hydra.core.global_hydra import GlobalHydra
 
@@ -204,12 +204,13 @@ def test_privileged_idm_task_composes_full_static_source_randomization() -> None
             overrides=["task=g1_walk_flat/mujoco_fada_privileged_idm"],
         )
 
-    assert cfg.training.fada.training_schedule == "idm_pretrain"
-    assert cfg.training.fada.planner_updates == 0
+    assert cfg.training.fada.training_schedule == "alternating_idm_then_planner"
+    assert cfg.training.fada.idm_updates == 128
+    assert cfg.training.fada.planner_updates == 128
     assert cfg.training.fada.async_artifact_dir == (
-        "logs/fada/idm_pretrain_privileged_v022/source_batches"
+        "logs/fada/planner_idm_privileged_v022/source_batches"
     )
-    assert cfg.training.fada.checkpoint_path == "logs/fada/idm_pretrain_privileged_v022.pt"
+    assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_privileged_v022.pt"
     assert cfg.teacher.task.endswith("mujoco_fada_privileged_oracle_grouped_dr_lineage")
     assert cfg.env.fada_privileged_observation.enabled is True
     assert cfg.env.ctrl_dt == pytest.approx(0.02)
@@ -227,7 +228,7 @@ def test_privileged_idm_task_composes_full_static_source_randomization() -> None
     assert cfg.env.domain_rand.push_robots is False
 
 
-def test_privileged_planner_task_composes_frozen_idm_stage() -> None:
+def test_privileged_planner_alias_composes_the_same_alternating_source_route() -> None:
     from hydra import compose, initialize_config_dir
     from hydra.core.global_hydra import GlobalHydra
 
@@ -239,14 +240,14 @@ def test_privileged_planner_task_composes_frozen_idm_stage() -> None:
             overrides=["task=g1_walk_flat/mujoco_fada_privileged_planner"],
         )
 
-    assert cfg.training.fada.training_schedule == "planner_from_idm"
-    assert cfg.training.fada.idm_updates == 0
+    assert cfg.training.fada.training_schedule == "alternating_idm_then_planner"
+    assert cfg.training.fada.idm_updates == 128
     assert cfg.training.fada.planner_updates == 128
-    assert cfg.training.fada.idm_initialization_path is None
+    assert "idm_initialization_path" not in cfg.training.fada
     assert cfg.training.fada.async_artifact_dir == (
-        "logs/fada/planner_from_privileged_idm_v022/source_batches"
+        "logs/fada/planner_idm_privileged_v022/source_batches"
     )
-    assert cfg.training.fada.checkpoint_path == ("logs/fada/planner_from_privileged_idm_v022.pt")
+    assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_privileged_v022.pt"
     assert cfg.env.mujoco_num_threads == 1
 
 

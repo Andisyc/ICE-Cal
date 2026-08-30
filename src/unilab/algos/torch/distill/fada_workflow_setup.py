@@ -100,30 +100,22 @@ def assert_fada_training_run_contract(cfg: DictConfig) -> None:
         )
     if not paper_source_enabled:
         raise ValueError("v011 alternating training requires paper_source_enabled=true")
-    if training_schedule == "idm_pretrain":
-        if str(OmegaConf.select(fada_cfg, "execution_mode")) != "persistent_async":
-            raise ValueError("IDM pretraining requires execution_mode='persistent_async'")
-        if int(OmegaConf.select(fada_cfg, "planner_updates", default=-1)) != 0:
-            raise ValueError("IDM pretraining requires planner_updates=0")
-
+    if training_schedule != "alternating_idm_then_planner":
+        raise ValueError(
+            "formal FADA source training only supports alternating_idm_then_planner; "
+            f"got {training_schedule!r}"
+        )
+    if int(OmegaConf.select(fada_cfg, "idm_updates", default=0)) <= 0:
+        raise ValueError("alternating FADA source training requires idm_updates>0")
+    if int(OmegaConf.select(fada_cfg, "planner_updates", default=0)) <= 0:
+        raise ValueError("alternating FADA source training requires planner_updates>0")
     idm_initialization_path = OmegaConf.select(
         fada_cfg,
         "idm_initialization_path",
         default=None,
     )
-    if training_schedule == "planner_from_idm":
-        if str(OmegaConf.select(fada_cfg, "execution_mode")) != "persistent_async":
-            raise ValueError("planner_from_idm requires execution_mode='persistent_async'")
-        if idm_initialization_path in (None, ""):
-            raise ValueError("planner_from_idm requires training.fada.idm_initialization_path")
-        if int(OmegaConf.select(fada_cfg, "idm_updates", default=-1)) != 0:
-            raise ValueError("planner_from_idm requires idm_updates=0")
-        if int(OmegaConf.select(fada_cfg, "planner_updates", default=0)) <= 0:
-            raise ValueError("planner_from_idm requires planner_updates>0")
-    elif idm_initialization_path not in (None, ""):
-        raise ValueError(
-            "training.fada.idm_initialization_path is only valid with planner_from_idm"
-        )
+    if idm_initialization_path not in (None, ""):
+        raise ValueError("v011 removed training.fada.idm_initialization_path")
 
 
 def assert_fada_source_route_contract(

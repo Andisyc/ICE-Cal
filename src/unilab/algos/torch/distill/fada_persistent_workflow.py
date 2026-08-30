@@ -125,35 +125,17 @@ def run_fada_persistent_async(
             replay.add(loaded.batch)
             samples_seen += result.num_samples
 
-            planner_update_ratios = (
-                planner_ratios
-                if v005_enabled
-                and training_schedule in {"alternating_idm_then_planner", "planner_from_idm"}
-                else None
+            planner_update_ratios = planner_ratios if v005_enabled else None
+            last_stats = trainer.update_from_replay(
+                replay,
+                batch_size=int(fada_cfg.batch_size),
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=int(fada_cfg.planner_updates),
+                device=distill_device(cfg),
+                planner_scenario_ratios=planner_update_ratios,
+                planner_walk_cold_start_ratio=walk_cold_start_ratio,
+                planner_static_cold_start_ratio=static_cold_start_ratio,
             )
-            if training_schedule == "planner_from_idm":
-                last_stats = trainer.update_planner_from_replay(
-                    replay,
-                    batch_size=int(fada_cfg.batch_size),
-                    planner_updates=int(fada_cfg.planner_updates),
-                    device=distill_device(cfg),
-                    planner_scenario_ratios=planner_update_ratios,
-                    planner_walk_cold_start_ratio=walk_cold_start_ratio,
-                    planner_static_cold_start_ratio=static_cold_start_ratio,
-                )
-            else:
-                last_stats = trainer.update_from_replay(
-                    replay,
-                    batch_size=int(fada_cfg.batch_size),
-                    idm_updates=int(fada_cfg.idm_updates),
-                    planner_updates=(
-                        0 if training_schedule == "idm_pretrain" else int(fada_cfg.planner_updates)
-                    ),
-                    device=distill_device(cfg),
-                    planner_scenario_ratios=planner_update_ratios,
-                    planner_walk_cold_start_ratio=walk_cold_start_ratio,
-                    planner_static_cold_start_ratio=static_cold_start_ratio,
-                )
             if bool(fada_cfg.oracle_shadow_enabled):
                 main_batch = slice_fada_batch(loaded.batch, main_windows)
                 quality_limit = int(
@@ -200,12 +182,8 @@ def run_fada_persistent_async(
                 iteration=iteration,
                 iterations=iterations,
                 stats=last_stats,
-                idm_updates=(
-                    0 if training_schedule == "planner_from_idm" else int(fada_cfg.idm_updates)
-                ),
-                planner_updates=(
-                    0 if training_schedule == "idm_pretrain" else int(fada_cfg.planner_updates)
-                ),
+                idm_updates=int(fada_cfg.idm_updates),
+                planner_updates=int(fada_cfg.planner_updates),
                 replay_size=len(replay),
                 samples_seen=samples_seen,
                 collection_summaries=cast(list[dict[str, Any]], summaries),

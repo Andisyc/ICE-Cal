@@ -1,20 +1,12 @@
-[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=20.0% windows=13116/65536 env_steps=480 acceptance=42.70% rejected(done=474 command=0 scenario=0)
 Fatal Python error: Segmentation fault
 
-Thread 0x000077f9317fa640 (most recent call first):
-  File "/usr/lib/python3.10/threading.py", line 320 in wait
-  File "/usr/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
-  File "/usr/lib/python3.10/threading.py", line 953 in run
-  File "/usr/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/usr/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Current thread 0x000077fac206c480 (most recent call first):
+Current thread 0x00007b3df08e2480 (most recent call first):
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 91 in _wrapreduction_any_all
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 2675 in all
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 69 in _validate_records
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 100 in build_fada_causal_window
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_windows.py", line 29 in _window_from_records
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_transaction.py", line 429 in collect_fada_source_windows
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_transaction.py", line 442 in collect_fada_source_windows
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_collection.py", line 228 in collect_fada_iteration
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_runtime.py", line 208 in collect
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 120 in _persistent_dagger_collector_entry
