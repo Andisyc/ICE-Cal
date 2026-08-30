@@ -101,6 +101,18 @@ def test_g1_walk_env_cfg_obs_groups_spec():
     assert reward_cfg.min_forward_speed_for_gait_reward == pytest.approx(0.05)
 
 
+def test_g1_walk_legacy_exports_have_focused_production_owners() -> None:
+    from unilab.envs.locomotion.g1.joystick import (
+        G1WalkDomainRandomizationProvider,
+        G1WalkEnvCfg,
+        compute_forward_progress_failure,
+    )
+
+    assert G1WalkEnvCfg.__module__.endswith("g1.walk_config")
+    assert compute_forward_progress_failure.__module__.endswith("g1.walk_math")
+    assert G1WalkDomainRandomizationProvider.__module__.endswith("g1.walk_domain_randomization")
+
+
 def test_g1_walk_flat_cfg_no_obs_config():
     """G1WalkFlatCfg should no longer have obs_config after dict obs refactor."""
     from unilab.envs.locomotion.g1.joystick import G1WalkFlatCfg

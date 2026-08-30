@@ -51,6 +51,8 @@ from unilab.algos.torch.fada_context.support_query_training import (
     save_context_support_query_checkpoint,
 )
 from unilab.visualization import interactive_playback as playback_owner
+from unilab.visualization import playback_distill_sessions as playback_distill_owner
+from unilab.visualization import playback_viewer
 
 DESIGN_ID = "ICE-Cal / ICA-DP-08 / FADA-CONTEXT-METHOD-v006 + FADA-CONTEXT-TRAIN-v005"
 CHECKOUT_ID = (
@@ -630,7 +632,7 @@ def _install_playback_external_seams(
         harness.dependency_maps.append(deps)
         return deps
 
-    interactive = _play_interactive_module()
+    _play_interactive_module()
 
     def launch_passive(
         _model: Any,
@@ -642,12 +644,12 @@ def _install_playback_external_seams(
         harness.viewer_launches += 1
         return harness.viewer
 
-    monkeypatch.setattr(playback_owner, "_default_fada_playback_deps", external_deps)
-    monkeypatch.setattr(interactive.mujoco, "MjData", _FakeMjData)
-    monkeypatch.setattr(interactive.mujoco, "mj_setState", lambda *_args: None)
-    monkeypatch.setattr(interactive.mujoco, "mj_forward", lambda *_args: None)
-    monkeypatch.setattr(interactive.mujoco.viewer, "launch_passive", launch_passive)
-    monkeypatch.setattr(interactive.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(playback_distill_owner, "_default_fada_playback_deps", external_deps)
+    monkeypatch.setattr(playback_viewer.mujoco, "MjData", _FakeMjData)
+    monkeypatch.setattr(playback_viewer.mujoco, "mj_setState", lambda *_args: None)
+    monkeypatch.setattr(playback_viewer.mujoco, "mj_forward", lambda *_args: None)
+    monkeypatch.setattr(playback_viewer.mujoco.viewer, "launch_passive", launch_passive)
+    monkeypatch.setattr(playback_viewer.time, "sleep", lambda _seconds: None)
     return harness
 
 
@@ -954,7 +956,7 @@ def test_official_offline_transaction_carries_v006_artifact_to_two_first_actions
         advance_calls.append(owner.step_count)
         return cast(bool, advanced)
 
-    monkeypatch.setattr(interactive, "_build_playback_config", record_build_playback_config)
+    monkeypatch.setattr(playback_viewer, "_build_playback_config", record_build_playback_config)
     monkeypatch.setattr(
         context_training,
         "prepare_context_support_query_artifact",

@@ -12,8 +12,8 @@ from typing import Any
 
 import torch
 
-from unilab.algos.torch.distill import offline
 from unilab.algos.torch.distill.data import DistillationBatch, load_distillation_dataset
+from unilab.algos.torch.distill.learning import offline
 
 
 class _NoOpTrainer:

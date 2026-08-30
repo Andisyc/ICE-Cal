@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 
 @dataclass
 class DomainRandConfig:
+    # Locomotion training historically randomizes reset XY/yaw independently
+    # from physical-parameter DR. Keep that default while allowing nominal
+    # evaluation profiles to request the task keyframe pose exactly.
+    randomize_reset_pose: bool = True
+
     randomize_base_mass: bool = False
     added_mass_range: list[float] = field(default_factory=lambda: [-1.5, 1.5])
 

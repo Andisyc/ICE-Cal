@@ -17,6 +17,10 @@ directly without a server:
 
 - `08_in_context_execution_calibration.html`
 - `09_in_context_execution_calibration_design_inspector.html`
+- `10_state_conditioned_history_readout.html`
+
+Page 10 is a proposal-stage research-design figure (state-conditioned history readout).
+It is not backed by an active Contract and carries no implementation or runtime evidence.
 
 For HTTP serving or source-link inspection, double-click `open_atlas.command` or run:
 

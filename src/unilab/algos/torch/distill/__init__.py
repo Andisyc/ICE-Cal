@@ -1,43 +1,10 @@
 """Generic behavior distillation helpers for torch locomotion policies."""
 
-from .checkpoint import load_distillation_checkpoint, save_distillation_checkpoint
-from .collector import (
-    collect_distillation_dataset_from_env,
-    collect_transition_distillation_dataset_from_env,
-    command_active_mask,
-    project_student_obs,
-    project_teacher_obs,
+from unilab.algos.torch.distill.contracts.checkpoint import (
+    load_distillation_checkpoint,
+    save_distillation_checkpoint,
 )
-from .dagger import (
-    IterativeDaggerRunResult,
-    resolve_command_intent_rollout_policies,
-    run_iterative_dagger_updates,
-)
-from .data import (
-    DistillationTensorDataset,
-    annotate_distillation_dataset_scenario,
-    build_distillation_dataset,
-    build_multitask_distillation_dataset,
-    load_distillation_dataset,
-    make_fake_distillation_dataset,
-    save_distillation_dataset,
-)
-from .fada import (
-    FADA_COMMAND_SCENARIOS,
-    FADA_IDM_SOURCE_ROLE_IDS,
-    FADA_IDM_SOURCE_ROLES,
-    FADA_SCENARIO_IDS,
-    FADAArchitectureConfig,
-    FADAInverseDynamicsModel,
-    FADAPlanner,
-    FADAPlannerIDMPolicy,
-    FADASourceBatch,
-    PlannerIDMOutput,
-    first_action_mse,
-    idm_source_loss,
-    planner_source_loss,
-)
-from .fada_adaptation import (
+from unilab.algos.torch.distill.fada.adaptation import (
     FADAAdaptationStats,
     FADAAdaptationTrainer,
     FADAAdaptedPolicy,
@@ -52,19 +19,19 @@ from .fada_adaptation import (
     select_fada_target_rows,
     split_fada_target_batch,
 )
-from .fada_adaptation_checkpoint import (
+from unilab.algos.torch.distill.fada.adaptation_checkpoint import (
     FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
     assert_fada_adaptation_source_checkpoint,
     load_fada_adapted_checkpoint,
     load_fada_deployable_policy_checkpoint,
     save_fada_adapted_checkpoint,
 )
-from .fada_async_runtime import (
+from unilab.algos.torch.distill.fada.async_runtime import (
     FADA_ASYNC_SCENARIO,
     allocate_fada_command_scenarios,
     build_persistent_fada_runtime,
 )
-from .fada_checkpoint import (
+from unilab.algos.torch.distill.fada.checkpoint import (
     FADA_CHECKPOINT_SCHEMA_VERSION,
     FADA_TRAINING_SCHEDULE,
     LoadedFADAPlannerIDMPolicy,
@@ -72,12 +39,27 @@ from .fada_checkpoint import (
     load_fada_policy_checkpoint,
     save_fada_checkpoint,
 )
-from .fada_collector import (
+from unilab.algos.torch.distill.fada.collector import (
     FADACollectionResult,
     FADACollectionSpec,
     collect_fada_source_windows,
 )
-from .fada_observation import (
+from unilab.algos.torch.distill.fada.model import (
+    FADA_COMMAND_SCENARIOS,
+    FADA_IDM_SOURCE_ROLE_IDS,
+    FADA_IDM_SOURCE_ROLES,
+    FADA_SCENARIO_IDS,
+    FADAArchitectureConfig,
+    FADAInverseDynamicsModel,
+    FADAPlanner,
+    FADAPlannerIDMPolicy,
+    FADASourceBatch,
+    PlannerIDMOutput,
+    first_action_mse,
+    idm_source_loss,
+    planner_source_loss,
+)
+from unilab.algos.torch.distill.fada.observation import (
     FADA_G1_ACTION_DIM,
     FADA_G1_ACTOR_OBS_DIM,
     FADA_G1_COMMAND_DIM,
@@ -91,48 +73,70 @@ from .fada_observation import (
     projection_for_fada_observation_contract,
     raw_observation_dim_for_fada_contract,
 )
-from .fada_oracle import load_fada_oracle_policy
-from .fada_replay import FADAReplayBuffer
-from .fada_source_artifact import (
+from unilab.algos.torch.distill.fada.oracle import load_fada_oracle_policy
+from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
+from unilab.algos.torch.distill.fada.source_artifact import (
     FADA_SOURCE_BATCH_SCHEMA_VERSION,
     LoadedFADASourceBatch,
     load_fada_source_batch,
     save_fada_source_batch,
 )
-from .fada_source_evaluation import evaluate_fada_source_batch
-from .fada_source_plan import (
+from unilab.algos.torch.distill.fada.source_evaluation import evaluate_fada_source_batch
+from unilab.algos.torch.distill.fada.source_plan import (
     FADA_INTERMEDIATE_ORACLE_COUNT,
     FADAPaperSourcePlan,
     build_fada_paper_source_plan,
 )
-from .fada_target_collector import (
+from unilab.algos.torch.distill.fada.target_collector import (
     FADATargetCollectionResult,
     FADATargetCollectionSpec,
     collect_fada_target_windows,
 )
-from .fada_target_data import (
+from unilab.algos.torch.distill.fada.target_data import (
     FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
     FADATargetBatch,
     LoadedFADATargetArtifact,
     load_fada_target_artifact,
     save_fada_target_artifact,
 )
-from .fada_trainer import FADATrainer, FADATrainingStats
-from .models import MLPStudentPolicy
-from .moe_diagnostics import (
+from unilab.algos.torch.distill.fada.trainer import FADATrainer, FADATrainingStats
+from unilab.algos.torch.distill.learning.dagger import (
+    IterativeDaggerRunResult,
+    resolve_command_intent_rollout_policies,
+    run_iterative_dagger_updates,
+)
+from unilab.algos.torch.distill.learning.models import MLPStudentPolicy
+from unilab.algos.torch.distill.learning.moe_diagnostics import (
     MoEExpertDiagnostics,
     MoERoleRouteSummary,
     diagnose_moe_expert_routes,
     moe_diagnostics_to_dict,
 )
-from .moe_student import MoEStudentOutput, MoEStudentPolicy
-from .offline import (
+from unilab.algos.torch.distill.learning.moe_student import MoEStudentOutput, MoEStudentPolicy
+from unilab.algos.torch.distill.learning.offline import (
     OfflineDistillationRunResult,
     required_balanced_replay_updates,
     required_balanced_replay_updates_for_labels,
     run_offline_distillation_updates,
 )
-from .performance import (
+from unilab.algos.torch.distill.learning.playback import (
+    LoadedDistillationStudentPolicy,
+    load_distillation_student_policy,
+)
+from unilab.algos.torch.distill.learning.teacher import (
+    DistillationTeacherCheckpointInfo,
+    DistillationTeacherSpec,
+    LoadedTeacherPolicy,
+    inspect_sac_teacher_checkpoint,
+    load_sac_teacher_policy,
+    validate_sac_teacher_checkpoint_contract,
+)
+from unilab.algos.torch.distill.learning.trainer import (
+    BehaviorDistillationStats,
+    BehaviorDistillationTrainer,
+    DistillationBatch,
+)
+from unilab.algos.torch.distill.observability.performance import (
     CLEANUP_STAGE_NAMES,
     COLLECTOR_REQUEST_STAGE_NAMES,
     DISTILLATION_METRICS_SCHEMA_VERSION,
@@ -141,19 +145,22 @@ from .performance import (
     DistillationPerformanceRunContext,
     DistillationStageObservation,
 )
-from .playback import LoadedDistillationStudentPolicy, load_distillation_student_policy
-from .teacher import (
-    DistillationTeacherCheckpointInfo,
-    DistillationTeacherSpec,
-    LoadedTeacherPolicy,
-    inspect_sac_teacher_checkpoint,
-    load_sac_teacher_policy,
-    validate_sac_teacher_checkpoint_contract,
+
+from .collector import (
+    collect_distillation_dataset_from_env,
+    collect_transition_distillation_dataset_from_env,
+    command_active_mask,
+    project_student_obs,
+    project_teacher_obs,
 )
-from .trainer import (
-    BehaviorDistillationStats,
-    BehaviorDistillationTrainer,
-    DistillationBatch,
+from .data import (
+    DistillationTensorDataset,
+    annotate_distillation_dataset_scenario,
+    build_distillation_dataset,
+    build_multitask_distillation_dataset,
+    load_distillation_dataset,
+    make_fake_distillation_dataset,
+    save_distillation_dataset,
 )
 from .workflow import (
     ArtifactDecision,

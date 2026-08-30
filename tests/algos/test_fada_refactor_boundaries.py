@@ -121,19 +121,19 @@ def test_workflow_facade_keeps_observation_contract_symbols() -> None:
 def test_collector_facade_reexports_decomposed_owners_by_identity() -> None:
     facade = importlib.import_module("unilab.algos.torch.distill.fada_collector")
     owners = {
-        "fada_collection_contract": (
+        "fada.collection_contract": (
             "FADACollectionResult",
             "FADACollectionSpec",
             "FADACollectionTransition",
         ),
-        "fada_collection_io": (
+        "fada.collection_io": (
             "_command_array",
             "_fada_actions",
             "_obs_array",
             "_oracle_shadow_pair",
             "_policy_actions",
         ),
-        "fada_collection_transaction": ("collect_fada_source_windows",),
+        "fada.collection_transaction": ("collect_fada_source_windows",),
     }
     for module_name, symbol_names in owners.items():
         owner = importlib.import_module(f"unilab.algos.torch.distill.{module_name}")
@@ -143,9 +143,9 @@ def test_collector_facade_reexports_decomposed_owners_by_identity() -> None:
 
 def test_async_facade_reexports_config_owner_and_keeps_worker_owner() -> None:
     facade = importlib.import_module("unilab.algos.torch.distill.fada_async_runtime")
-    config_owner = importlib.import_module("unilab.algos.torch.distill.fada_async_config")
+    config_owner = importlib.import_module("unilab.algos.torch.distill.fada.async_config")
     collection_owner = importlib.import_module(
-        "unilab.algos.torch.distill.fada_async_collection"
+        "unilab.algos.torch.distill.fada.async_collection"
     )
 
     assert facade.allocate_fada_command_scenarios is config_owner.allocate_fada_command_scenarios
@@ -154,7 +154,9 @@ def test_async_facade_reexports_config_owner_and_keeps_worker_owner() -> None:
     assert facade._stand_transition_curriculum_cfg is config_owner.stand_transition_curriculum_cfg
     assert facade._v005_replay_cfg is config_owner.v005_replay_cfg
     assert facade.collect_fada_iteration is collection_owner.collect_fada_iteration
-    assert facade.PersistentFADACollectorWorker.__module__ == facade.__name__
+    assert facade.PersistentFADACollectorWorker.__module__ == (
+        "unilab.algos.torch.distill.fada.async_runtime"
+    )
 
 
 def test_decomposed_owners_do_not_import_compatibility_facades() -> None:

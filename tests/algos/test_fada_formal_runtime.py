@@ -11,7 +11,7 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
-import unilab.algos.torch.distill.fada_async_runtime as fada_async_runtime
+import unilab.algos.torch.distill.fada.async_runtime as fada_async_runtime
 from tests.algos._fada_training_test_support import (
     ROOT,
     _load_train_distill,

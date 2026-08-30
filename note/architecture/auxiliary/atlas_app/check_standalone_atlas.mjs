@@ -15,6 +15,11 @@ const cases = [
     data: "concept/09_in_context_execution_calibration_design_inspector.data.json",
     title: "In-Context Execution Calibration — Design Inspector",
   },
+  {
+    html: "10_state_conditioned_history_readout.html",
+    data: "concept/10_state_conditioned_history_readout.data.json",
+    title: "10 State-Conditioned History Readout",
+  },
 ];
 
 for (const fixture of cases) {

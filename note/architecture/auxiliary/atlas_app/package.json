@@ -8,7 +8,7 @@
   "scripts": {
     "serve": "node serve_architecture.mjs",
     "build:standalone": "node build_standalone_atlas.mjs",
-    "check": "node check_trajectory_conditioned_figure.mjs && node check_in_context_calibration_design_inspector.mjs && node check_standalone_atlas.mjs",
+    "check": "node check_trajectory_conditioned_figure.mjs && node check_in_context_calibration_design_inspector.mjs && node check_state_conditioned_readout_figure.mjs && node check_standalone_atlas.mjs",
     "check:visual": "node check_in_context_calibration_design_inspector_visual.mjs"
   },
   "dependencies": {

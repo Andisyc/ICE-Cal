@@ -7,8 +7,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+from omegaconf import OmegaConf
 
 from unilab.base.backend.base import BackendSceneArtifacts
+from unilab.visualization import playback_viewer as playback_viewer_owner
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 
@@ -398,10 +400,14 @@ def test_play_interactive_routes_distill_to_generic_session(monkeypatch):
         return FakeSession(), "actor", "/tmp/model.pt"
 
     monkeypatch.setattr(
-        mod, "create_distill_playback_session", fake_create_distill_playback_session
+        playback_viewer_owner,
+        "create_distill_playback_session",
+        fake_create_distill_playback_session,
     )
-    monkeypatch.setattr(mod, "_uses_native_mujoco_viewer_launch", lambda: True)
-    monkeypatch.setattr(mod, "_can_launch_glfw_viewer", lambda: False)
+    monkeypatch.setattr(
+        playback_viewer_owner, "_uses_native_mujoco_viewer_launch", lambda: True
+    )
+    monkeypatch.setattr(playback_viewer_owner, "_can_launch_glfw_viewer", lambda: False)
 
     args = type(
         "Args",
@@ -419,7 +425,7 @@ def test_play_interactive_routes_distill_to_generic_session(monkeypatch):
             "algo": "distill",
         },
     )()
-    cfg = mod.OmegaConf.create({"training": {"device": "cpu"}})
+    cfg = OmegaConf.create({"training": {"device": "cpu"}})
 
     mod.play_interactive(args, cfg=cfg, algo="distill")
 
@@ -454,9 +460,15 @@ def test_play_interactive_cli_routes_fada_to_stateful_session(monkeypatch):
         calls.update(kwargs)
         return FakeSession(), "actor", "/tmp/planner_idm.pt"
 
-    monkeypatch.setattr(mod, "create_fada_playback_session", fake_create_fada_playback_session)
-    monkeypatch.setattr(mod, "_uses_native_mujoco_viewer_launch", lambda: True)
-    monkeypatch.setattr(mod, "_can_launch_glfw_viewer", lambda: False)
+    monkeypatch.setattr(
+        playback_viewer_owner,
+        "create_fada_playback_session",
+        fake_create_fada_playback_session,
+    )
+    monkeypatch.setattr(
+        playback_viewer_owner, "_uses_native_mujoco_viewer_launch", lambda: True
+    )
+    monkeypatch.setattr(playback_viewer_owner, "_can_launch_glfw_viewer", lambda: False)
 
     mod.play_interactive(args, cfg=cfg, algo="fada")
 
@@ -466,7 +478,8 @@ def test_play_interactive_cli_routes_fada_to_stateful_session(monkeypatch):
     assert calls["playback_cfg"].keyboard is True
     assert calls["cfg"] is cfg
     assert mod._normalize_interactive_overrides("fada", ["interactive.action_mode=zero"]) == [
-        "interactive.action_mode=zero"
+        "interactive.action_mode=zero",
+        "training.play_only=true",
     ]
 
 
@@ -497,7 +510,7 @@ def test_play_interactive_viewer_model_uses_shared_render_playback_resolver(
 
     monkeypatch.setattr(mujoco.MjModel, "from_binary_path", fake_from_binary_path)
     monkeypatch.setattr(
-        mod,
+        playback_viewer_owner,
         "resolve_render_play_model_files",
         fake_resolve_render_play_model_files,
     )

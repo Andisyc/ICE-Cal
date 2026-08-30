@@ -196,7 +196,7 @@ def test_persistent_walk_to_stop_matches_legacy_exact_two_role_contract(
 
 
 def test_persistent_runtime_builder_forwards_transition_grid(monkeypatch) -> None:
-    import unilab.algos.torch.distill.g1_persistent_worker as worker_module
+    import unilab.algos.torch.distill.runtime.g1_worker as worker_module
 
     captured: dict = {}
 
@@ -266,7 +266,7 @@ def test_g1_persistent_worker_reuses_exact_resources_across_scenario_sequence(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import unilab.algos.torch.distill.g1_persistent_worker as worker_module
+    import unilab.algos.torch.distill.runtime.g1_worker as worker_module
 
     walk_teacher = tmp_path / "walk_teacher.pt"
     stand_teacher = tmp_path / "stand_teacher.pt"

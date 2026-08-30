@@ -24,8 +24,14 @@ from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill import LEGACY_REQUEST_STAGE_NAMES
+from unilab.algos.torch.distill.workflows import entry_collection as distill_entry_collection
+from unilab.algos.torch.distill.workflows import entry_plan as distill_entry_plan
+from unilab.algos.torch.distill.workflows import entry_training as distill_entry_training
+from unilab.algos.torch.distill.workflows import entry_workflow as distill_entry_workflow
 from unilab.base.backend.base import BackendSceneArtifacts
 from unilab.base.backend.motrix.playback import run_motrix_playback
+from unilab.visualization import playback_checkpoint_contract, playback_viewer
+from unilab.visualization import playback_cli as playback_cli_owner
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 _CONF_DIR = Path(__file__).parent.parent.parent / "conf"
@@ -72,6 +78,14 @@ def _load_deploy_script(name: str) -> Any:
     sys.modules[name] = mod
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
+
+
+def test_distill_script_exports_owner_level_route_functions() -> None:
+    mod = _load_script("train_distill")
+
+    assert mod.build_teacher_spec.__module__.endswith("distill.workflows.entry_training")
+    assert mod.run_collect_dataset.__module__.endswith("distill.workflows.entry_collection")
+    assert mod.run_single_entry_workflow.__module__.endswith("distill.workflows.entry_workflow")
 
 
 @pytest.mark.parametrize(
@@ -1130,7 +1144,7 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
             bootstrap_updates=2,
         )
 
-    monkeypatch.setattr(mod, "run_bootstrap_workflow", fake_bootstrap)
+    monkeypatch.setattr(distill_entry_workflow, "run_bootstrap_workflow", fake_bootstrap)
 
     def fake_dagger(**kwargs):
         captured["dagger_kwargs"] = kwargs
@@ -1143,9 +1157,9 @@ def test_distill_single_entry_uses_task_owner_and_generated_artifact_paths(
             cumulative_num_samples=24,
         )
 
-    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
     monkeypatch.setattr(
-        mod,
+        distill_entry_workflow,
         "finalize_workflow_performance",
         lambda **kwargs: captured.setdefault("finalize_kwargs", kwargs),
     )
@@ -1189,7 +1203,7 @@ def test_distill_workflow_dagger_update_does_not_resume_or_save_optimizer_state(
     ]
 
     monkeypatch.setattr(
-        mod,
+        distill_entry_workflow,
         "run_bootstrap_workflow",
         lambda **kwargs: SimpleNamespace(
             run_dir=Path(kwargs["run_dir"]),
@@ -1264,9 +1278,11 @@ def test_distill_workflow_dagger_update_does_not_resume_or_save_optimizer_state(
             cumulative_num_samples=24,
         )
 
-    monkeypatch.setattr(mod, "run_offline_dataset_update", fake_offline_update)
-    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
-    monkeypatch.setattr(mod, "finalize_workflow_performance", lambda **_kwargs: None)
+    monkeypatch.setattr(distill_entry_workflow, "run_offline_dataset_update", fake_offline_update)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(
+        distill_entry_workflow, "finalize_workflow_performance", lambda **_kwargs: None
+    )
 
     mod.run_single_entry_workflow(cfg)
 
@@ -1308,9 +1324,11 @@ def test_distill_single_entry_persistent_execution_routes_factory_and_closes_ser
         mod.WorkflowScenarioSpec("stand", "role", ("stand",), 0.5),
         mod.WorkflowScenarioSpec("walk_flat", "role", ("walk_flat",), 0.5),
     )
-    monkeypatch.setattr(mod, "_workflow_scenario_specs", lambda *_args: scenarios)
     monkeypatch.setattr(
-        mod,
+        distill_entry_plan, "_workflow_scenario_specs", lambda *_args: scenarios
+    )
+    monkeypatch.setattr(
+        distill_entry_workflow,
         "run_bootstrap_workflow",
         lambda **kwargs: SimpleNamespace(
             run_dir=Path(kwargs["run_dir"]),
@@ -1346,9 +1364,9 @@ def test_distill_single_entry_persistent_execution_routes_factory_and_closes_ser
             cumulative_num_samples=24,
         )
 
-    monkeypatch.setattr(mod, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
     monkeypatch.setattr(
-        mod,
+        distill_entry_workflow,
         "finalize_workflow_performance",
         lambda **kwargs: dagger_inputs.setdefault("finalize_kwargs", kwargs),
     )
@@ -1407,11 +1425,11 @@ def test_distill_single_entry_persistent_execution_uses_production_factory(
         }
     ]
     monkeypatch.setattr(
-        mod,
+        distill_entry_plan,
         "_workflow_scenario_specs",
         lambda *_args: (mod.WorkflowScenarioSpec("stand", "role", ("stand",), 1.0),),
     )
-    monkeypatch.setattr(mod, "run_bootstrap_workflow", lambda **_kwargs: None)
+    monkeypatch.setattr(distill_entry_workflow, "run_bootstrap_workflow", lambda **_kwargs: None)
     service = MagicMock()
     service.close_report = {
         "worker_pid": 1234,
@@ -1424,12 +1442,12 @@ def test_distill_single_entry_persistent_execution_uses_production_factory(
         return service
 
     monkeypatch.setattr(
-        mod,
+        distill_entry_workflow,
         "build_persistent_g1_distillation_runtime",
         fake_production_factory,
     )
     monkeypatch.setattr(
-        mod,
+        distill_entry_workflow,
         "run_multirole_dagger_workflow",
         lambda **kwargs: types.SimpleNamespace(
             run_dir=Path(kwargs["run_dir"]),
@@ -1439,7 +1457,9 @@ def test_distill_single_entry_persistent_execution_uses_production_factory(
             cumulative_num_samples=1,
         ),
     )
-    monkeypatch.setattr(mod, "finalize_workflow_performance", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        distill_entry_workflow, "finalize_workflow_performance", lambda **_kwargs: None
+    )
 
     result = mod.run_single_entry_workflow(cfg)
 
@@ -1873,8 +1893,10 @@ def test_distill_script_wires_iterative_dagger_owner_loop(tmp_path: Path, monkey
     trainer = SimpleNamespace(student=object(), teacher=object())
     captured = {}
 
-    monkeypatch.setattr(mod, "build_distillation_trainer", lambda *args, **kwargs: trainer)
-    monkeypatch.setattr(mod, "_teacher_metadata", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        distill_entry_collection, "build_distillation_trainer", lambda *args, **kwargs: trainer
+    )
+    monkeypatch.setattr(distill_entry_collection, "_teacher_metadata", lambda *args, **kwargs: {})
 
     def fake_dagger(env, **kwargs):
         captured.update(kwargs)
@@ -1888,7 +1910,7 @@ def test_distill_script_wires_iterative_dagger_owner_loop(tmp_path: Path, monkey
             collection_metadata=({},),
         )
 
-    monkeypatch.setattr(mod, "run_iterative_dagger_updates", fake_dagger)
+    monkeypatch.setattr(distill_entry_collection, "run_iterative_dagger_updates", fake_dagger)
     env = SimpleNamespace(close=lambda: None)
 
     probe = mod.run_online_dagger_update(
@@ -1973,7 +1995,11 @@ def test_distill_script_resolves_teacher_checkpoint_with_training_semantics(
         captured.update(kwargs)
         return tmp_path / "model_42.pt", tmp_path / "teacher_run"
 
-    monkeypatch.setattr(mod, "resolve_task_checkpoint_path", fake_resolve_task_checkpoint_path)
+    monkeypatch.setattr(
+        distill_entry_training,
+        "resolve_task_checkpoint_path",
+        fake_resolve_task_checkpoint_path,
+    )
 
     checkpoint_path, run_dir = mod.resolve_teacher_checkpoint(cfg, root_dir=tmp_path)
 
@@ -4047,12 +4073,14 @@ def test_go2_arm_manip_loco_motrix_eval_uses_visual_floor(
     assert env_cfg_override["scene"].model_file == "/tmp/go2_arm_manip_loco_play_scene.xml"
 
 
-def test_run_motrix_rsl_play_loop_uses_render_spacing_and_offset_mode():
+def test_run_motrix_rsl_play_loop_uses_render_spacing_and_offset_mode(
+    monkeypatch: pytest.MonkeyPatch,
+):
     import numpy as np
     import torch
     from tensordict import TensorDict
 
-    mod = _train_rsl_rl(pytest.MonkeyPatch())
+    mod = _train_rsl_rl(monkeypatch)
 
     class FakePolicy:
         def __call__(self, obs):
@@ -5898,6 +5926,7 @@ def test_play_interactive_cli_respects_owner_action_mode_and_user_override():
     default_cfg = mod._compose_interactive_config(default_parsed.algo, default_parsed.overrides)
 
     assert default_cfg.interactive.action_mode == "policy"
+    assert default_cfg.training.play_only is True
 
     parsed = mod._parse_interactive_cli(
         [
@@ -5958,6 +5987,7 @@ def test_play_interactive_sac_task_shorthand_rewrites_to_owner_group():
         "algo=sac",
         "task=sac/sharpa_inhand/mujoco_hora",
         "algo.load_run=my_run",
+        "training.play_only=true",
     ]
 
 
@@ -5985,7 +6015,7 @@ def test_play_interactive_replays_checkpoint_env_contract_for_sac_g1(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        mod,
+        playback_checkpoint_contract,
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
@@ -6030,7 +6060,7 @@ def test_play_interactive_treats_missing_g1_mode_observation_as_legacy_false(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        mod,
+        playback_checkpoint_contract,
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
@@ -6073,11 +6103,11 @@ def test_play_interactive_infers_missing_g1_mode_observation_from_checkpoint_dim
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        mod,
+        playback_checkpoint_contract,
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(mod, "_checkpoint_actor_input_dim", lambda args: 99)
+    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99)
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",
@@ -6103,11 +6133,11 @@ def test_play_interactive_infers_missing_g1_height_command_contract(
     checkpoint = tmp_path / "model_5000.pt"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setattr(
-        mod,
+        playback_checkpoint_contract,
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(mod, "_checkpoint_actor_input_dim", lambda args: 100)
+    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 100)
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",
@@ -6137,11 +6167,11 @@ def test_play_interactive_does_not_infer_g1_height_for_legacy_checkpoint(
     checkpoint = tmp_path / "model_5000.pt"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setattr(
-        mod,
+        playback_checkpoint_contract,
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(mod, "_checkpoint_actor_input_dim", lambda args: 99)
+    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99)
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",
@@ -6395,21 +6425,33 @@ def test_play_interactive_runner_log_dir_uses_algo_log_name(monkeypatch: pytest.
         get_physics_state_snapshot=lambda: np.zeros((1, 8), dtype=np.float32),
     )
 
-    monkeypatch.setattr(mod.registry, "make", lambda *args, **kwargs: fake_env)
-    monkeypatch.setattr(mod, "resolve_checkpoint", lambda *args, **kwargs: "/tmp/model_10.pt")
+    monkeypatch.setattr(playback_viewer.registry, "make", lambda *args, **kwargs: fake_env)
     monkeypatch.setattr(
-        mod,
+        playback_viewer, "resolve_checkpoint", lambda *args, **kwargs: "/tmp/model_10.pt"
+    )
+    monkeypatch.setattr(
+        playback_viewer,
         "get_entrypoint_log_root",
         lambda root_dir, *, algo_log_name, log_root=None: Path("/tmp") / algo_log_name,
     )
-    monkeypatch.setattr(mod, "RslRlVecEnvWrapper", FakeWrapper)
-    monkeypatch.setattr(mod, "OnPolicyRunner", FakeRunner)
-    monkeypatch.setattr(mod, "PPOConfig", lambda: types.SimpleNamespace(to_dict=lambda: {}))
-    monkeypatch.setattr(mod.mujoco, "MjData", lambda model: object())
-    monkeypatch.setattr(mod.mujoco, "mj_setState", lambda *args, **kwargs: None)
-    monkeypatch.setattr(mod.mujoco, "mj_forward", lambda *args, **kwargs: None)
-    monkeypatch.setattr(mod.mujoco, "mjtState", types.SimpleNamespace(mjSTATE_FULLPHYSICS=0))
-    monkeypatch.setattr(mod.mujoco.viewer, "launch_passive", lambda *args, **kwargs: FakeViewer())
+    monkeypatch.setattr(playback_viewer, "RslRlVecEnvWrapper", FakeWrapper)
+    monkeypatch.setattr(playback_viewer, "OnPolicyRunner", FakeRunner)
+    monkeypatch.setattr(
+        playback_cli_owner, "PPOConfig", lambda: types.SimpleNamespace(to_dict=lambda: {})
+    )
+    monkeypatch.setattr(playback_viewer.mujoco, "MjData", lambda model: object())
+    monkeypatch.setattr(playback_viewer.mujoco, "mj_setState", lambda *args, **kwargs: None)
+    monkeypatch.setattr(playback_viewer.mujoco, "mj_forward", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        playback_viewer.mujoco,
+        "mjtState",
+        types.SimpleNamespace(mjSTATE_FULLPHYSICS=0),
+    )
+    monkeypatch.setattr(
+        playback_viewer.mujoco.viewer,
+        "launch_passive",
+        lambda *args, **kwargs: FakeViewer(),
+    )
 
     args = types.SimpleNamespace(
         task="MyTask",

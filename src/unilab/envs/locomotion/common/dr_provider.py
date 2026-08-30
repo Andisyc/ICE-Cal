@@ -111,8 +111,17 @@ class LocomotionDRProvider(DomainRandomizationProvider):
         num_reset = len(env_ids)
         qpos = np.tile(env._init_qpos, (num_reset, 1))
         qvel = np.tile(env._init_qvel, (num_reset, 1))
-        qpos[:, 0:2] += np.random.uniform(-0.5, 0.5, (num_reset, 2))
-        yaw = np.random.uniform(-np.pi, np.pi, (num_reset,))
+        domain_rand = getattr(env.cfg, "domain_rand", None)
+        randomize_reset_pose = (
+            True
+            if domain_rand is None
+            else bool(getattr(domain_rand, "randomize_reset_pose", True))
+        )
+        if randomize_reset_pose:
+            qpos[:, 0:2] += np.random.uniform(-0.5, 0.5, (num_reset, 2))
+            yaw = np.random.uniform(-np.pi, np.pi, (num_reset,))
+        else:
+            yaw = np.zeros((num_reset,), dtype=get_global_dtype())
         qpos[:, 3:7] = np_quat_mul(qpos[:, 3:7], np_yaw_to_quat(yaw))
         qpos[:, 0:3] = env._spawn.apply_spawn(env_ids, qpos[:, 0:3], yaw=yaw)
         limit = self._get_qvel_limit(env)

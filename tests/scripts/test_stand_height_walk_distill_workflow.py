@@ -10,8 +10,19 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
+from unilab.algos.torch.distill.workflows import entry_workflow as distill_entry_workflow
+from unilab.algos.torch.distill.workflows import transition as distill_workflow_transition
+
 _ROOT = Path(__file__).resolve().parents[2]
 _CONF_DIR = _ROOT / "conf" / "distill"
+
+
+def test_legacy_transition_collection_has_a_dedicated_owner() -> None:
+    from unilab.algos.torch.distill.workflow_transition import (
+        collect_legacy_transition_scenario,
+    )
+
+    assert collect_legacy_transition_scenario.__module__.endswith("workflows.transition")
 
 
 def _compose(overrides: list[str]):
@@ -158,9 +169,11 @@ def test_single_entry_connector_builds_two_height_aware_specs_without_env(
             cumulative_num_samples=8,
         )
 
-    monkeypatch.setattr(train_distill, "run_bootstrap_workflow", fake_bootstrap)
-    monkeypatch.setattr(train_distill, "run_multirole_dagger_workflow", fake_dagger)
-    monkeypatch.setattr(train_distill, "finalize_workflow_performance", lambda **_kwargs: None)
+    monkeypatch.setattr(distill_entry_workflow, "run_bootstrap_workflow", fake_bootstrap)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(
+        distill_entry_workflow, "finalize_workflow_performance", lambda **_kwargs: None
+    )
 
     result = train_distill.run_single_entry_workflow(cfg)
 
@@ -265,28 +278,34 @@ def test_legacy_transition_connector_forwards_non_nominal_grid(
             },
         )
 
-    monkeypatch.setattr(train_distill, "run_bootstrap_workflow", fake_bootstrap)
-    monkeypatch.setattr(train_distill, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(distill_entry_workflow, "run_bootstrap_workflow", fake_bootstrap)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
     monkeypatch.setattr(
-        train_distill,
+        distill_workflow_transition,
         "load_distillation_student_policy",
         lambda *_args, **_kwargs: SimpleNamespace(policy=object(), distill_runtime_cfg={}),
     )
     monkeypatch.setattr(
-        train_distill,
+        distill_workflow_transition,
         "load_sac_teacher_policy",
         lambda *_args, **_kwargs: object(),
     )
-    monkeypatch.setattr(train_distill, "ensure_registries", lambda: None)
-    monkeypatch.setattr(train_distill, "BackendAdapter", FakeAdapter)
-    monkeypatch.setattr(train_distill, "create_env", lambda *_args, **_kwargs: fake_env)
+    monkeypatch.setattr(distill_workflow_transition, "ensure_registries", lambda: None)
+    monkeypatch.setattr(distill_workflow_transition, "BackendAdapter", FakeAdapter)
     monkeypatch.setattr(
-        train_distill,
+        distill_workflow_transition, "create_env", lambda *_args, **_kwargs: fake_env
+    )
+    monkeypatch.setattr(
+        distill_workflow_transition,
         "collect_transition_distillation_dataset_from_env",
         fake_transition_collect,
     )
-    monkeypatch.setattr(train_distill, "save_distillation_dataset", lambda *_args: None)
-    monkeypatch.setattr(train_distill, "finalize_workflow_performance", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        distill_workflow_transition, "save_distillation_dataset", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        distill_entry_workflow, "finalize_workflow_performance", lambda **_kwargs: None
+    )
 
     train_distill.run_single_entry_workflow(cfg)
 
@@ -365,14 +384,16 @@ def test_persistent_connector_preserves_two_height_aware_roles_and_scenarios(
         )
 
     sentinel_events: list[str] = []
-    monkeypatch.setattr(train_distill, "run_bootstrap_workflow", fake_bootstrap)
-    monkeypatch.setattr(train_distill, "run_multirole_dagger_workflow", fake_dagger)
+    monkeypatch.setattr(distill_entry_workflow, "run_bootstrap_workflow", fake_bootstrap)
+    monkeypatch.setattr(distill_entry_workflow, "run_multirole_dagger_workflow", fake_dagger)
     monkeypatch.setattr(
-        train_distill,
+        distill_entry_workflow,
         "_probe_torch_serialization_runtime",
         sentinel_events.append,
     )
-    monkeypatch.setattr(train_distill, "finalize_workflow_performance", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        distill_entry_workflow, "finalize_workflow_performance", lambda **_kwargs: None
+    )
 
     result = train_distill.run_single_entry_workflow(
         cfg,

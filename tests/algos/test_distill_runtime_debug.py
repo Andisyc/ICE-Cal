@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from unilab.algos.torch.distill import data, offline, trainer
+from unilab.algos.torch.distill import data, dataset_diagnostics, offline, trainer
 
 
 def test_distill_runtime_debug_prints_are_opt_in(monkeypatch, capsys) -> None:
@@ -11,7 +11,7 @@ def test_distill_runtime_debug_prints_are_opt_in(monkeypatch, capsys) -> None:
     assert trainer._runtime_trace_update(1) is False
     assert trainer._runtime_trace_update(100) is False
     trainer._emit_trainer_runtime("probe/trainer")
-    data._emit_data_runtime("probe/data")
+    dataset_diagnostics._emit_data_runtime("probe/data")
     offline._emit_offline_runtime("probe/offline")
 
     assert capsys.readouterr().out == ""
@@ -22,7 +22,7 @@ def test_distill_runtime_debug_prints_are_opt_in(monkeypatch, capsys) -> None:
     assert trainer._runtime_trace_update(2) is False
     assert trainer._runtime_trace_update(100) is True
     trainer._emit_trainer_runtime("probe/trainer")
-    data._emit_data_runtime("probe/data")
+    dataset_diagnostics._emit_data_runtime("probe/data")
     offline._emit_offline_runtime("probe/offline")
 
     out = capsys.readouterr().out
@@ -37,7 +37,7 @@ def test_scenario_label_snapshot_is_cold_when_runtime_debug_is_disabled(monkeypa
     def fail_if_called(value):
         raise AssertionError(f"unexpected eager diagnostic repr: {value!r}")
 
-    monkeypatch.setattr(data, "_safe_runtime_repr", fail_if_called)
+    monkeypatch.setattr(dataset_diagnostics, "_safe_runtime_repr", fail_if_called)
 
     dataset = data.build_distillation_dataset(
         torch.zeros(4, 3),
@@ -65,7 +65,10 @@ def test_scenario_label_snapshot_avoids_closure_cell_iterator(monkeypatch) -> No
         },
     )
 
-    snapshot = data._scenario_label_debug_snapshot(labels, source_ranges=source_ranges)
+    snapshot = dataset_diagnostics._scenario_label_debug_snapshot(
+        labels,
+        source_ranges=source_ranges,
+    )
 
     assert snapshot["invalid_head"] == [
         {

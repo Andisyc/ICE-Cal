@@ -25,6 +25,7 @@ from unilab.training import (
     resolve_checkpoint_path,
     resolve_task_checkpoint_path,
 )
+from unilab.visualization.interactive_playback import _default_fada_playback_deps
 from unilab.visualization.playback import render_play_mode
 
 _ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -78,6 +79,12 @@ def _offpolicy_cfg(overrides: list[str] | None = None):
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=str(_CONF_DIR / "offpolicy"), version_base="1.3"):
         return compose("config", overrides=_normalize_overrides(overrides, offpolicy=True))
+
+
+def _distill_cfg(overrides: list[str] | None = None):
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(_CONF_DIR / "distill"), version_base="1.3"):
+        return compose("config", overrides=overrides or [])
 
 
 def test_get_latest_run_and_checkpoint_support_shared_checkpoint_resolution(tmp_path: Path):
@@ -306,6 +313,62 @@ def test_backend_adapter_builds_play_scene_override():
     assert captured["ground_texture_file"] == str(
         _ROOT_DIR / "src/unilab/assets/robots/g1/textures/floor.png"
     )
+
+
+def test_backend_adapter_fada_play_profile_is_fully_nominal() -> None:
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco_fada_privileged_planner",
+            "training.play_only=true",
+        ]
+    )
+
+    training_override = BackendAdapter(cfg, root_dir=_ROOT_DIR).build_task_env_cfg_override()
+    play_override = BackendAdapter(cfg, root_dir=_ROOT_DIR).build_play_env_cfg_override()
+
+    assert training_override["domain_rand"]["actuator_strength"]["enabled"] is True
+    assert training_override["domain_rand"]["randomize_kp"] is True
+    assert training_override["noise_config"]["level"] == pytest.approx(1.0)
+
+    domain_rand = play_override["domain_rand"]
+    assert domain_rand["actuator_strength"]["enabled"] is False
+    for name in (
+        "randomize_kp",
+        "randomize_kd",
+        "randomize_ground_friction",
+        "randomize_base_mass",
+        "randomize_body_mass",
+        "random_com",
+        "randomize_gravity",
+        "randomize_dof_armature",
+        "randomize_dof_position_bias",
+        "randomize_control_delay",
+        "push_robots",
+        "randomize_reset_pose",
+    ):
+        assert domain_rand[name] is False
+    assert domain_rand["torque_rfi_fraction"] == pytest.approx(0.0)
+    assert play_override["noise_config"]["level"] == pytest.approx(0.0)
+    assert play_override["curriculum"]["enabled"] is False
+    assert play_override["commands"]["rel_standing_envs"] == pytest.approx(1.0)
+    assert play_override["commands"]["resampling_time"] == pytest.approx(0.0)
+    assert play_override["reset_base_qvel_limit"] == pytest.approx(0.0)
+    assert play_override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
+
+
+def test_fada_playback_dependencies_consume_play_profile() -> None:
+    cfg = _distill_cfg(
+        [
+            "task=g1_walk_flat/mujoco_fada_privileged_planner",
+            "training.play_only=true",
+        ]
+    )
+
+    override = _default_fada_playback_deps(_ROOT_DIR)["build_env_cfg_override"](cfg)
+
+    assert override["domain_rand"]["actuator_strength"]["enabled"] is False
+    assert override["domain_rand"]["randomize_reset_pose"] is False
+    assert override["noise_config"]["level"] == pytest.approx(0.0)
 
 
 def test_render_play_mode_uses_env_interactive_contract():

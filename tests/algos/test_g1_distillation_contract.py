@@ -1778,7 +1778,7 @@ def test_command_intent_corruption_requests_native_abort_with_snapshot(
     capsys,
 ) -> None:
     monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
-    import unilab.algos.torch.distill.data as data_module
+    import unilab.algos.torch.distill.contracts.dataset as data_module
 
     class ImpossibleIntent:
         def __str__(self) -> str:
@@ -1828,7 +1828,7 @@ def test_serialization_callable_corruption_requests_native_abort(
     capsys,
 ) -> None:
     monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
-    import unilab.algos.torch.distill.data as data_module
+    import unilab.algos.torch.distill.datasets.io as data_module
     from unilab.algos.torch.distill import build_distillation_dataset
 
     class NativeAbortRequestedError(RuntimeError):
@@ -1875,7 +1875,7 @@ def test_serialization_io_failure_does_not_request_native_abort(
     capsys,
 ) -> None:
     monkeypatch.setenv("UNILAB_DISTILL_RUNTIME_DEBUG", "1")
-    import unilab.algos.torch.distill.data as data_module
+    import unilab.algos.torch.distill.datasets.io as data_module
     from unilab.algos.torch.distill import build_distillation_dataset
 
     dataset = build_distillation_dataset(
@@ -1914,7 +1914,7 @@ def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
     monkeypatch,
     capsys,
 ) -> None:
-    import unilab.algos.torch.distill.data as data_module
+    import unilab.algos.torch.distill.datasets.merge as data_module
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         build_multitask_distillation_dataset,
@@ -1943,7 +1943,7 @@ def test_multitask_command_intent_failure_emits_source_provenance_snapshot(
     def fail_only_at_final_validation(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        if call_count == 3:
+        if call_count == 1:
             raise ValueError("command_intents must contain only active/inactive labels")
         return real_builder(*args, **kwargs)
 
@@ -2205,7 +2205,7 @@ def test_multitask_scenario_failure_emits_raw_source_provenance_snapshot(
 ) -> None:
     from dataclasses import replace
 
-    import unilab.algos.torch.distill.data as data_module
+    import unilab.algos.torch.distill.datasets.merge as data_module
     from unilab.algos.torch.distill import (
         build_distillation_dataset,
         build_multitask_distillation_dataset,
@@ -3501,7 +3501,7 @@ def test_moe_expert_optimizer_state_does_not_drift_inactive_expert() -> None:
 def test_iterative_dagger_moves_collected_dataset_to_student_device(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    import unilab.algos.torch.distill.dagger as dagger_module
+    import unilab.algos.torch.distill.learning.dagger as dagger_module
     from unilab.algos.torch.distill import build_distillation_dataset
 
     collected = build_distillation_dataset(
@@ -4060,9 +4060,9 @@ def test_offline_distillation_builds_balanced_label_pools_once(
         BehaviorDistillationTrainer,
         MLPStudentPolicy,
         build_distillation_dataset,
-        offline,
         run_offline_distillation_updates,
     )
+    from unilab.algos.torch.distill.learning import offline
 
     dataset = build_distillation_dataset(
         torch.randn(6, 5),

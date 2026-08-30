@@ -12,10 +12,10 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
-import unilab.algos.torch.distill.fada_async_runtime as fada_async_runtime
-import unilab.algos.torch.distill.fada_collection_transaction as fada_collection_transaction
-import unilab.algos.torch.distill.fada_training as fada_training
-import unilab.algos.torch.distill.fada_workflow as fada_workflow
+import unilab.algos.torch.distill.fada.async_runtime as fada_async_runtime
+import unilab.algos.torch.distill.fada.collection_transaction as fada_collection_transaction
+import unilab.algos.torch.distill.fada.training as fada_training
+import unilab.algos.torch.distill.fada.workflow as fada_workflow
 from tests.algos._fada_training_test_support import (
     ROOT,
     _CommandControlledEnv,

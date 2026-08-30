@@ -16,6 +16,10 @@ const pages = [
     output: "09_in_context_execution_calibration_design_inspector.html",
     data: "concept/09_in_context_execution_calibration_design_inspector.data.json",
   },
+  {
+    output: "10_state_conditioned_history_readout.html",
+    data: "concept/10_state_conditioned_history_readout.data.json",
+  },
 ];
 
 function replaceRequired(source, search, replacement, label) {
