@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -76,6 +77,103 @@ def _reuse_complete_artifact(
     )
 
 
+def _admit_fada_artifact(
+    cfg: DictConfig,
+    *,
+    loaded: LoadedFADASourceArtifact,
+    result: DaggerCollectResult,
+    request: DaggerCollectRequest,
+    training_schedule: str,
+) -> tuple[int, list[Mapping[str, Any]], dict[str, torch.Tensor]]:
+    """Run the complete pre-mutation admission for new and reusable artifacts."""
+
+    validate_fada_async_artifact_identity(
+        loaded.metadata,
+        expected={
+            "request_id": request.request_id,
+            "scenario": request.scenario,
+            "iteration": request.iteration,
+            "checkpoint_path": request.checkpoint_path,
+            "expected_weight_version": request.expected_weight_version,
+            "producer_pid": result.worker_pid,
+        },
+    )
+    if loaded.metadata.get("training_schedule") != training_schedule:
+        raise ValueError(
+            "FADA async artifact training schedule mismatch: "
+            f"expected={training_schedule!r} "
+            f"observed={loaded.metadata.get('training_schedule')!r}"
+        )
+    if loaded.num_samples != result.num_samples:
+        raise ValueError(
+            "FADA async artifact/result sample mismatch: "
+            f"artifact={loaded.num_samples} result={result.num_samples}"
+        )
+    main_windows = int(loaded.metadata.get("main_windows", 0))
+    if main_windows <= 0 or main_windows > result.num_samples:
+        raise ValueError(f"invalid FADA async main_windows={main_windows}")
+    raw_summaries = loaded.metadata.get("collections")
+    if not isinstance(raw_summaries, list) or not all(
+        isinstance(item, Mapping) for item in raw_summaries
+    ):
+        raise ValueError("FADA async artifact collections must be a list of mappings")
+    summaries = cast(list[Mapping[str, Any]], raw_summaries)
+    identity = loaded.identity_fields()
+    require_fada_curriculum_artifact(
+        cfg,
+        loaded.metadata,
+        identity=identity,
+    )
+    return main_windows, summaries, identity
+
+
+def _load_or_collect_admitted_artifact(
+    cfg: DictConfig,
+    *,
+    runtime: Any,
+    artifact_path: Path,
+    config: FADAArchitectureConfig,
+    request: DaggerCollectRequest,
+    training_schedule: str,
+) -> tuple[
+    DaggerCollectResult,
+    LoadedFADASourceArtifact,
+    int,
+    list[Mapping[str, Any]],
+    dict[str, torch.Tensor],
+]:
+    """Reuse one fully admitted artifact, otherwise replace it with one collection."""
+
+    if artifact_path.is_file():
+        try:
+            result, loaded = _reuse_complete_artifact(
+                artifact_path,
+                config=config,
+                request=request,
+            )
+            admitted = _admit_fada_artifact(
+                cfg,
+                loaded=loaded,
+                result=result,
+                request=request,
+                training_schedule=training_schedule,
+            )
+            return result, loaded, *admitted
+        except (AttributeError, FileNotFoundError, OSError, RuntimeError, TypeError, ValueError):
+            pass
+
+    result = runtime.collect(request)
+    loaded = open_fada_source_artifact(artifact_path, config=config)
+    admitted = _admit_fada_artifact(
+        cfg,
+        loaded=loaded,
+        result=result,
+        request=request,
+        training_schedule=training_schedule,
+    )
+    return result, loaded, *admitted
+
+
 def run_fada_persistent_async(
     cfg: DictConfig,
     *,
@@ -146,48 +244,15 @@ def run_fada_persistent_async(
                 output_path=str(artifact_path),
                 expected_weight_version=weight_version,
             )
-            if artifact_path.is_file():
-                result, loaded = _reuse_complete_artifact(
-                    artifact_path,
+            result, loaded, main_windows, summaries, identity = (
+                _load_or_collect_admitted_artifact(
+                    cfg,
+                    runtime=runtime,
+                    artifact_path=artifact_path,
                     config=config,
                     request=request,
+                    training_schedule=training_schedule,
                 )
-            else:
-                result = runtime.collect(request)
-                loaded = open_fada_source_artifact(artifact_path, config=config)
-            validate_fada_async_artifact_identity(
-                loaded.metadata,
-                expected={
-                    "request_id": request.request_id,
-                    "scenario": request.scenario,
-                    "iteration": request.iteration,
-                    "checkpoint_path": request.checkpoint_path,
-                    "expected_weight_version": request.expected_weight_version,
-                    "producer_pid": result.worker_pid,
-                },
-            )
-            if loaded.metadata.get("training_schedule") != training_schedule:
-                raise ValueError(
-                    "FADA async artifact training schedule mismatch: "
-                    f"expected={training_schedule!r} "
-                    f"observed={loaded.metadata.get('training_schedule')!r}"
-                )
-            if loaded.num_samples != result.num_samples:
-                raise ValueError(
-                    "FADA async artifact/result sample mismatch: "
-                    f"artifact={loaded.num_samples} result={result.num_samples}"
-                )
-            main_windows = int(loaded.metadata.get("main_windows", 0))
-            if main_windows <= 0 or main_windows > result.num_samples:
-                raise ValueError(f"invalid FADA async main_windows={main_windows}")
-            summaries = loaded.metadata.get("collections")
-            if not isinstance(summaries, list):
-                raise ValueError("FADA async artifact collections must be a list")
-            identity = loaded.identity_fields()
-            require_fada_curriculum_artifact(
-                cfg,
-                loaded.metadata,
-                identity=identity,
             )
             quality_batch = None
             if bool(fada_cfg.oracle_shadow_enabled):

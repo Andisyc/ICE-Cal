@@ -48,6 +48,7 @@ from unilab.algos.torch.distill import (
 )
 from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.fada import FADA_SCENARIO_IDS, FADASourceBatch
+from unilab.algos.torch.distill.fada.async_collection import _require_exact_collection_rows
 from unilab.algos.torch.distill.fada_async_runtime import (
     FADA_ASYNC_SCENARIO,
     PersistentFADACollectorWorker,
@@ -67,6 +68,18 @@ def _reuse_test_collection_environment(worker, environment) -> None:
         yield environment
 
     worker.collection_environment = collection_environment
+
+
+def test_fada_collector_rejects_profile_overproduction_before_artifact_write() -> None:
+    collection = SimpleNamespace(batch=_source_batch(_config(), size=3))
+
+    with pytest.raises(RuntimeError, match="exact window allocation.*expected=2 observed=3"):
+        _require_exact_collection_rows(
+            collection,
+            expected=2,
+            scenario="static_stand",
+            profile="cold_start",
+        )
 
 
 def test_fada_runtime_selects_request_scoped_collector_processes(tmp_path: Path) -> None:

@@ -219,15 +219,23 @@ def save_fada_source_batch(
 class FADAShardedSourceWriter:
     """Write one async artifact without retaining or concatenating its batches."""
 
-    def __init__(self, path: str | Path, *, config: FADAArchitectureConfig) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        config: FADAArchitectureConfig,
+        replace_existing: bool = False,
+    ) -> None:
         self.target = Path(path)
         self.config = config
+        self.replace_existing = bool(replace_existing)
         self._token = uuid.uuid4().hex
         self._shard_dir = self.target.parent / f"{self.target.name}.shards-{self._token}"
         self._manifest_temporary = self.target.with_suffix(
             self.target.suffix + f".tmp-{self._token}"
         )
         self._shards: list[_FADASourceShard] = []
+        self._replaced_shard_dirs: tuple[Path, ...] = ()
         self._committed = False
         self._cleanup: weakref.finalize | None = None
 
@@ -237,9 +245,15 @@ class FADAShardedSourceWriter:
 
     def __enter__(self) -> FADAShardedSourceWriter:
         self.target.parent.mkdir(parents=True, exist_ok=True)
-        if self.target.exists():
+        if self.target.exists() and not self.replace_existing:
             raise FileExistsError(
                 f"refusing to overwrite existing FADA source artifact: {self.target}"
+            )
+        if self.replace_existing:
+            self._replaced_shard_dirs = tuple(
+                candidate
+                for candidate in self.target.parent.glob(f"{self.target.name}.shards-*")
+                if candidate.is_dir() and candidate != self._shard_dir
             )
         self._shard_dir.mkdir()
         self._cleanup = weakref.finalize(
@@ -282,7 +296,7 @@ class FADAShardedSourceWriter:
             raise RuntimeError("FADA source artifact was already committed")
         if not self._shards:
             raise ValueError("FADA source artifact must contain at least one shard")
-        if self.target.exists():
+        if self.target.exists() and not self.replace_existing:
             raise FileExistsError(
                 f"refusing to overwrite existing FADA source artifact: {self.target}"
             )
@@ -308,6 +322,8 @@ class FADAShardedSourceWriter:
         self._committed = True
         if self._cleanup is not None:
             self._cleanup.detach()
+        for replaced in self._replaced_shard_dirs:
+            shutil.rmtree(replaced, ignore_errors=True)
         return self.target
 
     def close(self) -> None:

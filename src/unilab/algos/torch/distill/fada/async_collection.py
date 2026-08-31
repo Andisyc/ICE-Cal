@@ -100,6 +100,22 @@ def _summary(
     return result
 
 
+def _require_exact_collection_rows(
+    collection: FADACollectionResult,
+    *,
+    expected: int,
+    scenario: str,
+    profile: str,
+) -> None:
+    observed = int(collection.batch.command.shape[0])
+    if observed != int(expected):
+        raise RuntimeError(
+            "FADA collector violated its exact window allocation before artifact write: "
+            f"scenario={scenario!r} profile={profile!r} "
+            f"expected={expected} observed={observed}"
+        )
+
+
 def _collect_cold_start_windows(
     env: Any,
     *,
@@ -241,6 +257,12 @@ def _collect_fada_iteration(
                         num_windows=profile_windows,
                         spec=scenario_spec,
                     )
+            _require_exact_collection_rows(
+                main,
+                expected=profile_windows,
+                scenario=str(scenario),
+                profile=("cold_start" if cold_start else "steady_state"),
+            )
             artifact_writer.append(main.batch)
             main_windows += int(main.batch.command.shape[0])
             summaries.append(
@@ -338,5 +360,9 @@ def collect_fada_iteration(
 ) -> DaggerCollectResult:
     """Collect one transaction with deterministic shard cleanup on every exit."""
 
-    with FADAShardedSourceWriter(request.output_path, config=worker.config) as writer:
+    with FADAShardedSourceWriter(
+        request.output_path,
+        config=worker.config,
+        replace_existing=True,
+    ) as writer:
         return _collect_fada_iteration(worker, request, writer)

@@ -49,7 +49,12 @@ from unilab.algos.torch.distill import (
 )
 from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.fada import FADA_SCENARIO_IDS, FADASourceBatch
-from unilab.algos.torch.distill.fada.persistent_workflow import _reuse_complete_artifact
+from unilab.algos.torch.distill.fada.async_config import fada_training_schedule
+from unilab.algos.torch.distill.fada.persistent_workflow import (
+    _admit_fada_artifact,
+    _load_or_collect_admitted_artifact,
+    _reuse_complete_artifact,
+)
 from unilab.algos.torch.distill.fada.source_artifact import (
     FADA_SHARDED_SOURCE_SCHEMA_VERSION,
     FADAShardedSourceWriter,
@@ -349,6 +354,15 @@ def test_persistent_retry_reuses_exact_completed_artifact(tmp_path: Path) -> Non
         "checkpoint_path": request.checkpoint_path,
         "expected_weight_version": request.expected_weight_version,
         "producer_pid": 1234,
+        "main_windows": 2,
+        "scenario_allocations": {"walk": 2},
+        "collections": [
+            {
+                "source": "optimal_or_current_policy",
+                "command_scenario": "walk",
+                "windows": 2,
+            }
+        ],
     }
     with FADAShardedSourceWriter(artifact_path, config=config) as writer:
         writer.append(_source_batch(config, size=2))
@@ -364,6 +378,223 @@ def test_persistent_retry_reuses_exact_completed_artifact(tmp_path: Path) -> Non
     assert result.num_samples == 2
     assert result.metrics == {"artifact_reused": 1.0}
     assert artifact.metadata == metadata
+
+
+def test_persistent_retry_rejects_completed_artifact_with_wrong_summary(tmp_path: Path) -> None:
+    config = _config()
+    cfg = _paper_persistent_training_cfg(tmp_path)
+    cfg.training.fada.windows_per_iteration = 65536
+    artifact_path = tmp_path / "iteration_0002.pt"
+    request = DaggerCollectRequest(
+        request_id="fada-0002-v3",
+        scenario=FADA_ASYNC_SCENARIO,
+        iteration=2,
+        checkpoint_path=str((tmp_path / "student.pt").resolve()),
+        output_path=str(artifact_path.resolve()),
+        expected_weight_version=3,
+    )
+    metadata = {
+        "request_id": request.request_id,
+        "scenario": request.scenario,
+        "iteration": request.iteration,
+        "checkpoint_path": request.checkpoint_path,
+        "expected_weight_version": request.expected_weight_version,
+        "producer_pid": 1234,
+        "training_schedule": fada_training_schedule(cfg.training.fada),
+        "main_windows": 12,
+        "stand_transition_curriculum_enabled": True,
+        "scenario_allocations": {
+            "walk": 32768,
+            "static_stand": 16384,
+            "walk_to_stand": 16384,
+        },
+        "collections": [
+            {
+                "source": "optimal_or_current_policy",
+                "command_scenario": "walk",
+                "windows": 32768,
+            },
+            {
+                "source": "optimal_or_current_policy",
+                "command_scenario": "static_stand",
+                "windows": 16385,
+            },
+            {
+                "source": "optimal_or_current_policy",
+                "command_scenario": "walk_to_stand",
+                "windows": 16384,
+            },
+        ],
+    }
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=12))
+        writer.commit(metadata=metadata)
+
+    result, loaded = _reuse_complete_artifact(
+        artifact_path,
+        config=config,
+        request=request,
+    )
+    with pytest.raises(ValueError, match="scenario summary mismatch"):
+        _admit_fada_artifact(
+            cfg,
+            loaded=loaded,
+            result=result,
+            request=request,
+            training_schedule=fada_training_schedule(cfg.training.fada),
+        )
+
+
+def test_invalid_reused_summary_is_recollected_once_before_consumer_mutation(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    cfg = _paper_persistent_training_cfg(tmp_path)
+    cfg.training.fada.v005_replay.enabled = False
+    schedule = fada_training_schedule(cfg.training.fada)
+    artifact_path = tmp_path / "iteration_0002.pt"
+    request = DaggerCollectRequest(
+        request_id="fada-0002-v3",
+        scenario=FADA_ASYNC_SCENARIO,
+        iteration=2,
+        checkpoint_path=str((tmp_path / "student.pt").resolve()),
+        output_path=str(artifact_path.resolve()),
+        expected_weight_version=3,
+    )
+
+    def metadata(*, static_windows: int, producer_pid: int) -> dict[str, object]:
+        return {
+            "request_id": request.request_id,
+            "scenario": request.scenario,
+            "iteration": request.iteration,
+            "checkpoint_path": request.checkpoint_path,
+            "expected_weight_version": request.expected_weight_version,
+            "producer_pid": producer_pid,
+            "training_schedule": schedule,
+            "main_windows": 12,
+            "stand_transition_curriculum_enabled": True,
+            "scenario_allocations": {"walk": 6, "static_stand": 3, "walk_to_stand": 3},
+            "collections": [
+                {
+                    "source": "optimal_or_current_policy",
+                    "command_scenario": "walk",
+                    "oracle_role": "unified",
+                    "windows": 6,
+                },
+                {
+                    "source": "optimal_or_current_policy",
+                    "command_scenario": "static_stand",
+                    "oracle_role": "unified",
+                    "windows": static_windows,
+                },
+                {
+                    "source": "optimal_or_current_policy",
+                    "command_scenario": "walk_to_stand",
+                    "oracle_role": "unified",
+                    "windows": 3,
+                },
+            ],
+        }
+
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=12))
+        writer.commit(metadata=metadata(static_windows=4, producer_pid=111))
+
+    class Runtime:
+        collect_calls = 0
+
+        def collect(self, collect_request: DaggerCollectRequest):
+            self.collect_calls += 1
+            with FADAShardedSourceWriter(
+                artifact_path,
+                config=config,
+                replace_existing=True,
+            ) as writer:
+                writer.append(_source_batch(config, size=12))
+                writer.commit(metadata=metadata(static_windows=3, producer_pid=222))
+            return SimpleNamespace(
+                request_id=collect_request.request_id,
+                scenario=collect_request.scenario,
+                iteration=collect_request.iteration,
+                checkpoint_path=collect_request.checkpoint_path,
+                output_path=collect_request.output_path,
+                expected_weight_version=collect_request.expected_weight_version,
+                observed_weight_version=collect_request.expected_weight_version,
+                num_samples=12,
+                worker_pid=222,
+            )
+
+    runtime = Runtime()
+    _, loaded, main_windows, summaries, _ = _load_or_collect_admitted_artifact(
+        cfg,
+        runtime=runtime,
+        artifact_path=artifact_path,
+        config=config,
+        request=request,
+        training_schedule=schedule,
+    )
+
+    assert runtime.collect_calls == 1
+    assert main_windows == 12
+    assert sum(int(item["windows"]) for item in summaries[:3]) == 12
+    assert loaded.metadata["producer_pid"] == 222
+
+
+def test_collector_writer_atomically_replaces_invalid_manifest_generation(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "iteration.pt"
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=1))
+        writer.commit(metadata={"generation": 1})
+    old_reader = open_fada_source_artifact(artifact_path, config=config)
+    old_shard_dirs = {shard.path.parent for shard in old_reader.shards}
+
+    with FADAShardedSourceWriter(
+        artifact_path,
+        config=config,
+        replace_existing=True,
+    ) as writer:
+        writer.append(_source_batch(config, size=2))
+        writer.commit(metadata={"generation": 2})
+
+    assert all(not directory.exists() for directory in old_shard_dirs)
+    replacement = open_fada_source_artifact(artifact_path, config=config)
+    assert replacement.metadata == {"generation": 2}
+    assert replacement.num_samples == 2
+
+
+def test_collector_writer_failed_replacement_keeps_old_generation_readable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    artifact_path = tmp_path / "iteration.pt"
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=1))
+        writer.commit(metadata={"generation": 1})
+    old_reader = open_fada_source_artifact(artifact_path, config=config)
+    old_shard_dirs = {shard.path.parent for shard in old_reader.shards}
+    original_replace = Path.replace
+
+    def fail_manifest_swap(path: Path, target: Path):
+        if target == artifact_path:
+            raise OSError("injected manifest swap failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_manifest_swap)
+    with pytest.raises(OSError, match="injected manifest swap failure"):
+        with FADAShardedSourceWriter(
+            artifact_path,
+            config=config,
+            replace_existing=True,
+        ) as writer:
+            writer.append(_source_batch(config, size=2))
+            writer.commit(metadata={"generation": 2})
+
+    retained = open_fada_source_artifact(artifact_path, config=config)
+    assert retained.metadata == {"generation": 1}
+    assert retained.num_samples == 1
+    assert all(directory.is_dir() for directory in old_shard_dirs)
 
 
 def test_fada_async_artifact_identity_fails_closed_on_stale_request() -> None:
