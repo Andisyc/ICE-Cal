@@ -177,18 +177,18 @@ def _oracle_shadow_pair(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Roll final Oracle for K steps and restore the exact visited-state snapshot."""
 
-    preserve = getattr(env, "preserve_rollout_state", None)
-    if not callable(preserve):
+    isolated_branch = getattr(env, "isolated_rollout_branch", None)
+    if not callable(isolated_branch):
         raise TypeError(
-            "Oracle-shadow collection requires env.preserve_rollout_state() exact snapshot support"
+            "Oracle-shadow collection requires env.isolated_rollout_branch() native isolation"
         )
     futures: list[np.ndarray] = []
     actions: list[np.ndarray] = []
     valid = np.ones((int(env.num_envs),), dtype=np.bool_)
     oracle_actions = initial_oracle_actions
 
-    preserve_context = cast(Callable[[], ContextManager[None]], preserve)
-    with preserve_context():
+    branch_context = cast(Callable[[], ContextManager[None]], isolated_branch)
+    with branch_context():
         for offset in range(config.prediction_horizon):
             actions.append(oracle_actions.copy())
             shadow_state = env.step(oracle_actions)

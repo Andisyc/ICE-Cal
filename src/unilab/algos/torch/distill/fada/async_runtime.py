@@ -165,6 +165,18 @@ class PersistentFADACollectorWorker:
                     self.cfg,
                 )
             environment.set_physics_envelope_guard(self._physics_guard_max_abs)
+            fada_cfg = self.cfg.training.fada
+            needs_oracle_shadow = bool(
+                OmegaConf.select(fada_cfg, "oracle_shadow_enabled", default=False)
+            ) or bool(self.source_allocations)
+            if needs_oracle_shadow:
+                prepare = getattr(environment, "prepare_isolated_rollout_branch", None)
+                if not callable(prepare):
+                    raise TypeError(
+                        "FADA Oracle-shadow collection requires an environment with "
+                        "prepare_isolated_rollout_branch()"
+                    )
+                prepare()
             return environment
         except BaseException:
             close = getattr(environment, "close", None)

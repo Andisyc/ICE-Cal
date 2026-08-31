@@ -5,6 +5,7 @@ These tests use a minimal concrete NpEnv stub — no MuJoCo required.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Tuple, cast
 from unittest.mock import MagicMock
@@ -287,6 +288,79 @@ class TestNpEnvInitState:
             env.task_counter = 99
 
         assert env.task_counter == 7
+
+    def test_isolated_rollout_branch_restores_state_before_primary_handle(self):
+        env = _StubNpEnv(num_envs=1)
+        env.init_state()
+        env._backend.capture_rollout_state.return_value = {"physics": np.array([3.0])}
+        events: list[str] = []
+
+        @contextmanager
+        def isolated_backend_branch():
+            events.append("activate-sibling")
+            try:
+                yield
+            finally:
+                events.append("restore-primary-handle")
+
+        env._backend.isolated_rollout_branch = isolated_backend_branch
+        original_restore = env.restore_rollout_snapshot
+
+        def recording_restore(snapshot):
+            events.append("restore-env-snapshot")
+            original_restore(snapshot)
+
+        env.restore_rollout_snapshot = recording_restore  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="shadow failed"):
+            with env.isolated_rollout_branch():
+                assert env._autoreset is False
+                _require_state(env).obs["obs"].fill(99.0)
+                raise RuntimeError("shadow failed")
+
+        assert events == [
+            "activate-sibling",
+            "restore-env-snapshot",
+            "restore-primary-handle",
+        ]
+        assert env._autoreset is True
+
+    def test_prepare_isolated_rollout_branch_rejects_initialized_env(self):
+        env = _StubNpEnv(num_envs=1)
+        env.init_state()
+
+        with pytest.raises(RuntimeError, match="before environment initialization"):
+            env.prepare_isolated_rollout_branch()
+
+        env._backend.prepare_isolated_rollout_branch.assert_not_called()
+
+    def test_prepare_isolated_rollout_branch_rejects_reset_before_init_state(self):
+        class _ResetTrackingBackend:
+            def __init__(self) -> None:
+                self.reset_count = 0
+
+            def set_state(self) -> None:
+                self.reset_count += 1
+
+            def prepare_isolated_rollout_branch(self) -> None:
+                if self.reset_count:
+                    raise RuntimeError("must be prepared before any reset transaction")
+
+        class _PreInitResetEnv(_StubNpEnv):
+            def __init__(self) -> None:
+                super().__init__(num_envs=1)
+                self._backend = _ResetTrackingBackend()  # type: ignore[assignment]
+
+            def reset(self, env_indices: np.ndarray):
+                self._backend.set_state()
+                return super().reset(env_indices)
+
+        env = _PreInitResetEnv()
+        env.reset(np.asarray([0], dtype=np.int32))
+        assert env.state is None
+
+        with pytest.raises(RuntimeError, match="before any reset transaction"):
+            env.prepare_isolated_rollout_branch()
 
     def test_refresh_state_recomputes_without_stepping(self):
         env = _StubNpEnv(num_envs=2)

@@ -2,8 +2,9 @@ import os
 import tempfile
 import time
 import weakref
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from multiprocessing import cpu_count, current_process, get_context
 from typing import Any, Optional, cast
@@ -332,6 +333,10 @@ class MuJoCoBackend(SimBackend):
         self._model_variants: tuple[mujoco.MjModel, ...] = (self._model,)
         self._model_assignments = np.zeros((num_envs,), dtype=np.int32)
         self._pool: BatchEnvPool | None = None
+        self._isolated_rollout_pool: BatchEnvPool | None = None
+        self._isolated_rollout_active = False
+        self._isolated_rollout_failure: str | None = None
+        self._reset_transaction_count = 0
 
         # State indices.
         self.nq = self._model.nq
@@ -809,7 +814,16 @@ class MuJoCoBackend(SimBackend):
     # Simulation control                                                 #
     # ------------------------------------------------------------------ #
 
+    def _raise_if_isolated_rollout_poisoned(self) -> None:
+        failure = getattr(self, "_isolated_rollout_failure", None)
+        if failure is not None:
+            raise RuntimeError(
+                "MuJoCo isolated rollout pool is poisoned after reset synchronization "
+                f"failure: {failure}"
+            )
+
     def step(self, ctrl: np.ndarray, nsteps: int = 1) -> dict | None:
+        self._raise_if_isolated_rollout_poisoned()
         if self._pre_step_control_fn is not None:
             return self._step_with_pre_step_control(ctrl, nsteps)
 
@@ -904,19 +918,43 @@ class MuJoCoBackend(SimBackend):
         qvel: np.ndarray,
         randomization: ResetRandomizationPayload | None = None,
     ) -> None:
+        self._raise_if_isolated_rollout_poisoned()
         if len(env_indices) == 0:
             return
 
+        self._reset_transaction_count += 1
         num_reset = len(env_indices)
         state_np = np.zeros((num_reset, self._physics_state.shape[1]), dtype=np.float64)
         state_np[:, self._idx_qpos : self._idx_qpos + self.nq] = qpos
         state_np[:, self._idx_qvel : self._idx_qvel + self.nv] = qvel
 
+        translated_randomization = self._translate_reset_randomization(randomization, num_reset)
+
+        def reset_payload() -> dict[str, np.ndarray] | None:
+            if translated_randomization is None:
+                return None
+            return {
+                key: np.asarray(value, dtype=np.float64).copy()
+                for key, value in translated_randomization.items()
+            }
+
         state_out, sensor_np = self._pool.reset(  # type: ignore[union-attr]
             env_ids=np.asarray(env_indices, dtype=np.int32),
             initial_state=state_np,
-            randomization=self._translate_reset_randomization(randomization, num_reset),
+            randomization=reset_payload(),
         )
+
+        sibling = self._isolated_rollout_pool
+        if sibling is not None and not self._isolated_rollout_active:
+            try:
+                sibling.reset(
+                    env_ids=np.asarray(env_indices, dtype=np.int32),
+                    initial_state=state_np,
+                    randomization=reset_payload(),
+                )
+            except BaseException as exc:
+                self._isolated_rollout_failure = f"{type(exc).__name__}: {exc}"
+                raise
 
         self._physics_state[env_indices] = state_out.astype(self._np_dtype)
         self._sensor_data[env_indices] = sensor_np.astype(self._np_dtype)
@@ -975,16 +1013,83 @@ class MuJoCoBackend(SimBackend):
             raise RuntimeError("MuJoCo backend pool is already materialized")
         self._pool = self._build_pool()
 
-    def close(self) -> None:
-        """Release the native batch pool before removing scene assets."""
+    def prepare_isolated_rollout_branch(self) -> None:
+        """Materialize a counterfactual pool from the cold model assignments."""
 
-        pool = self._pool
-        self._pool = None
+        self._raise_if_isolated_rollout_poisoned()
+        if self._isolated_rollout_active:
+            raise RuntimeError("cannot prepare an isolated rollout pool during a branch")
+        if self._isolated_rollout_pool is not None:
+            return
+        if self._reset_transaction_count != 0:
+            raise RuntimeError(
+                "isolated rollout pool must be prepared before any MuJoCo reset transaction"
+            )
+        primary = self._pool
+        if primary is None:
+            raise RuntimeError(
+                "MuJoCo backend must be materialized before preparing an isolated rollout pool"
+            )
+        sibling = BatchEnvPool(
+            self._current_model_sequence(),
+            nbatch=self._num_envs,
+            nthread=self._n_threads,
+        )
         try:
-            if pool is not None:
-                pool.close()
+            sibling.forward(self._physics_state)
+        except BaseException:
+            sibling.close()
+            raise
+        self._isolated_rollout_pool = sibling
+
+    @contextmanager
+    def isolated_rollout_branch(self) -> Iterator[None]:
+        """Temporarily route backend stepping through the prepared sibling pool."""
+
+        self._raise_if_isolated_rollout_poisoned()
+        if self._isolated_rollout_active:
+            raise RuntimeError("isolated MuJoCo rollout branches cannot be nested")
+        primary = self._pool
+        sibling = self._isolated_rollout_pool
+        if primary is None:
+            raise RuntimeError("MuJoCo backend pool is not materialized")
+        if sibling is None:
+            raise RuntimeError("MuJoCo isolated rollout pool is not prepared")
+        self._isolated_rollout_active = True
+        self._pool = sibling
+        try:
+            yield
         finally:
-            super().close()
+            self._pool = primary
+            self._isolated_rollout_active = False
+
+    def close(self) -> None:
+        """Release both native batch pools before removing scene assets."""
+
+        if getattr(self, "_isolated_rollout_active", False):
+            raise RuntimeError("cannot close MuJoCo backend during an isolated rollout branch")
+        primary = self._pool
+        sibling = getattr(self, "_isolated_rollout_pool", None)
+        self._pool = None
+        self._isolated_rollout_pool = None
+        errors: list[BaseException] = []
+        closed_pool_ids: set[int] = set()
+        try:
+            for pool in (sibling, primary):
+                if pool is None or id(pool) in closed_pool_ids:
+                    continue
+                closed_pool_ids.add(id(pool))
+                try:
+                    pool.close()
+                except BaseException as exc:
+                    errors.append(exc)
+        finally:
+            try:
+                super().close()
+            except BaseException as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]
 
     def apply_interval_randomization(self, plan: IntervalRandomizationPlan) -> None:
         if plan.is_empty():

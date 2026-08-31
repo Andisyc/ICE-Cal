@@ -154,6 +154,11 @@ class _FakeEnv:
             self.current_obs = current_obs
             self.step_count = step_count
 
+    @contextmanager
+    def isolated_rollout_branch(self):
+        with self.preserve_rollout_state():
+            yield
+
 
 class _CommandControlledEnv:
     def __init__(self) -> None:
@@ -207,6 +212,11 @@ class _CommandControlledEnv:
             self.step_count = step_count
             self.state = state
             self.command_history = command_history
+
+    @contextmanager
+    def isolated_rollout_branch(self):
+        with self.preserve_rollout_state():
+            yield
 
     def close(self) -> None:
         self.closed = True

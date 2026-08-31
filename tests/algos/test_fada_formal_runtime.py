@@ -96,6 +96,14 @@ class _FormalG1Env:
             self.step_count = step_count
             self.state = self._state(commands)
 
+    def prepare_isolated_rollout_branch(self) -> None:
+        return None
+
+    @contextmanager
+    def isolated_rollout_branch(self):
+        with self.preserve_rollout_state():
+            yield
+
     def set_physics_envelope_guard(self, max_abs_state: float | None) -> None:
         self.physics_guard_max_abs = max_abs_state
 

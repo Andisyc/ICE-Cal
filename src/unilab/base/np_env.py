@@ -157,6 +157,29 @@ class NpEnv(ABEnv):
             # B2: success/exception 均恢复同一 snapshot, 形成可重复的正式 rollout 起点.
             self.restore_rollout_snapshot(snapshot)
 
+    def prepare_isolated_rollout_branch(self) -> None:
+        """Prepare the backend-owned counterfactual rollout resource on the cold path."""
+
+        if self._state is not None or self.step_counter != 0:
+            raise RuntimeError(
+                "isolated rollout pool must be prepared before environment initialization"
+            )
+        self._backend.prepare_isolated_rollout_branch()
+
+    @contextmanager
+    def isolated_rollout_branch(self) -> Iterator[None]:
+        """Run a temporary branch without advancing the committed native trajectory owner."""
+
+        snapshot = self.capture_rollout_snapshot()
+        with self._backend.isolated_rollout_branch():
+            self._autoreset = False
+            try:
+                yield
+            finally:
+                # Restore while the sibling backend owner remains active. The primary
+                # handle is reactivated only after every env/task/RNG carrier is exact.
+                self.restore_rollout_snapshot(snapshot)
+
     @property
     def obs_groups_spec(self) -> dict[str, int]:
         """Return observation group dimensions, e.g. {"obs": 98, "critic": 101}.

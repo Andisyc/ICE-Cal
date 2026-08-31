@@ -1,16 +1,127 @@
+[fada-collect] scenario=walk profile=steady_state mode=intermediate_oracle progress=100.0% windows=6553/6553 env_steps=137 acceptance=74.74% rejected(done=0 command=0 scenario=0)
+[fada-train] stage=alternating_idm_then_planner iteration=1/8 windows=196608 env_steps=6209 replay=196608 samples_seen=196608 idm(loss=0.015362 grad=0.095516 updates=128) planner(loss=0.012260 grad=0.043968 updates=128) collect_s=609.06 rejected(done=3156 command=5184 scenario=13824) checkpoint=/ssd1/cyx/ICE-Cal/logs/fada/planner_idm_privileged_v022_coldstart_retrain.pt
+/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/gymnasium/spaces/box.py:226: RuntimeWarning: overflow encountered in cast
+  elif low.dtype != self.dtype and np.any(low < dtype_min):
+/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/gymnasium/spaces/box.py:296: RuntimeWarning: overflow encountered in cast
+  elif high.dtype != self.dtype and np.any(dtype_max < high):
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=35 acceptance=85.71% rejected(done=1 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1920 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=10.0% windows=192/1920 env_steps=3 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=20.0% windows=384/1920 env_steps=6 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=30.0% windows=576/1920 env_steps=9 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=40.0% windows=768/1920 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=960/1920 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=60.0% windows=1152/1920 env_steps=18 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=70.0% windows=1344/1920 env_steps=21 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=80.0% windows=1536/1920 env_steps=24 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=90.0% windows=1728/1920 env_steps=27 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1920/1920 env_steps=29 acceptance=103.45% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=0.0% windows=0/1024 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=12.5% windows=128/1024 env_steps=2 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=25.0% windows=256/1024 env_steps=4 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=31.2% windows=320/1024 env_steps=5 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=43.8% windows=448/1024 env_steps=7 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=50.0% windows=512/1024 env_steps=8 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=62.5% windows=640/1024 env_steps=10 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=75.0% windows=768/1024 env_steps=12 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=81.2% windows=832/1024 env_steps=13 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=93.8% windows=960/1024 env_steps=15 acceptance=100.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=cold_start mode=planner_idm progress=100.0% windows=1024/1024 env_steps=15 acceptance=106.67% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=0.0% windows=0/16384 env_steps=0 acceptance=0.00% rejected(done=0 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=10.0% windows=1640/16384 env_steps=83 acceptance=30.87% rejected(done=62 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=20.1% windows=3298/16384 env_steps=139 acceptance=37.07% rejected(done=120 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=30.1% windows=4934/16384 env_steps=197 acceptance=39.13% rejected(done=180 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=40.0% windows=6559/16384 env_steps=252 acceptance=40.67% rejected(done=235 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=50.0% windows=8200/16384 env_steps=311 acceptance=41.20% rejected(done=297 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=60.2% windows=9861/16384 env_steps=373 acceptance=41.31% rejected(done=365 command=0 scenario=0)
+[fada-collect] scenario=walk profile=steady_state mode=planner_idm progress=70.1% windows=11481/16384 env_steps=430 acceptance=41.72% rejected(done=424 command=0 scenario=0)
 Fatal Python error: Segmentation fault
 
-Current thread 0x000077782acc4480 (most recent call first):
-  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 91 in _wrapreduction_any_all
-  File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 2675 in all
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/windows.py", line 69 in _validate_records
+Current thread 0x000070993cecd480 (most recent call first):
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/windows.py", line 54 in _validate_records
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/windows.py", line 100 in build_fada_causal_window
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_windows.py", line 29 in _window_from_records
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 384 in _admit_record_window
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 347 in _admit_windows
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 134 in run
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 620 in collect_fada_source_windows
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/async_collection.py", line 270 in collect_fada_iteration
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/async_collection.py", line 232 in collect_fada_iteration
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/async_runtime.py", line 249 in collect
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 120 in _persistent_dagger_collector_entry
   File "/ssd1/cyx/ICE-Cal/src/unilab/ipc/async_runner.py", line 61 in _collector_entry_wrapper
@@ -21,15 +132,9 @@ Current thread 0x000077782acc4480 (most recent call first):
   File "<string>", line 1 in <module>
 
 Extension modules: yaml._yaml, numpy._core._multiarray_umath, numpy.linalg._umath_linalg, torch._C, torch._C._dynamo.autograd_compiler, torch._C._dynamo.eval_frame, torch._C._dynamo.guards, torch._C._dynamo.utils, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._special, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator, psutil._psutil_linux, _cffi_backend (total: 25)
-
-[AsyncRunner] Collector exited with code -11:
-Collector process killed by signal 11 (SIGSEGV).
-  No Python traceback available — killed externally.
-  Common cause: segfault in native code (C++/CUDA).
-
 Error executing job with overrides: ['task=g1_walk_flat/mujoco_fada_privileged_planner', 'training.fada.enabled=true', 'teacher.checkpoint_path=/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_5000.pt', 'training.fada.intermediate_oracle_checkpoint_paths=[/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_240.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_480.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_720.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_960.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1200.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1440.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1680.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1920.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2160.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2400.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2640.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2880.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3120.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3360.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3600.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3840.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4080.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4320.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4560.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4800.pt]', 'training.fada.stand_transition_curriculum.enabled=true', 'training.fada.v005_replay.enabled=true', 'training.fada.async_artifact_dir=/ssd1/cyx/ICE-Cal/logs/fada/planner_idm_privileged_v022_coldstart_retrain/source_batches', 'training.fada.checkpoint_path=/ssd1/cyx/ICE-Cal/logs/fada/planner_idm_privileged_v022_coldstart_retrain.pt']
 Traceback (most recent call last):
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 253, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 261, in collect
     self._result_queue.get(timeout=min(0.1, remaining)),
   File "/usr/lib/python3.10/multiprocessing/queues.py", line 114, in get
     raise Empty
@@ -66,11 +171,11 @@ Traceback (most recent call last):
     return run_fada_training_owner(
   File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/workflow.py", line 193, in run_fada_training_owner
     return _run_fada_persistent_async(
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/persistent_workflow.py", line 104, in run_fada_persistent_async
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/persistent_workflow.py", line 107, in run_fada_persistent_async
     result = runtime.collect(request)
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/persistent_runtime.py", line 157, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/persistent_runtime.py", line 160, in collect
     return self._runner.collect(request)
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 257, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 268, in collect
     raise RuntimeError(self._read_collector_error())
 RuntimeError: Collector process killed by signal 11 (SIGSEGV).
   No Python traceback available — killed externally.

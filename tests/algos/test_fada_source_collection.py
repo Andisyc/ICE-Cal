@@ -131,9 +131,16 @@ def test_oracle_shadow_stops_driving_rows_after_they_become_invalid() -> None:
         def __init__(self) -> None:
             self.obs = np.zeros((2, 3), dtype=np.float32)
             self.actions: list[np.ndarray] = []
+            self.isolated_branch_count = 0
 
         @contextmanager
         def preserve_rollout_state(self):
+            raise AssertionError("same-pool rollout preservation must not own Oracle shadow")
+            yield  # pragma: no cover
+
+        @contextmanager
+        def isolated_rollout_branch(self):
+            self.isolated_branch_count += 1
             yield
 
         def step(self, actions: np.ndarray) -> _State:
@@ -162,6 +169,7 @@ def test_oracle_shadow_stops_driving_rows_after_they_become_invalid() -> None:
         command_info_keys=("commands",),
     )
 
+    assert env.isolated_branch_count == 1
     np.testing.assert_array_equal(env.actions[1][0], np.zeros((2,), dtype=np.float32))
     assert np.any(env.actions[1][1] != 0.0)
 

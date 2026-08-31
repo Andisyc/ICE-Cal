@@ -90,6 +90,54 @@ def test_fada_runtime_selects_request_scoped_collector_processes(tmp_path: Path)
         runtime.close()
 
 
+@pytest.mark.parametrize(
+    ("oracle_shadow_enabled", "source_allocations", "expected_prepare_count"),
+    [
+        (True, (), 1),
+        (False, (), 0),
+        (False, (("intermediate.pt", 1),), 1),
+    ],
+)
+def test_fada_worker_prepares_isolated_pool_only_when_shadow_is_collected(
+    oracle_shadow_enabled: bool,
+    source_allocations: tuple[tuple[str, int], ...],
+    expected_prepare_count: int,
+) -> None:
+    class _Env:
+        def __init__(self) -> None:
+            self.prepare_count = 0
+
+        def prepare_isolated_rollout_branch(self) -> None:
+            self.prepare_count += 1
+
+        def set_physics_envelope_guard(self, _max_abs_state: float) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    environment = _Env()
+    worker = PersistentFADACollectorWorker.__new__(PersistentFADACollectorWorker)
+    worker.cfg = OmegaConf.create(
+        {
+            "training": {
+                "task_name": "G1WalkFlat",
+                "sim_backend": "mujoco",
+                "fada": {"num_envs": 1, "oracle_shadow_enabled": oracle_shadow_enabled},
+            }
+        }
+    )
+    worker._env_cfg_override = {}
+    worker._env_factory = lambda *_args, **_kwargs: environment
+    worker._checkpoint_identity = None
+    worker._physics_guard_max_abs = 1.0e4
+    worker.source_allocations = source_allocations
+    worker.root_dir = ROOT
+
+    assert worker._materialize_collection_environment() is environment
+    assert environment.prepare_count == expected_prepare_count
+
+
 def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     tmp_path: Path,
 ) -> None:

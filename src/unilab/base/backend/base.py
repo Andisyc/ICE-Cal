@@ -2,7 +2,7 @@ import abc
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from os import PathLike
-from typing import Any
+from typing import Any, ContextManager
 
 import numpy as np
 
@@ -465,6 +465,18 @@ class SimBackend(abc.ABC):
         """Restore a snapshot returned by :meth:`capture_rollout_state`."""
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support exact rollout snapshots"
+        )
+
+    def prepare_isolated_rollout_branch(self) -> None:
+        """Materialize backend resources for counterfactual rollout isolation."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support isolated rollout branches"
+        )
+
+    def isolated_rollout_branch(self) -> ContextManager[None]:
+        """Activate a prepared native owner for one counterfactual rollout."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support isolated rollout branches"
         )
 
     def get_playback_model(self, env_index: int | None = None) -> Any:
