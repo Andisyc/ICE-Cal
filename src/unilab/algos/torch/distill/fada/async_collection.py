@@ -292,12 +292,18 @@ def collect_fada_iteration(
     # B3: 合并并原子写出带配额/角色证据的 artifact, 产出 parent barrier receipt.
     collected = time.perf_counter()
     batch = _concat_source_batches(batches, worker.config)
+    producer_pid = os.getpid()
     save_fada_source_batch(
         request.output_path,
         batch,
         config=worker.config,
         metadata={
             "iteration": request.iteration,
+            "request_id": request.request_id,
+            "scenario": request.scenario,
+            "checkpoint_path": request.checkpoint_path,
+            "expected_weight_version": request.expected_weight_version,
+            "producer_pid": producer_pid,
             "training_schedule": training_schedule,
             "main_windows": main_windows,
             "stand_transition_curriculum_enabled": curriculum_enabled,
@@ -316,7 +322,7 @@ def collect_fada_iteration(
         expected_weight_version=request.expected_weight_version,
         observed_weight_version=worker.local_weight_version,
         num_samples=int(batch.command.shape[0]),
-        worker_pid=os.getpid(),
+        worker_pid=producer_pid,
         metrics={
             "weight_sync_seconds": sync_finished - started,
             "collect_seconds": collected - sync_finished,

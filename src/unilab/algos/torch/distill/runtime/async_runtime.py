@@ -21,7 +21,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, cast
+from typing import Any, Callable, Literal, Mapping, Protocol, cast
 
 from unilab.ipc.async_runner import AsyncRunner
 
@@ -137,11 +137,11 @@ def _persistent_dagger_collector_entry(
 
 
 class PersistentDaggerCollectorRunner(AsyncRunner):
-    """Synchronous request facade backed by one persistent spawned worker.
+    """Synchronous request facade backed by an explicitly scoped spawned worker.
 
     Collection remains sequential here to preserve the DAgger outer barrier.
-    The performance gain targeted by this layer is persistent runtime state,
-    not unsound overlap between collection and student publication.
+    The default keeps one resident worker for compatible workflows. Request scope
+    retires native/CUDA state after every completed collection transaction.
     """
 
     def __init__(
@@ -151,6 +151,7 @@ class PersistentDaggerCollectorRunner(AsyncRunner):
         worker_kwargs: Mapping[str, Any] | None = None,
         checkpoint_activator: Callable[[Path], int] | None = None,
         request_timeout_seconds: float = 300.0,
+        worker_lifecycle: Literal["persistent", "request"] = "persistent",
     ) -> None:
         super().__init__(
             env_name="DAggerPersistentCollector",
@@ -162,10 +163,15 @@ class PersistentDaggerCollectorRunner(AsyncRunner):
         )
         if request_timeout_seconds <= 0:
             raise ValueError("request_timeout_seconds must be positive")
+        if worker_lifecycle not in {"persistent", "request"}:
+            raise ValueError(
+                f"worker_lifecycle must be 'persistent' or 'request', got {worker_lifecycle!r}"
+            )
         self._worker_factory = worker_factory
         self._worker_kwargs = dict(worker_kwargs or {})
         self._checkpoint_activator = checkpoint_activator
         self._request_timeout_seconds = float(request_timeout_seconds)
+        self._worker_lifecycle = worker_lifecycle
         self._request_queue = _SPAWN_CTX.Queue(maxsize=1)
         self._result_queue = _SPAWN_CTX.Queue(maxsize=1)
         self._shared_resources.extend([self._request_queue, self._result_queue])
@@ -239,25 +245,79 @@ class PersistentDaggerCollectorRunner(AsyncRunner):
                     f"active={self._active_weight_version}"
                 )
         self.start()
-        self._request_queue.put(request)
-        deadline = time.monotonic() + self._request_timeout_seconds
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"persistent DAgger collector timed out for request {request.request_id!r}"
-                )
+        primary_error: BaseException | None = None
+        try:
+            self._request_queue.put(request)
+            deadline = time.monotonic() + self._request_timeout_seconds
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"persistent DAgger collector timed out for request {request.request_id!r}"
+                    )
+                try:
+                    result = cast(
+                        DaggerCollectResult,
+                        self._result_queue.get(timeout=min(0.1, remaining)),
+                    )
+                except queue.Empty:
+                    if (
+                        self._collector_process is not None
+                        and not self._collector_process.is_alive()
+                    ):
+                        raise RuntimeError(self._read_collector_error())
+                    continue
+                validate_dagger_collect_result(request, result)
+                return result
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            if self._worker_lifecycle == "request":
+                retirement_error: BaseException | None = None
+                try:
+                    self._retire_request_worker()
+                except BaseException as exc:
+                    retirement_error = exc
+                if primary_error is not None or retirement_error is not None:
+                    # A failed request can leave an unread queue item or uncertain native
+                    # teardown. Retire the whole facade instead of allowing stale IPC state
+                    # to cross into a later request.
+                    self.close()
+                if primary_error is None and retirement_error is not None:
+                    raise retirement_error
+
+    def _retire_request_worker(self) -> None:
+        """Retire, join, and close the worker that owned one request transaction."""
+
+        process = self._collector_process
+        if process is None:
+            return
+        if process.is_alive():
             try:
-                result = cast(
-                    DaggerCollectResult,
-                    self._result_queue.get(timeout=min(0.1, remaining)),
-                )
-            except queue.Empty:
-                if self._collector_process is not None and not self._collector_process.is_alive():
-                    raise RuntimeError(self._read_collector_error())
-                continue
-            validate_dagger_collect_result(request, result)
-            return result
+                self._request_queue.put(None, timeout=0.1)
+            except queue.Full:
+                pass
+            process.join(timeout=10.0)
+        retirement_error: RuntimeError | None = None
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5.0)
+            retirement_error = RuntimeError(
+                "request-scoped DAgger collector did not retire after its transaction"
+            )
+        elif process.exitcode != 0:
+            retirement_error = RuntimeError(self._read_collector_error())
+        process.close()
+        self._collector_process = None
+        if self._error_recv is not None:
+            self._error_recv.close()
+            self._error_recv = None
+        if self._error_send is not None:
+            self._error_send.close()
+            self._error_send = None
+        if retirement_error is not None:
+            raise retirement_error
 
     @staticmethod
     def validate_result(

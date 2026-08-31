@@ -1,15 +1,18 @@
 Fatal Python error: Segmentation fault
 
-Current thread 0x00007b3df08e2480 (most recent call first):
+Current thread 0x000077782acc4480 (most recent call first):
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 91 in _wrapreduction_any_all
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/numpy/_core/fromnumeric.py", line 2675 in all
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 69 in _validate_records
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_windows.py", line 100 in build_fada_causal_window
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_windows.py", line 29 in _window_from_records
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_collection_transaction.py", line 442 in collect_fada_source_windows
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_collection.py", line 228 in collect_fada_iteration
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_async_runtime.py", line 208 in collect
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 120 in _persistent_dagger_collector_entry
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/windows.py", line 69 in _validate_records
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/windows.py", line 100 in build_fada_causal_window
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_windows.py", line 29 in _window_from_records
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 384 in _admit_record_window
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 347 in _admit_windows
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 134 in run
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/collection_transaction.py", line 620 in collect_fada_source_windows
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/async_collection.py", line 270 in collect_fada_iteration
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/async_runtime.py", line 249 in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 120 in _persistent_dagger_collector_entry
   File "/ssd1/cyx/ICE-Cal/src/unilab/ipc/async_runner.py", line 61 in _collector_entry_wrapper
   File "/usr/lib/python3.10/multiprocessing/process.py", line 108 in run
   File "/usr/lib/python3.10/multiprocessing/process.py", line 314 in _bootstrap
@@ -24,9 +27,9 @@ Collector process killed by signal 11 (SIGSEGV).
   No Python traceback available — killed externally.
   Common cause: segfault in native code (C++/CUDA).
 
-Error executing job with overrides: ['task=g1_walk_flat/mujoco_fada_privileged_planner', 'training.fada.enabled=true', 'teacher.checkpoint_path=/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_5000.pt', 'training.fada.idm_initialization_path=/ssd1/cyx/ICE-Cal/logs/fada/idm_pretrain_privileged_v022.pt', 'training.fada.intermediate_oracle_checkpoint_paths=[/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_240.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_480.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_720.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_960.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1200.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1440.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1680.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1920.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2160.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2400.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2640.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2880.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3120.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3360.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3600.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3840.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4080.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4320.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4560.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4800.pt]']
+Error executing job with overrides: ['task=g1_walk_flat/mujoco_fada_privileged_planner', 'training.fada.enabled=true', 'teacher.checkpoint_path=/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_5000.pt', 'training.fada.intermediate_oracle_checkpoint_paths=[/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_240.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_480.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_720.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_960.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1200.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1440.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1680.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_1920.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2160.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2400.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2640.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_2880.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3120.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3360.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3600.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_3840.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4080.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4320.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4560.pt,/ssd1/cyx/ICE-Cal/model/G1WalkFlat_live_priv_grouped_dr_v022_lineage_nocompile/model_4800.pt]', 'training.fada.stand_transition_curriculum.enabled=true', 'training.fada.v005_replay.enabled=true', 'training.fada.async_artifact_dir=/ssd1/cyx/ICE-Cal/logs/fada/planner_idm_privileged_v022_coldstart_retrain/source_batches', 'training.fada.checkpoint_path=/ssd1/cyx/ICE-Cal/logs/fada/planner_idm_privileged_v022_coldstart_retrain.pt']
 Traceback (most recent call last):
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 253, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 253, in collect
     self._result_queue.get(timeout=min(0.1, remaining)),
   File "/usr/lib/python3.10/multiprocessing/queues.py", line 114, in get
     raise Empty
@@ -35,9 +38,9 @@ _queue.Empty
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2593, in <module>
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 287, in <module>
     _run_main_with_native_fail_stop()
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2583, in _run_main_with_native_fail_stop
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 277, in _run_main_with_native_fail_stop
     main()
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/hydra/main.py", line 94, in decorated_main
     _run_hydra(
@@ -57,17 +60,17 @@ Traceback (most recent call last):
     raise self._return_value
   File "/ssd1/cyx/ICE-Cal/.venv/lib/python3.10/site-packages/hydra/core/utils.py", line 186, in run_job
     ret.return_value = task_function(task_cfg)
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2472, in main
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 166, in main
     print(_format_cli_result(run_fada_training(cfg)))
-  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 2458, in run_fada_training
+  File "/ssd1/cyx/ICE-Cal/scripts/train_distill.py", line 152, in run_fada_training
     return run_fada_training_owner(
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_workflow.py", line 200, in run_fada_training_owner
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/workflow.py", line 193, in run_fada_training_owner
     return _run_fada_persistent_async(
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada_persistent_workflow.py", line 104, in run_fada_persistent_async
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/fada/persistent_workflow.py", line 104, in run_fada_persistent_async
     result = runtime.collect(request)
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/persistent_runtime.py", line 158, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/persistent_runtime.py", line 157, in collect
     return self._runner.collect(request)
-  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/async_runtime.py", line 257, in collect
+  File "/ssd1/cyx/ICE-Cal/src/unilab/algos/torch/distill/runtime/async_runtime.py", line 257, in collect
     raise RuntimeError(self._read_collector_error())
 RuntimeError: Collector process killed by signal 11 (SIGSEGV).
   No Python traceback available — killed externally.

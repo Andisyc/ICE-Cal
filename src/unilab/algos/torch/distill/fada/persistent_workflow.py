@@ -17,7 +17,10 @@ from unilab.algos.torch.distill.fada.async_runtime import FADA_ASYNC_SCENARIO
 from unilab.algos.torch.distill.fada.checkpoint import save_fada_checkpoint
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
 from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
-from unilab.algos.torch.distill.fada.source_artifact import load_fada_source_batch
+from unilab.algos.torch.distill.fada.source_artifact import (
+    load_fada_source_batch,
+    validate_fada_async_artifact_identity,
+)
 from unilab.algos.torch.distill.fada.source_evaluation import evaluate_fada_source_batch
 from unilab.algos.torch.distill.fada.source_plan import FADAPaperSourcePlan
 from unilab.algos.torch.distill.fada.trainer import FADATrainer
@@ -45,7 +48,7 @@ def run_fada_persistent_async(
     samples_seen: int,
     dependencies: FADAWorkflowDependencies,
 ) -> dict[str, Any]:
-    """Run the learner in the parent and all FADA rollout work in one resident child."""
+    """Run the learner in the parent and each FADA iteration in a fresh child."""
 
     fada_cfg = cfg.training.fada
     iterations = int(fada_cfg.iterations)
@@ -103,6 +106,17 @@ def run_fada_persistent_async(
             )
             result = runtime.collect(request)
             loaded = load_fada_source_batch(artifact_path, config=config)
+            validate_fada_async_artifact_identity(
+                loaded.metadata,
+                expected={
+                    "request_id": request.request_id,
+                    "scenario": request.scenario,
+                    "iteration": request.iteration,
+                    "checkpoint_path": request.checkpoint_path,
+                    "expected_weight_version": request.expected_weight_version,
+                    "producer_pid": result.worker_pid,
+                },
+            )
             if loaded.metadata.get("training_schedule") != training_schedule:
                 raise ValueError(
                     "FADA async artifact training schedule mismatch: "

@@ -45,6 +45,7 @@ from unilab.algos.torch.distill import (
     load_fada_source_batch,
     save_fada_checkpoint,
     save_fada_source_batch,
+    validate_fada_async_artifact_identity,
 )
 from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.fada import FADA_SCENARIO_IDS, FADASourceBatch
@@ -162,6 +163,27 @@ def test_fada_source_artifact_round_trip_validates_architecture(tmp_path: Path) 
     )
     with pytest.raises(ValueError, match="architecture mismatch"):
         load_fada_source_batch(artifact, config=incompatible)
+
+
+def test_fada_async_artifact_identity_fails_closed_on_stale_request() -> None:
+    metadata = {
+        "request_id": "fada-0001-v2",
+        "scenario": "fada_iteration",
+        "iteration": 1,
+        "checkpoint_path": "/tmp/student.pt",
+        "expected_weight_version": 2,
+        "producer_pid": 123,
+    }
+
+    validate_fada_async_artifact_identity(
+        metadata,
+        expected={**metadata},
+    )
+    with pytest.raises(ValueError, match="identity mismatch.*request_id"):
+        validate_fada_async_artifact_identity(
+            metadata,
+            expected={**metadata, "request_id": "fada-0002-v2"},
+        )
 
 
 def test_v4_source_artifacts_require_explicit_idm_source_role(

@@ -33,6 +33,7 @@ from unilab.algos.torch.distill.fada.source_artifact import (
     load_architecture_config,
     load_fada_source_batch,
     save_fada_source_batch,
+    validate_fada_async_artifact_identity,
 )
 from unilab.algos.torch.distill.fada.source_evaluation import evaluate_fada_source_batch
 from unilab.algos.torch.distill.fada.source_plan import (
@@ -75,4 +76,5 @@ __all__ = [
     "planner_source_loss",
     "save_fada_checkpoint",
     "save_fada_source_batch",
+    "validate_fada_async_artifact_identity",
 ]

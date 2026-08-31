@@ -98,7 +98,10 @@ def load_fada_source_batch(
     """Load and validate one collector artifact before it enters learner replay."""
 
     payload = torch.load(Path(path), map_location="cpu", weights_only=True)
-    if not isinstance(payload, dict) or payload.get("schema_version") != FADA_SOURCE_BATCH_SCHEMA_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != FADA_SOURCE_BATCH_SCHEMA_VERSION
+    ):
         raise ValueError("unsupported or malformed FADA source batch schema")
     observed = _load_architecture_config(
         payload.get("architecture"),
@@ -118,3 +121,26 @@ def load_fada_source_batch(
         raise ValueError("FADA source batch metadata must be a mapping")
     batch = FADASourceBatch(**tensors).validate(config)
     return LoadedFADASourceBatch(batch=batch, metadata=metadata)
+
+
+def validate_fada_async_artifact_identity(
+    metadata: Mapping[str, Any],
+    *,
+    expected: Mapping[str, Any],
+) -> None:
+    """Fail closed when a cold artifact does not belong to its collection transaction."""
+
+    identity_fields = (
+        "request_id",
+        "scenario",
+        "iteration",
+        "checkpoint_path",
+        "expected_weight_version",
+        "producer_pid",
+    )
+    missing = [name for name in identity_fields if name not in metadata or name not in expected]
+    if missing:
+        raise ValueError(f"FADA async artifact identity is incomplete: {missing}")
+    mismatches = [name for name in identity_fields if metadata.get(name) != expected.get(name)]
+    if mismatches:
+        raise ValueError(f"FADA async artifact identity mismatch: {mismatches}")

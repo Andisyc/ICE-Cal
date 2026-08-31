@@ -152,6 +152,11 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
                 config=config,
                 metadata={
                     "iteration": request.iteration,
+                    "request_id": request.request_id,
+                    "scenario": request.scenario,
+                    "checkpoint_path": request.checkpoint_path,
+                    "expected_weight_version": request.expected_weight_version,
+                    "producer_pid": 123,
                     "training_schedule": "alternating_idm_then_planner",
                     "main_windows": 1,
                     "collections": [summary],
@@ -160,7 +165,7 @@ def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
             return type(
                 "Result",
                 (),
-                {"num_samples": 1},
+                {"num_samples": 1, "worker_pid": 123},
             )()
 
         def close(self) -> None:
@@ -342,6 +347,11 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                 config=config,
                 metadata={
                     "iteration": request.iteration,
+                    "request_id": request.request_id,
+                    "scenario": request.scenario,
+                    "checkpoint_path": request.checkpoint_path,
+                    "expected_weight_version": request.expected_weight_version,
+                    "producer_pid": 456,
                     "training_schedule": "alternating_idm_then_planner",
                     "main_windows": 12,
                     "stand_transition_curriculum_enabled": True,
@@ -354,7 +364,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "collections": main_summaries + intermediate_summaries,
                 },
             )
-            return SimpleNamespace(num_samples=36)
+            return SimpleNamespace(num_samples=36, worker_pid=456)
 
         def close(self) -> None:
             self.closed = True

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 import torch
 
@@ -26,7 +26,7 @@ _WEIGHT_SYNC_KEYS = frozenset({"weight_sync_name", "weight_sync_lock", "weight_p
 
 
 class PersistentDistillationRuntime:
-    """Publish checkpoint weights to one resident collector-side student."""
+    """Publish checkpoint weights to a resident or request-scoped collector."""
 
     def __init__(
         self,
@@ -37,6 +37,7 @@ class PersistentDistillationRuntime:
         worker_kwargs_factory: Callable[[Path], Mapping[str, Any]] | None = None,
         lifecycle_report_queue: Any | None = None,
         request_timeout_seconds: float = 300.0,
+        worker_lifecycle: Literal["persistent", "request"] = "persistent",
     ) -> None:
         resolved_worker_kwargs = dict(worker_kwargs or {})
         collisions = sorted(_WEIGHT_SYNC_KEYS & resolved_worker_kwargs.keys())
@@ -51,6 +52,7 @@ class PersistentDistillationRuntime:
         self._lifecycle_report_queue = lifecycle_report_queue
         self.close_report: dict[str, Any] | None = None
         self._request_timeout_seconds = float(request_timeout_seconds)
+        self._worker_lifecycle: Literal["persistent", "request"] = worker_lifecycle
         self._weight_sync: SharedWeightSync | None = None
         self._runner: PersistentDaggerCollectorRunner | None = None
         self._param_shapes: dict[str, torch.Size] | None = None
@@ -123,6 +125,7 @@ class PersistentDistillationRuntime:
             worker_kwargs=worker_kwargs,
             checkpoint_activator=self._publish_checkpoint,
             request_timeout_seconds=self._request_timeout_seconds,
+            worker_lifecycle=self._worker_lifecycle,
         )
 
     def _publish_checkpoint(self, checkpoint_path: Path) -> int:

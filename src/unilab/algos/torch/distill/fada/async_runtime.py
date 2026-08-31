@@ -294,6 +294,7 @@ def build_persistent_fada_runtime(
             "initial_checkpoint_path": str(checkpoint_path.resolve())
         },
         request_timeout_seconds=float(request_timeout_seconds),
+        worker_lifecycle="request",
     )
 
 

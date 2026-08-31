@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
 import queue
 import threading
@@ -43,6 +44,19 @@ def _build_fake_collector_service(*, rows_per_request: int = 7):
     return _FakeCollectorService(rows_per_request=rows_per_request)
 
 
+class _LifecycleReportingService(_FakeCollectorService):
+    def __init__(self, *, lifecycle_queue) -> None:
+        super().__init__()
+        self.lifecycle_queue = lifecycle_queue
+
+    def close(self) -> None:
+        self.lifecycle_queue.put(os.getpid())
+
+
+def _build_lifecycle_reporting_service(*, lifecycle_queue):
+    return _LifecycleReportingService(lifecycle_queue=lifecycle_queue)
+
+
 class _CollectAndCloseFailureService(_FakeCollectorService):
     def collect(self, request: DaggerCollectRequest) -> DaggerCollectResult:
         raise ValueError("primary collect failure")
@@ -53,6 +67,15 @@ class _CollectAndCloseFailureService(_FakeCollectorService):
 
 def _build_collect_and_close_failure_service() -> _CollectAndCloseFailureService:
     return _CollectAndCloseFailureService()
+
+
+class _CloseFailureAfterResultService(_FakeCollectorService):
+    def close(self) -> None:
+        raise RuntimeError("request cleanup failed")
+
+
+def _build_close_failure_after_result_service() -> _CloseFailureAfterResultService:
+    return _CloseFailureAfterResultService()
 
 
 def _request(tmp_path: Path, *, request_id: str, scenario: str = "walk_flat"):
@@ -83,6 +106,43 @@ def test_persistent_runner_reuses_one_spawned_worker_for_sequential_requests(tmp
     assert first.worker_pid != os.getpid()
     assert first.observed_weight_version == 9
     assert second.request_id == "req-2"
+
+
+def test_request_lifecycle_runner_retires_one_spawned_worker_per_request(tmp_path):
+    lifecycle_queue = mp.get_context("spawn").Queue()
+    runner = PersistentDaggerCollectorRunner(
+        worker_factory=_build_lifecycle_reporting_service,
+        worker_kwargs={"lifecycle_queue": lifecycle_queue},
+        worker_lifecycle="request",
+    )
+    try:
+        first = runner.collect(_request(tmp_path, request_id="req-1"))
+        assert runner._collector_process is None
+        second = runner.collect(_request(tmp_path, request_id="req-2", scenario="stand"))
+        assert runner._collector_process is None
+        retired_pids = {lifecycle_queue.get(timeout=2.0), lifecycle_queue.get(timeout=2.0)}
+    finally:
+        runner.close()
+        lifecycle_queue.close()
+
+    assert retired_pids == {first.worker_pid, second.worker_pid}
+    assert first.worker_pid != second.worker_pid
+
+
+def test_request_lifecycle_runner_rejects_result_when_worker_cleanup_fails(tmp_path):
+    runner = PersistentDaggerCollectorRunner(
+        worker_factory=_build_close_failure_after_result_service,
+        worker_lifecycle="request",
+    )
+    try:
+        with pytest.raises(RuntimeError, match="request cleanup failed"):
+            runner.collect(_request(tmp_path, request_id="req-cleanup-failure"))
+        assert runner._collector_process is None
+        assert runner._closed is True
+        with pytest.raises(RuntimeError, match="cannot restart a closed"):
+            runner.collect(_request(tmp_path, request_id="req-after-cleanup-failure"))
+    finally:
+        runner.close()
 
 
 def test_persistent_runner_propagates_worker_exception_with_async_runner_diagnostics(tmp_path):

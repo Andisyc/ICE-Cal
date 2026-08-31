@@ -34,6 +34,7 @@ from unilab.algos.torch.distill import (
     FADA_SOURCE_BATCH_SCHEMA_VERSION,
     FADAArchitectureConfig,
     FADACollectionSpec,
+    FADAPaperSourcePlan,
     FADAPlannerIDMPolicy,
     FADAReplayBuffer,
     FADATrainer,
@@ -52,6 +53,7 @@ from unilab.algos.torch.distill.fada_async_runtime import (
     PersistentFADACollectorWorker,
     _fada_runtime_device,
     allocate_fada_command_scenarios,
+    build_persistent_fada_runtime,
 )
 from unilab.algos.torch.distill.fada_source_diagnostics import (
     classify_fada_coverage,
@@ -65,6 +67,27 @@ def _reuse_test_collection_environment(worker, environment) -> None:
         yield environment
 
     worker.collection_environment = collection_environment
+
+
+def test_fada_runtime_selects_request_scoped_collector_processes(tmp_path: Path) -> None:
+    cfg = _paper_persistent_training_cfg(tmp_path)
+    source_allocations = tuple(
+        (Path(path), 1) for path in cfg.training.fada.intermediate_oracle_checkpoint_paths
+    )
+    runtime = build_persistent_fada_runtime(
+        cfg=cfg,
+        architecture=_curriculum_config(),
+        paper_source_plan=FADAPaperSourcePlan(
+            enabled=True,
+            source_allocations=source_allocations,
+        ),
+        final_teacher_checkpoint=tmp_path / "final.pt",
+        request_timeout_seconds=10.0,
+    )
+    try:
+        assert runtime._worker_lifecycle == "request"
+    finally:
+        runtime.close()
 
 
 def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
@@ -136,6 +159,11 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     assert result.observed_weight_version == 7
     assert result.num_samples == 2
     assert loaded.metadata["main_windows"] == 1
+    assert loaded.metadata["request_id"] == "fada-1-v7"
+    assert loaded.metadata["scenario"] == FADA_ASYNC_SCENARIO
+    assert loaded.metadata["checkpoint_path"] == str((tmp_path / "fada.pt").resolve())
+    assert loaded.metadata["expected_weight_version"] == 7
+    assert loaded.metadata["producer_pid"] == result.worker_pid
     assert [item["rollout_mode"] for item in loaded.metadata["collections"]] == [
         "planner_idm",
         "intermediate_oracle",
