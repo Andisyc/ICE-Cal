@@ -5,7 +5,7 @@ import os
 import time
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, Literal, Protocol, cast
+from typing import Any, ContextManager, Literal, Protocol, cast
 
 import torch
 
@@ -39,8 +39,6 @@ class FADAAsyncCollectorState(Protocol):
     config: FADAArchitectureConfig
     device: str
     cfg: Any
-    env: Any
-    standing_env: Any
     student: FADAPlannerIDMPolicy
     final_teacher: torch.nn.Module
     teacher_spec: Any
@@ -53,6 +51,11 @@ class FADAAsyncCollectorState(Protocol):
     _intermediate_teacher_reloader: Any
 
     def _collection_spec(self) -> FADACollectionSpec: ...
+
+    def collection_environment(self) -> ContextManager[Any]: ...
+
+    @property
+    def physics_guard_trip_count(self) -> int: ...
 
 
 def _concat_source_batches(
@@ -184,21 +187,14 @@ def collect_fada_iteration(
             raise ValueError(f"v005 {scenario} cold-start ratio must be finite")
         if v005_enabled and not 0.0 < ratio < 1.0:
             raise ValueError(f"v005 {scenario} cold-start ratio must be strictly between 0 and 1")
-    if curriculum_enabled:
-        if (
-            any(scenario == "static_stand" for scenario, _ in allocations)
-            and getattr(worker, "standing_env", None) is None
-        ):
-            raise ValueError(
-                "enabled static standing curriculum requires a G1StandStill environment"
-            )
+    if not callable(getattr(worker, "collection_environment", None)):
+        raise TypeError("FADA collector worker must own collection_environment()")
 
     # B2: 按 scenario-authoritative Oracle 收集 main source, 再追加 walking intermediate source.
     batches: list[FADASourceBatch] = []
     summaries: list[dict[str, Any]] = []
     main_windows = 0
     for scenario, scenario_windows in allocations:
-        scenario_env = worker.standing_env if scenario == "static_stand" else worker.env
         scenario_spec = replace(
             common,
             collect_oracle_shadow=bool(fada_cfg.oracle_shadow_enabled),
@@ -217,33 +213,34 @@ def collect_fada_iteration(
                 )
             profiles = ((True, cold_windows), (False, steady_windows))
         for cold_start, profile_windows in profiles:
-            if cold_start:
-                main = _collect_cold_start_windows(
-                    scenario_env,
-                    teacher_policy=worker.final_teacher,
-                    rollout_policy=(
-                        worker.student
-                        if student_rollout_enabled and request.iteration > 0
-                        else None
-                    ),
-                    config=worker.config,
-                    num_windows=profile_windows,
-                    spec=scenario_spec,
-                    command_scenario=cast(Literal["walk", "static_stand"], scenario),
-                )
-            else:
-                main = collect_fada_source_windows(
-                    scenario_env,
-                    teacher_policy=worker.final_teacher,
-                    rollout_policy=(
-                        worker.student
-                        if student_rollout_enabled and request.iteration > 0
-                        else None
-                    ),
-                    config=worker.config,
-                    num_windows=profile_windows,
-                    spec=scenario_spec,
-                )
+            with worker.collection_environment() as scenario_env:
+                if cold_start:
+                    main = _collect_cold_start_windows(
+                        scenario_env,
+                        teacher_policy=worker.final_teacher,
+                        rollout_policy=(
+                            worker.student
+                            if student_rollout_enabled and request.iteration > 0
+                            else None
+                        ),
+                        config=worker.config,
+                        num_windows=profile_windows,
+                        spec=scenario_spec,
+                        command_scenario=cast(Literal["walk", "static_stand"], scenario),
+                    )
+                else:
+                    main = collect_fada_source_windows(
+                        scenario_env,
+                        teacher_policy=worker.final_teacher,
+                        rollout_policy=(
+                            worker.student
+                            if student_rollout_enabled and request.iteration > 0
+                            else None
+                        ),
+                        config=worker.config,
+                        num_windows=profile_windows,
+                        spec=scenario_spec,
+                    )
             batches.append(main.batch)
             main_windows += int(main.batch.command.shape[0])
             summaries.append(
@@ -269,18 +266,19 @@ def collect_fada_iteration(
         elif current_source != source_path:
             worker._intermediate_teacher_reloader(intermediate, source_path, worker.teacher_spec)
         worker.intermediate_teacher_checkpoint = source_path
-        collection = collect_fada_source_windows(
-            worker.env,
-            teacher_policy=worker.final_teacher,
-            rollout_teacher_policy=intermediate,
-            config=worker.config,
-            num_windows=source_windows,
-            spec=replace(
-                common,
-                collect_oracle_shadow=True,
-                planner_eligible=not v005_enabled,
-            ),
-        )
+        with worker.collection_environment() as source_env:
+            collection = collect_fada_source_windows(
+                source_env,
+                teacher_policy=worker.final_teacher,
+                rollout_teacher_policy=intermediate,
+                config=worker.config,
+                num_windows=source_windows,
+                spec=replace(
+                    common,
+                    collect_oracle_shadow=True,
+                    planner_eligible=not v005_enabled,
+                ),
+            )
         batches.append(collection.batch)
         summaries.append(
             _summary(
@@ -327,12 +325,6 @@ def collect_fada_iteration(
         metadata={
             "main_windows": main_windows,
             "scenario_allocations": dict(allocations),
-            "physics_guard_trips": float(
-                sum(
-                    int(getattr(resident_env, "physics_guard_trip_count", 0))
-                    for resident_env in (worker.env, getattr(worker, "standing_env", None))
-                    if resident_env is not None
-                )
-            ),
+            "physics_guard_trips": float(getattr(worker, "physics_guard_trip_count", 0)),
         },
     )

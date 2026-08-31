@@ -59,6 +59,14 @@ from unilab.algos.torch.distill.fada_source_diagnostics import (
 )
 
 
+def _reuse_test_collection_environment(worker, environment) -> None:
+    @contextmanager
+    def collection_environment():
+        yield environment
+
+    worker.collection_environment = collection_environment
+
+
 def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     tmp_path: Path,
 ) -> None:
@@ -82,7 +90,19 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
             }
         }
     )
-    worker.env = _FakeEnv()
+    collection_envs = [_FakeEnv(), _FakeEnv()]
+    entered_envs: list[_FakeEnv] = []
+
+    @contextmanager
+    def collection_environment():
+        env = collection_envs[len(entered_envs)]
+        entered_envs.append(env)
+        try:
+            yield env
+        finally:
+            env.close()
+
+    worker.collection_environment = collection_environment
     worker.student = FADAPlannerIDMPolicy(config)
     worker.final_teacher = _Oracle()
     worker.teacher_spec = object()
@@ -124,6 +144,8 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
         "unified",
         "walking",
     ]
+    assert len(entered_envs) == 2
+    assert all(env.closed for env in entered_envs)
 
 
 def test_fada_alternating_rolls_out_student_after_bootstrap(tmp_path: Path) -> None:
@@ -149,6 +171,7 @@ def test_fada_alternating_rolls_out_student_after_bootstrap(tmp_path: Path) -> N
         }
     )
     worker.env = _FakeEnv()
+    _reuse_test_collection_environment(worker, worker.env)
     worker.student = FADAPlannerIDMPolicy(config)
     worker.final_teacher = _Oracle()
     worker.teacher_spec = object()
@@ -200,6 +223,7 @@ def test_fada_persistent_worker_reuses_one_intermediate_teacher_across_rounds(
         }
     )
     worker.env = _FakeEnv()
+    _reuse_test_collection_environment(worker, worker.env)
     worker.student = FADAPlannerIDMPolicy(config)
     worker.final_teacher = _Oracle()
     worker.teacher_spec = object()
@@ -252,7 +276,7 @@ def test_fada_persistent_worker_reuses_one_intermediate_teacher_across_rounds(
     ]
 
 
-def test_fada_worker_reuses_one_privileged_environment_for_standing_curriculum(
+def test_fada_worker_isolates_each_collection_in_one_privileged_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
@@ -290,15 +314,12 @@ def test_fada_worker_reuses_one_privileged_environment_for_standing_curriculum(
         def build_task_env_cfg_override(self) -> dict[str, object]:
             return {}
 
-    walking_env = _Env()
-    env_calls = 0
+    environments: list[_Env] = []
 
     def env_factory(*_args, **_kwargs):
-        nonlocal env_calls
-        env_calls += 1
-        if env_calls == 1:
-            return walking_env
-        raise AssertionError("standing curriculum must reuse the G1WalkFlat environment")
+        environment = _Env()
+        environments.append(environment)
+        return environment
 
     monkeypatch.setattr(
         fada_async_runtime,
@@ -340,12 +361,27 @@ def test_fada_worker_reuses_one_privileged_environment_for_standing_curriculum(
         oracle_loader=lambda *_args, **_kwargs: _Oracle(),
     )
 
-    assert env_calls == 1
-    assert worker.env is walking_env
-    assert worker.standing_env is walking_env
-    assert walking_env.physics_guard_calls == 1
+    assert len(environments) == 1
+    with worker.collection_environment() as first:
+        assert first is environments[0]
+        assert worker.env is first
+        assert worker.standing_env is first
+    assert environments[0].close_count == 1
+    assert worker.env is None
+    assert worker.standing_env is None
+
+    with worker.collection_environment() as second:
+        assert second is environments[1]
+        assert second is not first
+    assert environments[1].close_count == 1
+
+    with pytest.raises(RuntimeError, match="collection failed"):
+        with worker.collection_environment():
+            raise RuntimeError("collection failed")
+    assert environments[2].close_count == 1
+    assert all(environment.physics_guard_calls == 1 for environment in environments)
     worker.close()
-    assert walking_env.close_count == 1
+    assert all(environment.close_count == 1 for environment in environments)
     assert len(_WeightSync.instances) == 1
     assert _WeightSync.instances[0].close_count == 1
 
@@ -388,7 +424,8 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
         }
     )
     worker.env = _CommandControlledEnv()
-    worker.standing_env = _CommandControlledEnv()
+    worker.standing_env = worker.env
+    _reuse_test_collection_environment(worker, worker.env)
     worker.student = FADAPlannerIDMPolicy(config)
     worker.final_teacher = _Oracle()
     worker.teacher_spec = object()
@@ -453,7 +490,7 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
     assert worker.env.step_count > 0
 
 
-def test_enabled_worker_curriculum_rejects_missing_standing_environment(
+def test_enabled_worker_curriculum_does_not_require_separate_standing_environment(
     tmp_path: Path,
 ) -> None:
     worker = PersistentFADACollectorWorker.__new__(PersistentFADACollectorWorker)
@@ -476,6 +513,9 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
                         "walk_ratio": 1 / 3,
                         "static_stand_ratio": 1 / 3,
                         "walk_to_stand_ratio": 1 / 3,
+                        "walk_command": [0.4, 0.0, 0.0],
+                        "pre_switch_steps": 2,
+                        "post_switch_steps": 3,
                     },
                 }
             }
@@ -483,6 +523,7 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
     )
     worker.env = _CommandControlledEnv()
     worker.standing_env = None
+    _reuse_test_collection_environment(worker, worker.env)
     worker.student = FADAPlannerIDMPolicy(worker.config)
     worker.final_teacher = _Oracle()
     worker.source_allocations = ()
@@ -492,14 +533,14 @@ def test_enabled_worker_curriculum_rejects_missing_standing_environment(
             return 1
 
     worker.weight_sync = _WeightSync()
-    with pytest.raises(ValueError, match="G1StandStill environment"):
-        worker.collect(
-            DaggerCollectRequest(
-                request_id="fada-0-v1",
-                scenario=FADA_ASYNC_SCENARIO,
-                iteration=0,
-                checkpoint_path=str((tmp_path / "fada.pt").resolve()),
-                output_path=str((tmp_path / "missing-env.pt").resolve()),
-                expected_weight_version=1,
-            )
+    result = worker.collect(
+        DaggerCollectRequest(
+            request_id="fada-0-v1",
+            scenario=FADA_ASYNC_SCENARIO,
+            iteration=0,
+            checkpoint_path=str((tmp_path / "fada.pt").resolve()),
+            output_path=str((tmp_path / "shared-env.pt").resolve()),
+            expected_weight_version=1,
         )
+    )
+    assert result.num_samples == 3

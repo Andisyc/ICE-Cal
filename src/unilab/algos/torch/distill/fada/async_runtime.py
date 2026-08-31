@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -50,7 +51,7 @@ _curriculum_and_allocations = curriculum_and_allocations
 
 
 class PersistentFADACollectorWorker:
-    """Keep one privileged task environment, Oracles, and Planner-IDM student resident."""
+    """Keep policies resident while isolating each native collection environment."""
 
     def __init__(
         self,
@@ -89,6 +90,12 @@ class PersistentFADACollectorWorker:
         self._intermediate_teacher_reloader = intermediate_teacher_reloader
         self.intermediate_teacher: torch.nn.Module | None = None
         self.intermediate_teacher_checkpoint: str | None = None
+        self._env_factory = env_factory
+        self._env_cfg_override: Mapping[str, Any] | None = None
+        self._checkpoint_identity: Mapping[str, Any] | None = None
+        self._physics_guard_max_abs = 1.0e4
+        self._retired_physics_guard_trips = 0
+        self._environment_in_use = False
 
         try:
             # B2: 恢复 student, shared-weight barrier 与 Oracle, 产出 resident policy resources.
@@ -114,65 +121,105 @@ class PersistentFADACollectorWorker:
             # accidental hard dependencies of Planner-IDM training.
             # B3: 创建唯一 G1WalkFlat environment; standing/transition 只改变 command scenario.
             ensure_registries(packages=("unilab.envs.locomotion.g1",))
-            env_override = BackendAdapter(
+            self._env_cfg_override = BackendAdapter(
                 self.cfg,
                 root_dir=self.root_dir,
                 algo_name="distill",
             ).build_task_env_cfg_override()
             fada_cfg = self.cfg.training.fada
-            self.env = env_factory(
-                self.cfg,
-                num_envs=int(fada_cfg.num_envs),
-                env_cfg_override=env_override,
-                sim_backend=str(self.cfg.training.sim_backend),
-                task_name=str(self.cfg.training.task_name),
-            )
             checkpoint_identity = getattr(self.final_teacher, "checkpoint_identity", None)
             if self.teacher_spec.algo_type == "privileged_locomotion_sac":
                 if not isinstance(checkpoint_identity, Mapping):
                     raise ValueError(
                         "privileged FADA Oracle must expose sealed checkpoint_identity"
                     )
-                validate_fada_oracle_environment_contract(
-                    checkpoint_identity,
-                    self.env,
-                    self.cfg,
-                )
-            if self.standing_curriculum_enabled:
-                self.standing_env = self.env
+                self._checkpoint_identity = checkpoint_identity
 
-            # B4: 物理包线守卫 opt-in, student 驱动的极端/非有限物理状态在回流
-            # 下一个原生 step 之前被 sanitize + 标记 terminated, 防止原生层 SIGSEGV.
-            physics_guard_max_abs = float(
+            # B4: 每个 collection transaction 独占一个 native pool; 首个实例在 worker
+            # 初始化时完成正式 Oracle/environment contract 验证，随后由同一 owner 重建.
+            self._physics_guard_max_abs = float(
                 OmegaConf.select(fada_cfg, "physics_guard_max_abs", default=1.0e4)
             )
-            configured_env_ids: set[int] = set()
-            for resident_env in (self.env, self.standing_env):
-                if resident_env is not None and id(resident_env) not in configured_env_ids:
-                    resident_env.set_physics_envelope_guard(physics_guard_max_abs)
-                    configured_env_ids.add(id(resident_env))
+            self.env = self._materialize_collection_environment()
+            if self.standing_curriculum_enabled:
+                self.standing_env = self.env
         except BaseException:
             self._close_resources(raise_errors=False)
             raise
+
+    def _materialize_collection_environment(self) -> Any:
+        if self._env_cfg_override is None:
+            raise RuntimeError("FADA collection environment configuration is not initialized")
+        environment = self._env_factory(
+            self.cfg,
+            num_envs=int(self.cfg.training.fada.num_envs),
+            env_cfg_override=self._env_cfg_override,
+            sim_backend=str(self.cfg.training.sim_backend),
+            task_name=str(self.cfg.training.task_name),
+        )
+        try:
+            if self._checkpoint_identity is not None:
+                validate_fada_oracle_environment_contract(
+                    self._checkpoint_identity,
+                    environment,
+                    self.cfg,
+                )
+            environment.set_physics_envelope_guard(self._physics_guard_max_abs)
+            return environment
+        except BaseException:
+            close = getattr(environment, "close", None)
+            if callable(close):
+                close()
+            raise
+
+    def _retire_collection_environment(self, environment: Any) -> None:
+        self._retired_physics_guard_trips += int(
+            getattr(environment, "physics_guard_trip_count", 0)
+        )
+        try:
+            close = getattr(environment, "close", None)
+            if callable(close):
+                close()
+        finally:
+            if self.env is environment:
+                self.env = None
+            if self.standing_env is environment:
+                self.standing_env = None
+
+    @contextmanager
+    def collection_environment(self) -> Iterator[Any]:
+        """Own one G1WalkFlat environment for exactly one source collection."""
+
+        if self._environment_in_use:
+            raise RuntimeError("FADA collection environments cannot be nested")
+        if self.env is None:
+            self.env = self._materialize_collection_environment()
+        environment = self.env
+        if self.standing_curriculum_enabled:
+            self.standing_env = environment
+        self._environment_in_use = True
+        try:
+            yield environment
+        finally:
+            try:
+                self._retire_collection_environment(environment)
+            finally:
+                self._environment_in_use = False
+
+    @property
+    def physics_guard_trip_count(self) -> int:
+        active = 0 if self.env is None else int(getattr(self.env, "physics_guard_trip_count", 0))
+        return self._retired_physics_guard_trips + active
 
     def _close_resources(self, *, raise_errors: bool) -> None:
         """Close every materialized resident resource once, including partial construction."""
 
         errors: list[BaseException] = []
-        environments = (self.env, self.standing_env)
-        closed_ids: set[int] = set()
-        for environment in environments:
-            if environment is None or id(environment) in closed_ids:
-                continue
-            close = getattr(environment, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except BaseException as exc:
-                    errors.append(exc)
-            closed_ids.add(id(environment))
-        self.env = None
-        self.standing_env = None
+        if self.env is not None:
+            try:
+                self._retire_collection_environment(self.env)
+            except BaseException as exc:
+                errors.append(exc)
         self.intermediate_teacher = None
         self.intermediate_teacher_checkpoint = None
         if self.weight_sync is not None:
