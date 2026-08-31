@@ -197,6 +197,61 @@ def test_fada_replay_paper_retention_failure_is_atomic() -> None:
         torch.testing.assert_close(getattr(replay._batch, field), expected)
 
 
+def test_fada_replay_add_many_only_concatenates_scalar_identity_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _curriculum_config()
+    replay = FADAReplayBuffer(config, capacity=9, suboptimal_retention_ratio=2)
+    original_cat = torch.cat
+    concatenated_ranks: list[tuple[int, ...]] = []
+
+    def traced_cat(tensors, *args, **kwargs):
+        values = tuple(tensors)
+        concatenated_ranks.append(tuple(tensor.ndim for tensor in values))
+        return original_cat(values, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "cat", traced_cat)
+    replay.add_many(
+        (
+            _paper_role_batch(config, main_rows=3, intermediate_rows=6),
+            _paper_role_batch(config, main_rows=3, intermediate_rows=6),
+        )
+    )
+
+    assert len(replay) == 9
+    assert concatenated_ranks
+    assert all(all(rank == 1 for rank in ranks) for ranks in concatenated_ranks)
+
+
+def test_fada_replay_add_many_failure_keeps_previous_shards() -> None:
+    config = _curriculum_config()
+    replay = FADAReplayBuffer(config, capacity=9, suboptimal_retention_ratio=2)
+    replay.add(_paper_role_batch(config, main_rows=2, intermediate_rows=4))
+    before_chunks = replay._chunks
+
+    with pytest.raises(ValueError, match="lacks Planner-ineligible intermediate rows"):
+        replay.add_many(
+            (
+                _paper_role_batch(config, main_rows=2, intermediate_rows=0),
+                _paper_role_batch(config, main_rows=2, intermediate_rows=0),
+            )
+        )
+
+    assert replay._chunks == before_chunks
+
+
+def test_fada_replay_copies_caller_owned_batches() -> None:
+    config = _curriculum_config()
+    replay = FADAReplayBuffer(config, capacity=4)
+    batch = _source_batch(config, size=4)
+    expected = batch.command.clone()
+
+    replay.add(batch)
+    batch.command.fill_(123.0)
+
+    torch.testing.assert_close(replay._chunks[0].command, expected)
+
+
 @pytest.mark.parametrize(
     ("ratio", "capacity", "message"),
     [

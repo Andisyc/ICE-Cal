@@ -24,7 +24,7 @@ from unilab.algos.torch.distill.fada.model import (
     FADAPlannerIDMPolicy,
     FADASourceBatch,
 )
-from unilab.algos.torch.distill.fada.source_artifact import save_fada_source_batch
+from unilab.algos.torch.distill.fada.source_artifact import FADAShardedSourceWriter
 from unilab.algos.torch.distill.runtime.async_runtime import (
     DaggerCollectRequest,
     DaggerCollectResult,
@@ -144,9 +144,10 @@ def _collect_cold_start_windows(
     )
 
 
-def collect_fada_iteration(
+def _collect_fada_iteration(
     worker: FADAAsyncCollectorState,
     request: DaggerCollectRequest,
+    artifact_writer: FADAShardedSourceWriter,
 ) -> DaggerCollectResult:
     """在一个 weight-version barrier 内产出完整 scenario source artifact.
 
@@ -191,7 +192,6 @@ def collect_fada_iteration(
         raise TypeError("FADA collector worker must own collection_environment()")
 
     # B2: 按 scenario-authoritative Oracle 收集 main source, 再追加 walking intermediate source.
-    batches: list[FADASourceBatch] = []
     summaries: list[dict[str, Any]] = []
     main_windows = 0
     for scenario, scenario_windows in allocations:
@@ -241,7 +241,7 @@ def collect_fada_iteration(
                         num_windows=profile_windows,
                         spec=scenario_spec,
                     )
-            batches.append(main.batch)
+            artifact_writer.append(main.batch)
             main_windows += int(main.batch.command.shape[0])
             summaries.append(
                 _summary(
@@ -279,7 +279,7 @@ def collect_fada_iteration(
                     planner_eligible=not v005_enabled,
                 ),
             )
-        batches.append(collection.batch)
+        artifact_writer.append(collection.batch)
         summaries.append(
             _summary(
                 collection,
@@ -289,14 +289,10 @@ def collect_fada_iteration(
             )
         )
 
-    # B3: 合并并原子写出带配额/角色证据的 artifact, 产出 parent barrier receipt.
+    # B3: 原子提交只引用已落盘 shards 的 manifest, 不再构造 iteration 级大 tensor.
     collected = time.perf_counter()
-    batch = _concat_source_batches(batches, worker.config)
     producer_pid = os.getpid()
-    save_fada_source_batch(
-        request.output_path,
-        batch,
-        config=worker.config,
+    artifact_writer.commit(
         metadata={
             "iteration": request.iteration,
             "request_id": request.request_id,
@@ -321,7 +317,7 @@ def collect_fada_iteration(
         output_path=request.output_path,
         expected_weight_version=request.expected_weight_version,
         observed_weight_version=worker.local_weight_version,
-        num_samples=int(batch.command.shape[0]),
+        num_samples=artifact_writer.num_samples,
         worker_pid=producer_pid,
         metrics={
             "weight_sync_seconds": sync_finished - started,
@@ -334,3 +330,13 @@ def collect_fada_iteration(
             "physics_guard_trips": float(getattr(worker, "physics_guard_trip_count", 0)),
         },
     )
+
+
+def collect_fada_iteration(
+    worker: FADAAsyncCollectorState,
+    request: DaggerCollectRequest,
+) -> DaggerCollectResult:
+    """Collect one transaction with deterministic shard cleanup on every exit."""
+
+    with FADAShardedSourceWriter(request.output_path, config=worker.config) as writer:
+        return _collect_fada_iteration(worker, request, writer)

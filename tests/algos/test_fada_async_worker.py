@@ -202,10 +202,14 @@ def test_fada_persistent_worker_collects_one_versioned_iteration_artifact(
     )
 
     result = worker.collect(request)
+    manifest = torch.load(output, map_location="cpu", weights_only=True)
     loaded = load_fada_source_batch(output, config=config)
 
     assert result.observed_weight_version == 7
     assert result.num_samples == 2
+    assert manifest["schema_version"] == 5
+    assert "batch" not in manifest
+    assert [entry["rows"] for entry in manifest["shards"]] == [1, 1]
     assert loaded.metadata["main_windows"] == 1
     assert loaded.metadata["request_id"] == "fada-1-v7"
     assert loaded.metadata["scenario"] == FADA_ASYNC_SCENARIO

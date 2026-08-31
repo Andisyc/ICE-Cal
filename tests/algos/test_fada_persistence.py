@@ -49,6 +49,13 @@ from unilab.algos.torch.distill import (
 )
 from unilab.algos.torch.distill.async_runtime import DaggerCollectRequest
 from unilab.algos.torch.distill.fada import FADA_SCENARIO_IDS, FADASourceBatch
+from unilab.algos.torch.distill.fada.persistent_workflow import _reuse_complete_artifact
+from unilab.algos.torch.distill.fada.source_artifact import (
+    FADA_SHARDED_SOURCE_SCHEMA_VERSION,
+    FADAShardedSourceWriter,
+    LoadedFADASourceArtifact,
+    open_fada_source_artifact,
+)
 from unilab.algos.torch.distill.fada_async_runtime import (
     FADA_ASYNC_SCENARIO,
     PersistentFADACollectorWorker,
@@ -163,6 +170,200 @@ def test_fada_source_artifact_round_trip_validates_architecture(tmp_path: Path) 
     )
     with pytest.raises(ValueError, match="architecture mismatch"):
         load_fada_source_batch(artifact, config=incompatible)
+
+
+def test_fada_sharded_source_artifact_is_lazy_and_v4_loader_compatible(tmp_path: Path) -> None:
+    config = _config()
+    first = _source_batch(config, size=2)
+    second = _source_batch(config, size=3)
+    artifact_path = tmp_path / "source-sharded.pt"
+
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(first)
+        writer.append(second)
+        writer.commit(metadata={"iteration": 2, "main_windows": 2})
+
+    manifest = torch.load(artifact_path, map_location="cpu", weights_only=True)
+    assert manifest["schema_version"] == FADA_SHARDED_SOURCE_SCHEMA_VERSION
+    assert "batch" not in manifest
+    assert manifest["num_samples"] == 5
+    assert [entry["rows"] for entry in manifest["shards"]] == [2, 3]
+
+    opened = open_fada_source_artifact(artifact_path, config=config)
+    assert opened.legacy_batch is None
+    assert opened.num_samples == 5
+    assert [batch.command.shape[0] for batch in opened.iter_batches()] == [2, 3]
+
+    materialized = load_fada_source_batch(artifact_path, config=config)
+    assert materialized.batch.command.shape[0] == 5
+    assert materialized.metadata == {"iteration": 2, "main_windows": 2}
+
+
+def test_fada_sharded_writer_removes_uncommitted_transaction(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "aborted.pt"
+    writer = FADAShardedSourceWriter(artifact_path, config=config)
+
+    with writer:
+        writer.append(_source_batch(config, size=1))
+        shard_dir = writer._shard_dir
+        manifest_temporary = writer._manifest_temporary
+        assert shard_dir.is_dir()
+
+    assert not artifact_path.exists()
+    assert not shard_dir.exists()
+    assert not manifest_temporary.exists()
+
+
+def test_fada_sharded_manifest_rejects_paths_outside_owned_directory(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "unsafe.pt"
+    torch.save(
+        {
+            "schema_version": FADA_SHARDED_SOURCE_SCHEMA_VERSION,
+            "architecture": asdict(config),
+            "num_samples": 1,
+            "shards": [
+                {
+                    "path": "unowned/shard_0000.pt",
+                    "rows": 1,
+                    "size_bytes": 1,
+                    "sha256": "0" * 64,
+                    "planner_eligible": True,
+                }
+            ],
+            "metadata": {},
+        },
+        artifact_path,
+    )
+
+    with pytest.raises(ValueError, match="unsafe FADA source artifact shard path"):
+        open_fada_source_artifact(artifact_path, config=config)
+
+
+def test_fada_sharded_writer_commit_failure_cleans_transaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    artifact_path = tmp_path / "commit-failure.pt"
+    writer = FADAShardedSourceWriter(artifact_path, config=config)
+    original_save = torch.save
+
+    def fail_manifest(payload, path, *args, **kwargs):
+        if Path(path) == writer._manifest_temporary:
+            raise OSError("injected manifest failure")
+        return original_save(payload, path, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "save", fail_manifest)
+    with pytest.raises(OSError, match="injected manifest failure"):
+        with writer:
+            writer.append(_source_batch(config, size=1))
+            writer.commit(metadata={})
+
+    assert not artifact_path.exists()
+    assert not writer._shard_dir.exists()
+    assert not writer._manifest_temporary.exists()
+
+
+def test_sharded_writer_forbids_overwriting_an_open_generation(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "replace.pt"
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=2))
+        writer.commit(metadata={"generation": 1})
+    first_reader = open_fada_source_artifact(artifact_path, config=config)
+
+    with pytest.raises(FileExistsError, match="refusing to overwrite"):
+        with FADAShardedSourceWriter(artifact_path, config=config):
+            pass
+
+    assert [batch.command.shape[0] for batch in first_reader.iter_batches()] == [2]
+
+
+def test_v4_mmap_artifact_replay_releases_discarded_storage(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "legacy-v4.pt"
+    save_fada_source_batch(
+        artifact_path,
+        _source_batch(config, size=128),
+        config=config,
+        metadata={},
+    )
+    artifact = open_fada_source_artifact(artifact_path, config=config)
+    assert artifact.legacy_batch is not None
+    artifact.identity_fields()
+    source_storage_bytes = artifact.legacy_batch.command.untyped_storage().nbytes()
+    replay = FADAReplayBuffer(config, capacity=1)
+
+    replay.add_artifact(artifact)
+
+    retained = replay._chunks[0].command
+    assert retained.untyped_storage().nbytes() == retained.numel() * retained.element_size()
+    assert retained.untyped_storage().nbytes() < source_storage_bytes
+
+
+def test_replay_loads_only_shards_selected_by_retention(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    artifact_path = tmp_path / "streamed.pt"
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        for _ in range(3):
+            writer.append(_source_batch(config, size=2))
+        writer.commit(metadata={})
+    artifact = open_fada_source_artifact(artifact_path, config=config)
+    replay = FADAReplayBuffer(config, capacity=2)
+    loaded_indices: list[int] = []
+    original_load = LoadedFADASourceArtifact.load_batch
+
+    def traced_load(self, index: int):
+        loaded_indices.append(index)
+        return original_load(self, index)
+
+    monkeypatch.setattr(LoadedFADASourceArtifact, "load_batch", traced_load)
+    artifact.identity_fields()
+    loaded_indices.clear()
+    replay.add_artifact(artifact)
+
+    assert loaded_indices == [2]
+    assert len(replay) == 2
+
+
+def test_persistent_retry_reuses_exact_completed_artifact(tmp_path: Path) -> None:
+    config = _config()
+    artifact_path = tmp_path / "iteration_0002.pt"
+    request = DaggerCollectRequest(
+        request_id="fada-0002-v3",
+        scenario=FADA_ASYNC_SCENARIO,
+        iteration=2,
+        checkpoint_path=str((tmp_path / "student.pt").resolve()),
+        output_path=str(artifact_path.resolve()),
+        expected_weight_version=3,
+    )
+    metadata = {
+        "request_id": request.request_id,
+        "scenario": request.scenario,
+        "iteration": request.iteration,
+        "checkpoint_path": request.checkpoint_path,
+        "expected_weight_version": request.expected_weight_version,
+        "producer_pid": 1234,
+    }
+    with FADAShardedSourceWriter(artifact_path, config=config) as writer:
+        writer.append(_source_batch(config, size=2))
+        writer.commit(metadata=metadata)
+
+    result, artifact = _reuse_complete_artifact(
+        artifact_path,
+        config=config,
+        request=request,
+    )
+
+    assert result.worker_pid == 1234
+    assert result.num_samples == 2
+    assert result.metrics == {"artifact_reused": 1.0}
+    assert artifact.metadata == metadata
 
 
 def test_fada_async_artifact_identity_fails_closed_on_stale_request() -> None:

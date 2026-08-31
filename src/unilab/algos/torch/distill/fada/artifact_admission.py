@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import torch
@@ -43,11 +43,32 @@ def _fada_quality_batch(
     walk_cold_start_ratio: float,
     static_cold_start_ratio: float,
 ) -> FADASourceBatch:
-    size = min(int(limit), int(batch.command.shape[0]))
+    return _fada_quality_batches(
+        (batch,),
+        config=config,
+        limit=limit,
+        scenario_ratios=scenario_ratios,
+        walk_cold_start_ratio=walk_cold_start_ratio,
+        static_cold_start_ratio=static_cold_start_ratio,
+    )
+
+
+def _fada_quality_batches(
+    batches: Iterable[FADASourceBatch],
+    *,
+    config: FADAArchitectureConfig,
+    limit: int,
+    scenario_ratios: Mapping[str, float],
+    walk_cold_start_ratio: float,
+    static_cold_start_ratio: float,
+) -> FADASourceBatch:
+    row_batches = tuple(batches)
+    total = sum(int(batch.command.shape[0]) for batch in row_batches)
+    size = min(int(limit), total)
     if size <= 0:
         raise ValueError(f"quality_eval_max_windows must be positive, got {limit}")
-    replay = FADAReplayBuffer(config, capacity=int(batch.command.shape[0]))
-    replay.add(batch)
+    replay = FADAReplayBuffer(config, capacity=total)
+    replay.add_many(row_batches)
     return replay.sample_planner(
         size,
         scenario_ratios=scenario_ratios,
@@ -57,10 +78,40 @@ def _fada_quality_batch(
     )
 
 
+def _fada_prefix_batch(
+    batches: Iterable[FADASourceBatch],
+    *,
+    config: FADAArchitectureConfig,
+    limit: int,
+) -> FADASourceBatch:
+    remaining = int(limit)
+    pieces: list[FADASourceBatch] = []
+    for batch in batches:
+        if remaining <= 0:
+            break
+        rows = min(remaining, int(batch.command.shape[0]))
+        if rows > 0:
+            pieces.append(_slice_fada_batch(batch, rows))
+            remaining -= rows
+    if not pieces:
+        raise ValueError(f"quality_eval_max_windows must be positive, got {limit}")
+    if len(pieces) == 1:
+        return pieces[0]
+    return FADASourceBatch(
+        **{
+            field: torch.cat([getattr(batch, field) for batch in pieces])
+            for field in FADASourceBatch.__dataclass_fields__
+        }
+    ).validate(config)
+
+
 def _require_fada_curriculum_artifact(
     cfg: DictConfig,
     metadata: Mapping[str, Any],
     batch: FADASourceBatch | None = None,
+    *,
+    batches: Iterable[FADASourceBatch] | None = None,
+    identity: Mapping[str, torch.Tensor] | None = None,
 ) -> None:
     """在 replay mutation 前验证 scenario 配额与 Oracle role artifact contract."""
 
@@ -147,24 +198,57 @@ def _require_fada_curriculum_artifact(
                 f"v005 {scenario} profile summary mismatch: "
                 f"expected={expected_profiles} observed={observed_profiles}"
             )
-    if batch is None:
+    provided = sum(value is not None for value in (batch, batches, identity))
+    if provided == 0:
         raise ValueError("v005 FADA artifact validation requires row-level source identity")
-    batch.validate(build_fada_architecture_config(cfg))
+    if provided != 1:
+        raise ValueError("provide exactly one row identity source for FADA artifact validation")
+    if identity is None:
+        row_batches = (batch,) if batch is not None else tuple(batches or ())
+        if not row_batches:
+            raise ValueError("v005 FADA artifact validation requires row-level source identity")
+        architecture = build_fada_architecture_config(cfg)
+        row_batches = tuple(item.validate(architecture) for item in row_batches)
+        identity = {
+            name: torch.cat([getattr(item, name) for item in row_batches])
+            for name in (
+                "oracle_shadow_valid",
+                "idm_source_role",
+                "command_scenario",
+                "planner_eligible",
+                "cold_start",
+            )
+        }
+    expected_identity = {
+        "oracle_shadow_valid",
+        "idm_source_role",
+        "command_scenario",
+        "planner_eligible",
+        "cold_start",
+    }
+    if set(identity) != expected_identity:
+        raise ValueError("FADA artifact row identity fields are incomplete")
+    oracle_shadow_valid = identity["oracle_shadow_valid"]
+    idm_source_role = identity["idm_source_role"]
+    command_scenario = identity["command_scenario"]
+    planner_eligible = identity["planner_eligible"]
+    cold_start = identity["cold_start"]
+    num_rows = int(command_scenario.shape[0])
     main_windows = int(metadata.get("main_windows", 0))
-    if main_windows <= 0 or main_windows > int(batch.command.shape[0]):
+    if main_windows <= 0 or main_windows > num_rows:
         raise ValueError(f"invalid v005 FADA main_windows={main_windows}")
-    main_mask = torch.arange(batch.command.shape[0]) < main_windows
+    main_mask = torch.arange(num_rows) < main_windows
     intermediate_mask = ~main_mask
     if bool(
-        (batch.idm_source_role[intermediate_mask] != FADA_IDM_SOURCE_ROLE_IDS["trajectory"]).any()
+        (idm_source_role[intermediate_mask] != FADA_IDM_SOURCE_ROLE_IDS["trajectory"]).any()
     ):
         raise ValueError("FADA intermediate-Oracle IDM role must be trajectory")
-    if not bool(batch.planner_eligible[main_mask].all()):
+    if not bool(planner_eligible[main_mask].all()):
         raise ValueError("v005 main-source rows must remain Planner eligible")
-    if bool(batch.planner_eligible[~main_mask].any()):
+    if bool(planner_eligible[~main_mask].any()):
         raise ValueError("v005 intermediate-Oracle rows must be excluded from Planner replay")
     observed_rows = {
-        scenario: int((batch.command_scenario[main_mask] == scenario_id).sum())
+        scenario: int((command_scenario[main_mask] == scenario_id).sum())
         for scenario, scenario_id in FADA_SCENARIO_IDS.items()
         if scenario in expected
     }
@@ -173,9 +257,9 @@ def _require_fada_curriculum_artifact(
             f"v005 row scenario counts mismatch: expected={expected} observed={observed_rows}"
         )
     for scenario, cold_ratio in profile_ratios.items():
-        scenario_mask = main_mask & (batch.command_scenario == FADA_SCENARIO_IDS[scenario])
+        scenario_mask = main_mask & (command_scenario == FADA_SCENARIO_IDS[scenario])
         expected_cold = int(math.floor(expected[scenario] * cold_ratio + 0.5))
-        observed_cold = int((scenario_mask & batch.cold_start).sum())
+        observed_cold = int((scenario_mask & cold_start).sum())
         if observed_cold != expected_cold:
             raise ValueError(
                 f"v005 {scenario.replace('_stand', '')} cold-start count mismatch: "
@@ -186,23 +270,23 @@ def _require_fada_curriculum_artifact(
         raise ValueError("FADA main-source summaries must share one iteration")
     iteration = next(iter(main_iterations))
     walking_recovery_mask = (
-        main_mask & batch.cold_start & (batch.command_scenario == FADA_SCENARIO_IDS["walk"])
+        main_mask & cold_start & (command_scenario == FADA_SCENARIO_IDS["walk"])
     )
     if bool(
         (
-            batch.idm_source_role[walking_recovery_mask]
+            idm_source_role[walking_recovery_mask]
             != FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
         ).any()
     ):
         raise ValueError("FADA walking recovery IDM role must be oracle_shadow")
     ordinary_main_mask = main_mask & ~walking_recovery_mask
     if iteration == 0:
-        valid_ordinary_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
+        valid_ordinary_role = idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
     else:
-        trajectory_role = batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["trajectory"]
+        trajectory_role = idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["trajectory"]
         planner_only_terminal = (
-            batch.idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
-        ) & ~batch.oracle_shadow_valid
+            idm_source_role == FADA_IDM_SOURCE_ROLE_IDS["oracle_shadow"]
+        ) & ~oracle_shadow_valid
         valid_ordinary_role = trajectory_role | planner_only_terminal
     if bool((ordinary_main_mask & ~valid_ordinary_role).any()):
         raise ValueError("FADA main-source IDM role does not match alternating iteration")
@@ -210,4 +294,6 @@ def _require_fada_curriculum_artifact(
 
 slice_fada_batch = _slice_fada_batch
 fada_quality_batch = _fada_quality_batch
+fada_quality_batches = _fada_quality_batches
+fada_prefix_batch = _fada_prefix_batch
 require_fada_curriculum_artifact = _require_fada_curriculum_artifact

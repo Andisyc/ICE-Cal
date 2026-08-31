@@ -5,20 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
+import torch
 from omegaconf import DictConfig, OmegaConf
 
 from unilab.algos.torch.distill.fada.artifact_admission import (
-    fada_quality_batch,
     require_fada_curriculum_artifact,
-    slice_fada_batch,
 )
 from unilab.algos.torch.distill.fada.async_config import fada_training_schedule
 from unilab.algos.torch.distill.fada.async_runtime import FADA_ASYNC_SCENARIO
 from unilab.algos.torch.distill.fada.checkpoint import save_fada_checkpoint
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
-from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
+from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer, planner_sample_indices
 from unilab.algos.torch.distill.fada.source_artifact import (
-    load_fada_source_batch,
+    LoadedFADASourceArtifact,
+    open_fada_source_artifact,
     validate_fada_async_artifact_identity,
 )
 from unilab.algos.torch.distill.fada.source_evaluation import evaluate_fada_source_batch
@@ -31,7 +31,49 @@ from unilab.algos.torch.distill.fada.workflow_setup import (
     fada_v005_replay_settings,
     resolve_fada_path,
 )
-from unilab.algos.torch.distill.runtime.async_runtime import DaggerCollectRequest
+from unilab.algos.torch.distill.runtime.async_runtime import (
+    DaggerCollectRequest,
+    DaggerCollectResult,
+)
+
+
+def _reuse_complete_artifact(
+    artifact_path: Path,
+    *,
+    config: FADAArchitectureConfig,
+    request: DaggerCollectRequest,
+) -> tuple[DaggerCollectResult, LoadedFADASourceArtifact]:
+    """Reuse only an immutable artifact with the exact repeated request identity."""
+
+    loaded = open_fada_source_artifact(artifact_path, config=config)
+    producer_pid = int(loaded.metadata.get("producer_pid", -1))
+    validate_fada_async_artifact_identity(
+        loaded.metadata,
+        expected={
+            "request_id": request.request_id,
+            "scenario": request.scenario,
+            "iteration": request.iteration,
+            "checkpoint_path": request.checkpoint_path,
+            "expected_weight_version": request.expected_weight_version,
+            "producer_pid": producer_pid,
+        },
+    )
+    return (
+        DaggerCollectResult(
+            request_id=request.request_id,
+            scenario=request.scenario,
+            iteration=request.iteration,
+            checkpoint_path=request.checkpoint_path,
+            output_path=str(artifact_path),
+            expected_weight_version=request.expected_weight_version,
+            observed_weight_version=request.expected_weight_version,
+            num_samples=loaded.num_samples,
+            worker_pid=producer_pid,
+            metrics={"artifact_reused": 1.0},
+            metadata={"artifact_reused": True},
+        ),
+        loaded,
+    )
 
 
 def run_fada_persistent_async(
@@ -104,8 +146,15 @@ def run_fada_persistent_async(
                 output_path=str(artifact_path),
                 expected_weight_version=weight_version,
             )
-            result = runtime.collect(request)
-            loaded = load_fada_source_batch(artifact_path, config=config)
+            if artifact_path.is_file():
+                result, loaded = _reuse_complete_artifact(
+                    artifact_path,
+                    config=config,
+                    request=request,
+                )
+            else:
+                result = runtime.collect(request)
+                loaded = open_fada_source_artifact(artifact_path, config=config)
             validate_fada_async_artifact_identity(
                 loaded.metadata,
                 expected={
@@ -123,10 +172,10 @@ def run_fada_persistent_async(
                     f"expected={training_schedule!r} "
                     f"observed={loaded.metadata.get('training_schedule')!r}"
                 )
-            if int(loaded.batch.command.shape[0]) != result.num_samples:
+            if loaded.num_samples != result.num_samples:
                 raise ValueError(
                     "FADA async artifact/result sample mismatch: "
-                    f"artifact={loaded.batch.command.shape[0]} result={result.num_samples}"
+                    f"artifact={loaded.num_samples} result={result.num_samples}"
                 )
             main_windows = int(loaded.metadata.get("main_windows", 0))
             if main_windows <= 0 or main_windows > result.num_samples:
@@ -134,9 +183,34 @@ def run_fada_persistent_async(
             summaries = loaded.metadata.get("collections")
             if not isinstance(summaries, list):
                 raise ValueError("FADA async artifact collections must be a list")
-            require_fada_curriculum_artifact(cfg, loaded.metadata, loaded.batch)
+            identity = loaded.identity_fields()
+            require_fada_curriculum_artifact(
+                cfg,
+                loaded.metadata,
+                identity=identity,
+            )
+            quality_batch = None
+            if bool(fada_cfg.oracle_shadow_enabled):
+                quality_limit = int(
+                    OmegaConf.select(fada_cfg, "quality_eval_max_windows", default=4096)
+                )
+                quality_size = min(quality_limit, main_windows)
+                quality_indices = (
+                    planner_sample_indices(
+                        quality_size,
+                        planner_eligible=identity["planner_eligible"][:main_windows],
+                        command_scenario=identity["command_scenario"][:main_windows],
+                        cold_start=identity["cold_start"][:main_windows],
+                        scenario_ratios=planner_ratios,
+                        walk_cold_start_ratio=walk_cold_start_ratio,
+                        static_cold_start_ratio=static_cold_start_ratio,
+                    )
+                    if v005_enabled
+                    else torch.arange(quality_size, dtype=torch.int64)
+                )
+                quality_batch = loaded.select_indices(quality_indices)
             collection_summaries.extend(cast(list[dict[str, Any]], summaries))
-            replay.add(loaded.batch)
+            replay.add_artifact(loaded)
             samples_seen += result.num_samples
 
             planner_update_ratios = planner_ratios if v005_enabled else None
@@ -150,23 +224,7 @@ def run_fada_persistent_async(
                 planner_walk_cold_start_ratio=walk_cold_start_ratio,
                 planner_static_cold_start_ratio=static_cold_start_ratio,
             )
-            if bool(fada_cfg.oracle_shadow_enabled):
-                main_batch = slice_fada_batch(loaded.batch, main_windows)
-                quality_limit = int(
-                    OmegaConf.select(fada_cfg, "quality_eval_max_windows", default=4096)
-                )
-                quality_batch = (
-                    fada_quality_batch(
-                        main_batch,
-                        config=config,
-                        limit=quality_limit,
-                        scenario_ratios=planner_ratios,
-                        walk_cold_start_ratio=walk_cold_start_ratio,
-                        static_cold_start_ratio=static_cold_start_ratio,
-                    )
-                    if v005_enabled
-                    else slice_fada_batch(main_batch, quality_limit)
-                )
+            if quality_batch is not None:
                 last_quality_metrics = evaluate_fada_source_batch(
                     policy,
                     quality_batch,
@@ -182,6 +240,7 @@ def run_fada_persistent_async(
                         ),
                     }
                 )
+            del identity
             save_fada_checkpoint(
                 checkpoint_path,
                 policy,

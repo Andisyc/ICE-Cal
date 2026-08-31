@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -15,7 +15,10 @@ from unilab.algos.torch.distill.fada.model import (
     FADAArchitectureConfig,
     FADASourceBatch,
 )
-from unilab.algos.torch.distill.fada.source_artifact import batch_to_device
+from unilab.algos.torch.distill.fada.source_artifact import (
+    LoadedFADASourceArtifact,
+    batch_to_device,
+)
 
 
 @dataclass(frozen=True)
@@ -26,8 +29,76 @@ class FADAReplayRoleCounts:
     planner_ineligible: int
 
 
+def _slice_batch(batch: FADASourceBatch, start: int, end: int) -> FADASourceBatch:
+    return FADASourceBatch(
+        **{
+            field: getattr(batch, field)[start:end]
+            for field in FADASourceBatch.__dataclass_fields__
+        }
+    )
+
+
+def planner_sample_indices(
+    batch_size: int,
+    *,
+    planner_eligible: torch.Tensor,
+    command_scenario: torch.Tensor,
+    cold_start: torch.Tensor,
+    scenario_ratios: Mapping[str, float],
+    walk_cold_start_ratio: float,
+    static_cold_start_ratio: float,
+    generator: torch.Generator | None = None,
+) -> torch.Tensor:
+    scenario_counts = _allocate_ratio_counts(
+        int(batch_size),
+        scenario_ratios,
+        ordered_names=FADA_COMMAND_SCENARIOS,
+        label="Planner scenario",
+    )
+    selected: list[torch.Tensor] = []
+    for scenario, count in scenario_counts:
+        scenario_mask = planner_eligible & (command_scenario == FADA_SCENARIO_IDS[scenario])
+        if scenario in {"walk", "static_stand"}:
+            cold_ratio = (
+                float(walk_cold_start_ratio)
+                if scenario == "walk"
+                else float(static_cold_start_ratio)
+            )
+            cold_counts = _allocate_ratio_counts(
+                count,
+                {"cold_start": cold_ratio, "steady_state": 1.0 - cold_ratio},
+                ordered_names=("cold_start", "steady_state"),
+                label=f"{scenario} Planner profile",
+            )
+            for profile, profile_count in cold_counts:
+                profile_mask = (
+                    scenario_mask & cold_start
+                    if profile == "cold_start"
+                    else scenario_mask & ~cold_start
+                )
+                selected.append(
+                    _sample_mask_indices(
+                        profile_mask,
+                        profile_count,
+                        generator=generator,
+                        label=f"{scenario}/{profile}",
+                    )
+                )
+        else:
+            selected.append(
+                _sample_mask_indices(
+                    scenario_mask,
+                    count,
+                    generator=generator,
+                    label=scenario,
+                )
+            )
+    indices = torch.cat(selected)
+    return indices.index_select(0, torch.randperm(indices.numel(), generator=generator))
+
+
 class FADAReplayBuffer:
-    """Bounded source-window replay with one validated tensor owner per field."""
+    """Bounded replay that owns independent CPU shards instead of one monolith."""
 
     def __init__(
         self,
@@ -55,10 +126,26 @@ class FADAReplayBuffer:
         self.suboptimal_retention_ratio = (
             None if suboptimal_retention_ratio is None else int(suboptimal_retention_ratio)
         )
-        self._batch: FADASourceBatch | None = None
+        self._chunks: tuple[FADASourceBatch, ...] = ()
+        self._size = 0
 
     def __len__(self) -> int:
-        return 0 if self._batch is None else int(self._batch.command.shape[0])
+        return self._size
+
+    @property
+    def _batch(self) -> FADASourceBatch | None:
+        """Compatibility view for diagnostics/tests; runtime sampling stays sharded."""
+
+        if not self._chunks:
+            return None
+        if len(self._chunks) == 1:
+            return self._chunks[0]
+        return FADASourceBatch(
+            **{
+                field: torch.cat([getattr(chunk, field) for chunk in self._chunks], dim=0)
+                for field in FADASourceBatch.__dataclass_fields__
+            }
+        ).validate(self.config)
 
     @property
     def effective_capacity(self) -> int:
@@ -68,16 +155,14 @@ class FADAReplayBuffer:
         return (self.capacity // (ratio + 1)) * (ratio + 1)
 
     def source_role_counts(self) -> FADAReplayRoleCounts:
-        if self._batch is None:
-            return FADAReplayRoleCounts(planner_eligible=0, planner_ineligible=0)
-        planner_eligible = int(self._batch.planner_eligible.sum())
+        planner_eligible = sum(int(chunk.planner_eligible.sum()) for chunk in self._chunks)
         return FADAReplayRoleCounts(
             planner_eligible=planner_eligible,
             planner_ineligible=len(self) - planner_eligible,
         )
 
-    def _retained_indices(self, merged: FADASourceBatch) -> torch.Tensor:
-        size = int(merged.command.shape[0])
+    def _retained_indices(self, roles: Sequence[torch.Tensor]) -> torch.Tensor:
+        size = sum(int(role.shape[0]) for role in roles)
         ratio = self.suboptimal_retention_ratio
         if ratio is None or size <= self.capacity:
             start = max(size - self.capacity, 0)
@@ -85,10 +170,9 @@ class FADAReplayBuffer:
 
         planner_eligible_capacity = self.capacity // (ratio + 1)
         planner_ineligible_capacity = planner_eligible_capacity * ratio
-        planner_eligible_indices = torch.nonzero(merged.planner_eligible, as_tuple=False).flatten()
-        planner_ineligible_indices = torch.nonzero(
-            ~merged.planner_eligible, as_tuple=False
-        ).flatten()
+        planner_eligible = torch.cat(tuple(roles))
+        planner_eligible_indices = torch.nonzero(planner_eligible, as_tuple=False).flatten()
+        planner_ineligible_indices = torch.nonzero(~planner_eligible, as_tuple=False).flatten()
         if planner_eligible_indices.numel() < planner_eligible_capacity:
             raise ValueError(
                 "paper FADA replay overflow lacks Planner-eligible main rows: "
@@ -109,26 +193,132 @@ class FADAReplayBuffer:
         )
         return selected.sort().values
 
+    def _retain_chunks(
+        self,
+        chunks: Sequence[FADASourceBatch],
+        indices: torch.Tensor,
+    ) -> tuple[FADASourceBatch, ...]:
+        retained: list[FADASourceBatch] = []
+        offset = 0
+        for chunk in chunks:
+            rows = int(chunk.command.shape[0])
+            left = int(torch.searchsorted(indices, torch.tensor(offset)).item())
+            right = int(torch.searchsorted(indices, torch.tensor(offset + rows)).item())
+            local = indices[left:right] - offset
+            offset += rows
+            if local.numel() == 0:
+                continue
+            first = int(local[0])
+            last = int(local[-1])
+            if first == 0 and last + 1 == rows and local.numel() == rows:
+                candidate = chunk
+            elif last - first + 1 == local.numel():
+                candidate = FADASourceBatch(
+                    **{
+                        field: getattr(chunk, field)[first : last + 1].clone()
+                        for field in FADASourceBatch.__dataclass_fields__
+                    }
+                )
+            else:
+                candidate = FADASourceBatch(
+                    **{
+                        field: getattr(chunk, field).index_select(0, local)
+                        for field in FADASourceBatch.__dataclass_fields__
+                    }
+                )
+            retained.append(candidate.validate(self.config))
+        return tuple(retained)
+
     def add(self, batch: FADASourceBatch) -> None:
-        # B1: 校验 causal window, 产出可进入 replay 的 CPU batch.
-        incoming = batch_to_device(batch.validate(self.config), torch.device("cpu"))
-        if self._batch is None:
-            merged = incoming
-        else:
-            merged = FADASourceBatch(
+        self.add_many((batch,))
+
+    def add_many(self, batches: Iterable[FADASourceBatch]) -> None:
+        """Copy caller-owned batches into one atomic replay transaction."""
+
+        self._add_many(batches, copy_incoming=True)
+
+    def _add_many(
+        self,
+        batches: Iterable[FADASourceBatch],
+        *,
+        copy_incoming: bool,
+    ) -> None:
+        """Atomically admit one collection transaction without global tensor copies."""
+
+        incoming = tuple(
+            FADASourceBatch(
                 **{
-                    field: torch.cat([getattr(self._batch, field), getattr(incoming, field)], dim=0)
+                    field: getattr(batch, field).detach().to("cpu").clone()
                     for field in FADASourceBatch.__dataclass_fields__
                 }
+            ).validate(self.config)
+            if copy_incoming
+            else batch_to_device(batch.validate(self.config), torch.device("cpu"))
+            for batch in batches
+        )
+        if not incoming:
+            raise ValueError("cannot add an empty FADA replay transaction")
+        candidates = (*self._chunks, *incoming)
+        retained_indices = self._retained_indices(
+            tuple(batch.planner_eligible for batch in candidates)
+        )
+        retained = self._retain_chunks(candidates, retained_indices)
+        self._chunks = retained
+        self._size = int(retained_indices.numel())
+
+    def add_artifact(self, artifact: LoadedFADASourceArtifact) -> None:
+        """Atomically retain only selected artifact shards, loading them one at a time."""
+
+        incoming_roles = artifact.planner_role_vectors()
+        role_chunks = (
+            *(chunk.planner_eligible for chunk in self._chunks),
+            *incoming_roles,
+        )
+        retained_indices = self._retained_indices(role_chunks)
+        old_size = len(self)
+        old_end = int(torch.searchsorted(retained_indices, torch.tensor(old_size)).item())
+        retained: list[FADASourceBatch] = list(
+            self._retain_chunks(self._chunks, retained_indices[:old_end])
+        )
+        incoming_indices = retained_indices[old_end:] - old_size
+        offset = 0
+        for index, roles in enumerate(incoming_roles):
+            rows = int(roles.shape[0])
+            left = int(torch.searchsorted(incoming_indices, torch.tensor(offset)).item())
+            right = int(torch.searchsorted(incoming_indices, torch.tensor(offset + rows)).item())
+            local = incoming_indices[left:right] - offset
+            offset += rows
+            if local.numel() == 0:
+                continue
+            batch = artifact.load_batch(index)
+            retained.extend(self._retain_chunks((batch,), local))
+        self._chunks = tuple(retained)
+        self._size = int(retained_indices.numel())
+
+    def _select_global_indices(self, indices: torch.Tensor) -> FADASourceBatch:
+        outputs: dict[str, torch.Tensor] = {}
+        first = self._chunks[0]
+        for field in FADASourceBatch.__dataclass_fields__:
+            tensor = getattr(first, field)
+            outputs[field] = torch.empty(
+                (indices.numel(), *tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device
             )
-        retained_indices = self._retained_indices(merged)
-        candidate = FADASourceBatch(
-            **{
-                field: getattr(merged, field).index_select(0, retained_indices).contiguous()
-                for field in FADASourceBatch.__dataclass_fields__
-            }
-        ).validate(self.config)
-        self._batch = candidate
+        offset = 0
+        for chunk in self._chunks:
+            rows = int(chunk.command.shape[0])
+            positions = torch.nonzero(
+                (indices >= offset) & (indices < offset + rows), as_tuple=False
+            ).flatten()
+            if positions.numel() > 0:
+                local = indices.index_select(0, positions) - offset
+                for field in FADASourceBatch.__dataclass_fields__:
+                    outputs[field].index_copy_(
+                        0,
+                        positions,
+                        getattr(chunk, field).index_select(0, local),
+                    )
+            offset += rows
+        return FADASourceBatch(**outputs).validate(self.config)
 
     def sample(
         self,
@@ -137,18 +327,16 @@ class FADAReplayBuffer:
         generator: torch.Generator | None = None,
         device: str | torch.device = "cpu",
     ) -> FADASourceBatch:
-        if self._batch is None or len(self) == 0:
+        if len(self) == 0:
             raise ValueError("cannot sample an empty FADA replay buffer")
         if int(batch_size) <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
         indices = torch.randint(len(self), (int(batch_size),), generator=generator)
-        sampled = FADASourceBatch(
-            **{
-                field: getattr(self._batch, field).index_select(0, indices)
-                for field in FADASourceBatch.__dataclass_fields__
-            }
-        )
+        sampled = self._select_global_indices(indices)
         return batch_to_device(sampled, torch.device(device)).validate(self.config)
+
+    def _metadata_field(self, field: str) -> torch.Tensor:
+        return torch.cat([getattr(chunk, field) for chunk in self._chunks])
 
     def sample_planner(
         self,
@@ -162,65 +350,22 @@ class FADAReplayBuffer:
     ) -> FADASourceBatch:
         """Sample one exact scenario-balanced Planner batch from eligible replay rows."""
 
-        if self._batch is None or len(self) == 0:
+        if len(self) == 0:
             raise ValueError("cannot sample an empty FADA replay buffer")
-        scenario_counts = _allocate_ratio_counts(
+        planner_eligible = self._metadata_field("planner_eligible")
+        command_scenario = self._metadata_field("command_scenario")
+        cold_start = self._metadata_field("cold_start")
+        indices = planner_sample_indices(
             int(batch_size),
-            scenario_ratios,
-            ordered_names=FADA_COMMAND_SCENARIOS,
-            label="Planner scenario",
+            planner_eligible=planner_eligible,
+            command_scenario=command_scenario,
+            cold_start=cold_start,
+            scenario_ratios=scenario_ratios,
+            walk_cold_start_ratio=walk_cold_start_ratio,
+            static_cold_start_ratio=static_cold_start_ratio,
+            generator=generator,
         )
-        selected: list[torch.Tensor] = []
-        for scenario, count in scenario_counts:
-            scenario_mask = self._batch.planner_eligible & (
-                self._batch.command_scenario == FADA_SCENARIO_IDS[scenario]
-            )
-            if scenario in {"walk", "static_stand"}:
-                cold_start_ratio = (
-                    float(walk_cold_start_ratio)
-                    if scenario == "walk"
-                    else float(static_cold_start_ratio)
-                )
-                cold_counts = _allocate_ratio_counts(
-                    count,
-                    {
-                        "cold_start": cold_start_ratio,
-                        "steady_state": 1.0 - cold_start_ratio,
-                    },
-                    ordered_names=("cold_start", "steady_state"),
-                    label=f"{scenario} Planner profile",
-                )
-                for profile, profile_count in cold_counts:
-                    profile_mask = (
-                        scenario_mask & self._batch.cold_start
-                        if profile == "cold_start"
-                        else scenario_mask & ~self._batch.cold_start
-                    )
-                    selected.append(
-                        _sample_mask_indices(
-                            profile_mask,
-                            profile_count,
-                            generator=generator,
-                            label=f"{scenario}/{profile}",
-                        )
-                    )
-            else:
-                selected.append(
-                    _sample_mask_indices(
-                        scenario_mask,
-                        count,
-                        generator=generator,
-                        label=scenario,
-                    )
-                )
-        indices = torch.cat(selected)
-        indices = indices.index_select(0, torch.randperm(indices.numel(), generator=generator))
-        sampled = FADASourceBatch(
-            **{
-                field: getattr(self._batch, field).index_select(0, indices)
-                for field in FADASourceBatch.__dataclass_fields__
-            }
-        )
+        sampled = self._select_global_indices(indices)
         return batch_to_device(sampled, torch.device(device)).validate(self.config)
 
 
