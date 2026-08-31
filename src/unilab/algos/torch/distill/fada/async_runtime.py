@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -50,14 +50,14 @@ _curriculum_and_allocations = curriculum_and_allocations
 
 
 class PersistentFADACollectorWorker:
-    """Keep walking/standing environments, Oracles, and Planner-IDM student resident."""
+    """Keep one privileged task environment, Oracles, and Planner-IDM student resident."""
 
     def __init__(
         self,
         *,
         root_dir: str,
         cfg_payload: Mapping[str, Any],
-        standing_cfg_payload: Mapping[str, Any] | None,
+        standing_curriculum_enabled: bool,
         architecture: Mapping[str, Any],
         final_teacher_checkpoint: str,
         source_allocations: Sequence[tuple[str, int]],
@@ -77,9 +77,7 @@ class PersistentFADACollectorWorker:
         self.standing_env: Any | None = None
         self.root_dir = Path(root_dir)
         self.cfg = OmegaConf.create(dict(cfg_payload))
-        self.standing_cfg = (
-            None if standing_cfg_payload is None else OmegaConf.create(dict(standing_cfg_payload))
-        )
+        self.standing_curriculum_enabled = bool(standing_curriculum_enabled)
         self.config = FADAArchitectureConfig(**dict(architecture))
         self.device = str(device)
         self.source_allocations = tuple(
@@ -114,7 +112,7 @@ class PersistentFADACollectorWorker:
             # A spawned worker starts with an empty registry. FADA owns the G1 route, so
             # importing unrelated optional robot families here would make their extras
             # accidental hard dependencies of Planner-IDM training.
-            # B3: 创建 walking/standing environment, 产出 collect() 使用的 resident env owners.
+            # B3: 创建唯一 G1WalkFlat environment; standing/transition 只改变 command scenario.
             ensure_registries(packages=("unilab.envs.locomotion.g1",))
             env_override = BackendAdapter(
                 self.cfg,
@@ -140,28 +138,19 @@ class PersistentFADACollectorWorker:
                     self.env,
                     self.cfg,
                 )
-            if self.standing_cfg is not None:
-                standing_override = BackendAdapter(
-                    self.standing_cfg,
-                    root_dir=self.root_dir,
-                    algo_name="distill",
-                ).build_task_env_cfg_override()
-                self.standing_env = env_factory(
-                    self.standing_cfg,
-                    num_envs=int(fada_cfg.num_envs),
-                    env_cfg_override=standing_override,
-                    sim_backend=str(self.standing_cfg.training.sim_backend),
-                    task_name=str(self.standing_cfg.training.task_name),
-                )
+            if self.standing_curriculum_enabled:
+                self.standing_env = self.env
 
             # B4: 物理包线守卫 opt-in, student 驱动的极端/非有限物理状态在回流
             # 下一个原生 step 之前被 sanitize + 标记 terminated, 防止原生层 SIGSEGV.
             physics_guard_max_abs = float(
                 OmegaConf.select(fada_cfg, "physics_guard_max_abs", default=1.0e4)
             )
+            configured_env_ids: set[int] = set()
             for resident_env in (self.env, self.standing_env):
-                if resident_env is not None:
+                if resident_env is not None and id(resident_env) not in configured_env_ids:
                     resident_env.set_physics_envelope_guard(physics_guard_max_abs)
+                    configured_env_ids.add(id(resident_env))
         except BaseException:
             self._close_resources(raise_errors=False)
             raise
@@ -239,25 +228,13 @@ def build_persistent_fada_runtime(
         return load_fada_policy_checkpoint(path, device="cpu").policy
 
     curriculum, _ = _curriculum_and_allocations(cfg.training.fada, architecture)
-    standing_cfg_payload: dict[str, Any] | None = None
-    if bool(curriculum.enabled):
-        standing_cfg = _standing_owner_cfg(
-            root_dir=root_dir,
-            cfg=cfg,
-            task_selector=str(curriculum.standing_task),
-        )
-        resolved_standing_cfg = OmegaConf.to_container(standing_cfg, resolve=True)
-        if not isinstance(resolved_standing_cfg, dict):
-            raise ValueError("standing FADA owner config must resolve to a mapping")
-        standing_cfg_payload = cast(dict[str, Any], resolved_standing_cfg)
-
     return PersistentDistillationRuntime(
         student_loader=load_student,
         worker_factory=_build_persistent_fada_worker,
         worker_kwargs={
             "root_dir": str(root_dir),
             "cfg_payload": cfg_payload,
-            "standing_cfg_payload": standing_cfg_payload,
+            "standing_curriculum_enabled": bool(curriculum.enabled),
             "architecture": asdict(architecture),
             "final_teacher_checkpoint": str(Path(final_teacher_checkpoint).resolve()),
             "source_allocations": [

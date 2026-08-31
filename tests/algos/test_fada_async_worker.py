@@ -252,7 +252,7 @@ def test_fada_persistent_worker_reuses_one_intermediate_teacher_across_rounds(
     ]
 
 
-def test_fada_worker_constructor_rolls_back_partial_resident_resources(
+def test_fada_worker_reuses_one_privileged_environment_for_standing_curriculum(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
@@ -274,8 +274,10 @@ def test_fada_worker_constructor_rolls_back_partial_resident_resources(
         def __init__(self) -> None:
             self.close_count = 0
             self.physics_guard_max_abs: float | None = None
+            self.physics_guard_calls = 0
 
         def set_physics_envelope_guard(self, max_abs_state: float | None) -> None:
+            self.physics_guard_calls += 1
             self.physics_guard_max_abs = max_abs_state
 
         def close(self) -> None:
@@ -296,7 +298,7 @@ def test_fada_worker_constructor_rolls_back_partial_resident_resources(
         env_calls += 1
         if env_calls == 1:
             return walking_env
-        raise RuntimeError("standing environment construction failed")
+        raise AssertionError("standing curriculum must reuse the G1WalkFlat environment")
 
     monkeypatch.setattr(
         fada_async_runtime,
@@ -322,25 +324,27 @@ def test_fada_worker_constructor_rolls_back_partial_resident_resources(
             "fada": {"num_envs": 1},
         },
     }
-    standing_cfg_payload = {"training": {"task_name": "G1StandStill", "sim_backend": "mujoco"}}
+    worker = PersistentFADACollectorWorker(
+        root_dir=str(ROOT),
+        cfg_payload=cfg_payload,
+        standing_curriculum_enabled=True,
+        architecture=asdict(config),
+        final_teacher_checkpoint="walking.pt",
+        source_allocations=(),
+        initial_checkpoint_path="student.pt",
+        device="cpu",
+        weight_sync_name="test-sync",
+        weight_sync_lock=object(),
+        weight_param_shapes={},
+        env_factory=env_factory,
+        oracle_loader=lambda *_args, **_kwargs: _Oracle(),
+    )
 
-    with pytest.raises(RuntimeError, match="standing environment construction failed"):
-        PersistentFADACollectorWorker(
-            root_dir=str(ROOT),
-            cfg_payload=cfg_payload,
-            standing_cfg_payload=standing_cfg_payload,
-            architecture=asdict(config),
-            final_teacher_checkpoint="walking.pt",
-            source_allocations=(),
-            initial_checkpoint_path="student.pt",
-            device="cpu",
-            weight_sync_name="test-sync",
-            weight_sync_lock=object(),
-            weight_param_shapes={},
-            env_factory=env_factory,
-            oracle_loader=lambda *_args, **_kwargs: _Oracle(),
-        )
-
+    assert env_calls == 1
+    assert worker.env is walking_env
+    assert worker.standing_env is walking_env
+    assert walking_env.physics_guard_calls == 1
+    worker.close()
     assert walking_env.close_count == 1
     assert len(_WeightSync.instances) == 1
     assert _WeightSync.instances[0].close_count == 1
