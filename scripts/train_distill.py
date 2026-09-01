@@ -86,6 +86,9 @@ from unilab.algos.torch.distill.entry_workflow import (
     _workflow_scenario_specs,
     run_single_entry_workflow,
 )
+from unilab.algos.torch.distill.fada.async_config import (
+    teacher_spec as build_fada_teacher_spec,
+)
 from unilab.algos.torch.distill.fada_workflow import (
     FADAWorkflowDependencies,
     run_fada_training_owner,
@@ -142,19 +145,22 @@ def run_fada_training(
         require_teacher_policy_collection_route=_require_teacher_policy_collection_route,
         apply_collect_command_distribution_overrides=_apply_collect_command_distribution_overrides,
         resolve_teacher_checkpoint=resolve_teacher_checkpoint,
-        build_teacher_spec=build_teacher_spec,
+        build_teacher_spec=build_fada_teacher_spec,
         build_persistent_fada_runtime=build_persistent_fada_runtime,
         ensure_registries=ensure_registries,
         create_env=create_env,
         backend_adapter_cls=BackendAdapter,
         load_fada_oracle_policy=load_fada_oracle_policy,
     )
-    return run_fada_training_owner(
-        cfg,
-        teacher_checkpoint=teacher_checkpoint,
-        create_env_fn=create_env_fn,
-        env_cfg_override_fn=env_cfg_override_fn,
-        dependencies=dependencies,
+    return cast(
+        dict[str, Any],
+        run_fada_training_owner(
+            cfg,
+            teacher_checkpoint=teacher_checkpoint,
+            create_env_fn=create_env_fn,
+            env_cfg_override_fn=env_cfg_override_fn,
+            dependencies=dependencies,
+        ),
     )
 
 

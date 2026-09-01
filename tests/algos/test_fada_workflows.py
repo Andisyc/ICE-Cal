@@ -12,6 +12,7 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+import unilab.algos.torch.distill.fada.async_config as fada_async_config
 import unilab.algos.torch.distill.fada.async_runtime as fada_async_runtime
 import unilab.algos.torch.distill.fada.training as fada_training
 import unilab.algos.torch.distill.fada.workflow as fada_workflow
@@ -59,6 +60,23 @@ from unilab.algos.torch.distill.fada_source_diagnostics import (
     run_fada_coverage_diagnostic,
 )
 from unilab.algos.torch.distill.fada_training import FADAPaperSourcePlan
+
+
+def test_train_distill_wires_privileged_teacher_spec_into_fada_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_train_distill()
+    captured: dict[str, object] = {}
+
+    def fake_owner(cfg, **kwargs):
+        captured["builder"] = kwargs["dependencies"].build_teacher_spec
+        return {"mode": "captured"}
+
+    monkeypatch.setattr(module, "run_fada_training_owner", fake_owner)
+    result = module.run_fada_training(OmegaConf.create({}))
+
+    assert result == {"mode": "captured"}
+    assert captured["builder"] is fada_async_config.teacher_spec
 
 
 def test_unilab_fada_persistent_async_keeps_collection_behind_version_barrier(
