@@ -142,7 +142,14 @@ def test_official_source_config_enables_exact_source_campaign_but_has_no_assets(
     assert cfg.training.fada.oracle_shadow_enabled is True
     assert cfg.training.fada.stand_transition_curriculum.enabled is True
     assert cfg.training.fada.v005_replay.enabled is True
-    assert cfg.training.fada.v005_replay.walk_cold_start_ratio == 0.5
+    assert cfg.training.fada.v005_replay.walk_cold_start_ratio == 0.2
+    assert cfg.training.fada.v005_replay.walk_steady_speed_thresholds == [0.25, 0.6]
+    assert cfg.training.fada.v005_replay.walk_steady_speed_ratios == {
+        "slow": 0.1,
+        "medium": 0.3,
+        "high": 0.6,
+    }
+    assert cfg.training.fada.v005_replay.min_high_speed_replay_passes == 8
     assert cfg.training.fada.intermediate_oracle_checkpoint_paths == []
     assert "standing_teacher_checkpoint_path" not in cfg.training.fada.stand_transition_curriculum
     assert cfg.training.fada.initial_weights_path is None

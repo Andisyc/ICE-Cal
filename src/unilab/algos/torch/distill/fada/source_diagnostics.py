@@ -17,6 +17,8 @@ from unilab.algos.torch.distill.collection.common import (
     project_teacher_obs,
 )
 from unilab.algos.torch.distill.collection.transition import set_transition_input_rows
+from unilab.algos.torch.distill.fada.collection_io import _oracle_actions
+from unilab.algos.torch.distill.fada.collection_io import _policy_actions as _policy_actions
 from unilab.algos.torch.distill.fada.collector import (
     FADACollectionSpec,
     _command_array,
@@ -24,7 +26,6 @@ from unilab.algos.torch.distill.fada.collector import (
     _fada_actions,
     _obs_array,
     _oracle_shadow_pair,
-    _policy_actions,
 )
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
 from unilab.algos.torch.distill.fada.observation import assert_fada_projection_matches_contract
@@ -46,6 +47,8 @@ class FADACoverageStep:
     action_history: tuple[tuple[float, ...], ...]
     command: tuple[float, ...]
     student_first_action: tuple[float, ...]
+    student_predicted_future: tuple[tuple[float, ...], ...]
+    student_action_chunk: tuple[tuple[float, ...], ...]
     oracle_first_action: tuple[float, ...]
     oracle_future: tuple[tuple[float, ...], ...]
     oracle_action_chunk: tuple[tuple[float, ...], ...]
@@ -309,7 +312,13 @@ def run_fada_coverage_diagnostic(
             projection=spec.teacher_projection,
             expected_teacher_obs_dim=int(getattr(teacher_policy, "obs_dim", source.shape[1])),
         )
-        oracle_actions = _policy_actions(teacher_policy, teacher_obs, action_dim=config.action_dim)
+        oracle_actions = _oracle_actions(
+            teacher_policy,
+            obs,
+            info,
+            teacher_obs,
+            action_dim=config.action_dim,
+        )
         oracle_future, oracle_action_chunk, oracle_valid = _oracle_shadow_pair(
             env,
             teacher_policy=teacher_policy,
@@ -328,12 +337,16 @@ def run_fada_coverage_diagnostic(
             command=complete_command,
             spec=spec,
         )
-        student_actions = _fada_actions(
-            student_policy,
-            observation_history,
-            action_history,
-            complete_command,
-        )
+        device = next(student_policy.parameters()).device
+        with torch.inference_mode():
+            student_output = student_policy(
+                torch.as_tensor(observation_history, dtype=torch.float32, device=device),
+                torch.as_tensor(action_history, dtype=torch.float32, device=device),
+                torch.as_tensor(complete_command, dtype=torch.float32, device=device),
+            )
+        student_future = student_output.predicted_future.detach().cpu().numpy().astype(np.float32)
+        student_action_chunk = student_output.action_chunk.detach().cpu().numpy().astype(np.float32)
+        student_actions = student_action_chunk[:, 0]
         previous_action = action_history[0, -1].copy()
         base_position = _base_row(env, "get_base_pos", index=0)
         base_quaternion = _base_row(env, "get_base_quat", index=0)
@@ -360,6 +373,8 @@ def run_fada_coverage_diagnostic(
                 action_history=_tuple_rows(action_history[0]),
                 command=tuple(float(item) for item in complete_command[0]),
                 student_first_action=tuple(float(item) for item in student_actions[0]),
+                student_predicted_future=_tuple_rows(student_future[0]),
+                student_action_chunk=_tuple_rows(student_action_chunk[0]),
                 oracle_first_action=tuple(float(item) for item in oracle_actions[0]),
                 oracle_future=_tuple_rows(oracle_future[0]),
                 oracle_action_chunk=_tuple_rows(oracle_action_chunk[0]),

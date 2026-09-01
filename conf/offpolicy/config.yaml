@@ -24,6 +24,7 @@ training:
   num_gpus: 1
   use_amp: true
   play_only: false
+  play_checkpoint_path: null
   no_play: false
   sim2sim_strict: true
   play_render_mode: auto

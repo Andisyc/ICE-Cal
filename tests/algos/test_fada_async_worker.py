@@ -509,7 +509,7 @@ def test_fada_persistent_worker_collects_v005_walk_and_static_profile_artifact(
                     },
                     "v005_replay": {
                         "enabled": True,
-                        "walk_cold_start_ratio": 0.5,
+                        "walk_cold_start_ratio": 0.2,
                         "static_cold_start_ratio": 0.5,
                     },
                 }

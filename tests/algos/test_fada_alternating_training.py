@@ -13,6 +13,7 @@ from unilab.algos.torch.distill import (
     load_fada_policy_checkpoint,
     save_fada_checkpoint,
 )
+from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
 
 
 def _snapshot(module: torch.nn.Module) -> dict[str, torch.Tensor]:
@@ -64,6 +65,52 @@ def test_trainer_allows_idm_only_budget_without_mutating_planner() -> None:
     assert not _changed(planner_before, policy.planner)
     assert stats.idm_grad_norm > 0.0
     assert stats.planner_grad_norm == 0.0
+
+
+def test_non_v005_replay_keeps_uniform_training_without_role_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = FADAPlannerIDMPolicy(_config())
+    trainer = FADATrainer(
+        policy,
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=1.0e-3),
+    )
+    replay = FADAReplayBuffer(policy.config, capacity=8)
+    replay.add(_source_batch(policy.config, size=8))
+    uniform_calls = 0
+    original_sample = replay.sample
+
+    def traced_sample(*args, **kwargs):
+        nonlocal uniform_calls
+        uniform_calls += 1
+        return original_sample(*args, **kwargs)
+
+    monkeypatch.setattr(replay, "sample", traced_sample)
+    monkeypatch.setattr(
+        replay,
+        "sample_idm",
+        lambda *args, **kwargs: pytest.fail("non-v005 must not use stratified IDM sampling"),
+    )
+    monkeypatch.setattr(
+        replay,
+        "sample_planner",
+        lambda *args, **kwargs: pytest.fail("non-v005 must not use stratified Planner sampling"),
+    )
+    idm_before = _snapshot(policy.idm)
+    planner_before = _snapshot(policy.planner)
+
+    trainer.update_from_replay(
+        replay,
+        batch_size=4,
+        idm_updates=1,
+        planner_updates=1,
+        device="cpu",
+    )
+
+    assert _changed(idm_before, policy.idm)
+    assert _changed(planner_before, policy.planner)
+    assert uniform_calls == 2
 
 
 def test_trainer_rejects_missing_idm_budget() -> None:

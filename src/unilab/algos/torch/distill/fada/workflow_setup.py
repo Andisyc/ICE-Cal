@@ -22,6 +22,10 @@ from unilab.algos.torch.distill.fada.observation import (
 from unilab.algos.torch.distill.fada.oracle import (
     load_fada_oracle_policy as _default_load_fada_oracle_policy,
 )
+from unilab.algos.torch.distill.fada.replay_sampling import (
+    FADAReplaySamplingSpec,
+    validate_sampling_batch_size,
+)
 from unilab.algos.torch.distill.fada.source_plan import (
     FADAPaperSourcePlan,
     build_fada_paper_source_plan,
@@ -231,7 +235,7 @@ def _fada_v005_replay_settings(
     fada_cfg: DictConfig,
     *,
     batch_size: int,
-) -> tuple[bool, dict[str, float], float, float]:
+) -> tuple[bool, FADAReplaySamplingSpec]:
     enabled = bool(OmegaConf.select(fada_cfg, "v005_replay.enabled", default=False))
     ratios_cfg = OmegaConf.select(fada_cfg, "v005_replay.planner_scenario_ratios")
     ratios_value = (
@@ -253,7 +257,39 @@ def _fada_v005_replay_settings(
         OmegaConf.select(fada_cfg, "v005_replay.static_cold_start_ratio", default=0.5)
     )
     if not enabled:
-        return False, ratios, walk_cold_ratio, static_cold_ratio
+        return False, FADAReplaySamplingSpec(
+            scenario_ratios=ratios,
+            walk_cold_start_ratio=walk_cold_ratio,
+            static_cold_start_ratio=static_cold_ratio,
+        )
+    thresholds = tuple(
+        float(value)
+        for value in OmegaConf.select(
+            fada_cfg,
+            "v005_replay.walk_steady_speed_thresholds",
+            default=[0.25, 0.6],
+        )
+    )
+    speed_ratios_cfg = OmegaConf.select(
+        fada_cfg,
+        "v005_replay.walk_steady_speed_ratios",
+        default={"slow": 0.1, "medium": 0.3, "high": 0.6},
+    )
+    speed_ratios_value = (
+        OmegaConf.to_container(speed_ratios_cfg, resolve=True)
+        if OmegaConf.is_config(speed_ratios_cfg)
+        else speed_ratios_cfg
+    )
+    if not isinstance(speed_ratios_value, Mapping):
+        raise ValueError("v005 walk_steady_speed_ratios must be a mapping")
+    speed_ratios = {str(name): float(value) for name, value in speed_ratios_value.items()}
+    min_high_speed_replay_passes = int(
+        OmegaConf.select(
+            fada_cfg,
+            "v005_replay.min_high_speed_replay_passes",
+            default=8,
+        )
+    )
     expected_ratios = {"walk": 0.5, "static_stand": 0.25, "walk_to_stand": 0.25}
     if set(ratios) != set(expected_ratios) or any(
         not math.isclose(ratios[name], expected, rel_tol=0.0, abs_tol=1.0e-12)
@@ -263,16 +299,34 @@ def _fada_v005_replay_settings(
             "v005 Planner scenario ratios are fixed at "
             "walk/static_stand/walk_to_stand=0.5/0.25/0.25"
         )
-    if not math.isclose(walk_cold_ratio, 0.5, rel_tol=0.0, abs_tol=1.0e-12):
-        raise ValueError("v005 walk_cold_start_ratio is fixed at 0.5")
+    if not math.isclose(walk_cold_ratio, 0.2, rel_tol=0.0, abs_tol=1.0e-12):
+        raise ValueError("v005 walk_cold_start_ratio is fixed at 0.2")
     if not math.isclose(static_cold_ratio, 0.5, rel_tol=0.0, abs_tol=1.0e-12):
         raise ValueError("v005 static_cold_start_ratio is fixed at 0.5")
-    allocations = dict(allocate_fada_command_scenarios(int(batch_size), ratios))
-    walk_count = int(allocations.get("walk", 0))
-    static_count = int(allocations.get("static_stand", 0))
-    if walk_count < 2 or static_count < 2:
-        raise ValueError("v005 Planner batch must allocate walk/static cold-start and steady rows")
-    return True, ratios, walk_cold_ratio, static_cold_ratio
+    if thresholds != (0.25, 0.6):
+        raise ValueError("v005 walk speed thresholds are fixed at [0.25, 0.6]")
+    expected_speed_ratios = {"slow": 0.1, "medium": 0.3, "high": 0.6}
+    if set(speed_ratios) != set(expected_speed_ratios) or any(
+        not math.isclose(speed_ratios[name], expected, rel_tol=0.0, abs_tol=1.0e-12)
+        for name, expected in expected_speed_ratios.items()
+    ):
+        raise ValueError("v005 walk steady speed ratios are fixed at slow/medium/high=0.1/0.3/0.6")
+    if min_high_speed_replay_passes != 8:
+        raise ValueError("v005 min_high_speed_replay_passes is fixed at 8")
+    sampling_spec = FADAReplaySamplingSpec(
+        scenario_ratios=ratios,
+        walk_cold_start_ratio=walk_cold_ratio,
+        static_cold_start_ratio=static_cold_ratio,
+        walk_steady_speed_thresholds=cast(tuple[float, float], thresholds),
+        walk_steady_speed_ratios=speed_ratios,
+        min_high_speed_replay_passes=min_high_speed_replay_passes,
+    )
+    validate_sampling_batch_size(
+        sampling_spec,
+        batch_size=int(batch_size),
+        suboptimal_retention_ratio=2,
+    )
+    return True, sampling_spec
 
 
 # Public owner names; legacy underscored names remain on the composition facade.

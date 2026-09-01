@@ -248,6 +248,12 @@ def test_privileged_planner_alias_composes_the_same_alternating_source_route() -
         "logs/fada/planner_idm_privileged_v022/source_batches"
     )
     assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_privileged_v022.pt"
+    assert cfg.training.fada.stand_transition_curriculum.enabled is True
+    assert cfg.training.fada.v005_replay.enabled is True
+    assert cfg.training.fada.v005_replay.walk_cold_start_ratio == pytest.approx(0.2)
+    assert cfg.training.fada.v005_replay.walk_steady_speed_thresholds == [0.25, 0.6]
+    assert cfg.training.fada.v005_replay.walk_steady_speed_ratios.high == pytest.approx(0.6)
+    assert cfg.training.fada.v005_replay.min_high_speed_replay_passes == 8
     assert cfg.env.mujoco_num_threads == 1
 
 

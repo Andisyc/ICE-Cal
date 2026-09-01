@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 from torch import nn
@@ -16,6 +16,7 @@ from unilab.algos.torch.distill.fada.model import (
     planner_source_loss,
 )
 from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
+from unilab.algos.torch.distill.fada.replay_sampling import FADAReplaySamplingSpec
 
 
 @dataclass(frozen=True)
@@ -101,17 +102,13 @@ class FADATrainer:
         batch_size: int,
         device: str | torch.device,
         generator: torch.Generator | None,
-        scenario_ratios: Mapping[str, float] | None,
-        walk_cold_start_ratio: float,
-        static_cold_start_ratio: float,
+        replay_sampling_spec: FADAReplaySamplingSpec | None,
     ) -> FADASourceBatch:
-        if scenario_ratios is None:
+        if replay_sampling_spec is None:
             return replay.sample(batch_size, generator=generator, device=device)
         return replay.sample_planner(
             batch_size,
-            scenario_ratios=scenario_ratios,
-            walk_cold_start_ratio=walk_cold_start_ratio,
-            static_cold_start_ratio=static_cold_start_ratio,
+            sampling_spec=replay_sampling_spec,
             generator=generator,
             device=device,
         )
@@ -151,18 +148,27 @@ class FADATrainer:
         planner_updates: int,
         device: str | torch.device,
         generator: torch.Generator | None = None,
-        planner_scenario_ratios: Mapping[str, float] | None = None,
-        planner_walk_cold_start_ratio: float = 0.5,
-        planner_static_cold_start_ratio: float = 0.5,
+        replay_sampling_spec: FADAReplaySamplingSpec | None = None,
     ) -> FADATrainingStats:
         """Run one phase while drawing a fresh replay sample for every update."""
 
         if int(idm_updates) <= 0 or int(planner_updates) < 0:
             raise ValueError("IDM updates must be positive and Planner updates non-negative")
+        if replay_sampling_spec is not None:
+            replay.validate_sampling_spec(replay_sampling_spec, batch_size=int(batch_size))
         idm_loss_value = 0.0
         idm_grad_norm = 0.0
         for _ in range(int(idm_updates)):
-            batch = replay.sample(batch_size, generator=generator, device=device)
+            batch = (
+                replay.sample(batch_size, generator=generator, device=device)
+                if replay_sampling_spec is None
+                else replay.sample_idm(
+                    batch_size,
+                    sampling_spec=replay_sampling_spec,
+                    generator=generator,
+                    device=device,
+                )
+            )
             idm_loss_value, idm_grad_norm = self._update_idm(batch)
         planner_loss_value = 0.0
         planner_grad_norm = 0.0
@@ -172,9 +178,7 @@ class FADATrainer:
                 batch_size=batch_size,
                 device=device,
                 generator=generator,
-                scenario_ratios=planner_scenario_ratios,
-                walk_cold_start_ratio=planner_walk_cold_start_ratio,
-                static_cold_start_ratio=planner_static_cold_start_ratio,
+                replay_sampling_spec=replay_sampling_spec,
             )
             planner_loss_value, planner_grad_norm = self._update_planner(batch)
         return FADATrainingStats(

@@ -135,12 +135,21 @@ training:
       post_switch_steps: 36
     v005_replay:
       enabled: true
-      walk_cold_start_ratio: 0.5
+      walk_cold_start_ratio: 0.2
       static_cold_start_ratio: 0.5
       planner_scenario_ratios:
         walk: 0.5
         static_stand: 0.25
         walk_to_stand: 0.25
+      walk_steady_speed_thresholds: [0.25, 0.6]
+      walk_steady_speed_ratios:
+        slow: 0.1
+        medium: 0.3
+        high: 0.6
+      min_high_speed_replay_passes: 8
+    v005_collection_profile:
+      walk_cold_start_ratio: 0.5
+      static_cold_start_ratio: 0.5
   workflow:
     enabled: false
     mode: auto

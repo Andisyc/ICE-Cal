@@ -44,6 +44,13 @@ Planner–IDM preserves the 98→66/29/3 split, H=30 history, K=6 action-free fu
 future–action pairing, IDM-before-Planner ordering, frozen-IDM Planner gradients, and first-action
 receding-horizon execution.
 
+Planner–IDM source replay treats command-speed coverage as a training-distribution identity rather
+than a model input change. Walking steady-state rows are stratified by planar command norm at
+`0.25` and `0.60 m/s`, with `0.10/0.30/0.60` slow/medium/high sampling. Planner and both IDM source
+roles consume the same speed definition, while standing and walk-to-stand retain their scenario
+identities. All required strata are admitted before optimizer mutation; replay coverage changes the
+update budget but not the first-action objectives or frozen-IDM gradient boundary.
+
 IDM coverage still requires one teacher lineage with exactly 20 intermediate checkpoints
 `240…4800` and final checkpoint `5000`. A policy-quality validation run that saves only at 1000-step
 intervals is not an admissible IDM lineage even when its Reward and episode length are high.

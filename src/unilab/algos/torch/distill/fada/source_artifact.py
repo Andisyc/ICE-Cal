@@ -89,6 +89,7 @@ class LoadedFADASourceArtifact:
 
     def identity_fields(self) -> dict[str, torch.Tensor]:
         names = (
+            "command",
             "oracle_shadow_valid",
             "idm_source_role",
             "command_scenario",

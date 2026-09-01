@@ -16,7 +16,8 @@ from unilab.algos.torch.distill.fada.async_config import fada_training_schedule
 from unilab.algos.torch.distill.fada.async_runtime import FADA_ASYNC_SCENARIO
 from unilab.algos.torch.distill.fada.checkpoint import save_fada_checkpoint
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
-from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer, planner_sample_indices
+from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
+from unilab.algos.torch.distill.fada.replay_sampling import planner_sample_indices
 from unilab.algos.torch.distill.fada.source_artifact import (
     LoadedFADASourceArtifact,
     open_fada_source_artifact,
@@ -193,11 +194,9 @@ def run_fada_persistent_async(
     fada_cfg = cfg.training.fada
     iterations = int(fada_cfg.iterations)
     training_schedule = fada_training_schedule(fada_cfg)
-    v005_enabled, planner_ratios, walk_cold_start_ratio, static_cold_start_ratio = (
-        fada_v005_replay_settings(
-            fada_cfg,
-            batch_size=int(fada_cfg.batch_size),
-        )
+    v005_enabled, replay_sampling_spec = fada_v005_replay_settings(
+        fada_cfg,
+        batch_size=int(fada_cfg.batch_size),
     )
     runtime_config = cast(dict[str, Any], OmegaConf.to_container(fada_cfg, resolve=True))
     artifact_dir_value = OmegaConf.select(
@@ -266,9 +265,8 @@ def run_fada_persistent_async(
                         planner_eligible=identity["planner_eligible"][:main_windows],
                         command_scenario=identity["command_scenario"][:main_windows],
                         cold_start=identity["cold_start"][:main_windows],
-                        scenario_ratios=planner_ratios,
-                        walk_cold_start_ratio=walk_cold_start_ratio,
-                        static_cold_start_ratio=static_cold_start_ratio,
+                        command=identity["command"][:main_windows],
+                        sampling_spec=replay_sampling_spec,
                     )
                     if v005_enabled
                     else torch.arange(quality_size, dtype=torch.int64)
@@ -278,16 +276,29 @@ def run_fada_persistent_async(
             replay.add_artifact(loaded)
             samples_seen += result.num_samples
 
-            planner_update_ratios = planner_ratios if v005_enabled else None
+            coverage = (
+                replay.validate_sampling_spec(
+                    replay_sampling_spec,
+                    batch_size=int(fada_cfg.batch_size),
+                )
+                if v005_enabled
+                else None
+            )
+            idm_updates = max(
+                int(fada_cfg.idm_updates),
+                0 if coverage is None else coverage.required_idm_updates,
+            )
+            planner_updates = max(
+                int(fada_cfg.planner_updates),
+                0 if coverage is None else coverage.required_planner_updates,
+            )
             last_stats = trainer.update_from_replay(
                 replay,
                 batch_size=int(fada_cfg.batch_size),
-                idm_updates=int(fada_cfg.idm_updates),
-                planner_updates=int(fada_cfg.planner_updates),
+                idm_updates=idm_updates,
+                planner_updates=planner_updates,
                 device=distill_device(cfg),
-                planner_scenario_ratios=planner_update_ratios,
-                planner_walk_cold_start_ratio=walk_cold_start_ratio,
-                planner_static_cold_start_ratio=static_cold_start_ratio,
+                replay_sampling_spec=replay_sampling_spec if v005_enabled else None,
             )
             if quality_batch is not None:
                 last_quality_metrics = evaluate_fada_source_batch(
@@ -320,8 +331,11 @@ def run_fada_persistent_async(
                 iteration=iteration,
                 iterations=iterations,
                 stats=last_stats,
-                idm_updates=int(fada_cfg.idm_updates),
-                planner_updates=int(fada_cfg.planner_updates),
+                idm_updates=idm_updates,
+                planner_updates=planner_updates,
+                configured_idm_updates=int(fada_cfg.idm_updates),
+                configured_planner_updates=int(fada_cfg.planner_updates),
+                replay_coverage=coverage,
                 replay_size=len(replay),
                 samples_seen=samples_seen,
                 collection_summaries=cast(list[dict[str, Any]], summaries),

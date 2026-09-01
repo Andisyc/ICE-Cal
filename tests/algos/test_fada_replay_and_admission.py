@@ -13,6 +13,7 @@ import torch
 from omegaconf import OmegaConf
 
 import unilab.algos.torch.distill.fada.artifact_admission as fada_artifact_admission
+import unilab.algos.torch.distill.fada.async_config as fada_async_config
 import unilab.algos.torch.distill.fada.async_runtime as fada_async_runtime
 import unilab.algos.torch.distill.fada.training as fada_training
 import unilab.algos.torch.distill.fada.workflow as fada_workflow
@@ -54,6 +55,7 @@ from unilab.algos.torch.distill.fada import (
     FADA_SCENARIO_IDS,
     FADASourceBatch,
 )
+from unilab.algos.torch.distill.fada.replay import FADAReplaySamplingSpec
 from unilab.algos.torch.distill.fada_async_runtime import (
     FADA_ASYNC_SCENARIO,
     PersistentFADACollectorWorker,
@@ -299,9 +301,11 @@ def test_planner_replay_preserves_scenario_and_cold_start_quotas() -> None:
 
     sampled = replay.sample_planner(
         40,
-        scenario_ratios={"walk": 0.5, "static_stand": 0.25, "walk_to_stand": 0.25},
-        walk_cold_start_ratio=0.5,
-        static_cold_start_ratio=0.5,
+        sampling_spec=FADAReplaySamplingSpec(
+            scenario_ratios={"walk": 0.5, "static_stand": 0.25, "walk_to_stand": 0.25},
+            walk_cold_start_ratio=0.5,
+            static_cold_start_ratio=0.5,
+        ),
         generator=torch.Generator().manual_seed(5),
     )
 
@@ -323,10 +327,230 @@ def test_planner_replay_fails_closed_when_required_stratum_is_missing() -> None:
     with pytest.raises(ValueError, match="walk/cold_start"):
         replay.sample_planner(
             8,
-            scenario_ratios={"walk": 0.5, "static_stand": 0.25, "walk_to_stand": 0.25},
-            walk_cold_start_ratio=0.5,
-            static_cold_start_ratio=0.5,
+            sampling_spec=FADAReplaySamplingSpec(
+                scenario_ratios={
+                    "walk": 0.5,
+                    "static_stand": 0.25,
+                    "walk_to_stand": 0.25,
+                },
+                walk_cold_start_ratio=0.5,
+                static_cold_start_ratio=0.5,
+            ),
         )
+
+
+def _speed_stratified_replay(
+    *,
+    main_rows_per_stratum: int = 4,
+    intermediate_rows_per_stratum: int = 4,
+) -> tuple[FADAReplayBuffer, FADAReplaySamplingSpec]:
+    config = _curriculum_config()
+    commands: list[list[float]] = []
+    scenarios: list[int] = []
+    cold_start: list[bool] = []
+    planner_eligible: list[bool] = []
+    idm_source_role: list[int] = []
+
+    def append_rows(
+        count: int,
+        command: tuple[float, float, float],
+        scenario: str,
+        *,
+        cold: bool,
+        eligible: bool,
+    ) -> None:
+        commands.extend([list(command)] * count)
+        scenarios.extend([FADA_SCENARIO_IDS[scenario]] * count)
+        cold_start.extend([cold] * count)
+        planner_eligible.extend([eligible] * count)
+        idm_source_role.extend([1 if eligible else 0] * count)
+
+    append_rows(main_rows_per_stratum, (0.0, 0.0, 0.0), "walk", cold=True, eligible=True)
+    append_rows(main_rows_per_stratum, (0.249, 0.0, 0.0), "walk", cold=False, eligible=True)
+    append_rows(main_rows_per_stratum, (0.25, 0.0, 0.0), "walk", cold=False, eligible=True)
+    append_rows(main_rows_per_stratum, (0.6, 0.0, 0.0), "walk", cold=False, eligible=True)
+    append_rows(
+        main_rows_per_stratum,
+        (0.0, 0.0, 0.0),
+        "static_stand",
+        cold=True,
+        eligible=True,
+    )
+    append_rows(
+        main_rows_per_stratum,
+        (0.0, 0.0, 0.0),
+        "static_stand",
+        cold=False,
+        eligible=True,
+    )
+    append_rows(
+        main_rows_per_stratum,
+        (0.4, 0.0, 0.0),
+        "walk_to_stand",
+        cold=False,
+        eligible=True,
+    )
+    append_rows(
+        intermediate_rows_per_stratum,
+        (0.249, 0.0, 0.0),
+        "walk",
+        cold=False,
+        eligible=False,
+    )
+    append_rows(
+        intermediate_rows_per_stratum,
+        (0.25, 0.0, 0.0),
+        "walk",
+        cold=False,
+        eligible=False,
+    )
+    append_rows(
+        intermediate_rows_per_stratum,
+        (0.6, 0.0, 0.0),
+        "walk",
+        cold=False,
+        eligible=False,
+    )
+    batch = replace(
+        _source_batch(config, size=len(commands)),
+        command=torch.tensor(commands, dtype=torch.float32),
+        command_scenario=torch.tensor(scenarios, dtype=torch.int64),
+        cold_start=torch.tensor(cold_start, dtype=torch.bool),
+        planner_eligible=torch.tensor(planner_eligible, dtype=torch.bool),
+        idm_source_role=torch.tensor(idm_source_role, dtype=torch.int64),
+    )
+    replay = FADAReplayBuffer(config, capacity=len(commands), suboptimal_retention_ratio=2)
+    replay.add(batch)
+    return replay, FADAReplaySamplingSpec(
+        scenario_ratios={"walk": 0.5, "static_stand": 0.25, "walk_to_stand": 0.25},
+        walk_cold_start_ratio=0.2,
+        static_cold_start_ratio=0.5,
+        walk_steady_speed_thresholds=(0.25, 0.6),
+        walk_steady_speed_ratios={"slow": 0.1, "medium": 0.3, "high": 0.6},
+        min_high_speed_replay_passes=8,
+    )
+
+
+def test_planner_replay_stratifies_walk_steady_speed_with_literal_boundaries() -> None:
+    replay, sampling = _speed_stratified_replay()
+
+    sampled = replay.sample_planner(
+        100,
+        sampling_spec=sampling,
+        generator=torch.Generator().manual_seed(7),
+    )
+
+    walk = sampled.command_scenario == FADA_SCENARIO_IDS["walk"]
+    assert int(walk.sum()) == 50
+    assert int((walk & sampled.cold_start).sum()) == 10
+    steady = walk & ~sampled.cold_start
+    speed = torch.linalg.vector_norm(sampled.command[:, :2], dim=1)
+    assert int((steady & (speed < 0.25)).sum()) == 4
+    assert int((steady & (speed >= 0.25) & (speed < 0.6)).sum()) == 12
+    assert int((steady & (speed >= 0.6)).sum()) == 24
+
+
+def test_idm_replay_uses_stable_512_role_and_speed_quotas() -> None:
+    replay, sampling = _speed_stratified_replay()
+
+    sampled = replay.sample_idm(
+        512,
+        sampling_spec=sampling,
+        generator=torch.Generator().manual_seed(11),
+    )
+
+    main = sampled.planner_eligible
+    assert int(main.sum()) == 171
+    assert int((~main).sum()) == 341
+    speed = torch.linalg.vector_norm(sampled.command[:, :2], dim=1)
+    main_walk_steady = (
+        main
+        & (sampled.command_scenario == FADA_SCENARIO_IDS["walk"])
+        & ~sampled.cold_start
+    )
+    assert int((main_walk_steady & (speed >= 0.6)).sum()) == 41
+    assert int((~main & (speed >= 0.6)).sum()) == 205
+
+
+def test_replay_coverage_floors_keep_three_high_speed_pools_independent() -> None:
+    replay, sampling = _speed_stratified_replay(
+        main_rows_per_stratum=41,
+        intermediate_rows_per_stratum=205,
+    )
+
+    coverage = replay.validate_sampling_spec(sampling, batch_size=512)
+
+    assert coverage.planner_high_rows == 41
+    assert coverage.planner_high_batch_quota == 123
+    assert coverage.required_planner_updates == 3
+    assert coverage.idm_main_high_rows == 41
+    assert coverage.idm_main_high_batch_quota == 41
+    assert coverage.idm_intermediate_high_rows == 205
+    assert coverage.idm_intermediate_high_batch_quota == 205
+    assert coverage.required_idm_updates == 8
+
+
+def test_stratified_replay_reuses_candidate_plan_until_replay_mutates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replay, sampling = _speed_stratified_replay()
+    original = replay._metadata_field
+    fields: list[str] = []
+
+    def traced(field: str) -> torch.Tensor:
+        fields.append(field)
+        return original(field)
+
+    monkeypatch.setattr(replay, "_metadata_field", traced)
+    replay.validate_sampling_spec(sampling, batch_size=512)
+    replay.sample_idm(512, sampling_spec=sampling)
+    replay.sample_planner(512, sampling_spec=sampling)
+    assert fields == ["planner_eligible", "command_scenario", "cold_start", "command"]
+
+    assert replay._batch is not None
+    replay.capacity = len(replay) * 2
+    replay.add(replay._batch)
+    replay.validate_sampling_spec(sampling, batch_size=512)
+    assert len(fields) == 8
+
+
+def test_idm_preflight_rejects_missing_speed_stratum_before_parameter_update() -> None:
+    replay, sampling = _speed_stratified_replay()
+    assert replay._batch is not None
+    keep = replay._batch.command[:, 0] < 0.6
+    incomplete = FADAReplayBuffer(
+        replay.config,
+        capacity=int(keep.sum()),
+        suboptimal_retention_ratio=2,
+    )
+    incomplete.add(
+        FADASourceBatch(
+            **{
+                field: getattr(replay._batch, field)[keep]
+                for field in FADASourceBatch.__dataclass_fields__
+            }
+        )
+    )
+    policy = FADAPlannerIDMPolicy(replay.config)
+    trainer = FADATrainer(
+        policy,
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters(), lr=1.0e-3),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters(), lr=1.0e-3),
+    )
+    before = {name: parameter.detach().clone() for name, parameter in policy.named_parameters()}
+
+    with pytest.raises(ValueError, match="high"):
+        trainer.update_from_replay(
+            incomplete,
+            batch_size=512,
+            idm_updates=1,
+            planner_updates=1,
+            device="cpu",
+            replay_sampling_spec=sampling,
+        )
+
+    for name, parameter in policy.named_parameters():
+        torch.testing.assert_close(parameter, before[name])
 
 
 def test_collector_builds_same_state_oracle_shadow_without_advancing_main_rollout() -> None:
@@ -519,29 +743,78 @@ def test_v005_replay_settings_reject_contract_ratio_drift() -> None:
         {
             "v005_replay": {
                 "enabled": True,
-                "walk_cold_start_ratio": 0.5,
+                "walk_cold_start_ratio": 0.2,
                 "static_cold_start_ratio": 0.5,
                 "planner_scenario_ratios": {
                     "walk": 0.5,
                     "static_stand": 0.25,
                     "walk_to_stand": 0.25,
                 },
+                "walk_steady_speed_thresholds": [0.25, 0.6],
+                "walk_steady_speed_ratios": {"slow": 0.1, "medium": 0.3, "high": 0.6},
+                "min_high_speed_replay_passes": 8,
             }
         }
     )
-    assert fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=8)[0] is True
+    assert fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=512)[0] is True
 
     fada.v005_replay.planner_scenario_ratios.walk = 0.4
     with pytest.raises(ValueError, match="scenario ratios are fixed"):
-        fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=8)
+        fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=512)
     fada.v005_replay.planner_scenario_ratios.walk = 0.5
-    fada.v005_replay.walk_cold_start_ratio = 0.25
-    with pytest.raises(ValueError, match="walk_cold_start_ratio is fixed"):
-        fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=8)
     fada.v005_replay.walk_cold_start_ratio = 0.5
+    with pytest.raises(ValueError, match="walk_cold_start_ratio is fixed"):
+        fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=512)
+    fada.v005_replay.walk_cold_start_ratio = 0.2
     fada.v005_replay.static_cold_start_ratio = 0.25
     with pytest.raises(ValueError, match="static_cold_start_ratio is fixed"):
+        fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=512)
+
+
+def test_v005_replay_settings_reject_batch_too_small_for_positive_strata() -> None:
+    fada = OmegaConf.create(
+        {
+            "v005_replay": {
+                "enabled": True,
+                "walk_cold_start_ratio": 0.2,
+                "static_cold_start_ratio": 0.5,
+                "planner_scenario_ratios": {
+                    "walk": 0.5,
+                    "static_stand": 0.25,
+                    "walk_to_stand": 0.25,
+                },
+                "walk_steady_speed_thresholds": [0.25, 0.6],
+                "walk_steady_speed_ratios": {
+                    "slow": 0.1,
+                    "medium": 0.3,
+                    "high": 0.6,
+                },
+                "min_high_speed_replay_passes": 8,
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="cannot cover"):
         fada_workflow_setup.fada_v005_replay_settings(fada, batch_size=8)
+
+
+def test_v005_collection_profile_is_independent_and_fixed() -> None:
+    fada = OmegaConf.create(
+        {
+            "v005_replay": {"enabled": True},
+            "v005_collection_profile": {
+                "walk_cold_start_ratio": 0.5,
+                "static_cold_start_ratio": 0.5,
+            },
+        }
+    )
+    assert fada_async_config.v005_collection_profile_ratios(fada) == {
+        "walk": 0.5,
+        "static_stand": 0.5,
+    }
+    fada.v005_collection_profile.walk_cold_start_ratio = 0.2
+    with pytest.raises(ValueError, match="collection cold-start ratios are fixed"):
+        fada_async_config.v005_collection_profile_ratios(fada)
 
 
 def test_parent_curriculum_artifact_guard_requires_unified_main_oracle_role() -> None:
@@ -604,7 +877,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
             "training": {
                 "fada": {
                     "windows_per_iteration": 8,
-                    "batch_size": 8,
+                    "batch_size": 512,
                     "command_dim": config.command_dim,
                     "history_length": config.history_length,
                     "prediction_horizon": config.prediction_horizon,
@@ -623,7 +896,7 @@ def test_v005_parent_artifact_guard_requires_row_provenance() -> None:
                     },
                     "v005_replay": {
                         "enabled": True,
-                        "walk_cold_start_ratio": 0.5,
+                        "walk_cold_start_ratio": 0.2,
                         "static_cold_start_ratio": 0.5,
                         "planner_scenario_ratios": {
                             "walk": 0.5,

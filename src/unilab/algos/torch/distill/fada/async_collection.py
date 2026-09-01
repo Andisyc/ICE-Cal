@@ -12,6 +12,7 @@ import torch
 from unilab.algos.torch.distill.fada.async_config import (
     curriculum_and_allocations,
     fada_training_schedule,
+    v005_collection_profile_ratios,
     v005_replay_cfg,
 )
 from unilab.algos.torch.distill.fada.collection_contract import (
@@ -195,10 +196,7 @@ def _collect_fada_iteration(
     curriculum_enabled = bool(curriculum.enabled)
     replay_cfg = v005_replay_cfg(fada_cfg)
     v005_enabled = bool(replay_cfg.enabled)
-    cold_start_ratios = {
-        "walk": float(replay_cfg.walk_cold_start_ratio),
-        "static_stand": float(replay_cfg.static_cold_start_ratio),
-    }
+    cold_start_ratios = v005_collection_profile_ratios(fada_cfg)
     for scenario, ratio in cold_start_ratios.items():
         if v005_enabled and not math.isfinite(ratio):
             raise ValueError(f"v005 {scenario} cold-start ratio must be finite")

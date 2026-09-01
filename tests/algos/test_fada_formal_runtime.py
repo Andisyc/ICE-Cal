@@ -12,6 +12,8 @@ import torch
 from omegaconf import OmegaConf
 
 import unilab.algos.torch.distill.fada.async_runtime as fada_async_runtime
+import unilab.algos.torch.distill.fada.persistent_workflow as fada_persistent_workflow
+import unilab.algos.torch.distill.fada.workflow as fada_workflow
 from tests.algos._fada_training_test_support import (
     ROOT,
     _load_train_distill,
@@ -28,6 +30,7 @@ from unilab.algos.torch.distill.fada import (
     FADA_IDM_SOURCE_ROLE_IDS,
     FADA_SCENARIO_IDS,
 )
+from unilab.algos.torch.distill.fada.replay import FADAReplaySamplingSpec
 from unilab.algos.torch.distill.fada_async_runtime import PersistentFADACollectorWorker
 from unilab.algos.torch.distill.fada_workflow_setup import (
     build_fada_architecture_config,
@@ -46,26 +49,35 @@ class _FormalG1Env:
     """Deterministic external simulator adapter; owns no FADA semantics."""
 
     def __init__(self) -> None:
-        self.num_envs = 1
+        self.num_envs = 3
         self.action_space = type("ActionSpace", (), {"shape": (29,)})()
-        self.current_obs = np.zeros((1, 98), dtype=np.float32)
+        self.current_obs = np.zeros((self.num_envs, 98), dtype=np.float32)
         self.step_count = 0
+        self.reset_count = 0
         self.closed = False
         self.physics_guard_max_abs: float | None = None
-        self.state = self._state(np.asarray([[0.4, 0.0, 0.0]], dtype=np.float32))
+        self.state = self._state(self._walking_commands())
+
+    def _walking_commands(self) -> np.ndarray:
+        commands = np.asarray(
+            [[0.1, 0.0, 0.0], [0.4, 0.0, 0.0], [0.8, 0.0, 0.0]],
+            dtype=np.float32,
+        )
+        return np.roll(commands, -(self.reset_count % self.num_envs), axis=0)
 
     def _state(self, commands: np.ndarray) -> _FormalEnvState:
         return _FormalEnvState(
             obs={"obs": self.current_obs.copy()},
             info={"commands": commands.copy()},
-            terminated=np.zeros((1,), dtype=np.bool_),
-            truncated=np.zeros((1,), dtype=np.bool_),
+            terminated=np.zeros((self.num_envs,), dtype=np.bool_),
+            truncated=np.zeros((self.num_envs,), dtype=np.bool_),
         )
 
     def reset_all(self) -> _FormalEnvState:
         self.current_obs.fill(0.0)
         self.step_count = 0
-        self.state = self._state(np.asarray([[0.4, 0.0, 0.0]], dtype=np.float32))
+        self.state = self._state(self._walking_commands())
+        self.reset_count += 1
         return self.state
 
     def refresh_state(self) -> _FormalEnvState:
@@ -75,7 +87,7 @@ class _FormalG1Env:
 
     def step(self, actions: np.ndarray) -> _FormalEnvState:
         action_rows = np.asarray(actions, dtype=np.float32)
-        if action_rows.shape != (1, 29):
+        if action_rows.shape != (self.num_envs, 29):
             raise ValueError(f"formal environment action shape mismatch: {action_rows.shape}")
         self.current_obs[:, :29] += 0.01 * np.tanh(action_rows)
         self.current_obs[:, 96:98] = float(self.step_count % 7) / 10.0
@@ -187,9 +199,11 @@ def _bounded_formal_config(tmp_path: Path):
     fada.quality_eval_max_windows = 12
     fada.iterations = 3
     fada.windows_per_iteration = 12
-    fada.num_envs = 1
+    fada.num_envs = 3
     fada.replay_capacity = 96
-    fada.batch_size = 12
+    fada.batch_size = 512
+    fada.v005_replay.enabled = True
+    fada.v005_replay.walk_cold_start_ratio = 0.2
     fada.idm_updates = 1
     fada.planner_updates = 1
     fada.max_env_steps = 72
@@ -229,6 +243,26 @@ def test_refactored_official_route_closes_updates_persistence_and_first_consumer
         fada_async_runtime,
         "_build_persistent_fada_worker",
         _formal_worker_factory,
+    )
+    active_settings = fada_persistent_workflow.fada_v005_replay_settings
+
+    def _profile_only_settings(fada_cfg, *, batch_size):
+        enabled, spec = active_settings(fada_cfg, batch_size=batch_size)
+        return enabled, FADAReplaySamplingSpec(
+            scenario_ratios=spec.scenario_ratios,
+            walk_cold_start_ratio=spec.walk_cold_start_ratio,
+            static_cold_start_ratio=spec.static_cold_start_ratio,
+        )
+
+    monkeypatch.setattr(
+        fada_persistent_workflow,
+        "fada_v005_replay_settings",
+        _profile_only_settings,
+    )
+    monkeypatch.setattr(
+        fada_workflow,
+        "_fada_v005_replay_settings",
+        _profile_only_settings,
     )
 
     baseline_children = {child.pid for child in mp.active_children()}

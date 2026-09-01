@@ -135,18 +135,43 @@ def v005_replay_cfg(fada_cfg: DictConfig) -> DictConfig:
     defaults = OmegaConf.create(
         {
             "enabled": False,
-            "walk_cold_start_ratio": 0.5,
+            "walk_cold_start_ratio": 0.2,
             "static_cold_start_ratio": 0.5,
             "planner_scenario_ratios": {
                 "walk": 0.5,
                 "static_stand": 0.25,
                 "walk_to_stand": 0.25,
             },
+            "walk_steady_speed_thresholds": [0.25, 0.6],
+            "walk_steady_speed_ratios": {"slow": 0.1, "medium": 0.3, "high": 0.6},
+            "min_high_speed_replay_passes": 8,
         }
     )
     return (
         defaults if configured is None else cast(DictConfig, OmegaConf.merge(defaults, configured))
     )
+
+
+def v005_collection_profile_ratios(fada_cfg: DictConfig) -> dict[str, float]:
+    """Resolve the Collector profile identity independently from replay resampling."""
+
+    configured = OmegaConf.select(fada_cfg, "v005_collection_profile")
+    defaults = OmegaConf.create(
+        {"walk_cold_start_ratio": 0.5, "static_cold_start_ratio": 0.5}
+    )
+    resolved = (
+        defaults if configured is None else cast(DictConfig, OmegaConf.merge(defaults, configured))
+    )
+    ratios = {
+        "walk": float(resolved.walk_cold_start_ratio),
+        "static_stand": float(resolved.static_cold_start_ratio),
+    }
+    if bool(v005_replay_cfg(fada_cfg).enabled) and any(
+        not math.isclose(value, 0.5, rel_tol=0.0, abs_tol=1.0e-12)
+        for value in ratios.values()
+    ):
+        raise ValueError("v005 collection cold-start ratios are fixed at walk/static=0.5/0.5")
+    return ratios
 
 
 def standing_owner_cfg(

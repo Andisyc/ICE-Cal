@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from unilab.algos.torch.distill.fada.async_config import v005_collection_profile_ratios
 from unilab.algos.torch.distill.fada.async_runtime import allocate_fada_command_scenarios
 from unilab.algos.torch.distill.fada.model import (
     FADA_IDM_SOURCE_ROLE_IDS,
@@ -17,6 +18,7 @@ from unilab.algos.torch.distill.fada.model import (
     FADASourceBatch,
 )
 from unilab.algos.torch.distill.fada.replay import FADAReplayBuffer
+from unilab.algos.torch.distill.fada.replay_sampling import FADAReplaySamplingSpec
 from unilab.algos.torch.distill.fada.workflow_setup import (
     build_fada_architecture_config,
 )
@@ -39,17 +41,13 @@ def _fada_quality_batch(
     *,
     config: FADAArchitectureConfig,
     limit: int,
-    scenario_ratios: Mapping[str, float],
-    walk_cold_start_ratio: float,
-    static_cold_start_ratio: float,
+    sampling_spec: FADAReplaySamplingSpec,
 ) -> FADASourceBatch:
     return _fada_quality_batches(
         (batch,),
         config=config,
         limit=limit,
-        scenario_ratios=scenario_ratios,
-        walk_cold_start_ratio=walk_cold_start_ratio,
-        static_cold_start_ratio=static_cold_start_ratio,
+        sampling_spec=sampling_spec,
     )
 
 
@@ -58,9 +56,7 @@ def _fada_quality_batches(
     *,
     config: FADAArchitectureConfig,
     limit: int,
-    scenario_ratios: Mapping[str, float],
-    walk_cold_start_ratio: float,
-    static_cold_start_ratio: float,
+    sampling_spec: FADAReplaySamplingSpec,
 ) -> FADASourceBatch:
     row_batches = tuple(batches)
     total = sum(int(batch.command.shape[0]) for batch in row_batches)
@@ -71,9 +67,7 @@ def _fada_quality_batches(
     replay.add_many(row_batches)
     return replay.sample_planner(
         size,
-        scenario_ratios=scenario_ratios,
-        walk_cold_start_ratio=walk_cold_start_ratio,
-        static_cold_start_ratio=static_cold_start_ratio,
+        sampling_spec=sampling_spec,
         generator=torch.Generator().manual_seed(0),
     )
 
@@ -166,7 +160,7 @@ def _require_fada_curriculum_artifact(
         if item.get("source") == "intermediate_oracle"
     ):
         raise ValueError("intermediate Oracle artifacts must remain walking-source only")
-    v005_enabled, _planner_ratios, walk_cold_ratio, static_cold_ratio = _fada_v005_replay_settings(
+    v005_enabled, sampling_spec = _fada_v005_replay_settings(
         cfg.training.fada,
         batch_size=int(OmegaConf.select(cfg, "training.fada.batch_size", default=512)),
     )
@@ -174,10 +168,7 @@ def _require_fada_curriculum_artifact(
         return
     if metadata.get("v005_replay_enabled") is not True:
         raise ValueError("FADA async artifact omitted enabled v005 replay identity")
-    profile_ratios = {
-        "walk": walk_cold_ratio,
-        "static_stand": static_cold_ratio,
-    }
+    profile_ratios = v005_collection_profile_ratios(cfg.training.fada)
     for scenario, cold_ratio in profile_ratios.items():
         expected_cold = int(math.floor(expected[scenario] * cold_ratio + 0.5))
         expected_profiles = {
@@ -212,6 +203,7 @@ def _require_fada_curriculum_artifact(
         identity = {
             name: torch.cat([getattr(item, name) for item in row_batches])
             for name in (
+                "command",
                 "oracle_shadow_valid",
                 "idm_source_role",
                 "command_scenario",
@@ -220,6 +212,7 @@ def _require_fada_curriculum_artifact(
             )
         }
     expected_identity = {
+        "command",
         "oracle_shadow_valid",
         "idm_source_role",
         "command_scenario",

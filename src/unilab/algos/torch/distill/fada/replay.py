@@ -1,19 +1,19 @@
-"""FADA replay retention and sampling owner."""
+"""Sharded FADA replay storage, retention, and plan lifecycle owner."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 
-from unilab.algos.torch.distill.fada.model import (
-    FADA_COMMAND_SCENARIOS,
-    FADA_SCENARIO_IDS,
-    FADAArchitectureConfig,
-    FADASourceBatch,
+from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADASourceBatch
+from unilab.algos.torch.distill.fada.replay_sampling import (
+    FADAReplayCoverage,
+    FADAReplaySamplingPlan,
+    FADAReplaySamplingSpec,
+    build_replay_sampling_plan,
+    planner_sample_indices,
 )
 from unilab.algos.torch.distill.fada.source_artifact import (
     LoadedFADASourceArtifact,
@@ -36,65 +36,6 @@ def _slice_batch(batch: FADASourceBatch, start: int, end: int) -> FADASourceBatc
             for field in FADASourceBatch.__dataclass_fields__
         }
     )
-
-
-def planner_sample_indices(
-    batch_size: int,
-    *,
-    planner_eligible: torch.Tensor,
-    command_scenario: torch.Tensor,
-    cold_start: torch.Tensor,
-    scenario_ratios: Mapping[str, float],
-    walk_cold_start_ratio: float,
-    static_cold_start_ratio: float,
-    generator: torch.Generator | None = None,
-) -> torch.Tensor:
-    scenario_counts = _allocate_ratio_counts(
-        int(batch_size),
-        scenario_ratios,
-        ordered_names=FADA_COMMAND_SCENARIOS,
-        label="Planner scenario",
-    )
-    selected: list[torch.Tensor] = []
-    for scenario, count in scenario_counts:
-        scenario_mask = planner_eligible & (command_scenario == FADA_SCENARIO_IDS[scenario])
-        if scenario in {"walk", "static_stand"}:
-            cold_ratio = (
-                float(walk_cold_start_ratio)
-                if scenario == "walk"
-                else float(static_cold_start_ratio)
-            )
-            cold_counts = _allocate_ratio_counts(
-                count,
-                {"cold_start": cold_ratio, "steady_state": 1.0 - cold_ratio},
-                ordered_names=("cold_start", "steady_state"),
-                label=f"{scenario} Planner profile",
-            )
-            for profile, profile_count in cold_counts:
-                profile_mask = (
-                    scenario_mask & cold_start
-                    if profile == "cold_start"
-                    else scenario_mask & ~cold_start
-                )
-                selected.append(
-                    _sample_mask_indices(
-                        profile_mask,
-                        profile_count,
-                        generator=generator,
-                        label=f"{scenario}/{profile}",
-                    )
-                )
-        else:
-            selected.append(
-                _sample_mask_indices(
-                    scenario_mask,
-                    count,
-                    generator=generator,
-                    label=scenario,
-                )
-            )
-    indices = torch.cat(selected)
-    return indices.index_select(0, torch.randperm(indices.numel(), generator=generator))
 
 
 class FADAReplayBuffer:
@@ -128,6 +69,10 @@ class FADAReplayBuffer:
         )
         self._chunks: tuple[FADASourceBatch, ...] = ()
         self._size = 0
+        self._generation = 0
+        self._sampling_plan_cache: (
+            tuple[int, int, FADAReplaySamplingSpec, FADAReplaySamplingPlan] | None
+        ) = None
 
     def __len__(self) -> int:
         return self._size
@@ -265,6 +210,8 @@ class FADAReplayBuffer:
         retained = self._retain_chunks(candidates, retained_indices)
         self._chunks = retained
         self._size = int(retained_indices.numel())
+        self._generation += 1
+        self._sampling_plan_cache = None
 
     def add_artifact(self, artifact: LoadedFADASourceArtifact) -> None:
         """Atomically retain only selected artifact shards, loading them one at a time."""
@@ -294,6 +241,8 @@ class FADAReplayBuffer:
             retained.extend(self._retain_chunks((batch,), local))
         self._chunks = tuple(retained)
         self._size = int(retained_indices.numel())
+        self._generation += 1
+        self._sampling_plan_cache = None
 
     def _select_global_indices(self, indices: torch.Tensor) -> FADASourceBatch:
         outputs: dict[str, torch.Tensor] = {}
@@ -338,13 +287,38 @@ class FADAReplayBuffer:
     def _metadata_field(self, field: str) -> torch.Tensor:
         return torch.cat([getattr(chunk, field) for chunk in self._chunks])
 
+    def _sampling_plan(
+        self,
+        sampling_spec: FADAReplaySamplingSpec,
+        *,
+        batch_size: int,
+    ) -> FADAReplaySamplingPlan:
+        ratio = self.suboptimal_retention_ratio
+        cached = self._sampling_plan_cache
+        if (
+            cached is not None
+            and cached[0] == self._generation
+            and cached[1] == int(batch_size)
+            and cached[2] == sampling_spec
+        ):
+            return cached[3]
+        plan = build_replay_sampling_plan(
+            int(batch_size),
+            planner_eligible=self._metadata_field("planner_eligible"),
+            command_scenario=self._metadata_field("command_scenario"),
+            cold_start=self._metadata_field("cold_start"),
+            command=self._metadata_field("command"),
+            spec=sampling_spec,
+            suboptimal_retention_ratio=ratio,
+        )
+        self._sampling_plan_cache = (self._generation, int(batch_size), sampling_spec, plan)
+        return plan
+
     def sample_planner(
         self,
         batch_size: int,
         *,
-        scenario_ratios: Mapping[str, float],
-        walk_cold_start_ratio: float,
-        static_cold_start_ratio: float,
+        sampling_spec: FADAReplaySamplingSpec,
         generator: torch.Generator | None = None,
         device: str | torch.device = "cpu",
     ) -> FADASourceBatch:
@@ -352,69 +326,41 @@ class FADAReplayBuffer:
 
         if len(self) == 0:
             raise ValueError("cannot sample an empty FADA replay buffer")
-        planner_eligible = self._metadata_field("planner_eligible")
-        command_scenario = self._metadata_field("command_scenario")
-        cold_start = self._metadata_field("cold_start")
-        indices = planner_sample_indices(
-            int(batch_size),
-            planner_eligible=planner_eligible,
-            command_scenario=command_scenario,
-            cold_start=cold_start,
-            scenario_ratios=scenario_ratios,
-            walk_cold_start_ratio=walk_cold_start_ratio,
-            static_cold_start_ratio=static_cold_start_ratio,
-            generator=generator,
-        )
+        plan = self._sampling_plan(sampling_spec, batch_size=int(batch_size))
+        indices = plan.sample_planner(generator)
         sampled = self._select_global_indices(indices)
         return batch_to_device(sampled, torch.device(device)).validate(self.config)
 
+    def sample_idm(
+        self,
+        batch_size: int,
+        *,
+        sampling_spec: FADAReplaySamplingSpec,
+        generator: torch.Generator | None = None,
+        device: str | torch.device = "cpu",
+    ) -> FADASourceBatch:
+        """Sample one deterministic-role, speed-stratified IDM batch."""
 
-def _allocate_ratio_counts(
-    total: int,
-    ratios: Mapping[str, float],
-    *,
-    ordered_names: Sequence[str],
-    label: str,
-) -> tuple[tuple[str, int], ...]:
-    if int(total) <= 0:
-        raise ValueError(f"{label} total must be positive, got {total}")
-    unknown = set(ratios) - set(ordered_names)
-    if unknown:
-        raise ValueError(f"{label} ratios contain unknown labels: {sorted(unknown)}")
-    values = [float(ratios.get(name, 0.0)) for name in ordered_names]
-    if not all(math.isfinite(value) and value >= 0.0 for value in values):
-        raise ValueError(f"{label} ratios must be finite and non-negative")
-    if abs(sum(values) - 1.0) > 1.0e-6:
-        raise ValueError(f"{label} ratios must sum to 1, got {sum(values)}")
-    positive = sum(value > 0.0 for value in values)
-    if int(total) < positive:
-        raise ValueError(f"{label} total={total} cannot cover {positive} positive strata")
-    raw = [int(total) * value for value in values]
-    counts = [int(value) for value in raw]
-    for index, value in enumerate(values):
-        if value > 0.0 and counts[index] == 0:
-            counts[index] = 1
-    while sum(counts) > int(total):
-        candidates = [index for index, count in enumerate(counts) if count > 1]
-        if not candidates:
-            raise ValueError(f"{label} allocation cannot preserve positive strata")
-        counts[min(candidates, key=lambda item: (raw[item] - counts[item], -item))] -= 1
-    while sum(counts) < int(total):
-        counts[max(range(len(counts)), key=lambda item: (raw[item] - counts[item], -item))] += 1
-    return tuple(
-        (name, count) for name, count in zip(ordered_names, counts, strict=True) if count > 0
-    )
+        if len(self) == 0:
+            raise ValueError("cannot sample an empty FADA replay buffer")
+        plan = self._sampling_plan(sampling_spec, batch_size=int(batch_size))
+        if not plan.idm:
+            raise ValueError("IDM stratified sampling requires paper source role retention")
+        indices = plan.sample_idm(generator)
+        sampled = self._select_global_indices(indices)
+        return batch_to_device(sampled, torch.device(device)).validate(self.config)
 
+    def validate_sampling_spec(
+        self,
+        sampling_spec: FADAReplaySamplingSpec,
+        *,
+        batch_size: int,
+    ) -> FADAReplayCoverage:
+        """Validate every positive stratum before mutation and compute update floors."""
 
-def _sample_mask_indices(
-    mask: torch.Tensor,
-    count: int,
-    *,
-    generator: torch.Generator | None,
-    label: str,
-) -> torch.Tensor:
-    candidates = torch.nonzero(mask, as_tuple=False).flatten()
-    if candidates.numel() == 0:
-        raise ValueError(f"Planner replay is missing required stratum {label!r}")
-    draws = torch.randint(candidates.numel(), (int(count),), generator=generator)
-    return candidates.index_select(0, draws)
+        if len(self) == 0:
+            raise ValueError("cannot validate an empty FADA replay buffer")
+        plan = self._sampling_plan(sampling_spec, batch_size=int(batch_size))
+        if not plan.idm:
+            raise ValueError("stratified replay validation requires paper source role retention")
+        return plan.coverage

@@ -326,7 +326,7 @@ def _paper_persistent_training_cfg(tmp_path: Path) -> OmegaConf:
                     "windows_per_iteration": 12,
                     "num_envs": 1,
                     "replay_capacity": 96,
-                    "batch_size": 12,
+                    "batch_size": 512,
                     "idm_updates": 1,
                     "planner_updates": 1,
                     "idm_learning_rate": 0.001,
@@ -354,7 +354,7 @@ def _paper_persistent_training_cfg(tmp_path: Path) -> OmegaConf:
                     },
                     "v005_replay": {
                         "enabled": True,
-                        "walk_cold_start_ratio": 0.5,
+                        "walk_cold_start_ratio": 0.2,
                         "static_cold_start_ratio": 0.5,
                         "planner_scenario_ratios": {
                             "walk": 0.5,

@@ -25,6 +25,32 @@ class FADATrainingStatsLike(Protocol):
     def planner_grad_norm(self) -> float: ...
 
 
+class FADAReplayCoverageLike(Protocol):
+    @property
+    def planner_high_rows(self) -> int: ...
+
+    @property
+    def planner_high_batch_quota(self) -> int: ...
+
+    @property
+    def required_planner_updates(self) -> int: ...
+
+    @property
+    def idm_main_high_rows(self) -> int: ...
+
+    @property
+    def idm_main_high_batch_quota(self) -> int: ...
+
+    @property
+    def idm_intermediate_high_rows(self) -> int: ...
+
+    @property
+    def idm_intermediate_high_batch_quota(self) -> int: ...
+
+    @property
+    def required_idm_updates(self) -> int: ...
+
+
 def format_fada_collection_diagnostic(
     *,
     scenario: str,
@@ -110,6 +136,9 @@ def format_fada_training_diagnostic(
     stats: FADATrainingStatsLike,
     idm_updates: int,
     planner_updates: int,
+    configured_idm_updates: int | None = None,
+    configured_planner_updates: int | None = None,
+    replay_coverage: FADAReplayCoverageLike | None = None,
     replay_size: int,
     samples_seen: int,
     collection_summaries: Sequence[Mapping[str, Any]],
@@ -137,12 +166,27 @@ def format_fada_training_diagnostic(
         )
     )
     collect_seconds = float(collector_metrics.get("collect_seconds", 0.0))
+    coverage = ""
+    if replay_coverage is not None:
+        coverage = (
+            " coverage("
+            f"planner_high={replay_coverage.planner_high_rows}/"
+            f"{replay_coverage.planner_high_batch_quota} "
+            f"idm_main_high={replay_coverage.idm_main_high_rows}/"
+            f"{replay_coverage.idm_main_high_batch_quota} "
+            f"idm_intermediate_high={replay_coverage.idm_intermediate_high_rows}/"
+            f"{replay_coverage.idm_intermediate_high_batch_quota} "
+            f"required_updates={replay_coverage.required_idm_updates}/"
+            f"{replay_coverage.required_planner_updates} "
+            f"configured_updates={configured_idm_updates}/{configured_planner_updates} "
+            f"actual_updates={idm_updates}/{planner_updates})"
+        )
     return (
         "[fada-train] "
         f"stage={schedule} iteration={iteration + 1}/{iterations} "
         f"windows={windows} env_steps={env_steps} replay={replay_size} "
         f"samples_seen={samples_seen} "
-        f"{idm} {planner} collect_s={collect_seconds:.2f} "
+        f"{idm} {planner}{coverage} collect_s={collect_seconds:.2f} "
         f"rejected(done={done} command={command} scenario={scenario}) "
         f"checkpoint={checkpoint_path}"
     )
@@ -156,6 +200,9 @@ def print_fada_training_diagnostic(
     stats: FADATrainingStatsLike,
     idm_updates: int,
     planner_updates: int,
+    configured_idm_updates: int | None = None,
+    configured_planner_updates: int | None = None,
+    replay_coverage: FADAReplayCoverageLike | None = None,
     replay_size: int,
     samples_seen: int,
     collection_summaries: Sequence[Mapping[str, Any]],
@@ -170,6 +217,9 @@ def print_fada_training_diagnostic(
             stats=stats,
             idm_updates=idm_updates,
             planner_updates=planner_updates,
+            configured_idm_updates=configured_idm_updates,
+            configured_planner_updates=configured_planner_updates,
+            replay_coverage=replay_coverage,
             replay_size=replay_size,
             samples_seen=samples_seen,
             collection_summaries=collection_summaries,

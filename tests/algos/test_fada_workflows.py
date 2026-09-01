@@ -261,11 +261,30 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                 dtype=torch.int64,
             )
             cold_start = torch.tensor(
-                [True, True, True, False, False, False] + [True, True, False] + [False] * 27,
+                [True, True, True, False, False, False]
+                + [True, True, False]
+                + [False] * 27,
                 dtype=torch.bool,
+            )
+            command = torch.tensor(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.1, 0.0, 0.0],
+                    [0.4, 0.0, 0.0],
+                    [0.8, 0.0, 0.0],
+                    *([[0.0, 0.0, 0.0]] * 3),
+                    *([[0.4, 0.0, 0.0]] * 3),
+                    *([[0.1, 0.0, 0.0]] * 8),
+                    *([[0.4, 0.0, 0.0]] * 8),
+                    *([[0.8, 0.0, 0.0]] * 8),
+                ],
+                dtype=torch.float32,
             )
             batch = replace(
                 batch,
+                command=command,
                 command_scenario=scenario,
                 cold_start=cold_start,
             )
@@ -277,7 +296,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "oracle_role": "unified",
                     "window_profile": "cold_start",
                     "windows": 3,
-                    "env_steps": 3,
+                    "env_steps": 1,
                     "rejected_done_transitions": 0,
                     "rejected_command_windows": 0,
                 },
@@ -288,7 +307,7 @@ def test_fada_official_persistent_route_consumes_balanced_paper_replay(
                     "oracle_role": "unified",
                     "window_profile": "steady_state",
                     "windows": 3,
-                    "env_steps": 3,
+                    "env_steps": 5,
                     "rejected_done_transitions": 0,
                     "rejected_command_windows": 0,
                 },

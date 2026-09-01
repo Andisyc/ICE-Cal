@@ -356,6 +356,49 @@ def test_backend_adapter_fada_play_profile_is_fully_nominal() -> None:
     assert play_override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
 
 
+def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-lineage")
+    checkpoint = "/tmp/privileged_oracle.pt"
+    cfg = _offpolicy_cfg(
+        [
+            "algo=sac",
+            "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+            "training.play_only=true",
+            f"training.play_checkpoint_path={checkpoint}",
+        ]
+    )
+
+    training_override = BackendAdapter(cfg, root_dir=_ROOT_DIR).build_task_env_cfg_override()
+    play_override = BackendAdapter(cfg, root_dir=_ROOT_DIR).build_play_env_cfg_override()
+
+    assert cfg.training.play_checkpoint_path == checkpoint
+    assert training_override["domain_rand"]["actuator_strength"]["enabled"] is True
+    domain_rand = play_override["domain_rand"]
+    assert domain_rand["actuator_strength"]["enabled"] is False
+    for name in (
+        "randomize_kp",
+        "randomize_kd",
+        "randomize_ground_friction",
+        "randomize_base_mass",
+        "randomize_body_mass",
+        "random_com",
+        "randomize_gravity",
+        "randomize_dof_armature",
+        "randomize_dof_position_bias",
+        "randomize_control_delay",
+        "push_robots",
+        "randomize_reset_pose",
+    ):
+        assert domain_rand[name] is False
+    assert domain_rand["torque_rfi_fraction"] == pytest.approx(0.0)
+    assert play_override["noise_config"]["level"] == pytest.approx(0.0)
+    assert play_override["curriculum"]["enabled"] is False
+    assert play_override["reset_base_qvel_limit"] == pytest.approx(0.0)
+    assert play_override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
+
+
 def test_fada_playback_dependencies_consume_play_profile() -> None:
     cfg = _distill_cfg(
         [

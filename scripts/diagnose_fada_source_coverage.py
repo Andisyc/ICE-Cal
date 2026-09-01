@@ -15,10 +15,11 @@ import torch
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
+from unilab.algos.torch.distill.fada.async_config import teacher_spec
+from unilab.algos.torch.distill.fada.oracle import load_fada_oracle_policy
 from unilab.algos.torch.distill.fada_collector import FADACollectionSpec
 from unilab.algos.torch.distill.fada_source_diagnostics import run_fada_coverage_diagnostic
 from unilab.algos.torch.distill.fada_training import load_fada_policy_checkpoint
-from unilab.algos.torch.distill.teacher import DistillationTeacherSpec, load_sac_teacher_policy
 from unilab.base.registry import ensure_registries
 from unilab.training import BackendAdapter, create_env
 
@@ -30,7 +31,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--teacher-checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--task", default="g1_walk_flat/mujoco")
+    parser.add_argument("--task", default="g1_walk_flat/mujoco_fada_privileged_planner")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument("--device", default="cpu")
@@ -86,7 +87,10 @@ def _checkout_identity() -> dict[str, Any]:
 
 def _compose_cfg(task: str, overrides: list[str]) -> Any:
     with initialize_config_dir(config_dir=str(ROOT_DIR / "conf" / "distill"), version_base="1.3"):
-        return compose(config_name="config", overrides=[f"task={task}", *overrides])
+        return compose(
+            config_name="config",
+            overrides=[f"task={task}", "training.play_only=true", *overrides],
+        )
 
 
 def main() -> int:
@@ -108,19 +112,15 @@ def main() -> int:
     loaded = load_fada_policy_checkpoint(checkpoint, device=args.device)
     config = loaded.policy.config
     fada_cfg = cfg.training.fada
-    teacher_spec = DistillationTeacherSpec(
-        obs_dim=int(cfg.teacher.obs_dim),
-        action_dim=int(cfg.teacher.action_dim),
-        algo_type="sac",
-        actor_hidden_dim=int(cfg.teacher.actor_hidden_dim),
-        use_layer_norm=bool(cfg.teacher.use_layer_norm),
-        obs_normalization=bool(cfg.teacher.obs_normalization),
+    teacher = load_fada_oracle_policy(
+        teacher_checkpoint,
+        teacher_spec(cfg),
+        device=args.device,
     )
-    teacher = load_sac_teacher_policy(teacher_checkpoint, teacher_spec, device=args.device)
     ensure_registries(packages=("unilab.envs.locomotion.g1",))
     env_override = BackendAdapter(
         cfg, root_dir=ROOT_DIR, algo_name="distill"
-    ).build_task_env_cfg_override()
+    ).build_play_env_cfg_override()
     env = create_env(
         cfg,
         num_envs=1,
@@ -129,6 +129,12 @@ def main() -> int:
         task_name=str(cfg.training.task_name),
     )
     try:
+        prepare_shadow = getattr(env, "prepare_isolated_rollout_branch", None)
+        if not callable(prepare_shadow):
+            raise TypeError(
+                "coverage diagnostic requires env.prepare_isolated_rollout_branch()"
+            )
+        prepare_shadow()
         report = run_fada_coverage_diagnostic(
             env,
             student_policy=loaded.policy,

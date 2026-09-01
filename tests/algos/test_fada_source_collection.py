@@ -478,6 +478,9 @@ def test_v007_bound_coverage_diagnostic_classifies_all_three_verdicts() -> None:
     assert report.failure_reproduced
     assert report.identity_valid
     assert report.coverage_gap_step_indices
+    assert len(report.steps[0].student_predicted_future) == config.prediction_horizon
+    assert len(report.steps[0].student_action_chunk) == config.prediction_horizon
+    assert report.steps[0].student_first_action == report.steps[0].student_action_chunk[0]
     assert report.steps[-1].v007_rejection_reason == ("episode_terminated_before_window_completion")
 
     early_fall = tuple(replace(step, timestep=0) for step in report.steps[-1:])
