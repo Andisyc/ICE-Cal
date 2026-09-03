@@ -57,6 +57,9 @@ class FADAAdaptationPreflight:
     target_artifact_schema_version: str
     train_rows: int
     validation_rows: int
+    represented_episodes: int
+    train_command_groups: int
+    validation_command_groups: int
     trainable_parameter_count: int
     total_parameter_count: int
     confirm_train: bool
@@ -126,6 +129,27 @@ def _assert_identity(cfg: DictConfig) -> Any:
     return domain
 
 
+def _assert_slope_target_coverage(batch: FADATargetBatch) -> int:
+    """Reject deterministic replay disguised as independent slope episodes."""
+
+    episode_commands: list[tuple[float, ...]] = []
+    for episode in torch.unique(batch.episode_id.detach().to("cpu"), sorted=True):
+        mask = batch.episode_id == episode.to(batch.episode_id.device)
+        commands = torch.unique(batch.command[mask].detach().to("cpu"), dim=0)
+        if int(commands.shape[0]) != 1:
+            raise ValueError("FADA slope target episode must contain exactly one command")
+        episode_commands.append(tuple(float(value) for value in commands[0]))
+    if len(set(episode_commands)) != len(episode_commands):
+        raise ValueError(
+            "FADA slope target adaptation requires one unique command per represented episode"
+        )
+    return len(episode_commands)
+
+
+def _command_group_count(batch: FADATargetBatch, indices: torch.Tensor) -> int:
+    return int(torch.unique(batch.command.index_select(0, indices), dim=0).shape[0])
+
+
 def preflight_fada_adaptation(
     cfg: DictConfig,
     *,
@@ -179,8 +203,13 @@ def preflight_fada_adaptation(
             raise ValueError(
                 "FADA target artifact target-domain identity does not match adaptation"
             )
+        represented_episodes = _assert_slope_target_coverage(loaded_target.batch)
     elif metadata.get("fault_profile") != domain.legacy_fault_profile:
         raise ValueError("FADA target artifact fault profile does not match adaptation")
+    else:
+        represented_episodes = int(
+            torch.unique(loaded_target.batch.episode_id.detach().to("cpu")).numel()
+        )
 
     adapted = inject_fada_idm_lora(
         loaded_source.policy,
@@ -211,6 +240,9 @@ def preflight_fada_adaptation(
         loaded_target.source_schema_version,
         int(split.train_indices.numel()),
         int(split.validation_indices.numel()),
+        represented_episodes,
+        _command_group_count(loaded_target.batch, split.train_indices),
+        _command_group_count(loaded_target.batch, split.validation_indices),
         int(trainable),
         int(total),
         bool(cfg.adaptation.confirm_train),
@@ -288,6 +320,9 @@ def train_fada_adaptation(
         "samples_seen": max_updates * batch_size,
         "train_loss": last_stats.loss,
         "validation_loss": validation_loss,
+        "represented_episodes": preflight.represented_episodes,
+        "train_command_groups": preflight.train_command_groups,
+        "validation_command_groups": preflight.validation_command_groups,
     }
 
 
@@ -307,6 +342,9 @@ def run_fada_adaptation(
             "target_artifact_sha256": preflight.target_artifact_sha256,
             "train_rows": preflight.train_rows,
             "validation_rows": preflight.validation_rows,
+            "represented_episodes": preflight.represented_episodes,
+            "train_command_groups": preflight.train_command_groups,
+            "validation_command_groups": preflight.validation_command_groups,
             "trainable_parameter_count": preflight.trainable_parameter_count,
             "total_parameter_count": preflight.total_parameter_count,
             "output_checkpoint_path": str(preflight.output_checkpoint_path),

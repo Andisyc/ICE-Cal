@@ -100,6 +100,12 @@ def test_slope_config_selects_nominal_target_only_collection() -> None:
     assert cfg.env.noise_config.level == 0.0
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     assert list(cfg.env.domain_rand.actuator_strength.multipliers) == []
+    assert cfg.target_domain.command_sampling.num_trials == 64
+
+    from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
+
+    commands = resolve_fada_target_domain(cfg).command_sequence
+    assert len(commands) == len(set(commands)) == 64
 
 
 def test_slope_env_overrides_merge_into_the_structured_g1_owner() -> None:

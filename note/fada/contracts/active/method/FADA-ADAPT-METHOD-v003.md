@@ -19,7 +19,15 @@ permitted.
 The Stage-C target budget is expressed as approximately `6000` executed control steps. The target
 collector derives the usable-window count from the checkpoint's `H`/`K` architecture and the
 configured command ramp and settling interval; it does not encode the derived count as a second
-method constant.
+method constant. Sim-to-sim slope collection uses a fixed-seed stratified sample of forward-speed
+commands while keeping the target dynamics, reset pose, observation noise, pushes, and actuator
+properties fixed. Each represented episode owns one unique command trial; the schedule fails closed
+instead of cycling and silently duplicating deterministic trajectories.
+
+Stage-D validation holds out complete command groups. No command value may appear in both training
+and validation, and slope preflight rejects artifacts that reuse one command across represented
+episodes. This separation diagnoses command interpolation; it does not replace closed-loop slope and
+flat-ground evaluation.
 
 Historical `fada-adapted/v1` and `fada-adapted/v2` policies retain explicit generic playback support
 but are excluded from current Stage-C collection and Stage-D training.

@@ -318,6 +318,36 @@ def test_target_split_is_episode_owned_deterministic_and_permutation_safe() -> N
     )
 
 
+def test_target_split_holds_out_complete_command_groups() -> None:
+    owner = _owner()
+    original = _target_batch(_config())
+    batch = FADATargetBatch(
+        **{
+            **{name: getattr(original, name) for name in FADATargetBatch.__dataclass_fields__},
+            "command": torch.tensor(
+                [
+                    [0.4, 0.0, 0.0],
+                    [0.4, 0.0, 0.0],
+                    [0.4, 0.0, 0.0],
+                    [0.4, 0.0, 0.0],
+                    [0.2, 0.0, 0.0],
+                    [0.2, 0.0, 0.0],
+                ],
+                dtype=torch.float32,
+            ),
+        }
+    )
+
+    split = owner.split_fada_target_batch(batch, validation_fraction=0.34, seed=19)
+    train_commands = {tuple(row) for row in batch.command[split.train_indices].tolist()}
+    validation_commands = {tuple(row) for row in batch.command[split.validation_indices].tolist()}
+
+    assert train_commands.isdisjoint(validation_commands)
+    assert sorted(split.train_indices.tolist() + split.validation_indices.tolist()) == list(
+        range(6)
+    )
+
+
 def test_target_split_supports_one_episode_with_temporal_purge() -> None:
     owner = _owner()
     batch = _target_batch(_config())

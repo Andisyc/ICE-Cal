@@ -387,7 +387,7 @@ def split_fada_target_batch(
     validation_fraction: float,
     seed: int,
 ) -> FADATargetSplit:
-    """Split by episode, or by purged time blocks for one continuous trajectory."""
+    """Hold out command groups, falling back to episode or purged-time ownership."""
 
     fraction = float(validation_fraction)
     if not math.isfinite(fraction) or not 0.0 < fraction < 1.0:
@@ -408,6 +408,31 @@ def split_fada_target_batch(
         if train_indices.numel() == 0:
             raise ValueError(
                 "FADA single-trajectory split is too short for train, validation, and purge gap"
+            )
+        return FADATargetSplit(
+            train_indices=train_indices,
+            validation_indices=validation_indices,
+        )
+    commands = torch.unique(batch.command.detach().to("cpu"), dim=0, sorted=True)
+    if int(commands.shape[0]) > 1:
+        generator = torch.Generator(device="cpu").manual_seed(seed)
+        command_order = commands[torch.randperm(int(commands.shape[0]), generator=generator)]
+        validation_count = max(
+            1,
+            min(int(commands.shape[0]) - 1, round(len(commands) * fraction)),
+        )
+        validation_commands = command_order[:validation_count]
+        validation_mask = torch.zeros_like(batch.episode_id, dtype=torch.bool)
+        command_rows = batch.command.detach().to("cpu")
+        for command in validation_commands:
+            validation_mask |= torch.all(command_rows == command, dim=1).to(validation_mask.device)
+        validation_indices = (
+            torch.nonzero(validation_mask, as_tuple=False).flatten().to(torch.int64)
+        )
+        train_indices = torch.nonzero(~validation_mask, as_tuple=False).flatten().to(torch.int64)
+        if train_indices.numel() == 0 or validation_indices.numel() == 0:
+            raise ValueError(
+                "FADA target command split must produce non-empty train and validation rows"
             )
         return FADATargetSplit(
             train_indices=train_indices,

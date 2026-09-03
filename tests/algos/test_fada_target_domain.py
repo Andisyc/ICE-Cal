@@ -43,6 +43,64 @@ def test_resolves_exact_slope_target_domain() -> None:
     assert domain.actuator_index is None
 
 
+def test_slope_command_sampling_is_reproducible_stratified_and_unique() -> None:
+    from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
+
+    cfg = _slope_cfg()
+    del cfg.target_domain.command_sequence
+    cfg.target_domain.command_sampling = {
+        "forward_speed_range": [0.75, 0.85],
+        "num_trials": 8,
+        "seed": 11,
+    }
+
+    first = resolve_fada_target_domain(cfg).command_sequence
+    second = resolve_fada_target_domain(cfg).command_sequence
+
+    assert first == second
+    assert len(first) == len(set(first)) == 8
+    assert all(0.75 < command[0] < 0.85 for command in first)
+    assert all(command[1:] == (0.0, 0.0) for command in first)
+    sorted_speeds = sorted(command[0] for command in first)
+    assert all(
+        0.75 + index * 0.0125 < speed < 0.75 + (index + 1) * 0.0125
+        for index, speed in enumerate(sorted_speeds)
+    )
+
+
+@pytest.mark.parametrize(
+    ("sampling", "match"),
+    [
+        ({"forward_speed_range": [0.75, 0.85], "num_trials": 1, "seed": 0}, "num_trials"),
+        ({"forward_speed_range": [0.85, 0.75], "num_trials": 8, "seed": 0}, "range"),
+        ({"forward_speed_range": [0.75, 0.85], "num_trials": 8, "seed": -1}, "seed"),
+    ],
+)
+def test_slope_command_sampling_rejects_invalid_design(sampling, match: str) -> None:
+    from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
+
+    cfg = _slope_cfg()
+    del cfg.target_domain.command_sequence
+    cfg.target_domain.command_sampling = sampling
+
+    with pytest.raises(ValueError, match=match):
+        resolve_fada_target_domain(cfg)
+
+
+def test_slope_target_rejects_two_command_owners() -> None:
+    from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
+
+    cfg = _slope_cfg()
+    cfg.target_domain.command_sampling = {
+        "forward_speed_range": [0.75, 0.85],
+        "num_trials": 8,
+        "seed": 0,
+    }
+
+    with pytest.raises(ValueError, match="exactly one of"):
+        resolve_fada_target_domain(cfg)
+
+
 def test_slope_geometry_owns_entry_finish_and_foot_exit() -> None:
     from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
 

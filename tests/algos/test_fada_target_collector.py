@@ -448,7 +448,7 @@ def test_target_collector_captures_reset_frame_before_first_action() -> None:
     assert events == ["initial", "step", "step", "step"]
 
 
-def test_slope_episode_policy_cycles_commands_and_classifies_boundaries() -> None:
+def test_slope_episode_policy_consumes_unique_commands_and_classifies_boundaries() -> None:
     from unilab.algos.torch.distill.fada.target_collector import FADASlopeEpisodePolicy
     from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
 
@@ -457,7 +457,10 @@ def test_slope_episode_policy_cycles_commands_and_classifies_boundaries() -> Non
         geometry,
         ((0.75, 0.0, 0.0), (0.8, 0.0, 0.0), (0.85, 0.0, 0.0)),
     )
-    np.testing.assert_allclose(policy.command_for_episode(4), [0.8, 0.0, 0.0])
+    np.testing.assert_allclose(policy.command_for_episode(0), [0.75, 0.0, 0.0])
+    np.testing.assert_allclose(policy.command_for_episode(1), [0.8, 0.0, 0.0])
+    with pytest.raises(RuntimeError, match="command trials exhausted"):
+        policy.command_for_episode(3)
 
     feet = np.array([[2.0, 0.1, 0.2], [2.0, -0.1, 0.2]])
     assert (
@@ -511,7 +514,10 @@ def test_slope_collection_owns_exact_accepted_steps_and_terminal_provenance(
         _V2Policy(),
         _V2Policy().config,
         4,
-        module.FADASlopeEpisodePolicy(geometry, ((0.8, 0.0, 0.0),)),
+        module.FADASlopeEpisodePolicy(
+            geometry,
+            ((0.8, 0.0, 0.0), (0.81, 0.0, 0.0)),
+        ),
         module.FADATargetCollectionSpec(
             max_env_steps=20,
             command_start=(0.8, 0.0, 0.0),

@@ -89,7 +89,11 @@ class FADASlopeEpisodePolicy:
     def command_for_episode(self, episode_id: int) -> np.ndarray:
         if episode_id < 0:
             raise ValueError("FADA slope episode_id must be non-negative")
-        return self.commands[episode_id % len(self.commands)].copy()
+        if episode_id >= len(self.commands):
+            raise RuntimeError(
+                "FADA slope command trials exhausted before the collection budget completed"
+            )
+        return self.commands[episode_id].copy()
 
     def classify(
         self,

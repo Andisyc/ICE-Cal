@@ -9,10 +9,12 @@ target_domain:
   task: sac/g1_walk_flat/mujoco_fada_slope_15
   task_name: G1WalkFlat
   backend: mujoco
-  command_sequence:
-    - [0.75, 0.0, 0.0]
-    - [0.80, 0.0, 0.0]
-    - [0.85, 0.0, 0.0]
+  # Fixed-seed stratified trials reproduce FADA's randomized-command sim-to-sim collection
+  # without enabling environment or dynamics randomization.
+  command_sampling:
+    forward_speed_range: [0.75, 0.85]
+    num_trials: 64
+    seed: 1
   slope:
     angle_deg: 15.0
     width_m: 0.8
@@ -24,4 +26,3 @@ target_domain:
 env:
   commands:
     vel_limit: [[0.85, 0.0, 0.0], [0.85, 0.0, 0.0]]
-

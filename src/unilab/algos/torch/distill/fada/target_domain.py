@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import cos, isfinite, radians, sin
+from numbers import Integral
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -37,6 +38,47 @@ def validate_fada_slope_commands(raw: Any) -> tuple[tuple[float, float, float], 
             raise ValueError("FADA slope command must have zero yaw velocity")
         commands.append(parsed)
     return tuple(commands)
+
+
+def _sample_fada_slope_commands(raw: Any) -> tuple[tuple[float, float, float], ...]:
+    if not isinstance(raw, dict):
+        raise ValueError("FADA target command_sampling must be a mapping")
+    expected = {"forward_speed_range", "num_trials", "seed"}
+    if set(raw) != expected:
+        raise ValueError(
+            "FADA target command_sampling fields must be exactly "
+            f"{sorted(expected)}, got {sorted(raw)}"
+        )
+    speed_range = raw["forward_speed_range"]
+    if not isinstance(speed_range, (list, tuple)) or len(speed_range) != 2:
+        raise ValueError("FADA target command_sampling forward_speed_range must have two values")
+    lower = _positive_float(speed_range[0], "command_sampling forward speed range")
+    upper = _positive_float(speed_range[1], "command_sampling forward speed range")
+    if lower >= upper:
+        raise ValueError("FADA target command_sampling forward speed range must increase")
+    num_trials = raw["num_trials"]
+    if isinstance(num_trials, bool) or not isinstance(num_trials, Integral) or num_trials < 2:
+        raise ValueError("FADA target command_sampling num_trials must be an integer >= 2")
+    seed = raw["seed"]
+    if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
+        raise ValueError("FADA target command_sampling seed must be a non-negative integer")
+
+    count = int(num_trials)
+    centers = lower + (np.arange(count, dtype=np.float64) + 0.5) * ((upper - lower) / count)
+    order = np.random.default_rng(int(seed)).permutation(count)
+    return tuple((float(centers[index]), 0.0, 0.0) for index in order)
+
+
+def _resolve_slope_commands(raw: dict[str, Any]) -> tuple[tuple[float, float, float], ...]:
+    has_sequence = "command_sequence" in raw
+    has_sampling = "command_sampling" in raw
+    if has_sequence == has_sampling:
+        raise ValueError(
+            "FADA slope target must define exactly one of command_sequence or command_sampling"
+        )
+    if has_sequence:
+        return validate_fada_slope_commands(raw["command_sequence"])
+    return _sample_fada_slope_commands(raw["command_sampling"])
 
 
 @dataclass(frozen=True)
@@ -213,7 +255,7 @@ def _resolve_slope(raw: dict[str, Any]) -> FADATargetDomainSpec:
         task=str(_required(raw, "task")),
         task_name=str(_required(raw, "task_name")),
         backend=str(_required(raw, "backend")),
-        command_sequence=validate_fada_slope_commands(_required(raw, "command_sequence")),
+        command_sequence=_resolve_slope_commands(raw),
         slope=slope,
     )
 

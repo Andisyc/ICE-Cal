@@ -19,6 +19,7 @@ from unilab.algos.torch.distill import (
     load_fada_policy_checkpoint,
     save_fada_checkpoint,
 )
+from unilab.algos.torch.distill.fada.target_domain import FADA_SLOPE_15_GEOMETRY
 from unilab.algos.torch.distill.fada_target_data import (
     FADATargetBatch,
     save_fada_target_artifact,
@@ -141,6 +142,56 @@ def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
     return source, target, source_sha, file_sha256(target)
 
 
+def _slope_artifacts(
+    tmp_path: Path, *, repeated_episode_commands: bool
+) -> tuple[Path, Path, str, str]:
+    source, legacy_target, source_sha, _ = _artifacts(tmp_path)
+    payload = torch.load(legacy_target, map_location="cpu", weights_only=True)
+    batch = FADATargetBatch(**payload["batch"])
+    speeds = [0.75, 0.75, 0.75] if repeated_episode_commands else [0.75, 0.8, 0.85]
+    commands = torch.tensor(
+        [[speeds[episode], 0.0, 0.0] for episode in batch.episode_id.tolist()],
+        dtype=torch.float32,
+    )
+    batch = FADATargetBatch(
+        **{
+            **{name: getattr(batch, name) for name in FADATargetBatch.__dataclass_fields__},
+            "command": commands,
+        }
+    )
+    target = tmp_path / "slope-target.pt"
+    save_fada_target_artifact(
+        target,
+        batch,
+        config=_config(),
+        metadata={
+            "policy_checkpoint_sha256": source_sha,
+            "config_fingerprint": "2" * 64,
+            "task": "G1WalkFlat",
+            "target_domain_id": "g1_slope_15_mujoco",
+            "target_domain_kind": "slope",
+            "command_sequence": [[speed, 0.0, 0.0] for speed in sorted(set(speeds))],
+            "slope_geometry": asdict(FADA_SLOPE_15_GEOMETRY),
+            "num_envs": 1,
+            "num_windows": len(batch.episode_id),
+            "observation_contract": "g1_fada_state_v2",
+            "episode_count": 3,
+            "accepted_steps": len(batch.episode_id),
+            "rejected_pre_entry_steps": 0,
+            "rejected_command_windows": 0,
+            "termination_counts": {
+                "fall": 0,
+                "environment_termination": 0,
+                "truncated": 0,
+                "foot_exit": 2,
+                "finish": 0,
+            },
+            "randomization_disabled": True,
+        },
+    )
+    return source, target, source_sha, file_sha256(target)
+
+
 def test_adaptation_config_reuses_target_owner_and_paper_lora_defaults() -> None:
     cfg = _compose()
 
@@ -191,6 +242,54 @@ def test_preflight_builds_frozen_adapter_and_writes_nothing(tmp_path: Path) -> N
     assert result.total_parameter_count > result.trainable_parameter_count
     assert result.confirm_train is False
     assert not output.exists()
+
+
+def test_slope_preflight_rejects_repeated_commands_across_episodes(tmp_path: Path) -> None:
+    module = _load_script()
+    source, target, source_sha, target_sha = _slope_artifacts(
+        tmp_path, repeated_episode_commands=True
+    )
+    cfg = _compose_slope(
+        f"adaptation.source_checkpoint_path={source}",
+        f"adaptation.expected_source_checkpoint_sha256={source_sha}",
+        f"adaptation.target_artifact_path={target}",
+        f"adaptation.expected_target_artifact_sha256={target_sha}",
+        f"adaptation.output_checkpoint_path={tmp_path / 'adapted.pt'}",
+        "adaptation.batch_size=2",
+    )
+
+    with pytest.raises(ValueError, match="unique command per represented episode"):
+        module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
+
+
+def test_slope_preflight_reports_command_disjoint_train_validation_split(
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    source, target, source_sha, target_sha = _slope_artifacts(
+        tmp_path, repeated_episode_commands=False
+    )
+    cfg = _compose_slope(
+        f"adaptation.source_checkpoint_path={source}",
+        f"adaptation.expected_source_checkpoint_sha256={source_sha}",
+        f"adaptation.target_artifact_path={target}",
+        f"adaptation.expected_target_artifact_sha256={target_sha}",
+        f"adaptation.output_checkpoint_path={tmp_path / 'adapted.pt'}",
+        "adaptation.batch_size=2",
+    )
+
+    result = module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
+    train_commands = {
+        tuple(row) for row in result.target_batch.command[result.split.train_indices].tolist()
+    }
+    validation_commands = {
+        tuple(row) for row in result.target_batch.command[result.split.validation_indices].tolist()
+    }
+
+    assert result.represented_episodes == 3
+    assert result.train_command_groups == 2
+    assert result.validation_command_groups == 1
+    assert train_commands.isdisjoint(validation_commands)
 
 
 def test_preflight_accepts_null_hashes_and_records_observed_identity(tmp_path: Path) -> None:
@@ -248,9 +347,7 @@ def test_preflight_rejects_legacy_source_before_target_load_or_optimizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script()
-    owner = importlib.import_module(
-        "unilab.algos.torch.distill.fada.target_adaptation_workflow"
-    )
+    owner = importlib.import_module("unilab.algos.torch.distill.fada.target_adaptation_workflow")
     source = tmp_path / "legacy-source.pt"
     target = tmp_path / "target.pt"
     source.write_bytes(b"legacy")
