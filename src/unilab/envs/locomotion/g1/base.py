@@ -67,3 +67,18 @@ class G1BaseEnv(LocomotionBaseEnv):
     def get_base_quat(self) -> np.ndarray:
         """Return batched world-frame base quaternions in wxyz order."""
         return np.asarray(self._backend.get_base_quat())
+
+    def get_base_lin_vel(self) -> np.ndarray:
+        """Return batched world-frame base linear velocity."""
+        return np.asarray(self._backend.get_base_lin_vel())
+
+    def get_foot_pos(self) -> np.ndarray:
+        """Return left/right foot world positions with shape ``(N, 2, 3)``."""
+        left = np.asarray(self._backend.get_sensor_data("left_foot_pos"))
+        right = np.asarray(self._backend.get_sensor_data("right_foot_pos"))
+        if left.ndim != 2 or left.shape[-1] != 3 or right.shape != left.shape:
+            raise ValueError(
+                "G1 foot position sensors must both have shape (num_envs, 3), "
+                f"got left={left.shape} right={right.shape}"
+            )
+        return np.stack((left, right), axis=1)

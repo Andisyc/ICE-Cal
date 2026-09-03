@@ -1,0 +1,20 @@
+policy_checkpoint_path: planner_idm_v022_cpu_limited.pt
+expected_checkpoint_sha256: null
+output_dir: artifacts/fada_target/${target_domain.target_domain_id}
+
+num_envs: 1
+control_steps: 6000
+max_env_steps: 24000
+device: cpu
+
+command_start: [0.0, 0.0, 0.0]
+ramp_steps: 25
+settle_steps: 50
+record_video: true
+seed: 1
+
+observation_key: obs
+student_projection: g1_fada_state_v2
+student_drop_index: null
+command_info_keys: [commands]
+

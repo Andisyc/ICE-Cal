@@ -11,6 +11,7 @@ import torch
 
 from unilab.algos.torch.distill.fada.adaptation import (
     FADALoRAConfig,
+    _inject_fada_idm_legacy_linear_lora,
     assert_fada_adaptation_parameter_ownership,
     fada_adapter_named_parameters,
     inject_fada_idm_lora,
@@ -21,9 +22,14 @@ from unilab.algos.torch.distill.fada.checkpoint import (
     load_fada_policy_checkpoint,
 )
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
+from unilab.algos.torch.distill.fada.target_data import (
+    FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
+    FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+)
 
-FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION = "fada-adapted/v2"
+FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION = "fada-adapted/v3"
 FADA_LEGACY_ADAPTED_CHECKPOINT_SCHEMA_VERSION = "fada-adapted/v1"
+FADA_LEGACY_LINEAR_ADAPTED_CHECKPOINT_SCHEMA_VERSION = "fada-adapted/v2"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -44,6 +50,23 @@ def assert_fada_adaptation_source_checkpoint(
     return loaded
 
 
+def assert_fada_target_collection_checkpoint(
+    loaded: LoadedFADAPlannerIDMPolicy,
+) -> LoadedFADAPlannerIDMPolicy:
+    """Admit current source and adapted policies to post-training collection."""
+
+    checkpoint = getattr(loaded, "checkpoint", None)
+    schema = checkpoint.get("schema_version") if isinstance(checkpoint, Mapping) else None
+    if schema not in {
+        FADA_CHECKPOINT_SCHEMA_VERSION,
+        FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
+    }:
+        raise ValueError(
+            "FADA target collection requires a schema-5 source or fada-adapted/v3 checkpoint"
+        )
+    return loaded
+
+
 def _validate_sha256(name: str, value: Any) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
         raise ValueError(f"{name} must be a lowercase SHA-256 digest")
@@ -56,6 +79,8 @@ def _lora_payload(config: FADALoRAConfig) -> dict[str, Any]:
         "alpha": float(config.alpha),
         "dropout": float(config.dropout),
         "target_modules": list(config.target_modules),
+        "adapter_type": config.adapter_type,
+        "target_projections": list(config.target_projections),
     }
 
 
@@ -67,6 +92,7 @@ def save_fada_adapted_checkpoint(
     lora_config: FADALoRAConfig,
     source_checkpoint_sha256: str,
     target_artifact_sha256: str,
+    target_artifact_schema_version: str,
     completed_steps: int,
     samples_seen: int,
     runtime_config: Mapping[str, Any],
@@ -74,6 +100,8 @@ def save_fada_adapted_checkpoint(
     """Atomically persist a self-contained frozen-base plus adapter checkpoint."""
 
     assert_fada_adaptation_parameter_ownership(policy, lora_config)
+    if lora_config.adapter_type != "qv_attention":
+        raise ValueError("new adapted checkpoints require Q/V attention LoRA")
     if (
         isinstance(completed_steps, bool)
         or not isinstance(completed_steps, int)
@@ -107,32 +135,57 @@ def save_fada_adapted_checkpoint(
         "target_artifact_sha256": _validate_sha256(
             "target_artifact_sha256", target_artifact_sha256
         ),
+        "target_artifact_schema_version": target_artifact_schema_version,
         "completed_steps": completed_steps,
         "samples_seen": samples_seen,
         "runtime_config": dict(runtime_config),
     }
+    target_domain = runtime_config.get("target_domain")
+    if isinstance(target_domain, Mapping):
+        target_domain_id = target_domain.get("target_domain_id")
+        if not isinstance(target_domain_id, str) or not target_domain_id.strip():
+            raise ValueError("adapted checkpoint target_domain_id must be a non-empty string")
+        payload["target_domain_id"] = target_domain_id
+    if target_artifact_schema_version not in {
+        FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+    }:
+        raise ValueError("adapted checkpoint target artifact schema is unsupported")
     torch.save(payload, temporary)
     temporary.replace(target)
     return target
 
 
-def _parse_lora_config(payload: Any) -> FADALoRAConfig:
-    if not isinstance(payload, dict) or set(payload) != {
-        "rank",
-        "alpha",
-        "dropout",
-        "target_modules",
-    }:
+def _parse_lora_config(payload: Any, *, schema_version: str) -> FADALoRAConfig:
+    common = {"rank", "alpha", "dropout", "target_modules"}
+    current = common | {"adapter_type", "target_projections"}
+    expected = current if schema_version == FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION else common
+    if not isinstance(payload, dict) or set(payload) != expected:
         raise ValueError("adapted checkpoint LoRA config or manifest is malformed")
     targets = payload.get("target_modules")
     if not isinstance(targets, list) or not all(isinstance(name, str) for name in targets):
         raise ValueError("adapted checkpoint LoRA target manifest is malformed")
-    return FADALoRAConfig(
-        rank=payload["rank"],
-        alpha=payload["alpha"],
-        dropout=payload["dropout"],
-        target_modules=tuple(targets),
-    )
+    kwargs = {
+        "rank": payload["rank"],
+        "alpha": payload["alpha"],
+        "dropout": payload["dropout"],
+        "target_modules": tuple(targets),
+    }
+    if schema_version == FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION:
+        projections = payload.get("target_projections")
+        adapter_type = payload.get("adapter_type")
+        if not isinstance(projections, list) or not all(
+            isinstance(name, str) for name in projections
+        ):
+            raise ValueError("adapted checkpoint LoRA projection manifest is malformed")
+        if not isinstance(adapter_type, str):
+            raise ValueError("adapted checkpoint LoRA adapter type is malformed")
+        return FADALoRAConfig(
+            **kwargs,
+            adapter_type=adapter_type,
+            target_projections=tuple(projections),
+        )
+    return FADALoRAConfig.legacy(**kwargs)
 
 
 def load_fada_adapted_checkpoint(
@@ -145,6 +198,7 @@ def load_fada_adapted_checkpoint(
     payload = torch.load(Path(path), map_location=device, weights_only=True)
     if not isinstance(payload, dict) or payload.get("schema_version") not in {
         FADA_LEGACY_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
+        FADA_LEGACY_LINEAR_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
         FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
     }:
         raise ValueError("unsupported or malformed FADA adapted checkpoint schema")
@@ -152,7 +206,11 @@ def load_fada_adapted_checkpoint(
     if not isinstance(architecture, dict):
         raise ValueError("adapted checkpoint architecture must be a mapping")
     if (
-        payload.get("schema_version") == FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION
+        payload.get("schema_version")
+        in {
+            FADA_LEGACY_LINEAR_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
+            FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
+        }
         and "observation_contract" not in architecture
     ):
         raise ValueError("adapted checkpoint architecture must contain observation_contract")
@@ -160,8 +218,14 @@ def load_fada_adapted_checkpoint(
         config = FADAArchitectureConfig(**architecture)
     except (TypeError, ValueError) as exc:
         raise ValueError("adapted checkpoint architecture is invalid") from exc
-    lora_config = _parse_lora_config(payload.get("lora_config"))
-    adapted = inject_fada_idm_lora(FADAPlannerIDMPolicy(config).to(device), lora_config)
+    schema_version = str(payload["schema_version"])
+    lora_config = _parse_lora_config(payload.get("lora_config"), schema_version=schema_version)
+    policy = FADAPlannerIDMPolicy(config).to(device)
+    adapted = (
+        inject_fada_idm_lora(policy, lora_config)
+        if schema_version == FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION
+        else _inject_fada_idm_legacy_linear_lora(policy, lora_config)
+    )
     expected_trainable = list(dict(fada_adapter_named_parameters(adapted.policy)))
     if payload.get("trainable_parameter_names") != expected_trainable:
         raise ValueError("adapted checkpoint trainable parameter manifest is incompatible")
@@ -174,6 +238,21 @@ def load_fada_adapted_checkpoint(
         raise ValueError("adapted checkpoint architecture or policy state is incompatible") from exc
     _validate_sha256("source_checkpoint_sha256", payload.get("source_checkpoint_sha256"))
     _validate_sha256("target_artifact_sha256", payload.get("target_artifact_sha256"))
+    if schema_version == FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION:
+        target_schema = payload.get("target_artifact_schema_version")
+        if target_schema not in {
+            FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
+            FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        }:
+            raise ValueError("adapted checkpoint target artifact schema is unsupported")
+        runtime_target = (
+            payload["runtime_config"].get("target_domain")
+            if isinstance(payload.get("runtime_config"), dict)
+            else None
+        )
+        if isinstance(runtime_target, Mapping):
+            if payload.get("target_domain_id") != runtime_target.get("target_domain_id"):
+                raise ValueError("adapted checkpoint target-domain identity is inconsistent")
     for name in ("completed_steps", "samples_seen"):
         value = payload.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -202,6 +281,7 @@ def load_fada_deployable_policy_checkpoint(
         return load_fada_policy_checkpoint(path, device=device)
     if schema in {
         FADA_LEGACY_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
+        FADA_LEGACY_LINEAR_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
         FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
     }:
         return load_fada_adapted_checkpoint(path, device=device)

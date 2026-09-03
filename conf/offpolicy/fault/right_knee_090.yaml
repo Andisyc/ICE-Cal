@@ -9,7 +9,11 @@ fault:
   task_name: G1WalkFlat
   backend: mujoco
   fault_profile: right_knee_strength_0.9
-  command_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+  command_limit: [[0.8, 0.0, 0.0], [0.8, 0.0, 0.0]]
   actuator_index: 9
   actuator_strength: 0.9
   actuator_count: 29
+
+env:
+  commands:
+    vel_limit: ${fault.command_limit}

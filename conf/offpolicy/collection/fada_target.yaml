@@ -3,14 +3,14 @@ expected_checkpoint_sha256: null
 output_dir: artifacts/fada_target/g1_walk_flat_mujoco_${fault.name}
 
 num_envs: 1
-num_windows: 512
+control_steps: 6000
 max_env_steps: 100000
 device: cpu
 
 command_start: [0.0, 0.0, 0.0]
-command_target: [0.4, 0.0, 0.0]
-ramp_steps: 10
-settle_steps: 20
+command_target: ${fault.command_limit.0}
+ramp_steps: 25
+settle_steps: 50
 single_trajectory: true
 record_video: true
 seed: 1

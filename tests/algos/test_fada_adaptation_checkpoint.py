@@ -18,7 +18,7 @@ from unilab.algos.torch.distill.fada_adaptation_checkpoint import (
 )
 
 
-@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4, "fada-adapted/v1", "fada-adapted/v2"])
 def test_adaptation_source_contract_rejects_retired_source_schema(
     schema_version: int,
 ) -> None:
@@ -31,6 +31,27 @@ def test_adaptation_source_contract_rejects_retired_source_schema(
 def test_adaptation_source_contract_accepts_current_schema5() -> None:
     loaded = type("Loaded", (), {"checkpoint": {"schema_version": 5}})()
     assert assert_fada_adaptation_source_checkpoint(loaded) is loaded
+
+
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+def test_target_collection_contract_rejects_retired_source_schema(
+    schema_version: int,
+) -> None:
+    _adaptation, checkpoint_owner = _owners()
+    assert hasattr(checkpoint_owner, "assert_fada_target_collection_checkpoint")
+    loaded = type("Loaded", (), {"checkpoint": {"schema_version": schema_version}})()
+    with pytest.raises(ValueError, match="schema-5 source or fada-adapted/v3"):
+        checkpoint_owner.assert_fada_target_collection_checkpoint(loaded)
+
+
+@pytest.mark.parametrize("schema_version", [5, "fada-adapted/v3"])
+def test_target_collection_contract_accepts_current_deployable_schemas(
+    schema_version: int | str,
+) -> None:
+    _adaptation, checkpoint_owner = _owners()
+    assert hasattr(checkpoint_owner, "assert_fada_target_collection_checkpoint")
+    loaded = type("Loaded", (), {"checkpoint": {"schema_version": schema_version}})()
+    assert checkpoint_owner.assert_fada_target_collection_checkpoint(loaded) is loaded
 
 
 def _owners() -> tuple[Any, Any]:
@@ -104,7 +125,7 @@ def test_adapted_checkpoint_round_trip_is_exact_and_self_contained(tmp_path: Pat
         next(
             parameter
             for name, parameter in adaptation.fada_adapter_named_parameters(adapted.policy)
-            if name.endswith("lora_B.weight")
+            if name.endswith("lora_q_B.weight")
         ).fill_(0.125)
     path = tmp_path / "adapted.pt"
 
@@ -115,9 +136,14 @@ def test_adapted_checkpoint_round_trip_is_exact_and_self_contained(tmp_path: Pat
         lora_config=adapted.lora_config,
         source_checkpoint_sha256="a" * 64,
         target_artifact_sha256="b" * 64,
+        target_artifact_schema_version="fada-target-batch/v3",
         completed_steps=3,
         samples_seen=96,
-        runtime_config={"batch_size": 32, "seed": 7},
+        runtime_config={
+            "batch_size": 32,
+            "seed": 7,
+            "target_domain": {"target_domain_id": "g1_slope_15_mujoco"},
+        },
     )
     adapted.policy.eval()
     expected = adapted.policy(*_inputs(adapted.policy.config))
@@ -126,12 +152,16 @@ def test_adapted_checkpoint_round_trip_is_exact_and_self_contained(tmp_path: Pat
     observed = loaded.policy(*_inputs(loaded.policy.config))
 
     assert loaded.policy.training is False
-    assert loaded.checkpoint["schema_version"] == "fada-adapted/v2"
+    assert loaded.checkpoint["schema_version"] == "fada-adapted/v3"
     assert loaded.checkpoint["source_checkpoint_sha256"] == "a" * 64
     assert loaded.checkpoint["target_artifact_sha256"] == "b" * 64
+    assert loaded.checkpoint["target_artifact_schema_version"] == "fada-target-batch/v3"
+    assert loaded.checkpoint["target_domain_id"] == "g1_slope_15_mujoco"
     assert loaded.checkpoint["lora_config"]["target_modules"] == list(
         adapted.lora_config.target_modules
     )
+    assert loaded.checkpoint["lora_config"]["adapter_type"] == "qv_attention"
+    assert loaded.checkpoint["lora_config"]["target_projections"] == ["q", "v"]
     assert loaded.checkpoint["optimizer_state_dict"] == optimizer.state_dict()
     torch.testing.assert_close(observed.action_chunk, expected.action_chunk, rtol=1e-6, atol=1e-7)
 
@@ -158,6 +188,7 @@ def test_adapted_checkpoint_rejects_invalid_step_identity_and_optimizer_ownershi
             lora_config=adapted.lora_config,
             source_checkpoint_sha256="a" * 64,
             target_artifact_sha256="b" * 64,
+            target_artifact_schema_version="fada-target-batch/v3",
             completed_steps=completed_steps,
             samples_seen=0,
             runtime_config={},
@@ -181,6 +212,7 @@ def test_deployable_loader_accepts_old_and_new_while_source_reader_rejects_new(
         lora_config=adapted.lora_config,
         source_checkpoint_sha256="c" * 64,
         target_artifact_sha256="d" * 64,
+        target_artifact_schema_version="fada-target-batch/v2",
         completed_steps=0,
         samples_seen=0,
         runtime_config={},
@@ -196,10 +228,66 @@ def test_deployable_loader_accepts_old_and_new_while_source_reader_rejects_new(
         checkpoint_owner.load_fada_deployable_policy_checkpoint(
             adapted_path, device="cpu"
         ).checkpoint["schema_version"]
-        == "fada-adapted/v2"
+        == "fada-adapted/v3"
     )
     with pytest.raises(ValueError, match="unsupported"):
         load_fada_policy_checkpoint(adapted_path, device="cpu")
+
+
+def test_legacy_v2_linear_lora_remains_generic_playback_only(tmp_path: Path) -> None:
+    adaptation, checkpoint_owner = _owners()
+    legacy = adaptation._inject_fada_idm_legacy_linear_lora(
+        FADAPlannerIDMPolicy(_config()), adaptation.FADALoRAConfig.legacy(dropout=0.0)
+    )
+    with torch.no_grad():
+        next(
+            parameter
+            for name, parameter in adaptation.fada_adapter_named_parameters(legacy.policy)
+            if name.endswith("lora_B.weight")
+        ).fill_(0.125)
+    path = tmp_path / "legacy-v2.pt"
+    torch.save(
+        {
+            "schema_version": "fada-adapted/v2",
+            "architecture": asdict(legacy.policy.config),
+            "lora_config": {
+                "rank": legacy.lora_config.rank,
+                "alpha": legacy.lora_config.alpha,
+                "dropout": legacy.lora_config.dropout,
+                "target_modules": list(legacy.lora_config.target_modules),
+            },
+            "policy_state_dict": legacy.policy.state_dict(),
+            "trainable_parameter_names": list(
+                dict(adaptation.fada_adapter_named_parameters(legacy.policy))
+            ),
+            "optimizer_state_dict": {},
+            "source_checkpoint_sha256": "a" * 64,
+            "target_artifact_sha256": "b" * 64,
+            "completed_steps": 1,
+            "samples_seen": 1,
+            "runtime_config": {},
+        },
+        path,
+    )
+    legacy.policy.eval()
+    expected = legacy.policy(*_inputs(legacy.policy.config))
+
+    loaded = checkpoint_owner.load_fada_deployable_policy_checkpoint(path, device="cpu")
+    observed = loaded.policy(*_inputs(loaded.policy.config))
+
+    assert loaded.checkpoint["schema_version"] == "fada-adapted/v2"
+    assert loaded.checkpoint["lora_config"].get("adapter_type") is None
+    torch.testing.assert_close(observed.action_chunk, expected.action_chunk, rtol=1e-6, atol=1e-7)
+
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    payload["schema_version"] = "fada-adapted/v1"
+    payload["architecture"].pop("observation_contract")
+    legacy_v1_path = tmp_path / "legacy-v1.pt"
+    torch.save(payload, legacy_v1_path)
+    loaded_v1 = checkpoint_owner.load_fada_deployable_policy_checkpoint(
+        legacy_v1_path, device="cpu"
+    )
+    assert loaded_v1.policy.config.observation_contract == "legacy_actor_obs_v1"
 
 
 @pytest.mark.parametrize("mutation", ["architecture", "manifest", "schema"])
@@ -218,6 +306,7 @@ def test_adapted_checkpoint_rejects_identity_drift_before_returning_policy(
         lora_config=adapted.lora_config,
         source_checkpoint_sha256="e" * 64,
         target_artifact_sha256="f" * 64,
+        target_artifact_schema_version="fada-target-batch/v2",
         completed_steps=1,
         samples_seen=6,
         runtime_config={},
@@ -235,7 +324,7 @@ def test_adapted_checkpoint_rejects_identity_drift_before_returning_policy(
         checkpoint_owner.load_fada_adapted_checkpoint(path, device="cpu")
 
 
-def test_v2_adapted_checkpoint_requires_contract_and_legacy_v1_remains_readable(
+def test_v3_adapted_checkpoint_requires_contract(
     tmp_path: Path,
 ) -> None:
     adaptation, checkpoint_owner = _owners()
@@ -250,18 +339,48 @@ def test_v2_adapted_checkpoint_requires_contract_and_legacy_v1_remains_readable(
         lora_config=adapted.lora_config,
         source_checkpoint_sha256="a" * 64,
         target_artifact_sha256="b" * 64,
+        target_artifact_schema_version="fada-target-batch/v2",
         completed_steps=0,
         samples_seen=0,
         runtime_config={},
     )
     payload = torch.load(path, map_location="cpu", weights_only=True)
-    assert checkpoint_owner.FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION == "fada-adapted/v2"
+    assert checkpoint_owner.FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION == "fada-adapted/v3"
     payload["architecture"].pop("observation_contract")
     torch.save(payload, path)
     with pytest.raises(ValueError, match="observation_contract"):
         checkpoint_owner.load_fada_adapted_checkpoint(path, device="cpu")
 
-    payload["schema_version"] = "fada-adapted/v1"
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("target_artifact_schema_version", "fada-target-batch/v999", "artifact schema"),
+        ("target_domain_id", "wrong-domain", "target-domain identity"),
+    ],
+)
+def test_v3_adapted_checkpoint_rejects_target_lineage_drift(
+    tmp_path: Path, field: str, value: str, match: str
+) -> None:
+    adaptation, checkpoint_owner = _owners()
+    adapted = adaptation.inject_fada_idm_lora(
+        FADAPlannerIDMPolicy(_config()), adaptation.FADALoRAConfig(dropout=0.0)
+    )
+    path = tmp_path / "adapted.pt"
+    checkpoint_owner.save_fada_adapted_checkpoint(
+        path,
+        adapted.policy,
+        torch.optim.AdamW(adaptation.fada_adapter_parameters(adapted.policy), lr=3e-4),
+        lora_config=adapted.lora_config,
+        source_checkpoint_sha256="a" * 64,
+        target_artifact_sha256="b" * 64,
+        target_artifact_schema_version="fada-target-batch/v3",
+        completed_steps=0,
+        samples_seen=0,
+        runtime_config={"target_domain": {"target_domain_id": "g1_slope_15_mujoco"}},
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    payload[field] = value
     torch.save(payload, path)
-    loaded = checkpoint_owner.load_fada_adapted_checkpoint(path, device="cpu")
-    assert loaded.policy.config.observation_contract == "legacy_actor_obs_v1"
+    with pytest.raises(ValueError, match=match):
+        checkpoint_owner.load_fada_adapted_checkpoint(path, device="cpu")

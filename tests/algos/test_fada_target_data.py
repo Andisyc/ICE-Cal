@@ -60,6 +60,40 @@ def _metadata() -> dict[str, object]:
     }
 
 
+def _slope_metadata() -> dict[str, object]:
+    metadata = _metadata()
+    metadata.pop("fault_profile")
+    metadata.update(
+        {
+            "target_domain_id": "g1_slope_15_mujoco",
+            "target_domain_kind": "slope",
+            "command_sequence": [[0.75, 0.0, 0.0], [0.8, 0.0, 0.0], [0.85, 0.0, 0.0]],
+            "slope_geometry": {
+                "angle_deg": 15.0,
+                "width_m": 0.8,
+                "approach_length_m": 1.5,
+                "surface_length_m": 8.0,
+                "entry_margin_m": 0.25,
+                "finish_margin_m": 0.5,
+            },
+            "observation_contract": "legacy_actor_obs_v1",
+            "episode_count": 2,
+            "accepted_steps": 6000,
+            "rejected_pre_entry_steps": 75,
+            "rejected_command_windows": 0,
+            "termination_counts": {
+                "fall": 0,
+                "environment_termination": 0,
+                "truncated": 0,
+                "foot_exit": 1,
+                "finish": 0,
+            },
+            "randomization_disabled": True,
+        }
+    )
+    return metadata
+
+
 def _source_batch(config: FADAArchitectureConfig) -> FADASourceBatch:
     size = 1
     return FADASourceBatch(
@@ -142,7 +176,7 @@ def test_v2_target_artifact_owns_contract_and_legacy_v1_remains_readable(tmp_pat
     module.save_fada_target_artifact(path, _target_batch(), config=_config(), metadata=_metadata())
     payload = torch.load(path, map_location="cpu", weights_only=True)
 
-    assert module.FADA_TARGET_ARTIFACT_SCHEMA_VERSION == "fada-target-batch/v2"
+    assert payload["schema_version"] == "fada-target-batch/v2"
     assert payload["architecture"]["observation_contract"] == "legacy_actor_obs_v1"
 
     payload["architecture"].pop("observation_contract")
@@ -154,6 +188,81 @@ def test_v2_target_artifact_owns_contract_and_legacy_v1_remains_readable(tmp_pat
     torch.save(payload, path)
     loaded = module.load_fada_target_artifact(path, config=_config())
     torch.testing.assert_close(loaded.batch.command, _target_batch().command)
+
+
+def test_v3_slope_artifact_round_trip_owns_target_domain_identity(tmp_path) -> None:
+    module = _target_module()
+    path = tmp_path / "target.pt"
+
+    module.save_fada_target_artifact(
+        path,
+        _target_batch(),
+        config=_config(),
+        metadata=_slope_metadata(),
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    loaded = module.load_fada_target_artifact(path, config=_config())
+
+    assert module.FADA_TARGET_ARTIFACT_SCHEMA_VERSION == "fada-target-batch/v3"
+    assert payload["schema_version"] == "fada-target-batch/v3"
+    assert loaded.metadata["target_domain_id"] == "g1_slope_15_mujoco"
+
+
+def test_v3_slope_artifact_rejects_fault_or_incomplete_domain_metadata(tmp_path) -> None:
+    module = _target_module()
+    with pytest.raises(ValueError, match="must not contain fault_profile"):
+        module.save_fada_target_artifact(
+            tmp_path / "mixed.pt",
+            _target_batch(),
+            config=_config(),
+            metadata={**_slope_metadata(), "fault_profile": "right_knee_strength_0.9"},
+        )
+    incomplete = _slope_metadata()
+    incomplete.pop("slope_geometry")
+    with pytest.raises(ValueError, match="metadata missing"):
+        module.save_fada_target_artifact(
+            tmp_path / "incomplete.pt",
+            _target_batch(),
+            config=_config(),
+            metadata=incomplete,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda metadata: metadata.__setitem__("unknown", 1), "unknown fields"),
+        (
+            lambda metadata: metadata.__setitem__("randomization_disabled", False),
+            "randomization_disabled",
+        ),
+        (
+            lambda metadata: metadata.__setitem__("observation_contract", "wrong"),
+            "observation_contract",
+        ),
+        (
+            lambda metadata: metadata["termination_counts"].pop("truncated"),
+            "termination_counts",
+        ),
+        (
+            lambda metadata: metadata["command_sequence"].__setitem__(0, [0.8, 1.0, 0.0]),
+            "slope semantics",
+        ),
+        (
+            lambda metadata: metadata["slope_geometry"].__setitem__("width_m", -0.8),
+            "slope semantics",
+        ),
+        (lambda metadata: metadata.__setitem__("episode_count", 99), "episode_count"),
+    ],
+)
+def test_v3_slope_artifact_rejects_runtime_provenance_drift(tmp_path, mutation, match: str) -> None:
+    module = _target_module()
+    metadata = _slope_metadata()
+    mutation(metadata)
+    with pytest.raises(ValueError, match=match):
+        module.save_fada_target_artifact(
+            tmp_path / "target.pt", _target_batch(), config=_config(), metadata=metadata
+        )
 
 
 def test_target_artifact_rejects_architecture_or_metadata_drift(tmp_path) -> None:

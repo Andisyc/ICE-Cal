@@ -6,6 +6,7 @@ The concrete environment remains the sole owner of mutable state.
 from __future__ import annotations
 
 import copy
+from collections.abc import MutableMapping
 from typing import Any, cast
 
 import numpy as np
@@ -40,6 +41,22 @@ from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
 
 LEFT_FOOT_CONTACT_SENSORS = [f"left_foot_contact_{i}" for i in range(4)]
 RIGHT_FOOT_CONTACT_SENSORS = [f"right_foot_contact_{i}" for i in range(4)]
+
+
+def publish_walk_termination_provenance(
+    info: MutableMapping[str, Any],
+    *,
+    fall_terminated: np.ndarray,
+    forward_progress_terminated: np.ndarray,
+) -> None:
+    """Publish task termination causes without sharing mutable owner buffers."""
+
+    fall = np.asarray(fall_terminated, dtype=np.bool_)
+    forward = np.asarray(forward_progress_terminated, dtype=np.bool_)
+    if fall.ndim != 1 or forward.shape != fall.shape:
+        raise ValueError("G1 walk termination provenance masks must be matching rank-1 arrays")
+    info["fall_terminated"] = fall.copy()
+    info["forward_progress_terminated"] = forward.copy()
 
 
 class G1WalkRuntimeBindings:
@@ -163,11 +180,17 @@ class G1WalkRuntimeBindings:
 
         max_tilt_rad = np.deg2rad(self._reward_cfg.max_tilt_deg)
         tilt = np.arccos(np.clip(gravity[:, 2], -1, 1))
-        terminated = np.logical_or(
+        fall_terminated = np.logical_or(
             tilt > max_tilt_rad,
             self._terrain_relative_base_height() < self._reward_cfg.min_base_height,
         )
-        np.logical_or(terminated, self._forward_progress_failure(state.info), out=terminated)
+        forward_progress_terminated = self._forward_progress_failure(state.info)
+        terminated = np.logical_or(fall_terminated, forward_progress_terminated)
+        publish_walk_termination_provenance(
+            state.info,
+            fall_terminated=fall_terminated,
+            forward_progress_terminated=forward_progress_terminated,
+        )
 
         reward = self._compute_reward(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         self._debug_action_trace(

@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - algo: sac
+  - target_domain: slope_15
+  - adaptation: fada_slope_lora
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false
+  job_logging:
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+    root:
+      handlers: [console]

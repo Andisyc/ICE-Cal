@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
@@ -13,6 +13,13 @@ from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPl
 from unilab.algos.torch.distill.fada.observation import assert_fada_projection_matches_contract
 from unilab.algos.torch.distill.fada.playback import FADAPlaybackController
 from unilab.algos.torch.distill.fada.target_data import FADATargetBatch
+from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
+from unilab.algos.torch.distill.fada.target_rollout import (
+    apply_external_command,
+    rollout_done_flags,
+    rollout_terminal_reasons,
+    scheduled_target_command,
+)
 from unilab.algos.torch.distill.fada.windows import FADACausalTransition, build_fada_causal_window
 
 
@@ -40,6 +47,94 @@ class FADATargetCollectionResult:
     env_steps: int
     rejected_done_transitions: int
     rejected_command_windows: int
+    accepted_steps: int = 0
+    episode_count: int = 1
+    rejected_pre_entry_steps: int = 0
+    termination_counts: Mapping[str, int] | None = None
+    representative_physics_states: tuple[np.ndarray, ...] = ()
+
+
+@dataclass(frozen=True)
+class FADATargetStepDecision:
+    accept: bool
+    terminal_reason: str | None
+
+
+class FADATargetEpisodePolicy(Protocol):
+    def command_for_episode(self, episode_id: int) -> np.ndarray: ...
+
+    def classify(
+        self,
+        *,
+        base_pos_w: np.ndarray,
+        feet_pos_w: np.ndarray,
+        done: bool,
+    ) -> FADATargetStepDecision: ...
+
+
+class FADASlopeEpisodePolicy:
+    """Own command cycling and ramp-local episode acceptance for Stage C."""
+
+    def __init__(
+        self,
+        geometry: FADASlopeGeometry,
+        command_sequence: Sequence[Sequence[float]],
+    ) -> None:
+        commands = tuple(np.asarray(command, dtype=np.float32) for command in command_sequence)
+        if not commands or any(command.shape != (3,) for command in commands):
+            raise ValueError("FADA slope command sequence must contain 3-D commands")
+        self.geometry = geometry
+        self.commands = commands
+
+    def command_for_episode(self, episode_id: int) -> np.ndarray:
+        if episode_id < 0:
+            raise ValueError("FADA slope episode_id must be non-negative")
+        return self.commands[episode_id % len(self.commands)].copy()
+
+    def classify(
+        self,
+        *,
+        base_pos_w: np.ndarray,
+        feet_pos_w: np.ndarray,
+        done: bool,
+    ) -> FADATargetStepDecision:
+        if done:
+            return FADATargetStepDecision(False, "fall")
+        if self.geometry.foot_exited(feet_pos_w):
+            return FADATargetStepDecision(False, "foot_exit")
+        if self.geometry.has_finished(base_pos_w):
+            return FADATargetStepDecision(False, "finish")
+        return FADATargetStepDecision(
+            self.geometry.has_entered(base_pos_w, feet_pos_w),
+            None,
+        )
+
+
+def fada_target_window_budget(
+    config: FADAArchitectureConfig,
+    spec: FADATargetCollectionSpec,
+    *,
+    control_steps: int,
+) -> int:
+    """Derive usable steady-state windows from one executed control-step budget."""
+
+    if isinstance(control_steps, bool) or not isinstance(control_steps, int) or control_steps <= 0:
+        raise ValueError(f"control_steps must be a positive integer, got {control_steps!r}")
+    if spec.ramp_steps < 0 or spec.settle_steps < 0:
+        raise ValueError("FADA target ramp_steps and settle_steps must be non-negative")
+    record_count = config.history_length + config.prediction_horizon - 1
+    collection_start = int(spec.ramp_steps) + int(spec.settle_steps)
+    first_usable_step = max(
+        record_count,
+        collection_start + config.prediction_horizon,
+    )
+    windows = control_steps - first_usable_step + 1
+    if windows <= 0:
+        raise ValueError(
+            "control_steps cannot produce a usable window: "
+            f"control_steps={control_steps} first_usable_step={first_usable_step}"
+        )
+    return windows
 
 
 def _scheduled_command(spec: FADATargetCollectionSpec, step: int) -> np.ndarray:
@@ -57,16 +152,7 @@ def _scheduled_command(spec: FADATargetCollectionSpec, step: int) -> np.ndarray:
 
 
 def _apply_external_command(env: Any, command: np.ndarray) -> None:
-    state = getattr(env, "state", None)
-    info = getattr(state, "info", None)
-    commands = info.get("commands") if isinstance(info, dict) else None
-    if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
-        raise RuntimeError("FADA target command schedule requires env-owned command rows")
-    commands[:, :3] = command[None, :]
-    refresh = getattr(env, "refresh_state", None)
-    if not callable(refresh):
-        raise RuntimeError("FADA target command schedule requires env.refresh_state()")
-    refresh()
+    apply_external_command(env, command)
 
 
 def _module_device(module: torch.nn.Module) -> torch.device:
@@ -119,17 +205,8 @@ def _command_array(
 
 
 def _done_mask(state: Any, *, num_envs: int) -> np.ndarray:
-    done = np.zeros((int(num_envs),), dtype=np.bool_)
-    for value in (getattr(state, "terminated", None), getattr(state, "truncated", None)):
-        if value is None:
-            continue
-        current = np.asarray(value, dtype=np.bool_).reshape(-1)
-        if current.shape != done.shape:
-            raise ValueError(
-                f"done mask shape mismatch: expected {done.shape}, got {current.shape}"
-            )
-        done |= current
-    return done
+    terminated, truncated = rollout_done_flags(state, num_envs=num_envs)
+    return terminated | truncated
 
 
 def _concat_target_batches(
@@ -317,4 +394,223 @@ def collect_fada_target_windows(
         env_steps=env_steps,
         rejected_done_transitions=rejected_done,
         rejected_command_windows=rejected_command,
+    )
+
+
+def _single_body_state(env: Any) -> tuple[np.ndarray, np.ndarray]:
+    base = np.asarray(env.get_base_pos(), dtype=np.float64)
+    feet = np.asarray(env.get_foot_pos(), dtype=np.float64)
+    if base.shape != (1, 3) or feet.shape != (1, 2, 3):
+        raise ValueError(
+            "FADA slope collection requires base (1, 3) and feet (1, 2, 3), "
+            f"got base={base.shape} feet={feet.shape}"
+        )
+    return base[0].copy(), feet[0].copy()
+
+
+def _slope_command(
+    spec: FADATargetCollectionSpec,
+    target: np.ndarray,
+    episode_step: int,
+) -> np.ndarray:
+    if spec.command_start is None:
+        raise ValueError("FADA slope command_start must be configured")
+    return scheduled_target_command(
+        spec.command_start,
+        target,
+        ramp_steps=spec.ramp_steps,
+        step=episode_step,
+    )
+
+
+def collect_fada_slope_windows(
+    env: Any,
+    rollout_policy: FADAPlannerIDMPolicy,
+    config: FADAArchitectureConfig,
+    accepted_control_steps: int,
+    episode_policy: FADATargetEpisodePolicy,
+    spec: FADATargetCollectionSpec,
+) -> FADATargetCollectionResult:
+    """Collect target-only slope windows across isolated, explicit episodes."""
+
+    if int(accepted_control_steps) <= 0:
+        raise ValueError(f"accepted_control_steps must be positive, got {accepted_control_steps}")
+    if rollout_policy.config != config:
+        raise ValueError("rollout policy architecture must match target collection config")
+    if int(env.num_envs) != 1:
+        raise ValueError("FADA slope collection requires num_envs=1")
+    if spec.max_env_steps is None or int(spec.max_env_steps) <= 0:
+        raise ValueError("FADA slope collection requires a positive max_env_steps")
+    if spec.command_start is None:
+        raise ValueError("FADA slope collection requires command_start")
+    assert_fada_projection_matches_contract(
+        observation_contract=config.observation_contract,
+        projection=spec.student_projection,
+    )
+    set_autoreset = getattr(env, "set_autoreset", None)
+    if not callable(set_autoreset):
+        raise RuntimeError("FADA slope collection requires env.set_autoreset()")
+    set_autoreset(False)
+
+    controller = FADAPlaybackController(rollout_policy, device=_module_device(rollout_policy))
+    record_count = config.history_length + config.prediction_horizon - 1
+    records: deque[FADACausalTransition] = deque(maxlen=record_count)
+    previous_action = np.zeros((config.action_dim,), dtype=np.float32)
+    batches: list[FADATargetBatch] = []
+    termination_counts: dict[str, int] = {
+        "fall": 0,
+        "environment_termination": 0,
+        "truncated": 0,
+        "foot_exit": 0,
+        "finish": 0,
+    }
+    representative: tuple[np.ndarray, ...] = ()
+    episode_states: list[np.ndarray] = []
+    episode_accepted = 0
+    episode_id = 0
+    episode_step = 0
+    env_steps = 0
+    accepted_steps = 0
+    rejected_pre_entry = 0
+    rejected_command = 0
+
+    def reset_episode() -> tuple[dict[str, np.ndarray], dict[str, Any], np.ndarray]:
+        nonlocal previous_action, episode_step, episode_states, episode_accepted
+        state = env.reset_all()
+        controller.reset()
+        records.clear()
+        previous_action = np.zeros((config.action_dim,), dtype=np.float32)
+        episode_step = 0
+        episode_accepted = 0
+        episode_states = [np.asarray(env.get_physics_state_snapshot()).copy()]
+        obs = {key: np.asarray(value).copy() for key, value in state.obs.items()}
+        info = dict(state.info)
+        projected = project_student_obs(
+            _observation_array(obs, spec.observation_key),
+            projection=spec.student_projection,
+            expected_student_obs_dim=config.obs_dim,
+            student_drop_index=spec.student_drop_index,
+        )
+        return obs, info, projected
+
+    obs, info, student_obs = reset_episode()
+    while accepted_steps < int(accepted_control_steps) and env_steps < int(spec.max_env_steps):
+        target = episode_policy.command_for_episode(episode_id)
+        command_now = _slope_command(spec, target, episode_step)
+        _apply_external_command(env, command_now)
+        obs = {key: np.asarray(value).copy() for key, value in env.state.obs.items()}
+        info = dict(env.state.info)
+        student_obs = project_student_obs(
+            _observation_array(obs, spec.observation_key),
+            projection=spec.student_projection,
+            expected_student_obs_dim=config.obs_dim,
+            student_drop_index=spec.student_drop_index,
+        )
+        command = _command_array(
+            info,
+            spec.command_info_keys,
+            expected_rows=1,
+            expected_dim=config.command_dim,
+        )
+        base_before, feet_before = _single_body_state(env)
+        before = episode_policy.classify(
+            base_pos_w=base_before,
+            feet_pos_w=feet_before,
+            done=False,
+        )
+        if before.terminal_reason is not None:
+            termination_counts[before.terminal_reason] = (
+                termination_counts.get(before.terminal_reason, 0) + 1
+            )
+            if episode_accepted > 0 and len(episode_states) > len(representative):
+                representative = tuple(episode_states)
+            episode_id += 1
+            obs, info, student_obs = reset_episode()
+            continue
+
+        actions = (
+            controller.act_projected(student_obs, command).detach().cpu().numpy().astype(np.float32)
+        )
+        next_state = env.step(actions)
+        env_steps += 1
+        episode_step += 1
+        episode_states.append(np.asarray(env.get_physics_state_snapshot()).copy())
+        base_after, feet_after = _single_body_state(env)
+        after = episode_policy.classify(
+            base_pos_w=base_after,
+            feet_pos_w=feet_after,
+            done=False,
+        )
+        lifecycle_reason = rollout_terminal_reasons(next_state, num_envs=1)[0]
+        if lifecycle_reason is not None:
+            after = FADATargetStepDecision(False, lifecycle_reason)
+        next_obs = {key: np.asarray(value).copy() for key, value in next_state.obs.items()}
+        next_info = dict(next_state.info)
+        next_student_obs = project_student_obs(
+            _observation_array(next_obs, spec.observation_key),
+            projection=spec.student_projection,
+            expected_student_obs_dim=config.obs_dim,
+            student_drop_index=spec.student_drop_index,
+        )
+
+        collection_ready = episode_step - 1 >= int(spec.ramp_steps) + int(spec.settle_steps)
+        if before.accept and collection_ready and after.terminal_reason is None:
+            records.append(
+                FADACausalTransition(
+                    observation=student_obs[0].copy(),
+                    previous_action=previous_action.copy(),
+                    command=command[0].copy(),
+                    executed_action=actions[0].copy(),
+                    next_observation=next_student_obs[0].copy(),
+                    episode_id=episode_id,
+                    timestep=episode_step - 1,
+                )
+            )
+            accepted_steps += 1
+            episode_accepted += 1
+            if len(records) == record_count:
+                window = _target_batch_from_window(tuple(records), config)
+                if window is None:
+                    rejected_command += 1
+                else:
+                    batches.append(window)
+        elif not before.accept or not collection_ready:
+            rejected_pre_entry += 1
+            records.clear()
+
+        previous_action = actions[0].copy()
+        obs, info, student_obs = next_obs, next_info, next_student_obs
+        if after.terminal_reason is not None:
+            termination_counts[after.terminal_reason] = (
+                termination_counts.get(after.terminal_reason, 0) + 1
+            )
+            if episode_accepted > 0 and len(episode_states) > len(representative):
+                representative = tuple(episode_states)
+            episode_id += 1
+            obs, info, student_obs = reset_episode()
+
+    if accepted_steps < int(accepted_control_steps):
+        raise RuntimeError(
+            f"FADA slope collector accepted {accepted_steps}/{accepted_control_steps} steps after "
+            f"{env_steps} env steps; accepted_steps={accepted_steps} episodes={episode_id + 1} "
+            f"terminations={termination_counts}"
+        )
+    if not batches:
+        raise RuntimeError("FADA slope collector produced no complete causal windows")
+    if episode_accepted > 0 and len(episode_states) > len(representative):
+        representative = tuple(episode_states)
+    return FADATargetCollectionResult(
+        batch=_concat_target_batches(batches, config),
+        env_steps=env_steps,
+        rejected_done_transitions=(
+            termination_counts["fall"]
+            + termination_counts["environment_termination"]
+            + termination_counts["truncated"]
+        ),
+        rejected_command_windows=rejected_command,
+        accepted_steps=accepted_steps,
+        episode_count=episode_id + 1,
+        rejected_pre_entry_steps=rejected_pre_entry,
+        termination_counts=termination_counts,
+        representative_physics_states=representative,
     )

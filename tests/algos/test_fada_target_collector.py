@@ -149,6 +149,58 @@ class _V2Env:
         return self._state()
 
 
+class _SlopeEnv(_V2Env):
+    def __init__(
+        self,
+        *,
+        terminate_once: bool = False,
+        truncate_once: bool = False,
+        fall_once: bool = False,
+    ) -> None:
+        super().__init__()
+        self.terminate_once = terminate_once
+        self.truncate_once = truncate_once
+        self.fall_once = fall_once
+        self.did_terminate = False
+        self.did_truncate = False
+        self.did_fall = False
+        self.state = self._state()
+
+    def set_autoreset(self, enabled: bool) -> None:
+        assert enabled is False
+
+    def reset_all(self) -> _State:
+        self.state = super().reset_all()
+        return self.state
+
+    def refresh_state(self) -> None:
+        pass
+
+    def step(self, actions: np.ndarray) -> _State:
+        state = super().step(actions)
+        if self.terminate_once and not self.did_terminate and self.step_count == 2:
+            state.terminated[:] = True
+            self.did_terminate = True
+        if self.truncate_once and not self.did_truncate and self.step_count == 2:
+            state.truncated[:] = True
+            self.did_truncate = True
+        if self.fall_once and not self.did_fall and self.step_count == 2:
+            state.terminated[:] = True
+            state.info["fall_terminated"] = np.ones((1,), dtype=np.bool_)
+            self.did_fall = True
+        self.state = state
+        return state
+
+    def get_base_pos(self) -> np.ndarray:
+        return np.asarray([[2.0, 0.0, 0.3]])
+
+    def get_foot_pos(self) -> np.ndarray:
+        return np.asarray([[[2.0, 0.1, 0.2], [2.0, -0.1, 0.2]]])
+
+    def get_physics_state_snapshot(self) -> np.ndarray:
+        return np.asarray([self.step_count], dtype=np.float32)
+
+
 def test_target_collector_consumes_preprojected_v2_observation_once() -> None:
     module = _target_module()
 
@@ -165,6 +217,29 @@ def test_target_collector_consumes_preprojected_v2_observation_once() -> None:
 
     assert result.batch.observation_history.shape == (1, 2, 66)
     assert result.batch.executed_action_chunk.shape == (1, 2, 29)
+
+
+def test_target_control_step_budget_derives_usable_windows_from_architecture() -> None:
+    module = _target_module()
+    config = FADAArchitectureConfig(
+        obs_dim=66,
+        action_dim=29,
+        command_dim=3,
+        observation_contract="g1_fada_state_v2",
+        history_length=30,
+        prediction_horizon=6,
+        hidden_dim=128,
+        num_heads=4,
+        planner_layers=3,
+        idm_encoder_layers=3,
+        idm_decoder_layers=2,
+        feedforward_dim=256,
+    )
+    spec = module.FADATargetCollectionSpec(ramp_steps=25, settle_steps=50)
+
+    assert module.fada_target_window_budget(config, spec, control_steps=6000) == 5920
+    with pytest.raises(ValueError, match="control_steps.*usable window"):
+        module.fada_target_window_budget(config, spec, control_steps=35)
 
 
 def test_target_collector_builds_exact_oracle_free_executed_window() -> None:
@@ -371,3 +446,80 @@ def test_target_collector_captures_reset_frame_before_first_action() -> None:
     )
 
     assert events == ["initial", "step", "step", "step"]
+
+
+def test_slope_episode_policy_cycles_commands_and_classifies_boundaries() -> None:
+    from unilab.algos.torch.distill.fada.target_collector import FADASlopeEpisodePolicy
+    from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
+
+    geometry = FADASlopeGeometry(15.0, 0.8, 1.5, 8.0, 0.25, 0.5)
+    policy = FADASlopeEpisodePolicy(
+        geometry,
+        ((0.75, 0.0, 0.0), (0.8, 0.0, 0.0), (0.85, 0.0, 0.0)),
+    )
+    np.testing.assert_allclose(policy.command_for_episode(4), [0.8, 0.0, 0.0])
+
+    feet = np.array([[2.0, 0.1, 0.2], [2.0, -0.1, 0.2]])
+    assert (
+        policy.classify(base_pos_w=np.array([1.6, 0.0, 0.2]), feet_pos_w=feet, done=False).accept
+        is False
+    )
+    assert (
+        policy.classify(base_pos_w=np.array([2.0, 0.0, 0.2]), feet_pos_w=feet, done=False).accept
+        is True
+    )
+    exited = feet.copy()
+    exited[0, 1] = 0.41
+    assert (
+        policy.classify(
+            base_pos_w=np.array([2.0, 0.0, 0.2]), feet_pos_w=exited, done=False
+        ).terminal_reason
+        == "foot_exit"
+    )
+    assert (
+        policy.classify(
+            base_pos_w=np.array([9.0, 0.0, 2.0]), feet_pos_w=feet, done=False
+        ).terminal_reason
+        == "finish"
+    )
+    assert (
+        policy.classify(
+            base_pos_w=np.array([2.0, 0.0, 0.2]), feet_pos_w=feet, done=True
+        ).terminal_reason
+        == "fall"
+    )
+
+
+@pytest.mark.parametrize(
+    ("flag", "reason"),
+    [
+        ("terminate_once", "environment_termination"),
+        ("truncate_once", "truncated"),
+        ("fall_once", "fall"),
+    ],
+)
+def test_slope_collection_owns_exact_accepted_steps_and_terminal_provenance(
+    flag: str, reason: str
+) -> None:
+    module = _target_module()
+    env = _SlopeEnv(**{flag: True})
+    from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
+
+    geometry = FADASlopeGeometry(15.0, 0.8, 1.5, 8.0, 0.25, 0.5)
+    result = module.collect_fada_slope_windows(
+        env,
+        _V2Policy(),
+        _V2Policy().config,
+        4,
+        module.FADASlopeEpisodePolicy(geometry, ((0.8, 0.0, 0.0),)),
+        module.FADATargetCollectionSpec(
+            max_env_steps=20,
+            command_start=(0.8, 0.0, 0.0),
+            student_projection="g1_fada_state_v2",
+        ),
+    )
+
+    assert result.accepted_steps == 4
+    assert result.termination_counts is not None
+    assert result.termination_counts[reason] == 1
+    assert result.batch.observation_history.shape[0] == 1

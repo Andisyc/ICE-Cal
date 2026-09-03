@@ -52,6 +52,24 @@ def _compose(*overrides: str) -> DictConfig:
         )
 
 
+def _compose_slope(*overrides: str) -> DictConfig:
+    with initialize_config_dir(config_dir=str(CONF_DIR), version_base="1.3"):
+        return compose(
+            config_name="fada_slope_adapt",
+            overrides=list(overrides),
+            return_hydra_config=True,
+        )
+
+
+def test_slope_adaptation_reads_target_only_v3_artifact() -> None:
+    cfg = _compose_slope()
+
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
+    assert cfg.adaptation.target_artifact_path.endswith("g1_slope_15_mujoco/target.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_15_mujoco_v3.pt")
+    assert cfg.adaptation.rank == 8
+
+
 def _config() -> FADAArchitectureConfig:
     return FADAArchitectureConfig(
         obs_dim=66,
@@ -148,7 +166,7 @@ def test_right_knee_adaptation_uses_the_matching_stage_c_bundle() -> None:
 
     assert cfg.fault.actuator_index == 9
     assert cfg.adaptation.target_artifact_path.endswith("right_knee_090/faulty.pt")
-    assert cfg.adaptation.output_checkpoint_path.endswith("right_knee_090_v2.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("right_knee_090_v3.pt")
 
 
 def test_preflight_builds_frozen_adapter_and_writes_nothing(tmp_path: Path) -> None:
@@ -230,6 +248,9 @@ def test_preflight_rejects_legacy_source_before_target_load_or_optimizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script()
+    owner = importlib.import_module(
+        "unilab.algos.torch.distill.fada.target_adaptation_workflow"
+    )
     source = tmp_path / "legacy-source.pt"
     target = tmp_path / "target.pt"
     source.write_bytes(b"legacy")
@@ -258,7 +279,7 @@ def test_preflight_rejects_legacy_source_before_target_load_or_optimizer(
         )
     )
     monkeypatch.setattr(
-        module,
+        owner,
         "load_fada_policy_checkpoint",
         lambda *_args, **_kwargs: type(
             "Loaded", (), {"policy": legacy_policy, "checkpoint": {"schema_version": 2}}
@@ -271,7 +292,7 @@ def test_preflight_rejects_legacy_source_before_target_load_or_optimizer(
         target_loads += 1
         raise AssertionError("legacy source must fail before target loading")
 
-    monkeypatch.setattr(module, "load_fada_target_artifact", forbidden_target_load)
+    monkeypatch.setattr(owner, "load_fada_target_artifact", forbidden_target_load)
 
     with pytest.raises(ValueError, match="requires current schema-5"):
         module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
@@ -332,8 +353,12 @@ def test_confirmed_one_update_runs_official_transaction_and_persists_resume_stat
         adapted_name = name
         if name.startswith("idm."):
             module_name, separator, parameter_name = name.removeprefix("idm.").rpartition(".")
-            if separator and module_name in targets and parameter_name in {"weight", "bias"}:
-                adapted_name = f"idm.{module_name}.base.{parameter_name}"
+            if separator:
+                for target in targets:
+                    if module_name == target or module_name.startswith(f"{target}."):
+                        suffix = module_name.removeprefix(target)
+                        adapted_name = f"idm.{target}.base{suffix}.{parameter_name}"
+                        break
         torch.testing.assert_close(adapted_state[adapted_name], expected, rtol=0.0, atol=0.0)
 
 

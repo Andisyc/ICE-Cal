@@ -43,3 +43,8 @@ evidence, and policy quality have not run.
 
 Historical failed routes and old receipts are evidence, not policy-quality proof and not authority
 to revive a superseded design.
+
+The approved 15-degree narrow-slope reproduction has a separate operational
+runbook at `docs/runbooks/fada-slope-traversal.md`. It keeps source training,
+target-only collection, Q/V-only IDM LoRA adaptation, and same-snapshot
+before/after evaluation as four distinct evidence boundaries.

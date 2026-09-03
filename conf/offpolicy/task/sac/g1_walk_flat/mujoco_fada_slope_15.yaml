@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_target
+  - _self_
+
+env:
+  scene:
+    model_file: src/unilab/assets/robots/g1/scene_slope_15.xml
+  noise_config:
+    level: 0.0
+  control_config:
+    simulate_action_latency: false
+  domain_rand:
+    randomize_reset_pose: false
+    randomize_base_mass: false
+    randomize_body_mass: false
+    random_com: false
+    randomize_gravity: false
+    randomize_ground_friction: false
+    randomize_dof_armature: false
+    push_robots: false
+    randomize_kp: false
+    randomize_kd: false
+    randomize_dof_position_bias: false
+    randomize_control_delay: false
+    torque_rfi_fraction: 0.0
+    actuator_strength:
+      enabled: false
+      multipliers: []

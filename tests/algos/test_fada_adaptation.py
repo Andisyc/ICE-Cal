@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -112,15 +113,12 @@ def test_lora_injection_is_zero_delta_and_has_exact_trainable_owner() -> None:
     assert adapted.lora_config.rank == 8
     assert adapted.lora_config.alpha == 16.0
     assert adapted.lora_config.dropout == 0.05
+    assert adapted.lora_config.adapter_type == "qv_attention"
+    assert adapted.lora_config.target_projections == ("q", "v")
     assert adapted.lora_config.target_modules == (
-        "observation_embedding",
-        "action_embedding",
-        "history_encoder.layers.0.linear1",
-        "history_encoder.layers.0.linear2",
-        "future_embedding",
-        "future_decoder.layers.0.linear1",
-        "future_decoder.layers.0.linear2",
-        "action_head",
+        "history_encoder.layers.0.self_attn",
+        "future_decoder.layers.0.self_attn",
+        "future_decoder.layers.0.multihead_attn",
     )
     torch.testing.assert_close(
         observed.predicted_future, baseline.predicted_future, rtol=1e-6, atol=1e-7
@@ -128,12 +126,126 @@ def test_lora_injection_is_zero_delta_and_has_exact_trainable_owner() -> None:
     torch.testing.assert_close(observed.action_chunk, baseline.action_chunk, rtol=1e-6, atol=2e-7)
 
     trainable = dict(owner.fada_adapter_named_parameters(adapted.policy))
-    assert trainable
-    assert all(name.endswith(("lora_A.weight", "lora_B.weight")) for name in trainable)
+    expected_adapter_names = {
+        f"idm.{module}.lora_{projection}_{matrix}.weight"
+        for module in adapted.lora_config.target_modules
+        for projection in ("q", "v")
+        for matrix in ("A", "B")
+    }
+    assert set(trainable) == expected_adapter_names
     assert {
         name for name, parameter in adapted.policy.named_parameters() if parameter.requires_grad
     } == (set(trainable))
     assert all(not parameter.requires_grad for parameter in adapted.policy.planner.parameters())
+
+
+def test_lora_injection_preserves_eval_mode_and_zero_delta_with_dropout() -> None:
+    owner = _owner()
+    torch.manual_seed(17)
+    config = replace(_config(), dropout=0.2)
+    policy = FADAPlannerIDMPolicy(config).eval()
+    inputs = _inputs(config)
+    baseline = policy(*inputs)
+
+    adapted = owner.inject_fada_idm_lora(policy, owner.FADALoRAConfig(dropout=0.05))
+    observed = adapted.policy(*inputs)
+
+    assert not adapted.policy.training
+    assert all(
+        not adapted.policy.idm.get_submodule(name).training
+        for name in adapted.lora_config.target_modules
+    )
+    torch.testing.assert_close(observed.predicted_future, baseline.predicted_future)
+    torch.testing.assert_close(observed.action_chunk, baseline.action_chunk)
+
+
+def test_lora_injection_preserves_train_mode() -> None:
+    owner = _owner()
+    policy = FADAPlannerIDMPolicy(replace(_config(), dropout=0.2)).train()
+
+    adapted = owner.inject_fada_idm_lora(policy, owner.FADALoRAConfig())
+
+    assert adapted.policy.training
+    assert all(
+        adapted.policy.idm.get_submodule(name).training
+        for name in adapted.lora_config.target_modules
+    )
+
+
+def test_production_idm_lora_targets_all_seven_attention_modules() -> None:
+    owner = _owner()
+    config = FADAArchitectureConfig(
+        obs_dim=66,
+        action_dim=29,
+        command_dim=3,
+        observation_contract="g1_fada_state_v2",
+        history_length=30,
+        prediction_horizon=6,
+        hidden_dim=128,
+        num_heads=4,
+        planner_layers=3,
+        idm_encoder_layers=3,
+        idm_decoder_layers=2,
+        feedforward_dim=256,
+    )
+
+    adapted = owner.inject_fada_idm_lora(
+        FADAPlannerIDMPolicy(config), owner.FADALoRAConfig(dropout=0.0)
+    )
+
+    assert len(adapted.lora_config.target_modules) == 7
+    assert len(dict(owner.fada_adapter_named_parameters(adapted.policy))) == 28
+    assert all(
+        isinstance(adapted.policy.idm.get_submodule(name), owner.FADALoRAQVMultiheadAttention)
+        for name in adapted.lora_config.target_modules
+    )
+    for name in adapted.lora_config.target_modules:
+        module = adapted.policy.idm.get_submodule(name)
+        assert module.lora_q_A.weight.shape == (8, 128)
+        assert module.lora_q_B.weight.shape == (128, 8)
+        assert module.lora_v_A.weight.shape == (8, 128)
+        assert module.lora_v_B.weight.shape == (128, 8)
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_zero_delta_qv_attention_preserves_native_mask_and_weight_behavior(
+    training: bool,
+) -> None:
+    owner = _owner()
+    torch.manual_seed(31)
+    base = torch.nn.MultiheadAttention(8, 2, dropout=0.0, batch_first=True)
+    query = torch.randn(2, 3, 8)
+    memory = torch.randn(2, 4, 8)
+    key_padding_mask = torch.tensor([[False, False, False, True], [False] * 4])
+    attn_mask = torch.zeros((3, 4), dtype=torch.bool)
+    attn_mask[0, 3] = True
+    base.train(training)
+    expected, expected_weights = base(
+        query,
+        memory,
+        memory,
+        key_padding_mask=key_padding_mask,
+        attn_mask=attn_mask,
+        need_weights=True,
+    )
+    adapted = owner.FADALoRAQVMultiheadAttention(
+        base,
+        rank=4,
+        alpha=8.0,
+        dropout=0.0,
+    ).train(training)
+
+    observed, observed_weights = adapted(
+        query,
+        memory,
+        memory,
+        key_padding_mask=key_padding_mask,
+        attn_mask=attn_mask,
+        need_weights=True,
+    )
+
+    torch.testing.assert_close(observed, expected, rtol=1e-6, atol=1e-7)
+    torch.testing.assert_close(observed_weights, expected_weights, rtol=1e-6, atol=1e-7)
 
 
 @pytest.mark.parametrize(
@@ -172,7 +284,7 @@ def test_lora_backward_reaches_every_adapter_and_no_frozen_parameter() -> None:
     assert any(
         bool(torch.any(parameter.grad != 0.0))
         for name, parameter in adapters.items()
-        if name.endswith("lora_B.weight")
+        if name.endswith(("lora_q_B.weight", "lora_v_B.weight"))
     )
     assert all(
         parameter.grad is None
@@ -264,6 +376,10 @@ def test_one_update_changes_only_adapters_and_steps_exactly_once() -> None:
         FADAPlannerIDMPolicy(_config()), owner.FADALoRAConfig(dropout=0.0)
     )
     adapters = dict(owner.fada_adapter_named_parameters(adapted.policy))
+    frozen_attention = {
+        name: adapted.policy.idm.get_submodule(name).base.in_proj_weight.detach().clone()
+        for name in adapted.lora_config.target_modules
+    }
 
     class _CountingSGD(torch.optim.SGD):
         steps = 0
@@ -298,6 +414,16 @@ def test_one_update_changes_only_adapters_and_steps_exactly_once() -> None:
     for name, before in frozen_before.items():
         torch.testing.assert_close(
             dict(adapted.policy.named_parameters())[name], before, rtol=0, atol=0
+        )
+    hidden_dim = adapted.policy.config.hidden_dim
+    for name, before in frozen_attention.items():
+        current = adapted.policy.idm.get_submodule(name).base.in_proj_weight
+        torch.testing.assert_close(current, before, rtol=0, atol=0)
+        torch.testing.assert_close(
+            current[hidden_dim : 2 * hidden_dim],
+            before[hidden_dim : 2 * hidden_dim],
+            rtol=0,
+            atol=0,
         )
 
 

@@ -1,0 +1,54 @@
+<mujoco model="g1_29dof 15 degree slope scene">
+  <include file="g1.xml"/>
+
+  <statistic center="3.5 0 1.2" extent="5.5"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <geom name="approach" type="box" pos="0.25 0 -0.05" size="1.25 0.4 0.05" material="groundplane"/>
+    <geom name="slope_15" type="box" pos="5.376 0 0.987" size="4 0.4 0.05" euler="0 -0.2617993877991494 0" material="groundplane"/>
+  </worldbody>
+
+  <sensor>
+    <contact name="left_foot_contact_0" geom2="left_foot_contact_0_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="left_foot_contact_1" geom2="left_foot_contact_1_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="left_foot_contact_2" geom2="left_foot_contact_2_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="left_foot_contact_3" geom2="left_foot_contact_3_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="right_foot_contact_0" geom2="right_foot_contact_0_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="right_foot_contact_1" geom2="right_foot_contact_1_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="right_foot_contact_2" geom2="right_foot_contact_2_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="right_foot_contact_3" geom2="right_foot_contact_3_geom" data="found" num="1" reduce="mindist"/>
+    <contact name="left_foot_net_contact" body2="left_ankle_roll_link" data="found force" num="1" reduce="netforce"/>
+    <contact name="right_foot_net_contact" body2="right_ankle_roll_link" data="found force" num="1" reduce="netforce"/>
+  </sensor>
+
+  <keyframe>
+    <key name="stand"
+      qpos="
+      0 0 0.754
+      1 0 0 0
+      -0.312 0.0 0.0 0.669 -0.363 0.0
+      -0.312 0.0 0.0 0.669 -0.363 0.0
+      0.0 0.0 0.0
+      0.2  0.2 0.0 0.6 0.0 0.0 0.0
+      0.2 -0.2 0.0 0.6 0.0 0.0 0.0"
+      ctrl="
+      -0.312 0.0 0.0 0.669 -0.363 0.0
+      -0.312 0.0 0.0 0.669 -0.363 0.0
+      0.0 0.0 0.0
+      0.2  0.2 0.0 0.6 0.0 0.0 0.0
+      0.2 -0.2 0.0 0.6 0.0 0.0 0.0"/>
+  </keyframe>
+</mujoco>

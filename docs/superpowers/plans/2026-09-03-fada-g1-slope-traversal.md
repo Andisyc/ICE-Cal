@@ -22,9 +22,43 @@
 - Do not add action clipping, clamping, min/max, tanh, or slope-specific control correction.
 - Slope mode rejects randomization, observation noise, pushes, latency randomization, and actuator faults.
 - LoRA freezes Planner and base IDM and trains only existing IDM Q/V attention adapters with rank 8, alpha 16, and dropout 0.05.
-- Before editing a dirty file, capture its current diff. Stage only task-owned hunks and never stage experiment artifacts.
+- Before editing a dirty file, capture its current diff. Keep task-owned hunks
+  distinguishable and never stage experiment artifacts.
+- The current dirty working tree's Q/V-attention LoRA and `fada-adapted/v3`
+  loader are a required prerequisite, covered by the pre-change `54 passed`
+  baseline. Do not recreate, revert, or reinterpret them from committed `HEAD`.
+- This execution has no Git-action authority. Replace each planned task commit
+  with an execution-ledger checkpoint and leave implementation unstaged.
 
 ## File Map
+
+## Validated Dirty-Tree Prerequisite
+
+The approved slope work consumes, but does not redefine, the existing Q/V LoRA
+implementation. Freeze its pre-execution identity as:
+
+```text
+adaptation.py                    94f5ae8d29902a1694cd0c6f9c80c114e0860bcd3b80080803541efcfa3c3d0e
+adaptation_checkpoint.py         6e0814ad9d4037313fcec81b6db19382140e585cc9a75bcec5a39bf9ec1e7a21
+test_fada_adaptation.py          cc9c4edef2339567edafda342eba06d2b25a34c9da723196ce38410acd64492a
+test_fada_adaptation_checkpoint.py 242489fdd47dddd8e316e0fbfee41a70b98ea643081982dcffb85576be7b83ea
+test_adapt_fada_target.py        f17adc1f237ad90adacf8977052314ca07b3ba895dd70a0274032628877a7de2
+```
+
+Before slope edits, the focused prerequisite command produced `54 passed`:
+
+```bash
+uv run --frozen --no-sync pytest -q \
+  tests/algos/test_fada_target_collector.py \
+  tests/algos/test_fada_target_data.py \
+  tests/scripts/test_collect_fada_target.py \
+  tests/scripts/test_adapt_fada_target.py
+```
+
+Any necessary edit to a hashed prerequisite file must preserve the Q/V target
+manifest, v1/v2 legacy loading, v3 deployable loading, frozen Planner/base IDM,
+and its existing tests. A failing prerequisite test stops slope work until the
+same working-tree behavior is restored.
 
 New owner modules:
 
@@ -33,6 +67,8 @@ New owner modules:
 - `target_slope_workflow.py`: target-only slope collection and publication.
 - `slope_metrics.py`: ramp-frame metrics.
 - `target_evaluation.py`: identical-condition zero-shot/adapted evaluation.
+- `target_adaptation_workflow.py`: Stage D preflight, admission, optimization,
+  and persistence transaction moved out of the script.
 
 New configuration and entrypoints:
 
@@ -96,7 +132,7 @@ def resolve_fada_target_domain(cfg: DictConfig) -> FADATargetDomainSpec: ...
 - [ ] Run RED: `uv run --frozen --no-sync pytest -q tests/algos/test_fada_target_domain.py`.
 - [ ] Implement immutable specs, finite/range validation, vectorized world-to-ramp coordinates, and an explicit legacy `cfg.fault -> actuator_gain` conversion only when `target_domain` is absent.
 - [ ] Export the three public symbols and rerun the focused test plus Ruff.
-- [ ] Commit the new owner, facade hunk, and test as `feat: add typed FADA target domains`.
+- [ ] Record the GREEN commands and changed files in the execution ledger; do not stage or commit.
 
 ## Task 2: Deterministic Slope Scene and Task State
 
@@ -112,24 +148,38 @@ def get_foot_pos(self) -> np.ndarray:
     return np.stack((left, right), axis=1)
 ```
 
-The scene retains `scene_flat.xml` assets, sensors, actuators, visuals, and `stand` keyframe, but replaces the infinite floor with:
+The scene retains `scene_flat.xml` assets, actuators, visuals, and `stand`
+keyframe, but replaces the infinite floor with:
 
 ```xml
 <geom name="approach" type="box" pos="0.25 0 -0.05"
       size="1.25 0.4 0.05" material="groundplane" contype="1" conaffinity="1"/>
 <geom name="slope_15" type="box" pos="5.376 0 0.987"
-      size="4.0 0.4 0.05" euler="0 -15 0"
+      size="4.0 0.4 0.05" euler="0 -0.2617993877991494 0"
       material="groundplane" contype="1" conaffinity="1"/>
 ```
 
+It preserves the canonical sensor names with foot-side-only selectors, which
+MuJoCo accepts and aggregates across both ground geoms:
+
+```xml
+<contact name="left_foot_contact_0" geom2="left_foot_contact_0_geom"
+         data="found" num="1" reduce="mindist"/>
+<contact name="left_foot_net_contact" body2="left_ankle_roll_link"
+         data="found force" num="1" reduce="netforce"/>
+```
+
+Apply the same pattern to all four point sensors and the net sensor for both
+feet.
+
 - [ ] Write a failing config test asserting `G1WalkFlat`, MuJoCo, slope scene path, 98-D raw observation compatibility, and 29 actions.
-- [ ] Write a failing XML test that loads through MuJoCo and derives 15 degrees, 0.8 m width, 8.0 m surface length, a ramp entry at `x=1.5`, and flat support extending from `x=-1.0` to the entry.
+- [ ] Write a failing XML test that loads through MuJoCo and derives 15 degrees, 0.8 m width, 8.0 m surface length, a ramp entry at `x=1.5`, and flat support extending from `x=-1.0` to the entry. Assert every canonical foot-contact sensor loads and does not name one ground geom.
 - [ ] Write a failing fake-backend test for `get_foot_pos()` shape/order and malformed sensor shapes.
 - [ ] Run RED with `uv run --frozen --no-sync pytest -q tests/envs/test_env_configs.py tests/scripts/test_collect_fada_target.py -k 'slope or foot_pos'`.
 - [ ] Create the task-level XML without touching `g1.xml`; implement the task accessor using declared sensor data only.
-- [ ] Create a Hydra task owner inheriting `/task/sac/g1_walk_flat/mujoco_fada_target`, overriding only the scene path, and preserving task/checkpoint identity.
+- [ ] Create a Hydra task owner inheriting `/task/sac/g1_walk_flat/mujoco_fada_target`, preserving task/checkpoint identity while explicitly overriding scene, `noise_config.level=0`, actuator-strength randomization off, latency off, pushes off, and every inherited randomization switch off.
 - [ ] Rerun tests and cold-load XML with `uv run --frozen --no-sync python -c 'import mujoco; mujoco.MjModel.from_xml_path("src/unilab/assets/robots/g1/scene_slope_15.xml")'`.
-- [ ] Commit Task 2 as `feat: add deterministic G1 slope scene`.
+- [ ] Record the GREEN commands and changed files in the execution ledger; do not stage or commit.
 
 ## Task 3: Slope Hydra Defaults and Preflight
 
@@ -160,12 +210,16 @@ target_domain:
 Collection defaults are `control_steps=6000`, `max_env_steps=24000`, `ramp_steps=25`, `settle_steps=50`, `seed=1`, and `output_dir=artifacts/fada_target/${target_domain.target_domain_id}`.
 
 - [ ] Write RED composition tests proving slope is the Stage C/D default, Stage D reads `target.pt`, and output names use the target-domain ID.
-- [ ] Write RED preflight tests enabling noise, each randomization family, pushes, latency, and non-identity actuator multipliers one at a time. Assert failure occurs before environment construction and names the dotted field.
+- [ ] First assert the untouched slope composition passes nominal preflight.
+  Then write RED preflight tests enabling noise, each randomization family,
+  pushes, latency, and actuator-strength randomization one at a time. Include
+  `enabled=true` with identity multipliers. Assert failure occurs before
+  environment construction and names the dotted field.
 - [ ] Write RED identity tests for wrong task, backend, scene, or policy observation contract.
 - [ ] Implement `assert_nominal_slope_environment(cfg, domain)` and call it before checkpoint loading/environment creation. Missing SHA means no digest comparison; a supplied SHA remains strict.
 - [ ] Remove slope dependencies on `${fault.*}` while keeping the legacy conversion in the typed owner.
 - [ ] Rerun the two script-test files and a Hydra compose smoke test.
-- [ ] Commit Task 3 as `feat: configure slope target collection`, staging only new hunks from currently dirty config/workflow files.
+- [ ] Record the GREEN commands and changed hunks in the execution ledger; do not stage or commit.
 
 ## Task 4: Multi-Episode Target-Only Collector
 
@@ -187,17 +241,25 @@ class FADATargetEpisodePolicy(Protocol):
 
 Extend the result with `accepted_steps`, `episode_count`, `rejected_pre_entry_steps`, `termination_counts`, and `representative_physics_states`.
 
-- [ ] Write a scripted multi-episode RED test that enters, collects, terminates, resets, and re-enters. No causal window may cross episode ID/timestep boundaries.
+- [ ] Write a scripted multi-episode RED test that disables autoreset, enters,
+  collects, terminates, explicitly resets, and re-enters. No causal window may
+  cross episode ID/timestep boundaries, and terminal body state must be observed
+  before reset.
 - [ ] Add RED cases for pre-entry exclusion, command cycling, reset history clearing, partial-window discard, every terminal reason, longest-episode video selection, and bounded 24,000-step exhaustion diagnostics.
 - [ ] Preserve characterization coverage for the legacy actuator single-trajectory lifecycle.
-- [ ] Refactor the loop to reset controller/history at each boundary and classify before accepting a transition. Never join raw records across resets.
+- [ ] Refactor the loop to set autoreset false and classify the pre-action state
+  before accepting its transition. At a boundary, reset environment, controller,
+  previous action, record deque, timestep, and episode command ramp as one
+  transaction. Never join raw records across resets.
 - [ ] Retain startup frames for representative video context while excluding them from `target.pt`.
 - [ ] Run the full collector test, Ruff, and diff check.
-- [ ] Commit Task 4 as `feat: collect slope rollouts across episodes`, staging only the collector/test hunks.
+- [ ] Record the GREEN commands and changed hunks in the execution ledger; do not stage or commit.
 
 ## Task 5: Target Artifact v3 and Stage D Migration
 
-**Files:** Modify `target_data.py`, `fada_adaptation.py`, `adaptation_checkpoint.py`, and the three associated test files.
+**Files:** Create `target_adaptation_workflow.py`; modify `target_data.py`,
+`adaptation_checkpoint.py`, `scripts/adapt_fada_target.py`, the compatibility
+facade only for exports, and the three associated test files.
 
 ```python
 FADA_TARGET_ARTIFACT_SCHEMA_VERSION = "fada-target-batch/v3"
@@ -208,13 +270,20 @@ V3 requires `target_domain_id`, `target_domain_kind`, task, source checkpoint di
 
 - [ ] Write RED round-trip tests for valid v3 and rejection of missing/unknown/mixed metadata.
 - [ ] Write RED tests proving neither v2 nor v3 infers identity from a path.
-- [ ] Write RED Stage D tests loading one v2 knee artifact and one v3 slope artifact through the same split/LoRA boundary.
+- [ ] Write RED Stage D tests loading one v2 knee artifact and one v3 slope
+  artifact through the same split/LoRA boundary owned by
+  `target_adaptation_workflow.py`. Assert the script contains only Hydra
+  composition and JSON output.
 - [ ] Write RED checkpoint tests requiring target schema, digest, and target-domain ID in newly adapted checkpoints.
 - [ ] Implement version-dispatched metadata validation with shared tensor validation and explicit `source_schema_version` in the loaded representation.
 - [ ] Compare v3 `target_domain_id` against config; compare v2 `fault_profile` only through the legacy actuator boundary.
 - [ ] Record v3 lineage without changing policy tensor/checkpoint architecture schema.
+- [ ] Move Stage D preflight, artifact admission, split, optimizer construction,
+  training transaction, and persistence from `scripts/adapt_fada_target.py` into
+  `target_adaptation_workflow.py`. Keep the compatibility facade import-only and
+  the script at most 19 lines.
 - [ ] Run `test_fada_target_data.py`, `test_adapt_fada_target.py`, and `test_fada_adaptation_checkpoint.py` plus Ruff.
-- [ ] Commit Task 5 as `feat: add target-domain artifact schema`, staging only task-owned hunks.
+- [ ] Record the GREEN commands and changed hunks in the execution ledger; do not stage or commit.
 
 ## Task 6: Separate Actuator and Slope Stage C Owners
 
@@ -232,7 +301,7 @@ def run_fada_slope_collection(cfg, *, preflight, dependencies) -> dict[str, Any]
 - [ ] Implement the slope owner with multi-episode collection, v3 save, representative-video rendering through the existing MuJoCo playback owner, and transactional publication.
 - [ ] Leave `target_workflow.py` owning shared path/checkpoint/dependency preflight and strict two-kind dispatch only.
 - [ ] Run the complete Stage C script tests, Ruff, Pyright on these three owners, and diff check.
-- [ ] Commit Task 6 as `refactor: separate FADA target workflows`.
+- [ ] Record the GREEN commands and changed hunks in the execution ledger; do not stage or commit.
 
 ## Task 7: Ramp Metrics and Same-Condition Evaluation
 
@@ -258,14 +327,20 @@ Evaluation defaults: source `planner_idm_v022_cpu_limited.pt`, adapted `artifact
 
 - [ ] Write RED metric tests for straight, left-drift, right-drift, yaw drift, uphill progress, velocity error, fall, finish, and foot exit.
 - [ ] Assert error improvement is `zero_shot - adapted`; progress improvement is `adapted - zero_shot`; preserve signed lateral/yaw traces.
-- [ ] Write RED workflow tests proving task, seed, reset physics snapshot, command, and horizon are identical for both checkpoints.
+- [ ] Write RED workflow tests proving task, seed, complete rollout snapshot,
+  first observation, command trace, horizon, controller history, task/RNG state,
+  autoreset state, and termination rules are identical for both checkpoints.
 - [ ] Write RED publication tests for slope videos/metrics/manifest, optional flat-regression outputs, and refusal to overwrite a run directory.
-- [ ] Implement one shared rollout function. Restore the same reset snapshot and reset controller history before each checkpoint.
+- [ ] Implement one shared rollout function. Capture with
+  `env.capture_rollout_snapshot()`, set autoreset false for a branch, and restore
+  with `env.restore_rollout_snapshot()` before each checkpoint. Construct or
+  reset the controller after every restore. Use physics snapshots only for
+  offline video rendering.
 - [ ] Load both schemas with `load_fada_deployable_policy_checkpoint()` and validate architecture before environment creation.
 - [ ] Keep flat regression in a separate result object and out of artifact/adaptation owners.
 - [ ] Add a thin Hydra CLI of at most 19 lines.
 - [ ] Run both new test files, Ruff, Pyright, and diff check.
-- [ ] Commit Task 7 as `feat: evaluate FADA slope adaptation`.
+- [ ] Record the GREEN commands and changed files in the execution ledger; do not stage or commit.
 
 ## Task 8: Integrated Verification and Runbook
 
@@ -301,8 +376,10 @@ uv run --frozen --no-sync pytest -q \
 ```
 
 - [ ] Run Ruff over changed source/tests, Pyright over the seven new or changed owner modules, and `git diff --check`.
-- [ ] Inspect `git status --short`; no experiment artifact, unrelated note, or pre-existing dirty file may be staged.
-- [ ] Commit documentation as `docs: add FADA slope traversal runbook`.
+- [ ] Inspect `git status --short`; no implementation or experiment artifact may
+  be staged, and every pre-existing dirty path must remain present.
+- [ ] Leave documentation and implementation unstaged and report their paths;
+  no Git commit is authorized for this execution.
 
 ## Execution Stop Boundary
 

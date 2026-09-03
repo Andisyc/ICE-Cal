@@ -10,6 +10,7 @@ from unilab.algos.torch.distill.fada.adaptation import (
     FADAAdaptedPolicy,
     FADALoRAConfig,
     FADALoRALinear,
+    FADALoRAQVMultiheadAttention,
     FADATargetSplit,
     assert_fada_adaptation_parameter_ownership,
     fada_adaptation_loss,
@@ -90,8 +91,11 @@ from unilab.algos.torch.distill.fada.source_plan import (
     build_fada_paper_source_plan,
 )
 from unilab.algos.torch.distill.fada.target_collector import (
+    FADASlopeEpisodePolicy,
     FADATargetCollectionResult,
     FADATargetCollectionSpec,
+    FADATargetStepDecision,
+    collect_fada_slope_windows,
     collect_fada_target_windows,
 )
 from unilab.algos.torch.distill.fada.target_data import (
@@ -100,6 +104,12 @@ from unilab.algos.torch.distill.fada.target_data import (
     LoadedFADATargetArtifact,
     load_fada_target_artifact,
     save_fada_target_artifact,
+)
+from unilab.algos.torch.distill.fada.target_domain import (
+    FADASlopeGeometry,
+    FADATargetDomainSpec,
+    assert_nominal_slope_environment,
+    resolve_fada_target_domain,
 )
 from unilab.algos.torch.distill.fada.trainer import FADATrainer, FADATrainingStats
 from unilab.algos.torch.distill.learning.dagger import (
@@ -232,6 +242,10 @@ __all__ = [
     "FADACollectionResult",
     "FADATargetCollectionResult",
     "FADATargetCollectionSpec",
+    "FADATargetStepDecision",
+    "FADASlopeEpisodePolicy",
+    "FADASlopeGeometry",
+    "FADATargetDomainSpec",
     "FADATargetBatch",
     "FADATargetSplit",
     "FADA_TARGET_ARTIFACT_SCHEMA_VERSION",
@@ -241,6 +255,7 @@ __all__ = [
     "FADAInverseDynamicsModel",
     "FADALoRAConfig",
     "FADALoRALinear",
+    "FADALoRAQVMultiheadAttention",
     "FADAPlanner",
     "FADAPlannerIDMPolicy",
     "FADASourceBatch",
@@ -257,6 +272,7 @@ __all__ = [
     "LoadedFADATargetArtifact",
     "annotate_distillation_dataset_scenario",
     "assert_fada_active_route_contract",
+    "assert_nominal_slope_environment",
     "assert_fada_adaptation_parameter_ownership",
     "assert_fada_projection_matches_contract",
     "IterativeDaggerRunResult",
@@ -274,6 +290,7 @@ __all__ = [
     "allocate_fada_command_scenarios",
     "collect_distillation_dataset_from_env",
     "collect_fada_source_windows",
+    "collect_fada_slope_windows",
     "collect_fada_target_windows",
     "collect_transition_distillation_dataset_from_env",
     "config_fingerprint",
@@ -326,6 +343,7 @@ __all__ = [
     "save_fada_source_batch",
     "validate_fada_async_artifact_identity",
     "save_fada_target_artifact",
+    "resolve_fada_target_domain",
     "select_fada_target_rows",
     "split_fada_target_batch",
     "build_persistent_fada_runtime",

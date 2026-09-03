@@ -1,0 +1,14 @@
+source_checkpoint_path: planner_idm_v022_cpu_limited.pt
+adapted_checkpoint_path: artifacts/fada_adaptation/${target_domain.target_domain_id}_v3.pt
+output_dir: artifacts/fada_evaluation/${target_domain.target_domain_id}
+expected_source_checkpoint_sha256: null
+expected_adapted_checkpoint_sha256: null
+
+device: cpu
+command: [0.8, 0.0, 0.0]
+control_steps: 600
+ramp_steps: 25
+seed: 1
+record_video: true
+run_flat_regression: true
+

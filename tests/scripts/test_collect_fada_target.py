@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ import numpy as np
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from unilab.algos.torch.distill import FADAArchitectureConfig
 from unilab.algos.torch.distill.fada.target_data import FADATargetBatch, load_fada_target_artifact
@@ -30,6 +31,15 @@ def _compose(*overrides: str) -> DictConfig:
     with initialize_config_dir(config_dir=str(CONF_DIR), version_base="1.3"):
         return compose(
             config_name="fada_target", overrides=list(overrides), return_hydra_config=True
+        )
+
+
+def _compose_slope(*overrides: str) -> DictConfig:
+    with initialize_config_dir(config_dir=str(CONF_DIR), version_base="1.3"):
+        return compose(
+            config_name="fada_slope_target",
+            overrides=list(overrides),
+            return_hydra_config=True,
         )
 
 
@@ -70,16 +80,57 @@ def test_target_config_has_one_paired_bundle_mode() -> None:
     assert cfg.collection.output_dir.endswith("g1_walk_flat_mujoco_left_knee_090")
     assert cfg.collection.single_trajectory is True
     assert cfg.collection.record_video is True
-    assert cfg.collection.ramp_steps == 10
-    assert cfg.collection.settle_steps == 20
+    assert list(cfg.collection.command_target) == [0.4, 0.0, 0.0]
+    assert cfg.collection.ramp_steps == 25
+    assert cfg.collection.settle_steps == 50
+    assert cfg.collection.control_steps == 6000
     assert cfg.env.gait_phase_enabled is False
     assert cfg.env.mode_observation is False
     assert cfg.reward.scales.feet_phase == 0.0
     assert not (CONF_DIR / "collection" / "fada_target_paired.yaml").exists()
 
 
+def test_slope_config_selects_nominal_target_only_collection() -> None:
+    cfg = _compose_slope()
+
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
+    assert cfg.target_domain.target_domain_id == "g1_slope_15_mujoco"
+    assert cfg.collection.output_dir.endswith("g1_slope_15_mujoco")
+    assert cfg.env.scene.model_file.endswith("scene_slope_15.xml")
+    assert cfg.env.noise_config.level == 0.0
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    assert list(cfg.env.domain_rand.actuator_strength.multipliers) == []
+
+
+def test_slope_env_overrides_merge_into_the_structured_g1_owner() -> None:
+    from unilab.envs.locomotion.g1.joystick import G1WalkFlatCfg
+
+    cfg = _compose_slope()
+    merged = OmegaConf.to_object(OmegaConf.merge(OmegaConf.structured(G1WalkFlatCfg()), cfg.env))
+
+    assert isinstance(merged, G1WalkFlatCfg)
+    assert merged.scene.model_file.endswith("scene_slope_15.xml")
+    assert merged.noise_config.level == 0.0
+    assert merged.domain_rand.actuator_strength.enabled is False
+    assert merged.domain_rand.actuator_strength.multipliers == []
+
+
+def test_stage_c_composition_root_uses_the_deployable_checkpoint_reader() -> None:
+    owner = _owner()
+    default_loader = (
+        inspect.signature(owner.run_fada_target_collection).parameters["load_policy_fn"].default
+    )
+
+    assert default_loader is owner.load_fada_deployable_policy_checkpoint
+
+
 def _run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, fail_second: bool = False
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail_second: bool = False,
+    checkpoint_schema: int | str = 5,
+    control_steps: int = 10,
 ) -> tuple[dict[str, Any], list[Any]]:
     owner = _owner()
     checkpoint = tmp_path / "source.pt"
@@ -89,7 +140,7 @@ def _run(
         f"collection.policy_checkpoint_path={checkpoint}",
         f"collection.expected_checkpoint_sha256={owner.file_sha256(checkpoint)}",
         f"collection.output_dir={output}",
-        "collection.num_windows=8",
+        f"collection.control_steps={control_steps}",
         "collection.ramp_steps=0",
         "collection.settle_steps=0",
     )
@@ -164,13 +215,118 @@ def _run(
         cfg,
         root_dir=ROOT_DIR,
         load_policy_fn=lambda *_a, **_k: SimpleNamespace(
-            policy=policy, checkpoint={"schema_version": 5}
+            policy=policy, checkpoint={"schema_version": checkpoint_schema}
         ),
         ensure_registries_fn=lambda: None,
         create_env_fn=create_env,
         collect_fn=collect,
     )
     return result, envs
+
+
+def test_stage_c_accepts_an_adapted_policy_for_post_lora_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _envs = _run(
+        tmp_path,
+        monkeypatch,
+        checkpoint_schema="fada-adapted/v3",
+    )
+
+    assert result["status"] == "completed"
+
+
+def test_slope_stage_c_publishes_only_target_bundle_outputs(tmp_path: Path) -> None:
+    owner = importlib.import_module("unilab.algos.torch.distill.fada.target_slope_workflow")
+    checkpoint = tmp_path / "source.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    output = tmp_path / "slope_bundle"
+    cfg = _compose_slope(
+        f"collection.policy_checkpoint_path={checkpoint}",
+        f"collection.output_dir={output}",
+        "collection.control_steps=10",
+        "collection.max_env_steps=20",
+        "collection.ramp_steps=0",
+        "collection.settle_steps=0",
+    )
+    config = _config()
+    policy = SimpleNamespace(config=config)
+
+    class Env:
+        cfg = SimpleNamespace(ctrl_dt=0.02)
+        play_capabilities = SimpleNamespace(supports_physics_state_playback=True)
+
+        def close(self) -> None:
+            pass
+
+    def collect(*_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            batch=_batch(config, 1.0),
+            env_steps=12,
+            accepted_steps=10,
+            episode_count=2,
+            rejected_pre_entry_steps=2,
+            rejected_command_windows=0,
+            termination_counts={
+                "fall": 0,
+                "environment_termination": 1,
+                "truncated": 0,
+                "foot_exit": 0,
+                "finish": 0,
+            },
+            representative_physics_states=(np.zeros((1, 4), dtype=np.float32),),
+        )
+
+    rendered: dict[str, Any] = {}
+
+    def render(**kwargs: Any) -> str:
+        rendered.update(kwargs)
+        return str(Path(kwargs["output_video"]).write_bytes(b"video"))
+
+    result = owner.run_fada_slope_collection(
+        cfg,
+        root_dir=ROOT_DIR,
+        load_policy_fn=lambda *_a, **_k: SimpleNamespace(
+            policy=policy, checkpoint={"schema_version": 5}
+        ),
+        ensure_registries_fn=lambda: None,
+        create_env_fn=lambda *_a, **_k: Env(),
+        collect_fn=collect,
+        render_fn=render,
+    )
+
+    assert result["status"] == "completed"
+    assert {path.name for path in output.iterdir()} == {
+        "target.pt",
+        "collection.mp4",
+        "collection_summary.json",
+        "manifest.json",
+    }
+    assert (
+        load_fada_target_artifact(output / "target.pt", config=config).metadata["target_domain_id"]
+        == "g1_slope_15_mujoco"
+    )
+    assert rendered["camera_kwargs"] == {
+        "cam_tracking": True,
+        "cam_tracking_env_idx": 0,
+    }
+
+
+def test_stage_c_rejects_legacy_adapter_and_short_budget_before_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="schema-5 source or fada-adapted/v3"):
+        _run(
+            tmp_path,
+            monkeypatch,
+            checkpoint_schema="fada-adapted/v2",
+        )
+    with pytest.raises(ValueError, match="control_steps.*usable window"):
+        _run(
+            tmp_path,
+            monkeypatch,
+            control_steps=2,
+        )
 
 
 def test_stage_c_env_override_disables_all_non_fault_randomization() -> None:
@@ -211,13 +367,23 @@ def test_right_knee_fault_is_a_config_owned_mirror() -> None:
     assert left.fault.actuator_index == 3
     assert right.fault.actuator_index == 9
     assert right.collection.output_dir.endswith("g1_walk_flat_mujoco_right_knee_090")
+    assert list(right.collection.command_target) == [0.8, 0.0, 0.0]
+    assert [list(limit) for limit in right.fault.command_limit] == [
+        [0.8, 0.0, 0.0],
+        [0.8, 0.0, 0.0],
+    ]
+    assert OmegaConf.to_container(right.env.commands.vel_limit, resolve=True) == [
+        [0.8, 0.0, 0.0],
+        [0.8, 0.0, 0.0],
+    ]
+    owner._assert_identity(right)
 
-    left_multipliers = owner._env_override(left, nominal=False, root=ROOT_DIR)[
-        "domain_rand"
-    ]["actuator_strength"]["multipliers"]
-    right_multipliers = owner._env_override(right, nominal=False, root=ROOT_DIR)[
-        "domain_rand"
-    ]["actuator_strength"]["multipliers"]
+    left_multipliers = owner._env_override(left, nominal=False, root=ROOT_DIR)["domain_rand"][
+        "actuator_strength"
+    ]["multipliers"]
+    right_multipliers = owner._env_override(right, nominal=False, root=ROOT_DIR)["domain_rand"][
+        "actuator_strength"
+    ]["multipliers"]
     assert [index for index, value in enumerate(left_multipliers) if value != 1.0] == [3]
     assert [index for index, value in enumerate(right_multipliers) if value != 1.0] == [9]
     assert left_multipliers[3] == right_multipliers[9] == 0.9
@@ -249,9 +415,7 @@ def test_one_call_atomically_publishes_complete_bundle(
     assert deviation["excess"]["max_abs_lateral_m"] == pytest.approx(0.5)
     assert deviation["nominal"]["yaw_rad"] == pytest.approx([0.0, 0.0, 0.01, 0.02])
     assert deviation["faulty"]["yaw_rad"] == pytest.approx([0.0, 0.0, 0.05, 0.1])
-    assert deviation["faulty"]["yaw_drift_rad"] == pytest.approx(
-        [0.0, 0.0, 0.05, 0.1]
-    )
+    assert deviation["faulty"]["yaw_drift_rad"] == pytest.approx([0.0, 0.0, 0.05, 0.1])
     assert result["path_deviation_path"] == str(bundle / "path_deviation.json")
 
 

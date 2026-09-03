@@ -86,6 +86,11 @@ action latency randomization, and actuator faults off. A preflight assertion
 checks these fields before collection begins. The assertion fails closed and
 names any non-nominal field.
 
+The slope scene keeps the existing foot-contact sensor names, but each sensor
+filters only by its foot geom or foot body instead of naming one ground geom.
+This lets the same observation contract report contact on both the flat approach
+and slope without adding a second sensor family or changing policy inputs.
+
 ### 3. Command and collection lifecycle
 
 The default evaluation command is `[0.8, 0.0, 0.0]`: forward speed only, with no
@@ -108,6 +113,12 @@ uphill finish boundary. Partial causal windows are discarded rather than padded
 or joined across resets. Collection resets the existing environment through its
 normal lifecycle and continues until the accepted-step target is met or a
 24,000 total-step budget is exhausted.
+
+Slope collection disables autoreset before stepping so terminal body state is
+observable before reset. Each explicit reset uses the environment's normal
+reset lifecycle, then clears policy history and causal records as one
+transaction. A transition is accepted only when its pre-action state already
+satisfies the slope-entry gate.
 
 The ramp-local surface coordinate is `s=0` at the bottom edge. Collection starts
 only when the pelvis reaches `s>=0.25 m` and both foot bodies have entered the
@@ -184,7 +195,10 @@ It runs:
    `evaluation.run_flat_regression=true`.
 
 The slope pair uses identical command, reset state, seed, control horizon, and
-termination rules. The evaluator saves:
+termination rules. Identity means restoring the complete
+`capture_rollout_snapshot()` state, including backend, task, RNG, cached final
+observation, and autoreset state; restoring only physics coordinates is
+insufficient. The evaluator saves:
 
 ```text
 artifacts/fada_evaluation/g1_slope_15_mujoco/<run-id>/
@@ -251,6 +265,9 @@ same-seed slope evaluation --> videos + straight-line metrics
 ## Compatibility and Retirement
 
 - Preserve the existing Planner-IDM checkpoint schema and playback controller.
+- Treat the current working-tree Q/V-attention `fada-adapted/v3` implementation
+  as an explicit prerequisite. Slope work preserves its exact adapter and
+  legacy-loader behavior rather than reconstructing it from committed `HEAD`.
 - Preserve existing actuator-gain artifacts and configs as historical experiment
   inputs.
 - Retire `nominal`, `faulty`, `delta`, and `excess` terminology from the slope
@@ -277,6 +294,8 @@ Implementation must add RED-first tests for:
 11. identical zero-shot/adapted evaluation conditions;
 12. ramp-coordinate metrics, support-foot exit detection, and improvement sign;
 13. transactional artifact publication and MuJoCo video rendering.
+14. non-autoreset terminal capture, atomic episode reset, and full rollout-state
+    restoration during paired evaluation.
 
 Focused tests run first, followed by the affected FADA suite, configuration
 composition tests, Ruff, Pyright on changed ownership boundaries, and
