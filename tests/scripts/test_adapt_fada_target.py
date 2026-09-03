@@ -71,6 +71,14 @@ def test_slope_adaptation_reads_target_only_v3_artifact() -> None:
     assert cfg.adaptation.rank == 8
 
 
+def test_slope_10_adaptation_uses_its_own_artifact_and_checkpoint() -> None:
+    cfg = _compose_slope("target_domain=slope_10")
+
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
+    assert cfg.adaptation.target_artifact_path.endswith("g1_slope_10_mujoco/target.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_10_mujoco_v3.pt")
+
+
 def _config() -> FADAArchitectureConfig:
     return FADAArchitectureConfig(
         obs_dim=66,
@@ -259,6 +267,29 @@ def test_slope_preflight_rejects_repeated_commands_across_episodes(tmp_path: Pat
     )
 
     with pytest.raises(ValueError, match="unique command per represented episode"):
+        module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
+
+
+def test_slope_10_preflight_rejects_slope_15_artifact_geometry(tmp_path: Path) -> None:
+    module = _load_script()
+    source, target, source_sha, _ = _slope_artifacts(
+        tmp_path, repeated_episode_commands=False
+    )
+    payload = torch.load(target, map_location="cpu", weights_only=True)
+    payload["metadata"]["target_domain_id"] = "g1_slope_10_mujoco"
+    torch.save(payload, target)
+    target_sha = file_sha256(target)
+    cfg = _compose_slope(
+        "target_domain=slope_10",
+        f"adaptation.source_checkpoint_path={source}",
+        f"adaptation.expected_source_checkpoint_sha256={source_sha}",
+        f"adaptation.target_artifact_path={target}",
+        f"adaptation.expected_target_artifact_sha256={target_sha}",
+        f"adaptation.output_checkpoint_path={tmp_path / 'adapted.pt'}",
+        "adaptation.batch_size=2",
+    )
+
+    with pytest.raises(ValueError, match="slope_geometry"):
         module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
 
 

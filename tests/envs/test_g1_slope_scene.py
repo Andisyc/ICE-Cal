@@ -10,21 +10,29 @@ import pytest
 from unilab.envs.locomotion.g1.base import G1BaseEnv
 
 ROOT = Path(__file__).resolve().parents[2]
-SCENE = ROOT / "src/unilab/assets/robots/g1/scene_slope_15.xml"
 
 
-def test_slope_scene_has_exact_geometry_and_ground_independent_contacts() -> None:
-    model = mujoco.MjModel.from_xml_path(str(SCENE))
+@pytest.mark.parametrize("angle_deg", [10, 15])
+def test_slope_scene_has_exact_geometry_and_ground_independent_contacts(angle_deg: int) -> None:
+    scene = ROOT / f"src/unilab/assets/robots/g1/scene_slope_{angle_deg}.xml"
+    model = mujoco.MjModel.from_xml_path(str(scene))
     approach_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "approach")
-    slope_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "slope_15")
+    slope_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"slope_{angle_deg}")
 
     np.testing.assert_allclose(model.geom_size[approach_id], [1.25, 0.4, 0.05])
     np.testing.assert_allclose(model.geom_pos[approach_id], [0.25, 0.0, -0.05])
     np.testing.assert_allclose(model.geom_size[slope_id], [4.0, 0.4, 0.05])
+    angle = np.deg2rad(angle_deg)
+    expected_slope_center = [
+        1.5 + 4.0 * np.cos(angle) + 0.05 * np.sin(angle),
+        0.0,
+        4.0 * np.sin(angle) - 0.05 * np.cos(angle),
+    ]
+    np.testing.assert_allclose(model.geom_pos[slope_id], expected_slope_center, atol=1e-3)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     slope_x_axis = data.geom_xmat[slope_id].reshape(3, 3)[:, 0]
-    assert np.rad2deg(np.arctan2(slope_x_axis[2], slope_x_axis[0])) == pytest.approx(15.0)
+    assert np.rad2deg(np.arctan2(slope_x_axis[2], slope_x_axis[0])) == pytest.approx(angle_deg)
 
     names = {
         mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_SENSOR, index)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import fields, replace
+from dataclasses import asdict, fields, replace
 
 import pytest
 import torch
@@ -12,6 +12,7 @@ from unilab.algos.torch.distill import (
     save_fada_source_batch,
 )
 from unilab.algos.torch.distill.fada import FADASourceBatch
+from unilab.algos.torch.distill.fada.target_domain import FADA_SLOPE_10_GEOMETRY
 
 
 def _target_module():
@@ -206,6 +207,55 @@ def test_v3_slope_artifact_round_trip_owns_target_domain_identity(tmp_path) -> N
     assert module.FADA_TARGET_ARTIFACT_SCHEMA_VERSION == "fada-target-batch/v3"
     assert payload["schema_version"] == "fada-target-batch/v3"
     assert loaded.metadata["target_domain_id"] == "g1_slope_15_mujoco"
+
+
+def test_v3_slope_artifact_accepts_registered_10_degree_geometry(tmp_path) -> None:
+    module = _target_module()
+    metadata = _slope_metadata()
+    metadata["target_domain_id"] = "g1_slope_10_mujoco"
+    metadata["slope_geometry"] = asdict(FADA_SLOPE_10_GEOMETRY)
+    path = tmp_path / "target-10.pt"
+
+    module.save_fada_target_artifact(
+        path,
+        _target_batch(),
+        config=_config(),
+        metadata=metadata,
+    )
+    loaded = module.load_fada_target_artifact(path, config=_config())
+
+    assert loaded.metadata["target_domain_id"] == "g1_slope_10_mujoco"
+    assert loaded.metadata["slope_geometry"] == asdict(FADA_SLOPE_10_GEOMETRY)
+
+
+def test_v3_slope_artifact_rejects_unregistered_geometry(tmp_path) -> None:
+    module = _target_module()
+    metadata = _slope_metadata()
+    metadata["slope_geometry"]["angle_deg"] = 12.0
+
+    with pytest.raises(ValueError, match="registered canonical slope"):
+        module.save_fada_target_artifact(
+            tmp_path / "target-12.pt",
+            _target_batch(),
+            config=_config(),
+            metadata=metadata,
+        )
+
+
+def test_v3_slope_artifact_rejects_geometry_from_another_registered_target(
+    tmp_path,
+) -> None:
+    module = _target_module()
+    metadata = _slope_metadata()
+    metadata["target_domain_id"] = "g1_slope_10_mujoco"
+
+    with pytest.raises(ValueError, match="target_domain_id.*slope_geometry"):
+        module.save_fada_target_artifact(
+            tmp_path / "mislabeled-target.pt",
+            _target_batch(),
+            config=_config(),
+            metadata=metadata,
+        )
 
 
 def test_v3_slope_artifact_rejects_fault_or_incomplete_domain_metadata(tmp_path) -> None:

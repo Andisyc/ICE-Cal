@@ -108,6 +108,18 @@ def test_slope_config_selects_nominal_target_only_collection() -> None:
     assert len(commands) == len(set(commands)) == 64
 
 
+def test_slope_10_config_selects_an_independent_nominal_target() -> None:
+    cfg = _compose_slope("target_domain=slope_10")
+
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
+    assert cfg.target_domain.target_domain_id == "g1_slope_10_mujoco"
+    assert cfg.target_domain.slope.angle_deg == 10.0
+    assert cfg.collection.output_dir.endswith("g1_slope_10_mujoco")
+    assert cfg.env.scene.model_file.endswith("scene_slope_10.xml")
+    assert cfg.env.noise_config.level == 0.0
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+
+
 def test_slope_env_overrides_merge_into_the_structured_g1_owner() -> None:
     from unilab.envs.locomotion.g1.joystick import G1WalkFlatCfg
 

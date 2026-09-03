@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - /task: sac/g1_walk_flat/mujoco_fada_slope_10
+  - _self_
+
+target_domain:
+  target_domain_id: g1_slope_10_mujoco
+  kind: slope
+  task: sac/g1_walk_flat/mujoco_fada_slope_10
+  task_name: G1WalkFlat
+  backend: mujoco
+  command_sampling:
+    forward_speed_range: [0.75, 0.85]
+    num_trials: 64
+    seed: 1
+  slope:
+    angle_deg: 10.0
+    width_m: 0.8
+    approach_length_m: 1.5
+    surface_length_m: 8.0
+    entry_margin_m: 0.25
+    finish_margin_m: 0.5
+
+env:
+  commands:
+    vel_limit: [[0.85, 0.0, 0.0], [0.85, 0.0, 0.0]]

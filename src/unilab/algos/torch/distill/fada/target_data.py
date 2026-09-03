@@ -12,7 +12,7 @@ import torch
 
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig
 from unilab.algos.torch.distill.fada.target_domain import (
-    FADA_SLOPE_15_GEOMETRY,
+    FADA_SLOPE_GEOMETRY_BY_TARGET_DOMAIN_ID,
     FADASlopeGeometry,
     validate_fada_slope_commands,
 )
@@ -218,8 +218,13 @@ def _validated_metadata(
             )
         except (TypeError, ValueError) as exc:
             raise ValueError("FADA target metadata slope semantics are invalid") from exc
-        if slope != FADA_SLOPE_15_GEOMETRY:
-            raise ValueError("FADA target metadata slope_geometry is not canonical")
+        target_domain_id = str(result["target_domain_id"])
+        expected_slope = FADA_SLOPE_GEOMETRY_BY_TARGET_DOMAIN_ID.get(target_domain_id)
+        if expected_slope is None or slope != expected_slope:
+            raise ValueError(
+                "FADA target metadata target_domain_id and slope_geometry do not match "
+                "a registered canonical slope target"
+            )
         if result["observation_contract"] != observation_contract:
             raise ValueError("FADA target metadata observation_contract is incompatible")
         if result["randomization_disabled"] is not True:

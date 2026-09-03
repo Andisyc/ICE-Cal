@@ -95,5 +95,5 @@ src/unilab/assets/checkpoints/**/*.onnx
 # Backend temp XML emitted next to robot.xml (motrix/mujoco scene materialization)
 src/unilab/assets/robots/**/tmp*.xml
 logs
-./artifacts/fada_target/collection
+./artifacts/fada_evaluation/
 ./model

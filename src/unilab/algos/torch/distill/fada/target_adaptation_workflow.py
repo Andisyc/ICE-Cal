@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from numbers import Integral
 from pathlib import Path
 from typing import Any, cast
@@ -203,6 +203,8 @@ def preflight_fada_adaptation(
             raise ValueError(
                 "FADA target artifact target-domain identity does not match adaptation"
             )
+        if metadata.get("slope_geometry") != asdict(domain.slope):
+            raise ValueError("FADA target artifact slope geometry does not match adaptation")
         represented_episodes = _assert_slope_target_coverage(loaded_target.batch)
     elif metadata.get("fault_profile") != domain.legacy_fault_profile:
         raise ValueError("FADA target artifact fault profile does not match adaptation")

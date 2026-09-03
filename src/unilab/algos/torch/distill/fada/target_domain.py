@@ -139,6 +139,24 @@ FADA_SLOPE_15_GEOMETRY = FADASlopeGeometry(
     finish_margin_m=0.5,
 )
 
+FADA_SLOPE_10_GEOMETRY = FADASlopeGeometry(
+    angle_deg=10.0,
+    width_m=0.8,
+    approach_length_m=1.5,
+    surface_length_m=8.0,
+    entry_margin_m=0.25,
+    finish_margin_m=0.5,
+)
+
+FADA_SLOPE_GEOMETRY_BY_SCENE = {
+    "scene_slope_10.xml": FADA_SLOPE_10_GEOMETRY,
+    "scene_slope_15.xml": FADA_SLOPE_15_GEOMETRY,
+}
+FADA_SLOPE_GEOMETRY_BY_TARGET_DOMAIN_ID = {
+    "g1_slope_10_mujoco": FADA_SLOPE_10_GEOMETRY,
+    "g1_slope_15_mujoco": FADA_SLOPE_15_GEOMETRY,
+}
+
 
 @dataclass(frozen=True)
 class FADATargetDomainSpec:
@@ -191,11 +209,13 @@ def assert_nominal_slope_environment(
     if str(OmegaConf.select(cfg, "training.sim_backend")) != domain.backend:
         raise ValueError(f"FADA target training.sim_backend must be {domain.backend}")
     scene = str(OmegaConf.select(cfg, "env.scene.model_file"))
-    if not scene.endswith("robots/g1/scene_slope_15.xml"):
-        raise ValueError("FADA target env.scene.model_file must select scene_slope_15.xml")
-    if domain.slope != FADA_SLOPE_15_GEOMETRY:
+    scene_name = scene.rsplit("/", maxsplit=1)[-1]
+    expected_geometry = FADA_SLOPE_GEOMETRY_BY_SCENE.get(scene_name)
+    if expected_geometry is None:
+        raise ValueError("FADA target env.scene.model_file must select a registered slope scene")
+    if domain.slope != expected_geometry:
         raise ValueError(
-            "FADA target slope geometry must match the canonical scene_slope_15.xml geometry"
+            f"FADA target slope geometry must match the canonical {scene_name} geometry"
         )
     noise_level = OmegaConf.select(cfg, "env.noise_config.level")
     if isinstance(noise_level, bool) or float(noise_level) != 0.0:
