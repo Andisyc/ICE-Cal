@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -25,6 +25,13 @@ class FADATargetCollectionSpec:
     student_drop_index: int | None = None
     command_info_keys: tuple[str, ...] = ("commands",)
     max_env_steps: int | None = None
+    command_start: tuple[float, float, float] | None = None
+    command_target: tuple[float, float, float] | None = None
+    ramp_steps: int = 0
+    settle_steps: int = 0
+    single_trajectory: bool = False
+    capture_initial_frame: Callable[[], None] | None = None
+    capture_frame: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,33 @@ class FADATargetCollectionResult:
     env_steps: int
     rejected_done_transitions: int
     rejected_command_windows: int
+
+
+def _scheduled_command(spec: FADATargetCollectionSpec, step: int) -> np.ndarray:
+    if spec.command_start is None or spec.command_target is None:
+        raise ValueError("FADA target command schedule is not configured")
+    start = np.asarray(spec.command_start, dtype=np.float32)
+    target = np.asarray(spec.command_target, dtype=np.float32)
+    if start.shape != (3,) or target.shape != (3,):
+        raise ValueError("FADA target command schedule requires two 3-D commands")
+    if spec.ramp_steps < 0 or spec.settle_steps < 0:
+        raise ValueError("FADA target ramp_steps and settle_steps must be non-negative")
+    if spec.ramp_steps == 0 or step >= spec.ramp_steps:
+        return target
+    return start + (target - start) * (float(step + 1) / float(spec.ramp_steps))
+
+
+def _apply_external_command(env: Any, command: np.ndarray) -> None:
+    state = getattr(env, "state", None)
+    info = getattr(state, "info", None)
+    commands = info.get("commands") if isinstance(info, dict) else None
+    if not isinstance(commands, np.ndarray) or commands.ndim != 2 or commands.shape[1] < 3:
+        raise RuntimeError("FADA target command schedule requires env-owned command rows")
+    commands[:, :3] = command[None, :]
+    refresh = getattr(env, "refresh_state", None)
+    if not callable(refresh):
+        raise RuntimeError("FADA target command schedule requires env.refresh_state()")
+    refresh()
 
 
 def _module_device(module: torch.nn.Module) -> torch.device:
@@ -153,7 +187,11 @@ def collect_fada_target_windows(
     num_envs = int(env.num_envs)
     if num_envs <= 0:
         raise ValueError(f"env.num_envs must be positive, got {num_envs}")
+    if spec.single_trajectory and num_envs != 1:
+        raise ValueError("FADA target single-trajectory collection requires exactly one env")
     initial_state = env.reset_all()
+    if spec.capture_initial_frame is not None:
+        spec.capture_initial_frame()
     obs = {
         key: np.asarray(value).copy()
         for key, value in cast(Mapping[str, Any], initial_state.obs).items()
@@ -178,6 +216,7 @@ def collect_fada_target_windows(
     rejected_done = 0
     rejected_command = 0
     env_steps = 0
+    collection_start = int(spec.ramp_steps) + int(spec.settle_steps)
     step_limit = (
         int(spec.max_env_steps)
         if spec.max_env_steps is not None
@@ -192,16 +231,29 @@ def collect_fada_target_windows(
                 f"FADA target collector produced {len(batches)}/{num_windows} windows after "
                 f"{env_steps} env steps; increase max_env_steps or inspect episode/command resets"
             )
+        if spec.command_start is not None or spec.command_target is not None:
+            scheduled_command = _scheduled_command(spec, env_steps)
+            _apply_external_command(env, scheduled_command)
+            obs = {key: np.asarray(value).copy() for key, value in env.state.obs.items()}
+            info = dict(env.state.info)
+            student_obs = project_student_obs(
+                _observation_array(obs, spec.observation_key),
+                projection=spec.student_projection,
+                expected_student_obs_dim=config.obs_dim,
+                student_drop_index=spec.student_drop_index,
+            )
         command = _command_array(
             info,
             spec.command_info_keys,
             expected_rows=num_envs,
             expected_dim=config.command_dim,
         )
-        action_tensor = controller.act(student_obs, command)
+        action_tensor = controller.act_projected(student_obs, command)
         actions = action_tensor.detach().cpu().numpy().astype(np.float32)
         state = env.step(actions)
         env_steps += 1
+        if spec.capture_frame is not None:
+            spec.capture_frame()
         done = _done_mask(state, num_envs=num_envs)
         next_obs = {
             key: np.asarray(value).copy()
@@ -215,12 +267,16 @@ def collect_fada_target_windows(
             student_drop_index=spec.student_drop_index,
         )
 
+        trajectory_ended = False
         for index in range(num_envs):
             if bool(done[index]):
                 records[index].clear()
-                episode_ids[index] += 1
                 episode_timesteps[index] = 0
                 rejected_done += 1
+                if spec.single_trajectory:
+                    trajectory_ended = True
+                else:
+                    episode_ids[index] += 1
                 continue
             records[index].append(
                 FADACausalTransition(
@@ -238,7 +294,7 @@ def collect_fada_target_windows(
                 window = _target_batch_from_window(tuple(records[index]), config)
                 if window is None:
                     rejected_command += 1
-                else:
+                elif window.start_timestep >= collection_start:
                     batches.append(window)
                     if len(batches) >= int(num_windows):
                         break
@@ -248,6 +304,13 @@ def collect_fada_target_windows(
             previous_actions[done] = 0.0
             controller.reset(done)
         obs, info, student_obs = next_obs, next_info, next_student_obs
+        if trajectory_ended:
+            if not batches:
+                raise RuntimeError(
+                    "FADA target single trajectory ended before producing a usable window "
+                    f"after {env_steps} env steps"
+                )
+            break
 
     return FADATargetCollectionResult(
         batch=_concat_target_batches(batches[: int(num_windows)], config),

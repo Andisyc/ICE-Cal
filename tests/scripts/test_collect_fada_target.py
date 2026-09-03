@@ -1,46 +1,39 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from unilab.algos.torch.distill import FADAArchitectureConfig
-from unilab.algos.torch.distill.fada_target_data import (
-    FADATargetBatch,
-    load_fada_target_artifact,
-)
+from unilab.algos.torch.distill.fada.target_data import FADATargetBatch, load_fada_target_artifact
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONF_DIR = ROOT_DIR / "conf" / "offpolicy"
 SCRIPT_PATH = ROOT_DIR / "scripts" / "collect_fada_target.py"
 
 
-def _load_script() -> Any:
-    spec = importlib.util.spec_from_file_location("collect_fada_target", SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def _owner() -> Any:
+    return importlib.import_module("unilab.algos.torch.distill.fada.target_workflow")
 
 
-def _compose_target(*overrides: str) -> DictConfig:
+def _compose(*overrides: str) -> DictConfig:
     with initialize_config_dir(config_dir=str(CONF_DIR), version_base="1.3"):
         return compose(
-            config_name="fada_target",
-            overrides=list(overrides),
-            return_hydra_config=True,
+            config_name="fada_target", overrides=list(overrides), return_hydra_config=True
         )
 
 
-def _small_config() -> FADAArchitectureConfig:
+def _config() -> FADAArchitectureConfig:
     return FADAArchitectureConfig(
         obs_dim=66,
         action_dim=29,
@@ -57,345 +50,289 @@ def _small_config() -> FADAArchitectureConfig:
     )
 
 
-def _target_batch(config: FADAArchitectureConfig) -> FADATargetBatch:
+def _batch(config: FADAArchitectureConfig, value: float) -> FADATargetBatch:
+    rows = 8
     return FADATargetBatch(
-        observation_history=torch.zeros(1, config.history_length, config.obs_dim),
-        action_history=torch.zeros(1, config.history_length, config.action_dim),
-        command=torch.zeros(1, config.command_dim),
-        realized_future=torch.zeros(1, config.prediction_horizon, config.obs_dim),
-        executed_action_chunk=torch.zeros(1, config.prediction_horizon, config.action_dim),
-        episode_id=torch.zeros(1, dtype=torch.int64),
-        start_timestep=torch.zeros(1, dtype=torch.int64),
+        observation_history=torch.full((rows, 2, 66), value),
+        action_history=torch.full((rows, 2, 29), value),
+        command=torch.tensor([[0.4, 0.0, 0.0]] * rows),
+        realized_future=torch.full((rows, 2, 66), value),
+        executed_action_chunk=torch.full((rows, 2, 29), value),
+        episode_id=torch.zeros(rows, dtype=torch.int64),
+        start_timestep=torch.arange(rows, dtype=torch.int64),
     ).validate(config)
 
 
-def test_target_config_reuses_exact_offpolicy_task_owner() -> None:
-    cfg = _compose_target()
-
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_left_knee_090"
+def test_target_config_has_one_paired_bundle_mode() -> None:
+    cfg = _compose()
     assert cfg.hydra.runtime.choices.collection == "fada_target"
-    assert cfg.algo.algo == "sac"
-    assert cfg.training.task_name == "G1WalkFlat"
-    assert cfg.training.sim_backend == "mujoco"
-    assert cfg.env.commands.vel_limit == [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
-    assert cfg.env.domain_rand.actuator_strength.multipliers[3] == 0.9
-    assert len(cfg.env.domain_rand.actuator_strength.multipliers) == 29
-    assert cfg.collection.policy_checkpoint_path == "logs/fada/planner_idm_v006_state66.pt"
-    assert cfg.collection.expected_checkpoint_sha256 is None
-    assert cfg.collection.output_path.endswith("_v2.pt")
+    assert cfg.collection.policy_checkpoint_path.endswith("planner_idm_v022_cpu_limited.pt")
+    assert cfg.collection.output_dir.endswith("g1_walk_flat_mujoco_left_knee_090")
+    assert cfg.collection.single_trajectory is True
+    assert cfg.collection.record_video is True
+    assert cfg.collection.ramp_steps == 10
+    assert cfg.collection.settle_steps == 20
+    assert cfg.env.gait_phase_enabled is False
+    assert cfg.env.mode_observation is False
+    assert cfg.reward.scales.feet_phase == 0.0
+    assert not (CONF_DIR / "collection" / "fada_target_paired.yaml").exists()
 
 
-@pytest.mark.parametrize(
-    ("selector", "value", "match"),
-    [
-        ("env.commands.vel_limit", [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], "command"),
-        ("env.domain_rand.actuator_strength.multipliers.3", 0.8, "actuator"),
-        ("training.sim_backend", "motrix", "MuJoCo"),
-    ],
-)
-def test_target_preflight_rejects_identity_drift_before_env_creation(
-    tmp_path: Path,
-    selector: str,
-    value: Any,
-    match: str,
-) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
+def _run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, fail_second: bool = False
+) -> tuple[dict[str, Any], list[Any]]:
+    owner = _owner()
+    checkpoint = tmp_path / "source.pt"
     checkpoint.write_bytes(b"checkpoint")
-    cfg = _compose_target(
+    output = tmp_path / "bundle"
+    cfg = _compose(
         f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={tmp_path / 'target.pt'}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
+        f"collection.expected_checkpoint_sha256={owner.file_sha256(checkpoint)}",
+        f"collection.output_dir={output}",
+        "collection.num_windows=8",
+        "collection.ramp_steps=0",
+        "collection.settle_steps=0",
     )
-    OmegaConf.update(cfg, selector, value, merge=False)
+    config = _config()
+    policy = SimpleNamespace(config=config)
+    envs: list[Any] = []
 
-    with pytest.raises(ValueError, match=match):
-        module.preflight_fada_target_collection(cfg, root_dir=ROOT_DIR)
+    class Env:
+        def __init__(self, nominal: bool) -> None:
+            self.nominal = nominal
+            self.cfg = SimpleNamespace(ctrl_dt=0.02)
+            self.closed = False
+            self.position = np.zeros((1, 3), dtype=np.float32)
+            self.yaw = 0.0
+            self.state = SimpleNamespace(
+                info={
+                    "episode_start_base_pos": np.zeros((1, 3), dtype=np.float32),
+                    "episode_start_base_yaw": np.zeros((1,), dtype=np.float32),
+                }
+            )
+            self.play_capabilities = SimpleNamespace(supports_physics_state_playback=True)
 
+        def get_physics_state_snapshot(self) -> np.ndarray:
+            return np.zeros((1, 4), dtype=np.float32)
 
-@pytest.mark.parametrize(
-    ("selector", "value"),
-    [
-        ("collection.num_envs", 1.5),
-        ("collection.num_windows", 2.75),
-        ("collection.max_env_steps", 3.5),
-    ],
-)
-def test_target_preflight_rejects_fractional_positive_integer_fields(
-    tmp_path: Path,
-    selector: str,
-    value: float,
-) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={tmp_path / 'target.pt'}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
-    )
-    OmegaConf.update(cfg, selector, value, merge=False)
+        def get_base_pos(self) -> np.ndarray:
+            return self.position.copy()
 
-    with pytest.raises(ValueError, match=rf"{selector} must be a positive integer"):
-        module.preflight_fada_target_collection(cfg, root_dir=ROOT_DIR)
-
-
-def test_target_preflight_refuses_checkpoint_output_alias_and_existing_output(
-    tmp_path: Path,
-) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    digest = module.file_sha256(checkpoint)
-    alias_cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={checkpoint}",
-        f"collection.expected_checkpoint_sha256={digest}",
-    )
-    with pytest.raises(ValueError, match="must differ"):
-        module.preflight_fada_target_collection(alias_cfg, root_dir=ROOT_DIR)
-
-    output = tmp_path / "already-there.pt"
-    output.write_bytes(b"owned")
-    existing_cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={output}",
-        f"collection.expected_checkpoint_sha256={digest}",
-    )
-    with pytest.raises(FileExistsError, match="already exists"):
-        module.preflight_fada_target_collection(existing_cfg, root_dir=ROOT_DIR)
-
-
-def test_target_runner_loads_before_env_collects_saves_and_closes(tmp_path: Path) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    output = tmp_path / "target.pt"
-    cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={output}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
-        "collection.num_envs=1",
-        "collection.num_windows=1",
-        "collection.max_env_steps=7",
-    )
-    config = _small_config()
-    events: list[str] = []
-
-    class _Env:
-        num_envs = 1
+        def get_base_quat(self) -> np.ndarray:
+            return np.asarray(
+                [[np.cos(self.yaw / 2.0), 0.0, 0.0, np.sin(self.yaw / 2.0)]],
+                dtype=np.float32,
+            )
 
         def close(self) -> None:
-            events.append("close")
+            self.closed = True
 
-    env = _Env()
-    policy = SimpleNamespace(config=config)
-    collection_result = SimpleNamespace(
-        batch=_target_batch(config),
-        env_steps=3,
-        rejected_done_transitions=0,
-        rejected_command_windows=0,
+    monkeypatch.setattr(
+        importlib.import_module("unilab.algos.torch.distill.fada.path_capture"),
+        "render_mujoco_states_video",
+        lambda *, output_video, **_kwargs: Path(output_video).write_bytes(b"video"),
     )
 
-    def load_policy(path: Path, *, device: str) -> SimpleNamespace:
-        assert path == checkpoint
-        assert device == "cpu"
-        events.append("load")
-        return SimpleNamespace(policy=policy, checkpoint={"schema_version": 3})
-
-    def ensure_registries() -> None:
-        events.append("registry")
-
-    def create_env(
-        owner_cfg: DictConfig,
-        *,
-        num_envs: int,
-        env_cfg_override: dict[str, Any],
-        sim_backend: str,
-    ) -> _Env:
-        assert owner_cfg is cfg
-        assert num_envs == 1
-        assert sim_backend == "mujoco"
-        assert env_cfg_override["domain_rand"]["actuator_strength"]["multipliers"][3] == 0.9
-        events.append("env")
+    def create_env(_cfg: Any, *, env_cfg_override: dict[str, Any], **_kwargs: Any) -> Env:
+        multipliers = env_cfg_override["domain_rand"]["actuator_strength"]["multipliers"]
+        env = Env(all(float(v) == 1.0 for v in multipliers))
+        envs.append(env)
         return env
 
-    def collect(
-        created_env: _Env,
-        rollout_policy: Any,
-        architecture: FADAArchitectureConfig,
-        num_windows: int,
-        spec: Any,
-    ) -> Any:
-        assert created_env is env
-        assert rollout_policy is policy
-        assert architecture == config
-        assert num_windows == 1
-        assert spec.max_env_steps == 7
-        events.append("collect")
-        return collection_result
+    calls = 0
 
-    def save(
-        path: Path,
-        batch: FADATargetBatch,
-        *,
-        config: FADAArchitectureConfig,
-        metadata: dict[str, Any],
-    ) -> Path:
-        assert path == output
-        assert batch is collection_result.batch
-        assert config == policy.config
-        assert metadata["policy_checkpoint_sha256"] == module.file_sha256(checkpoint)
-        assert metadata["task"] == "G1WalkFlat"
-        assert metadata["fault_profile"] == "left_knee_strength_0.9"
-        assert metadata["num_windows"] == 1
-        events.append("save")
-        return path
-
-    summary = module.run_fada_target_collection(
-        cfg,
-        root_dir=ROOT_DIR,
-        load_policy_fn=load_policy,
-        ensure_registries_fn=ensure_registries,
-        create_env_fn=create_env,
-        collect_fn=collect,
-        save_fn=save,
-    )
-
-    assert events == ["load", "registry", "env", "collect", "save", "close"]
-    assert summary["status"] == "completed"
-    assert summary["env_steps"] == 3
-    assert summary["artifact_path"] == str(output)
-
-
-def test_target_runner_rejects_legacy_checkpoint_before_registry_or_env(
-    tmp_path: Path,
-) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={tmp_path / 'target.pt'}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
-    )
-    events: list[str] = []
-
-    with pytest.raises(ValueError, match="projection does not match|active FADA route"):
-        module.run_fada_target_collection(
-            cfg,
-            root_dir=ROOT_DIR,
-            load_policy_fn=lambda *_args, **_kwargs: SimpleNamespace(
-                policy=SimpleNamespace(
-                    config=FADAArchitectureConfig(
-                        obs_dim=3,
-                        action_dim=2,
-                        command_dim=2,
-                        history_length=2,
-                        prediction_horizon=2,
-                        hidden_dim=8,
-                        num_heads=2,
-                        planner_layers=1,
-                        idm_encoder_layers=1,
-                        idm_decoder_layers=1,
-                        feedforward_dim=16,
-                    )
-                ),
-                checkpoint={"schema_version": 3},
-            ),
-            ensure_registries_fn=lambda: events.append("registry"),
-            create_env_fn=lambda *_args, **_kwargs: events.append("env"),
-        )
-
-    assert events == []
-
-
-def test_target_runner_real_persistence_round_trip_on_official_composition(
-    tmp_path: Path,
-) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    output = tmp_path / "target.pt"
-    cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={output}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
-        "collection.num_envs=1",
-        "collection.num_windows=1",
-    )
-    config = _small_config()
-    policy = SimpleNamespace(config=config)
-    batch = _target_batch(config)
-
-    class _Env:
-        num_envs = 1
-
-        def close(self) -> None:
-            return None
-
-    module.run_fada_target_collection(
-        cfg,
-        root_dir=ROOT_DIR,
-        load_policy_fn=lambda *_args, **_kwargs: SimpleNamespace(
-            policy=policy, checkpoint={"schema_version": 3}
-        ),
-        ensure_registries_fn=lambda: None,
-        create_env_fn=lambda *_args, **_kwargs: _Env(),
-        collect_fn=lambda *_args, **_kwargs: SimpleNamespace(
-            batch=batch,
-            env_steps=3,
+    def collect(env: Env, *_args: Any, **_kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if fail_second and calls == 2:
+            raise RuntimeError("fault branch failed")
+        lateral = [0.0, 0.1, -0.1] if env.nominal else [0.0, 0.4, 0.6]
+        spec = _args[-1]
+        spec.capture_initial_frame()
+        for step, value in enumerate(lateral):
+            env.position[0] = [float(step), value, 0.8]
+            env.yaw = 0.01 * step if env.nominal else 0.05 * step
+            spec.capture_frame()
+        return SimpleNamespace(
+            batch=_batch(config, 0.0 if env.nominal else 1.0),
+            env_steps=10,
             rejected_done_transitions=0,
             rejected_command_windows=0,
-        ),
-    )
-
-    loaded = load_fada_target_artifact(output, config=config)
-    torch.testing.assert_close(loaded.batch.observation_history, batch.observation_history)
-    assert loaded.metadata["policy_checkpoint_sha256"] == module.file_sha256(checkpoint)
-    assert loaded.metadata["num_windows"] == 1
-
-
-def test_target_runner_closes_env_when_collection_fails(tmp_path: Path) -> None:
-    module = _load_script()
-    checkpoint = tmp_path / "planner.pt"
-    checkpoint.write_bytes(b"checkpoint")
-    cfg = _compose_target(
-        f"collection.policy_checkpoint_path={checkpoint}",
-        f"collection.output_path={tmp_path / 'target.pt'}",
-        f"collection.expected_checkpoint_sha256={module.file_sha256(checkpoint)}",
-    )
-    config = _small_config()
-    closed: list[bool] = []
-
-    class _Env:
-        num_envs = 1
-
-        def close(self) -> None:
-            closed.append(True)
-
-    with pytest.raises(RuntimeError, match="collection failed"):
-        module.run_fada_target_collection(
-            cfg,
-            root_dir=ROOT_DIR,
-            load_policy_fn=lambda *_args, **_kwargs: SimpleNamespace(
-                policy=SimpleNamespace(config=config), checkpoint={"schema_version": 3}
-            ),
-            ensure_registries_fn=lambda: None,
-            create_env_fn=lambda *_args, **_kwargs: _Env(),
-            collect_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                RuntimeError("collection failed")
-            ),
         )
 
-    assert closed == [True]
+    result = owner.run_fada_target_collection(
+        cfg,
+        root_dir=ROOT_DIR,
+        load_policy_fn=lambda *_a, **_k: SimpleNamespace(
+            policy=policy, checkpoint={"schema_version": 5}
+        ),
+        ensure_registries_fn=lambda: None,
+        create_env_fn=create_env,
+        collect_fn=collect,
+    )
+    return result, envs
 
 
-def test_target_cli_imports_only_target_collection_boundary() -> None:
-    source = SCRIPT_PATH.read_text(encoding="utf-8")
+def test_stage_c_env_override_disables_all_non_fault_randomization() -> None:
+    owner = _owner()
+    cfg = _compose()
 
-    assert 'config_path="../conf/offpolicy"' in source
-    assert 'config_name="fada_target"' in source
-    assert "collect_fada_target_windows" in source
-    assert "save_fada_target_artifact" in source
-    assert "collect_fada_source_windows" not in source
+    nominal = owner._env_override(cfg, nominal=True, root=ROOT_DIR)
+    faulty = owner._env_override(cfg, nominal=False, root=ROOT_DIR)
+
+    disabled_flags = {
+        "randomize_reset_pose",
+        "randomize_kp",
+        "randomize_kd",
+        "randomize_ground_friction",
+        "randomize_base_mass",
+        "randomize_body_mass",
+        "random_com",
+        "randomize_gravity",
+        "randomize_dof_armature",
+        "randomize_dof_position_bias",
+        "randomize_control_delay",
+        "push_robots",
+    }
+    for override in (nominal, faulty):
+        assert override["noise_config"]["level"] == 0.0
+        assert all(override["domain_rand"][name] is False for name in disabled_flags)
+        assert override["domain_rand"]["torque_rfi_fraction"] == 0.0
+    assert nominal["domain_rand"]["actuator_strength"]["multipliers"] == [1.0] * 29
+    assert faulty["domain_rand"]["actuator_strength"]["multipliers"][3] == 0.9
+
+
+def test_right_knee_fault_is_a_config_owned_mirror() -> None:
+    owner = _owner()
+    left = _compose()
+    right = _compose("fault=right_knee_090")
+
+    assert left.fault.task == right.fault.task == "sac/g1_walk_flat/mujoco_fada_target"
+    assert left.fault.actuator_index == 3
+    assert right.fault.actuator_index == 9
+    assert right.collection.output_dir.endswith("g1_walk_flat_mujoco_right_knee_090")
+
+    left_multipliers = owner._env_override(left, nominal=False, root=ROOT_DIR)[
+        "domain_rand"
+    ]["actuator_strength"]["multipliers"]
+    right_multipliers = owner._env_override(right, nominal=False, root=ROOT_DIR)[
+        "domain_rand"
+    ]["actuator_strength"]["multipliers"]
+    assert [index for index, value in enumerate(left_multipliers) if value != 1.0] == [3]
+    assert [index for index, value in enumerate(right_multipliers) if value != 1.0] == [9]
+    assert left_multipliers[3] == right_multipliers[9] == 0.9
+
+
+def test_one_call_atomically_publishes_complete_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, envs = _run(tmp_path, monkeypatch)
+    bundle = Path(result["bundle_dir"])
+    assert {p.name for p in bundle.iterdir()} == {
+        "nominal.pt",
+        "faulty.pt",
+        "delta.pt",
+        "nominal.mp4",
+        "faulty.mp4",
+        "path_deviation.json",
+        "manifest.json",
+    }
+    assert all(env.closed for env in envs) and len(envs) == 2
+    loaded = load_fada_target_artifact(bundle / "faulty.pt", config=_config())
+    assert loaded.metadata["fault_profile"] == "left_knee_strength_0.9"
+    delta = torch.load(bundle / "delta.pt", weights_only=True)
+    torch.testing.assert_close(delta["delta"]["observation_history"], torch.ones(8, 2, 66))
+    deviation = json.loads((bundle / "path_deviation.json").read_text())
+    assert deviation["reference_line"]["measurement_start_step"] == 0
+    assert deviation["nominal"]["max_abs_lateral_m"] == pytest.approx(0.1)
+    assert deviation["faulty"]["max_abs_lateral_m"] == pytest.approx(0.6)
+    assert deviation["excess"]["max_abs_lateral_m"] == pytest.approx(0.5)
+    assert deviation["nominal"]["yaw_rad"] == pytest.approx([0.0, 0.0, 0.01, 0.02])
+    assert deviation["faulty"]["yaw_rad"] == pytest.approx([0.0, 0.0, 0.05, 0.1])
+    assert deviation["faulty"]["yaw_drift_rad"] == pytest.approx(
+        [0.0, 0.0, 0.05, 0.1]
+    )
+    assert result["path_deviation_path"] == str(bundle / "path_deviation.json")
+
+
+def test_branch_failure_closes_envs_and_publishes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(RuntimeError, match="fault branch failed"):
+        _run(tmp_path, monkeypatch, fail_second=True)
+    assert not (tmp_path / "bundle").exists()
+
+
+def test_paired_batches_align_to_common_time_prefix() -> None:
+    owner = _owner()
+    config = _config()
+    nominal = _batch(config, 0.0)
+    faulty = owner._slice_target_batch(_batch(config, 1.0), 5, config)
+
+    aligned_nominal, aligned_faulty = owner._align_paired_batches(nominal, faulty, config)
+
+    assert aligned_nominal.observation_history.shape[0] == 5
+    assert aligned_faulty.observation_history.shape[0] == 5
+    torch.testing.assert_close(aligned_nominal.start_timestep, aligned_faulty.start_timestep)
+
+
+def test_delta_rejects_unpaired_rows_before_publication(tmp_path: Path) -> None:
+    owner = _owner()
+    config = _config()
+    nominal = _batch(config, 0.0)
+    faulty = _batch(config, 1.0)
+    faulty.start_timestep[0] = 99
+    with pytest.raises(ValueError, match="row identity mismatch: start_timestep"):
+        owner._save_delta(tmp_path / "delta.pt", nominal, faulty, {})
+    assert not (tmp_path / "delta.pt").exists()
+
+
+def test_preflight_accepts_missing_expected_hash_and_records_observed_hash(tmp_path: Path) -> None:
+    owner = _owner()
+    checkpoint = tmp_path / "source.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    cfg = _compose(
+        f"collection.policy_checkpoint_path={checkpoint}",
+        "collection.expected_checkpoint_sha256=null",
+        f"collection.output_dir={tmp_path / 'bundle'}",
+    )
+
+    preflight = owner.preflight_fada_target_collection(cfg, root_dir=ROOT_DIR)
+
+    assert preflight.checkpoint_sha256 == owner.file_sha256(checkpoint)
+
+
+def test_preflight_rejects_wrong_explicit_hash(tmp_path: Path) -> None:
+    owner = _owner()
+    checkpoint = tmp_path / "source.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    cfg = _compose(
+        f"collection.policy_checkpoint_path={checkpoint}",
+        f"collection.expected_checkpoint_sha256={'0' * 64}",
+        f"collection.output_dir={tmp_path / 'bundle'}",
+    )
+
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        owner.preflight_fada_target_collection(cfg, root_dir=ROOT_DIR)
+
+
+def test_preflight_rejects_existing_bundle(tmp_path: Path) -> None:
+    owner = _owner()
+    checkpoint = tmp_path / "source.pt"
+    checkpoint.write_bytes(b"x")
+    output = tmp_path / "bundle"
+    output.mkdir()
+    cfg = _compose(
+        f"collection.policy_checkpoint_path={checkpoint}",
+        f"collection.expected_checkpoint_sha256={owner.file_sha256(checkpoint)}",
+        f"collection.output_dir={output}",
+    )
+    with pytest.raises(FileExistsError, match="bundle already exists"):
+        owner.preflight_fada_target_collection(cfg, root_dir=ROOT_DIR)
+
+
+def test_cli_is_thin_composition_root() -> None:
+    source = SCRIPT_PATH.read_text()
+    assert "run_fada_target_collection" in source
+    assert "collect_fada_target_windows" not in source
+    assert len(source.splitlines()) < 30

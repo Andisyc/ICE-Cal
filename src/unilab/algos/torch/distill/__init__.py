@@ -44,6 +44,7 @@ from unilab.algos.torch.distill.fada.collector import (
     FADACollectionSpec,
     collect_fada_source_windows,
 )
+from unilab.algos.torch.distill.fada.fault import FADAFaultSpec, resolve_fada_fault
 from unilab.algos.torch.distill.fada.model import (
     FADA_COMMAND_SCENARIOS,
     FADA_IDM_SOURCE_ROLE_IDS,

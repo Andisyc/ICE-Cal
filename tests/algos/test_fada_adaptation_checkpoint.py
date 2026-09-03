@@ -18,12 +18,19 @@ from unilab.algos.torch.distill.fada_adaptation_checkpoint import (
 )
 
 
-@pytest.mark.parametrize("schema_version", [1, 2, 4, 5])
-def test_adaptation_source_contract_rejects_non_schema3(schema_version: int) -> None:
-    with pytest.raises(ValueError, match="requires schema-3"):
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+def test_adaptation_source_contract_rejects_retired_source_schema(
+    schema_version: int,
+) -> None:
+    with pytest.raises(ValueError, match="requires current schema-5"):
         assert_fada_adaptation_source_checkpoint(
             type("Loaded", (), {"checkpoint": {"schema_version": schema_version}})()
         )
+
+
+def test_adaptation_source_contract_accepts_current_schema5() -> None:
+    loaded = type("Loaded", (), {"checkpoint": {"schema_version": 5}})()
+    assert assert_fada_adaptation_source_checkpoint(loaded) is loaded
 
 
 def _owners() -> tuple[Any, Any]:

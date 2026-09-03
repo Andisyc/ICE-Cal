@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /task: sac/g1_walk_flat/mujoco_fada_target
+  - _self_
+
+fault:
+  name: right_knee_090
+  task: sac/g1_walk_flat/mujoco_fada_target
+  task_name: G1WalkFlat
+  backend: mujoco
+  fault_profile: right_knee_strength_0.9
+  command_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+  actuator_index: 9
+  actuator_strength: 0.9
+  actuator_count: 29

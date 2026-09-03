@@ -96,8 +96,8 @@ def test_fada_playback_controller_owns_history_and_done_reset() -> None:
     torch.testing.assert_close(reset_action_history, torch.zeros(1, 3, 2))
 
 
-def test_fada_playback_projects_raw_g1_actor_observation_for_v2_policy() -> None:
-    config = FADAArchitectureConfig(
+def _g1_v2_config() -> FADAArchitectureConfig:
+    return FADAArchitectureConfig(
         obs_dim=66,
         action_dim=29,
         command_dim=3,
@@ -111,6 +111,10 @@ def test_fada_playback_projects_raw_g1_actor_observation_for_v2_policy() -> None
         idm_decoder_layers=1,
         feedforward_dim=16,
     )
+
+
+def test_fada_playback_projects_raw_g1_actor_observation_for_v2_policy() -> None:
+    config = _g1_v2_config()
     policy = _RecordingPolicy(config)
     controller = FADAPlaybackController(policy, device="cpu")
     raw = torch.arange(98, dtype=torch.float32).unsqueeze(0)
@@ -123,6 +127,40 @@ def test_fada_playback_projects_raw_g1_actor_observation_for_v2_policy() -> None
     torch.testing.assert_close(observed_actions, torch.zeros(1, 2, 29))
     torch.testing.assert_close(observed_command, torch.tensor([[0.4, 0.0, 0.0]]))
     assert action.shape == (1, 29)
+
+
+def test_fada_playback_raw_v2_boundary_rejects_preprojected_observation() -> None:
+    controller = FADAPlaybackController(_RecordingPolicy(_g1_v2_config()), device="cpu")
+
+    with pytest.raises(ValueError, match="requires rank-2 actor observations with width 98"):
+        controller.act(
+            torch.zeros(1, 66),
+            torch.tensor([[0.4, 0.0, 0.0]]),
+        )
+
+
+def test_fada_playback_accepts_preprojected_v2_observation_without_reprojection() -> None:
+    config = _g1_v2_config()
+    policy = _RecordingPolicy(config)
+    controller = FADAPlaybackController(policy, device="cpu")
+    projected = torch.arange(66, dtype=torch.float32).unsqueeze(0)
+
+    action = controller.act_projected(projected, torch.tensor([[0.4, 0.0, 0.0]]))
+
+    observed_history, observed_actions, _ = policy.calls[0]
+    torch.testing.assert_close(observed_history, projected.unsqueeze(1).repeat(1, 2, 1))
+    torch.testing.assert_close(observed_actions, torch.zeros(1, 2, 29))
+    assert action.shape == (1, 29)
+
+
+def test_fada_playback_projected_boundary_rejects_raw_v2_observation() -> None:
+    controller = FADAPlaybackController(_RecordingPolicy(_g1_v2_config()), device="cpu")
+
+    with pytest.raises(ValueError, match="projected observation shape mismatch"):
+        controller.act_projected(
+            torch.zeros(1, 98),
+            torch.tensor([[0.4, 0.0, 0.0]]),
+        )
 
 
 def test_load_fada_policy_checkpoint_reconstructs_strict_inference_policy(tmp_path) -> None:

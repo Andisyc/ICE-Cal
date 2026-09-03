@@ -1,8 +1,8 @@
-source_checkpoint_path: logs/fada/planner_idm_v006_state66.pt
+source_checkpoint_path: planner_idm_v022_cpu_limited.pt
 expected_source_checkpoint_sha256: null
-target_artifact_path: artifacts/fada_target/g1_walk_flat_mujoco_left_knee_090_v2.pt
+target_artifact_path: artifacts/fada_target/g1_walk_flat_mujoco_${fault.name}/faulty.pt
 expected_target_artifact_sha256: null
-output_checkpoint_path: artifacts/fada_adaptation/g1_walk_flat_mujoco_left_knee_090_v2.pt
+output_checkpoint_path: artifacts/fada_adaptation/g1_walk_flat_mujoco_${fault.name}_v2.pt
 
 device: cpu
 confirm_train: false

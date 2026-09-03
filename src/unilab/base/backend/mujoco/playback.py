@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Sequence, TypeVar
 
 import numpy as np
 
@@ -55,9 +55,31 @@ def run_mujoco_playback(
         else:
             marker_list.append(None)
 
-    marker_positions_list = (
-        marker_list if any(marker is not None for marker in marker_list) else None
+    return render_mujoco_states_video(
+        env=env,
+        state_list=state_list,
+        output_video=output_video,
+        render_spacing=render_spacing,
+        camera_kwargs=camera_kwargs,
+        marker_positions_list=(
+            marker_list if any(marker is not None for marker in marker_list) else None
+        ),
     )
+
+
+def render_mujoco_states_video(
+    *,
+    env: Any,
+    state_list: Sequence[np.ndarray],
+    output_video: str | PathLike[str],
+    render_spacing: float | None = None,
+    camera_kwargs: dict[str, Any] | None = None,
+    marker_positions_list: Sequence[np.ndarray | None] | None = None,
+) -> str:
+    """Render already-collected MuJoCo physics states through the playback owner."""
+
+    if not state_list:
+        raise ValueError("MuJoCo video export requires at least one physics state")
 
     from unilab.visualization import render_many
 

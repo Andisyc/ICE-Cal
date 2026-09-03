@@ -100,6 +100,73 @@ class _Env:
         )
 
 
+class _V2Policy(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.config = FADAArchitectureConfig(
+            obs_dim=66,
+            action_dim=29,
+            command_dim=3,
+            observation_contract="g1_fada_state_v2",
+            history_length=2,
+            prediction_horizon=2,
+            hidden_dim=8,
+            num_heads=2,
+            planner_layers=1,
+            idm_encoder_layers=1,
+            idm_decoder_layers=1,
+            feedforward_dim=16,
+        )
+        self.anchor = torch.nn.Parameter(torch.zeros(()), requires_grad=False)
+
+    def forward(self, observation_history, _action_history, _command):
+        return SimpleNamespace(action=observation_history[:, -1, :29])
+
+
+class _V2Env:
+    num_envs = 1
+
+    def __init__(self) -> None:
+        self.step_count = 0
+        self.current_obs = np.arange(98, dtype=np.float32)[None, :]
+
+    def _state(self) -> _State:
+        return _State(
+            obs={"obs": self.current_obs.copy()},
+            info={"commands": np.asarray([[0.4, 0.0, 0.0]], dtype=np.float32)},
+            terminated=np.zeros((1,), dtype=np.bool_),
+            truncated=np.zeros((1,), dtype=np.bool_),
+        )
+
+    def reset_all(self) -> _State:
+        self.step_count = 0
+        self.current_obs = np.arange(98, dtype=np.float32)[None, :]
+        return self._state()
+
+    def step(self, actions: np.ndarray) -> _State:
+        self.step_count += 1
+        self.current_obs[:, :29] = actions + float(self.step_count)
+        return self._state()
+
+
+def test_target_collector_consumes_preprojected_v2_observation_once() -> None:
+    module = _target_module()
+
+    result = module.collect_fada_target_windows(
+        _V2Env(),
+        rollout_policy=_V2Policy(),
+        config=_V2Policy().config,
+        num_windows=1,
+        spec=module.FADATargetCollectionSpec(
+            student_projection="g1_fada_state_v2",
+            max_env_steps=10,
+        ),
+    )
+
+    assert result.batch.observation_history.shape == (1, 2, 66)
+    assert result.batch.executed_action_chunk.shape == (1, 2, 29)
+
+
 def test_target_collector_builds_exact_oracle_free_executed_window() -> None:
     module = _target_module()
     result = module.collect_fada_target_windows(
@@ -212,3 +279,95 @@ def test_target_collector_public_boundary_has_no_oracle_or_training_inputs() -> 
         for name in names
         for forbidden in ("oracle", "teacher", "trainer", "optimizer", "replay")
     )
+
+
+def test_target_command_schedule_ramps_then_holds_without_clipping() -> None:
+    owner = importlib.import_module("unilab.algos.torch.distill.fada.target_collector")
+    spec = owner.FADATargetCollectionSpec(
+        command_start=(0.0, 0.0, 0.0),
+        command_target=(0.4, 0.0, 0.0),
+        ramp_steps=4,
+        settle_steps=2,
+    )
+
+    np.testing.assert_allclose(owner._scheduled_command(spec, 0), [0.1, 0.0, 0.0])
+    np.testing.assert_allclose(owner._scheduled_command(spec, 3), [0.4, 0.0, 0.0])
+    np.testing.assert_allclose(owner._scheduled_command(spec, 9), [0.4, 0.0, 0.0])
+
+
+def test_target_collector_uses_warmup_as_history_before_collection_boundary() -> None:
+    module = _target_module()
+
+    result = module.collect_fada_target_windows(
+        _Env(done_steps=(7,)),
+        rollout_policy=_Policy(),
+        config=_config(),
+        num_windows=8,
+        spec=module.FADATargetCollectionSpec(
+            max_env_steps=10,
+            ramp_steps=2,
+            settle_steps=1,
+            single_trajectory=True,
+        ),
+    )
+
+    assert result.env_steps == 7
+    assert result.batch.observation_history.shape[0] == 2
+    assert result.batch.start_timestep.tolist() == [3, 4]
+
+
+def test_single_trajectory_returns_usable_prefix_when_episode_ends() -> None:
+    module = _target_module()
+    captured: list[int] = []
+
+    result = module.collect_fada_target_windows(
+        _Env(done_steps=(4,)),
+        rollout_policy=_Policy(),
+        config=_config(),
+        num_windows=8,
+        spec=module.FADATargetCollectionSpec(
+            max_env_steps=10,
+            single_trajectory=True,
+            capture_frame=lambda: captured.append(1),
+        ),
+    )
+
+    assert len(captured) == 4
+    assert result.env_steps == 4
+    assert result.rejected_done_transitions == 1
+    assert result.batch.observation_history.shape[0] == 1
+    assert result.batch.episode_id.tolist() == [0]
+    assert result.batch.start_timestep.tolist() == [1]
+
+
+def test_single_trajectory_rejects_episode_with_no_usable_window() -> None:
+    module = _target_module()
+
+    with pytest.raises(RuntimeError, match="ended before producing a usable window"):
+        module.collect_fada_target_windows(
+            _Env(done_steps=(2,)),
+            rollout_policy=_Policy(),
+            config=_config(),
+            num_windows=8,
+            spec=module.FADATargetCollectionSpec(max_env_steps=10, single_trajectory=True),
+        )
+
+
+def test_target_collector_captures_reset_frame_before_first_action() -> None:
+    module = _target_module()
+    assert "capture_initial_frame" in module.FADATargetCollectionSpec.__dataclass_fields__
+    events: list[str] = []
+
+    module.collect_fada_target_windows(
+        _Env(),
+        rollout_policy=_Policy(),
+        config=_config(),
+        num_windows=1,
+        spec=module.FADATargetCollectionSpec(
+            max_env_steps=10,
+            capture_initial_frame=lambda: events.append("initial"),
+            capture_frame=lambda: events.append("step"),
+        ),
+    )
+
+    assert events == ["initial", "step", "step", "step"]

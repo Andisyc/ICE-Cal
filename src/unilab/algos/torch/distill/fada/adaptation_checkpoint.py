@@ -30,11 +30,17 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 def assert_fada_adaptation_source_checkpoint(
     loaded: LoadedFADAPlannerIDMPolicy,
 ) -> LoadedFADAPlannerIDMPolicy:
-    """Keep the active Stage-C/D adaptation contract pinned to source schema 3."""
+    """Keep Stage-C/D pinned to the current complete FADA source schema."""
 
     checkpoint = getattr(loaded, "checkpoint", None)
-    if not isinstance(checkpoint, Mapping) or checkpoint.get("schema_version") != 3:
-        raise ValueError("FADA adaptation v002 requires schema-3 source checkpoint")
+    if (
+        not isinstance(checkpoint, Mapping)
+        or checkpoint.get("schema_version") != FADA_CHECKPOINT_SCHEMA_VERSION
+    ):
+        raise ValueError(
+            "FADA adaptation requires current schema-"
+            f"{FADA_CHECKPOINT_SCHEMA_VERSION} source checkpoint"
+        )
     return loaded
 
 

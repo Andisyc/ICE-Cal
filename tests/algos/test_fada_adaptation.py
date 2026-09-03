@@ -206,13 +206,26 @@ def test_target_split_is_episode_owned_deterministic_and_permutation_safe() -> N
     )
 
 
-def test_target_split_rejects_one_episode_and_row_selection_rejects_duplicates() -> None:
+def test_target_split_supports_one_episode_with_temporal_purge() -> None:
     owner = _owner()
     batch = _target_batch(_config())
-    one_episode = owner.select_fada_target_rows(batch, torch.tensor([0, 1]))
-
-    with pytest.raises(ValueError, match="two episodes"):
-        owner.split_fada_target_batch(one_episode, validation_fraction=0.5, seed=0)
+    repeats = 3
+    long_episode = FADATargetBatch(
+        **{
+            name: (
+                torch.zeros(len(batch.episode_id) * repeats, dtype=torch.int64)
+                if name == "episode_id"
+                else (
+                    torch.arange(len(batch.episode_id) * repeats, dtype=torch.int64)
+                    if name == "start_timestep"
+                    else torch.cat([getattr(batch, name)] * repeats)
+                )
+            )
+            for name in FADATargetBatch.__dataclass_fields__
+        }
+    )
+    split = owner.split_fada_target_batch(long_episode, validation_fraction=0.34, seed=0)
+    assert int(split.train_indices.max()) + 4 <= int(split.validation_indices.min())
     with pytest.raises(ValueError, match="unique"):
         owner.select_fada_target_rows(batch, torch.tensor([0, 0]))
 

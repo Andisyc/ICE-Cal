@@ -3,8 +3,8 @@ defaults:
   - /task/sac/g1_walk_flat/mujoco_no_gait_single_reward
   - _self_
 
-# Controlled teacher playback profile: fixed 0.4 m/s straight command and a
-# gain-based actuator-effectiveness approximation on the left knee (index 3).
+# Shared Stage-C playback environment. The selected fault config owns and injects
+# the actuator multiplier; this task owns only the common nominal environment.
 interactive:
   keyboard: false
 
@@ -22,25 +22,6 @@ env:
     actuator_strength:
       enabled: true
       multipliers:
-        # left leg: hip pitch/roll/yaw, knee, ankle pitch/roll
-        - 1.0
-        - 1.0
-        - 1.0
-        - 0.9
-        - 1.0
-        - 1.0
-        # right leg
-        - 1.0
-        - 1.0
-        - 1.0
-        - 1.0
-        - 1.0
-        - 1.0
-        # waist
-        - 1.0
-        - 1.0
-        - 1.0
-        # left arm
         - 1.0
         - 1.0
         - 1.0
@@ -48,7 +29,21 @@ env:
         - 1.0
         - 1.0
         - 1.0
-        # right arm
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
         - 1.0
         - 1.0
         - 1.0

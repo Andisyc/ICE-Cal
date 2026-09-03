@@ -11,6 +11,7 @@ def __getattr__(name: str):
     if name in {
         "materialize_visual_playback_model",
         "resolve_render_play_model_files",
+        "render_mujoco_states_video",
         "run_mujoco_playback",
     }:
         from . import playback
@@ -41,6 +42,7 @@ __all__ = [
     "materialize_visual_playback_model",
     "materialize_mujoco_hfield_attached_scene",
     "resolve_render_play_model_files",
+    "render_mujoco_states_video",
     "materialize_scene_fragments",
     "materialize_scene_visual_override",
     "processed_xml",

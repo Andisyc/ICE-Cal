@@ -14,8 +14,10 @@ from omegaconf import DictConfig, OmegaConf
 from unilab.algos.torch.distill import (
     FADAArchitectureConfig,
     FADAPlannerIDMPolicy,
+    FADATrainer,
     load_fada_adapted_checkpoint,
     load_fada_policy_checkpoint,
+    save_fada_checkpoint,
 )
 from unilab.algos.torch.distill.fada_target_data import (
     FADATargetBatch,
@@ -71,20 +73,19 @@ def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
     source = tmp_path / "source.pt"
-    torch.save(
-        {
-            "schema_version": 3,
-            "architecture": asdict(config),
-            "planner_state_dict": policy.planner.state_dict(),
-            "idm_state_dict": policy.idm.state_dict(),
-            "planner_optimizer_state_dict": {},
-            "idm_optimizer_state_dict": {},
-            "completed_iterations": 5,
-            "samples_seen": 100,
-            "runtime_config": {},
-            "quality_metrics": {},
-        },
+    trainer = FADATrainer(
+        policy,
+        idm_optimizer=torch.optim.Adam(policy.idm.parameters()),
+        planner_optimizer=torch.optim.Adam(policy.planner.parameters()),
+        max_grad_norm=1.0,
+    )
+    save_fada_checkpoint(
         source,
+        policy,
+        trainer,
+        completed_iterations=5,
+        samples_seen=100,
+        runtime_config={"training_schedule": "alternating_idm_then_planner"},
     )
     source_sha = file_sha256(source)
     rows = 6
@@ -125,7 +126,7 @@ def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
 def test_adaptation_config_reuses_target_owner_and_paper_lora_defaults() -> None:
     cfg = _compose()
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_left_knee_090"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target"
     assert cfg.hydra.runtime.choices.adaptation == "fada_lora"
     assert cfg.training.task_name == "G1WalkFlat"
     assert cfg.training.sim_backend == "mujoco"
@@ -136,10 +137,18 @@ def test_adaptation_config_reuses_target_owner_and_paper_lora_defaults() -> None
     assert cfg.adaptation.batch_size == 512
     assert cfg.adaptation.max_updates == 400
     assert cfg.adaptation.observation_contract == "g1_fada_state_v2"
-    assert cfg.adaptation.source_checkpoint_path == "logs/fada/planner_idm_v006_state66.pt"
+    assert cfg.adaptation.source_checkpoint_path == "planner_idm_v022_cpu_limited.pt"
     assert cfg.adaptation.expected_source_checkpoint_sha256 is None
     assert cfg.adaptation.expected_target_artifact_sha256 is None
-    assert cfg.adaptation.target_artifact_path.endswith("_v2.pt")
+    assert cfg.adaptation.target_artifact_path.endswith("left_knee_090/faulty.pt")
+
+
+def test_right_knee_adaptation_uses_the_matching_stage_c_bundle() -> None:
+    cfg = _compose("fault=right_knee_090")
+
+    assert cfg.fault.actuator_index == 9
+    assert cfg.adaptation.target_artifact_path.endswith("right_knee_090/faulty.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("right_knee_090_v2.pt")
 
 
 def test_preflight_builds_frozen_adapter_and_writes_nothing(tmp_path: Path) -> None:
@@ -163,6 +172,26 @@ def test_preflight_builds_frozen_adapter_and_writes_nothing(tmp_path: Path) -> N
     assert result.trainable_parameter_count > 0
     assert result.total_parameter_count > result.trainable_parameter_count
     assert result.confirm_train is False
+    assert not output.exists()
+
+
+def test_preflight_accepts_null_hashes_and_records_observed_identity(tmp_path: Path) -> None:
+    module = _load_script()
+    source, target, source_sha, target_sha = _artifacts(tmp_path)
+    output = tmp_path / "adapted.pt"
+    cfg = _compose(
+        f"adaptation.source_checkpoint_path={source}",
+        "adaptation.expected_source_checkpoint_sha256=null",
+        f"adaptation.target_artifact_path={target}",
+        "adaptation.expected_target_artifact_sha256=null",
+        f"adaptation.output_checkpoint_path={output}",
+        "adaptation.batch_size=2",
+    )
+
+    result = module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
+
+    assert result.source_checkpoint_sha256 == source_sha
+    assert result.target_artifact_sha256 == target_sha
     assert not output.exists()
 
 
@@ -244,7 +273,7 @@ def test_preflight_rejects_legacy_source_before_target_load_or_optimizer(
 
     monkeypatch.setattr(module, "load_fada_target_artifact", forbidden_target_load)
 
-    with pytest.raises(ValueError, match="requires schema-3"):
+    with pytest.raises(ValueError, match="requires current schema-5"):
         module.preflight_fada_adaptation(cfg, root_dir=ROOT_DIR)
 
     assert target_loads == 0

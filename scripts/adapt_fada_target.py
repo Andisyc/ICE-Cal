@@ -32,6 +32,7 @@ from unilab.algos.torch.distill import (  # noqa: E402
     inject_fada_idm_lora,
     load_fada_policy_checkpoint,
     load_fada_target_artifact,
+    resolve_fada_fault,
     save_fada_adapted_checkpoint,
     select_fada_target_rows,
     split_fada_target_batch,
@@ -41,10 +42,6 @@ from unilab.training import (  # noqa: E402
     get_hydra_runtime_choice,
 )
 
-_TARGET_TASK_CHOICE = "sac/g1_walk_flat/mujoco_left_knee_090"
-_TARGET_TASK_NAME = "G1WalkFlat"
-_TARGET_BACKEND = "mujoco"
-_TARGET_FAULT_PROFILE = "left_knee_strength_0.9"
 _PAPER_LORA = {"rank": 8, "alpha": 16.0, "dropout": 0.05}
 
 
@@ -86,12 +83,13 @@ def _nonnegative_int(cfg: DictConfig, path: str) -> int:
 
 
 def _assert_identity(cfg: DictConfig) -> None:
+    fault = resolve_fada_fault(cfg)
     assert_offpolicy_task_choice_matches_algo(cfg, algo_name="sac")
-    if get_hydra_runtime_choice(cfg, "task") != _TARGET_TASK_CHOICE:
-        raise ValueError(f"FADA adaptation requires task={_TARGET_TASK_CHOICE}")
-    if str(OmegaConf.select(cfg, "training.task_name")) != _TARGET_TASK_NAME:
-        raise ValueError(f"FADA adaptation requires task_name={_TARGET_TASK_NAME}")
-    if str(OmegaConf.select(cfg, "training.sim_backend")) != _TARGET_BACKEND:
+    if get_hydra_runtime_choice(cfg, "task") != fault.task:
+        raise ValueError(f"FADA adaptation requires task={fault.task}")
+    if str(OmegaConf.select(cfg, "training.task_name")) != fault.task_name:
+        raise ValueError(f"FADA adaptation requires task_name={fault.task_name}")
+    if str(OmegaConf.select(cfg, "training.sim_backend")) != fault.backend:
         raise ValueError("FADA adaptation identity requires the MuJoCo target owner")
     for name, expected in _PAPER_LORA.items():
         observed = OmegaConf.select(cfg, f"adaptation.{name}")
@@ -154,14 +152,14 @@ def preflight_fada_adaptation(
         raise ValueError("FADA adapted output must use a .pt suffix")
 
     source_sha = file_sha256(source_path)
-    expected_source = str(OmegaConf.select(cfg, "adaptation.expected_source_checkpoint_sha256"))
-    if source_sha != expected_source:
+    expected_source = OmegaConf.select(cfg, "adaptation.expected_source_checkpoint_sha256")
+    if expected_source is not None and source_sha != str(expected_source):
         raise ValueError(
             f"FADA source checkpoint SHA-256 mismatch: expected={expected_source} observed={source_sha}"
         )
     target_sha = file_sha256(target_path)
-    expected_target = str(OmegaConf.select(cfg, "adaptation.expected_target_artifact_sha256"))
-    if target_sha != expected_target:
+    expected_target = OmegaConf.select(cfg, "adaptation.expected_target_artifact_sha256")
+    if expected_target is not None and target_sha != str(expected_target):
         raise ValueError(
             f"FADA target artifact SHA-256 mismatch: expected={expected_target} observed={target_sha}"
         )
@@ -180,9 +178,10 @@ def preflight_fada_adaptation(
         raise ValueError(
             "FADA target artifact policy checkpoint identity does not match the source"
         )
-    if loaded_target.metadata["task"] != _TARGET_TASK_NAME:
+    fault = resolve_fada_fault(cfg)
+    if loaded_target.metadata["task"] != fault.task_name:
         raise ValueError("FADA target artifact task identity does not match adaptation")
-    if loaded_target.metadata["fault_profile"] != _TARGET_FAULT_PROFILE:
+    if loaded_target.metadata["fault_profile"] != fault.fault_profile:
         raise ValueError("FADA target artifact fault profile does not match adaptation")
 
     adapted = inject_fada_idm_lora(

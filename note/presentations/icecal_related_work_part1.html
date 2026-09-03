@@ -66,6 +66,14 @@
     td:first-child { color: var(--ink); font-weight: 700; white-space: normal; }
     .tag { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 99px; font-size: 11px; white-space: nowrap; }
     .tag.sim { color: var(--violet); } .tag.cal { color: var(--cyan); } .tag.real { color: var(--orange); }
+    .scenario-section { margin-top: 64px; }
+    .scenario-wrap { overflow-x: auto; border: 1px solid var(--line); background: rgba(16,26,33,.78); }
+    .scenario-table { min-width: 920px; }
+    .scenario-table th:nth-child(1) { width: 16%; }
+    .scenario-table th:nth-child(2) { width: 32%; }
+    .scenario-table th:nth-child(3) { width: 30%; }
+    .scenario-table th:nth-child(4) { width: 22%; }
+    .scenario-note { margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
     footer { padding: 20px 0 34px; color: #61707a; border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
     dialog { width: min(460px, calc(100% - 32px)); border: 1px solid var(--cyan); border-radius: 4px; padding: 0; color: var(--ink); background: #111d25; box-shadow: 0 24px 80px rgba(0,0,0,.55); }
     dialog::backdrop { background: rgba(1,6,9,.72); backdrop-filter: blur(4px); }
@@ -133,6 +141,24 @@
           <tr><td>HALOMI</td><td><span class="tag sim">否</span></td><td>人类示教；真机不做目标域更新</td><td>controller-aware reference adaptation</td><td>训练完成 → 真机部署</td></tr>
         </tbody>
       </table></div>
+    </section>
+    <section class="scenario-section" aria-labelledby="scenario-title">
+      <div class="section-label"><h2 id="scenario-title">校准工作如何制造新场景</h2><span class="hint">先改变条件，再决定校准对象</span></div>
+      <div class="scenario-wrap"><table class="scenario-table">
+        <thead><tr><th>工作</th><th>如何制造场景</th><th>暴露出的失配</th><th>校准对象</th></tr></thead>
+        <tbody>
+          <tr><td>RMA</td><td>在仿真中随机化质量、摩擦、执行器等动力学，测试时使用未见组合。</td><td>新动力学下仍需完成原 locomotion 任务。</td><td>仿真中联合训练的 Context Encoder 和策略；真机不更新。</td></tr>
+          <tr><td>SplitAdapter</td><td>让人形机器人搬运不同质量、不同高度的箱子，并叠加机器人与环境动力学变化。</td><td>负载变化同时影响物体运动和机器人运动。</td><td>分开的 <code>z_obj</code>、<code>z_dyn</code>，通过 FiLM 调制冻结策略。</td></tr>
+          <tr><td>FADA</td><td>先训练 Planner–IDM；部署时施加执行器故障，收集失败的 observation-action 轨迹。</td><td>Planner 意图仍然正确，但 IDM 动作无法被故障机器人正确执行。</td><td>冻结 Planner，只微调 IDM 内的 LoRA。</td></tr>
+          <tr><td>ASAP</td><td>将仿真策略直接放到真实机器人，收集真实执行轨迹。</td><td>仿真动作在真实动力学下产生不同结果。</td><td>学习 Delta Action Model，再回仿真调整策略；部署时不保留校准模型。</td></tr>
+          <tr><td>RTR</td><td>把策略放到真实机器人，在不同真实动力学下继续运行并获得 reward。</td><td>真实速度跟踪或稳定性下降。</td><td>用真实 reward 继续 PPO，主要优化 dynamics latent 和相关策略参数。</td></tr>
+          <tr><td>HALOMI</td><td>让运动生成器输出的参考轨迹经过控制器执行。</td><td>生成的参考与控制器能力不匹配，参考暂时不可执行。</td><td>调整 reference，而不是单纯修改控制器。</td></tr>
+          <tr><td>Motion Generation + Tracking</td><td>冻结动作生成器，提供不完美或难以执行的参考动作。</td><td>Tracker 无法稳定跟踪生成参考。</td><td>保留生成器，重点训练或微调 Tracker。</td></tr>
+          <tr><td>REFINE-DP</td><td>将 Planner 生成的动作意图交给低层控制器，在执行中暴露联合失配。</td><td>Planner 和 Controller 的责任边界不清。</td><td>同时细化 Planner 与低层 Controller。</td></tr>
+          <tr><td>ReactiveBFM / ADAPT</td><td>在行走中加入外力、失衡或突发扰动。</td><td>当前参考不再适合机器人的瞬时状态。</td><td>通过恢复、重规划或 disturbance observer 改变输入和决策。</td></tr>
+        </tbody>
+      </table></div>
+      <p class="scenario-note">这些工作不是先选择一个网络模块，再寻找应用场景。它们先制造“原策略在新条件下不再适用”的情形，再根据误差发生的位置决定校准 Planner、Tracker、参考接口或整个策略。</p>
     </section>
   </main>
   <footer><div class="wrap">ICE-Cal · Related Work / Part 01 · 分类依据：真机数据是否进入参数或模型更新</div></footer>

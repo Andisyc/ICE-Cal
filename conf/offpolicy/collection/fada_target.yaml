@@ -1,16 +1,21 @@
-policy_checkpoint_path: logs/fada/planner_idm_v006_state66.pt
+policy_checkpoint_path: logs/fada/planner_idm_v022_cpu_limited.pt
 expected_checkpoint_sha256: null
-output_path: artifacts/fada_target/g1_walk_flat_mujoco_left_knee_090_v2.pt
-overwrite: false
+output_dir: artifacts/fada_target/g1_walk_flat_mujoco_${fault.name}
 
 num_envs: 1
-num_windows: 4096
+num_windows: 512
 max_env_steps: 100000
 device: cpu
+
+command_start: [0.0, 0.0, 0.0]
+command_target: [0.4, 0.0, 0.0]
+ramp_steps: 10
+settle_steps: 20
+single_trajectory: true
+record_video: true
+seed: 1
 
 observation_key: obs
 student_projection: g1_fada_state_v2
 student_drop_index: null
 command_info_keys: [commands]
-
-fault_profile: left_knee_strength_0.9

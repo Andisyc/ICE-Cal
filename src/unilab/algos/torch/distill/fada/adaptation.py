@@ -179,7 +179,7 @@ def split_fada_target_batch(
     validation_fraction: float,
     seed: int,
 ) -> FADATargetSplit:
-    """Split by episode identity so overlapping lifecycle windows never cross splits."""
+    """Split by episode, or by purged time blocks for one continuous trajectory."""
 
     fraction = float(validation_fraction)
     if not math.isfinite(fraction) or not 0.0 < fraction < 1.0:
@@ -187,8 +187,24 @@ def split_fada_target_batch(
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError(f"split seed must be a non-negative integer, got {seed!r}")
     episodes = torch.unique(batch.episode_id.detach().to("cpu"), sorted=True)
-    if int(episodes.numel()) < 2:
-        raise ValueError("FADA target split requires at least two episodes")
+    if int(episodes.numel()) == 1:
+        timesteps = batch.start_timestep.detach().to("cpu")
+        order = torch.argsort(timesteps, stable=True)
+        validation_count = max(1, round(len(order) * fraction))
+        validation_start = len(order) - validation_count
+        validation_indices = order[validation_start:].to(torch.int64)
+        validation_timestep = int(timesteps[validation_indices].min())
+        window_span = int(batch.observation_history.shape[1] + batch.realized_future.shape[1] - 1)
+        train_mask = timesteps[order[:validation_start]] + window_span < validation_timestep
+        train_indices = order[:validation_start][train_mask].to(torch.int64)
+        if train_indices.numel() == 0:
+            raise ValueError(
+                "FADA single-trajectory split is too short for train, validation, and purge gap"
+            )
+        return FADATargetSplit(
+            train_indices=train_indices,
+            validation_indices=validation_indices,
+        )
     generator = torch.Generator(device="cpu").manual_seed(seed)
     episode_order = episodes[torch.randperm(int(episodes.numel()), generator=generator)]
     validation_count = max(1, min(int(episodes.numel()) - 1, round(len(episodes) * fraction)))

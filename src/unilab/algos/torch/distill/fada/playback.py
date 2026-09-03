@@ -60,10 +60,17 @@ class FADAPlaybackController:
 
     @torch.no_grad()
     def act(self, observation: Any, command: Any) -> torch.Tensor:
-        """Update histories from the current state and execute only the IDM chunk's first action."""
+        """Project a raw actor observation and execute one receding-horizon action."""
 
-        # B1: 投影 deployable actor observation 与完整 task command, 并关闭 shape/finite 漂移.
-        obs = self._observation_tensor(observation)
+        return self._act(self._observation_tensor(observation), command)
+
+    @torch.no_grad()
+    def act_projected(self, observation: Any, command: Any) -> torch.Tensor:
+        """Execute from an observation already projected to the policy contract."""
+
+        return self._act(self._projected_observation_tensor(observation), command)
+
+    def _act(self, obs: torch.Tensor, command: Any) -> torch.Tensor:
         cmd = torch.as_tensor(command, dtype=torch.float32, device=self.device)
         if cmd.ndim == 1:
             cmd = cmd.unsqueeze(0)
@@ -105,14 +112,30 @@ class FADAPlaybackController:
         obs = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
         if obs.ndim == 1:
             obs = obs.unsqueeze(0)
-        obs = project_fada_observation_tensor(
-            obs,
-            observation_contract=self.config.observation_contract,
+        return self._validate_projected_observation(
+            project_fada_observation_tensor(
+                obs,
+                observation_contract=self.config.observation_contract,
+            )
         )
+
+    def _projected_observation_tensor(self, observation: Any) -> torch.Tensor:
+        obs = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
+        if obs.ndim == 1:
+            obs = obs.unsqueeze(0)
+        return self._validate_projected_observation(obs, projected=True)
+
+    def _validate_projected_observation(
+        self,
+        obs: torch.Tensor,
+        *,
+        projected: bool = False,
+    ) -> torch.Tensor:
         expected_feature_dim = self.config.obs_dim
         if obs.ndim != 2 or obs.shape[1] != expected_feature_dim:
+            boundary = "projected observation" if projected else "observation"
             raise ValueError(
-                "FADA playback observation shape mismatch: expected "
+                f"FADA playback {boundary} shape mismatch: expected "
                 f"[batch, {expected_feature_dim}] observed={tuple(obs.shape)}"
             )
         if not bool(torch.isfinite(obs).all()):
