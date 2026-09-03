@@ -4,13 +4,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 from hydra import compose, initialize_config_dir
 
 from unilab.algos.torch.distill import FADAArchitectureConfig
 from unilab.algos.torch.distill.fada.target_collector import FADASlopeEpisodePolicy
 from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
-from unilab.algos.torch.distill.fada.target_evaluation import _run_pair
+from unilab.algos.torch.distill.fada.target_evaluation import _evaluation_commands, _run_pair
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -95,13 +96,35 @@ class _Env:
         return np.asarray([[self.step_count]], dtype=np.float32)
 
 
+class _EarlyTerminalEnv(_Env):
+    def step(self, action):
+        state = super().step(action)
+        state.terminated[:] = True
+        return state
+
+
 def test_evaluation_config_owns_same_condition_pair_and_flat_regression() -> None:
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
         cfg = compose(config_name="fada_slope_evaluate", return_hydra_config=True)
 
     assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
-    assert list(cfg.evaluation.command) == [0.8, 0.0, 0.0]
+    assert cfg.evaluation.num_trials == 20
+    assert cfg.evaluation.representative_forward_speed_mps == 0.8
+    assert "command" not in cfg.evaluation
     assert cfg.evaluation.run_flat_regression is True
+
+
+def test_evaluation_selects_twenty_unique_domain_commands_and_representative() -> None:
+    with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
+        cfg = compose(config_name="fada_slope_evaluate", return_hydra_config=True)
+    from unilab.algos.torch.distill.fada.target_domain import resolve_fada_target_domain
+
+    commands, representative = _evaluation_commands(cfg, resolve_fada_target_domain(cfg))
+
+    assert len(commands) == len(set(commands)) == 20
+    assert commands[representative][0] == min(
+        (command[0] for command in commands), key=lambda speed: abs(speed - 0.8)
+    )
 
 
 def test_rollout_pair_restores_complete_snapshot_before_each_policy() -> None:
@@ -120,6 +143,26 @@ def test_rollout_pair_restores_complete_snapshot_before_each_policy() -> None:
     )
 
     assert env.restore_calls == 2
-    np.testing.assert_array_equal(zero.base_pos_w, adapted.base_pos_w)
-    np.testing.assert_array_equal(zero.command_forward_mps, adapted.command_forward_mps)
-    assert len(zero.physics_states) == len(adapted.physics_states) == 4
+    np.testing.assert_array_equal(zero.trajectory.base_pos_w, adapted.trajectory.base_pos_w)
+    np.testing.assert_array_equal(
+        zero.trajectory.command_forward_mps, adapted.trajectory.command_forward_mps
+    )
+    assert len(zero.trajectory.physics_states) == len(adapted.trajectory.physics_states) == 4
+    assert zero.target_batch.observation_history.shape[0] == 2
+    assert adapted.target_batch.observation_history.shape[0] == 2
+
+
+def test_rollout_pair_rejects_policy_that_terminates_before_one_causal_window() -> None:
+    env = _EarlyTerminalEnv()
+    policy = _Policy()
+
+    with pytest.raises(RuntimeError, match="no complete causal windows"):
+        _run_pair(
+            env,
+            policy,
+            policy,
+            command=np.asarray([0.8, 0.0, 0.0], dtype=np.float32),
+            control_steps=4,
+            ramp_steps=0,
+            episode_policy=None,
+        )

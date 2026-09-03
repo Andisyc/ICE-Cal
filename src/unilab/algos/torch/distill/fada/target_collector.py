@@ -213,7 +213,7 @@ def _done_mask(state: Any, *, num_envs: int) -> np.ndarray:
     return terminated | truncated
 
 
-def _concat_target_batches(
+def concat_fada_target_batches(
     batches: Sequence[FADATargetBatch], config: FADAArchitectureConfig
 ) -> FADATargetBatch:
     return FADATargetBatch(
@@ -224,7 +224,7 @@ def _concat_target_batches(
     ).validate(config)
 
 
-def _target_batch_from_window(
+def fada_target_batch_from_window(
     records: Sequence[FADACausalTransition], config: FADAArchitectureConfig
 ) -> FADATargetBatch | None:
     window = build_fada_causal_window(
@@ -372,7 +372,7 @@ def collect_fada_target_windows(
             )
             episode_timesteps[index] += 1
             if len(records[index]) == record_count:
-                window = _target_batch_from_window(tuple(records[index]), config)
+                window = fada_target_batch_from_window(tuple(records[index]), config)
                 if window is None:
                     rejected_command += 1
                 elif window.start_timestep >= collection_start:
@@ -394,7 +394,7 @@ def collect_fada_target_windows(
             break
 
     return FADATargetCollectionResult(
-        batch=_concat_target_batches(batches[: int(num_windows)], config),
+        batch=concat_fada_target_batches(batches[: int(num_windows)], config),
         env_steps=env_steps,
         rejected_done_transitions=rejected_done,
         rejected_command_windows=rejected_command,
@@ -573,7 +573,7 @@ def collect_fada_slope_windows(
             accepted_steps += 1
             episode_accepted += 1
             if len(records) == record_count:
-                window = _target_batch_from_window(tuple(records), config)
+                window = fada_target_batch_from_window(tuple(records), config)
                 if window is None:
                     rejected_command += 1
                 else:
@@ -604,7 +604,7 @@ def collect_fada_slope_windows(
     if episode_accepted > 0 and len(episode_states) > len(representative):
         representative = tuple(episode_states)
     return FADATargetCollectionResult(
-        batch=_concat_target_batches(batches, config),
+        batch=concat_fada_target_batches(batches, config),
         env_steps=env_steps,
         rejected_done_transitions=(
             termination_counts["fall"]

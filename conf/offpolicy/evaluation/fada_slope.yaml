@@ -5,10 +5,12 @@ expected_source_checkpoint_sha256: null
 expected_adapted_checkpoint_sha256: null
 
 device: cpu
-command: [0.8, 0.0, 0.0]
+# FADA Section 5.5 evaluates randomized commands; use the Stage-C fixed-seed
+# command sequence so zero-shot and adapted policies see identical trials.
+num_trials: 20
+representative_forward_speed_mps: 0.8
 control_steps: 600
 ramp_steps: 25
 seed: 1
 record_video: true
 run_flat_regression: true
-

@@ -48,9 +48,13 @@ cd /Users/chengyuxuan/ArtiIntComVis/ICE-Cal
 uv run --frozen --no-sync python scripts/evaluate_fada_slope.py
 ```
 
-Evaluation writes paired slope videos, ramp-coordinate metrics, and the
-enabled-by-default flat-ground regression. Existing output directories are
-never overwritten.
+Evaluation runs `20` fixed-seed randomized forward-speed commands. Each command
+uses one shared reset snapshot for the zero-shot/adapted pair, while each policy's
+IDM loss is computed only from that policy's own rollout. The output also reports
+the Planner-predicted-versus-realized future consistency gap, paired means,
+sample standard deviations, and win fractions. It writes representative slope
+videos for the command nearest `0.8 m/s` plus the enabled-by-default multi-command
+flat-ground regression. Existing output directories are never overwritten.
 
 Automated tests validate contracts and data flow only. They are not simulator,
 training, deployment, or policy-quality evidence.

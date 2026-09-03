@@ -29,6 +29,14 @@ and validation, and slope preflight rejects artifacts that reuse one command acr
 episodes. This separation diagnoses command interpolation; it does not replace closed-loop slope and
 flat-ground evaluation.
 
+Closed-loop evaluation uses the first `20` unique commands from the same fixed-seed stratified
+Stage-C command sequence. Zero-shot and adapted policies restore the same complete simulator
+snapshot for every command. Each policy is measured only on causal windows from its own rollout:
+first-action IDM MSE measures realized-dynamics fit, while the first-action RMSE between the IDM
+outputs for Planner-predicted and realized futures is the consistency gap. Metrics report paired
+means, sample standard deviations, and win fractions; one command nearest `0.8 m/s` owns the
+representative videos. These diagnostics do not alter training, action execution, or checkpoints.
+
 Historical `fada-adapted/v1` and `fada-adapted/v2` policies retain explicit generic playback support
 but are excluded from current Stage-C collection and Stage-D training.
 

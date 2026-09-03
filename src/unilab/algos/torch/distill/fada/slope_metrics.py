@@ -142,3 +142,97 @@ def compare_slope_summaries(
         zero_shot["time_before_terminal_s"]
     )
     return comparison
+
+
+def compact_slope_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Drop per-frame series while preserving scalar and terminal evidence."""
+
+    return {
+        key: value for key, value in summary.items() if key not in {"lateral_m", "yaw_error_rad"}
+    }
+
+
+def _sample_statistics(values: list[float]) -> dict[str, float]:
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim != 1 or array.size == 0 or not bool(np.all(np.isfinite(array))):
+        raise ValueError("FADA evaluation aggregation requires finite scalar values")
+    return {
+        "mean": float(np.mean(array)),
+        "sample_std": float(np.std(array, ddof=1)) if array.size > 1 else 0.0,
+    }
+
+
+def aggregate_policy_summaries(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate repeated policy trials without merging terminal semantics into scalars."""
+
+    if not summaries:
+        raise ValueError("FADA evaluation requires at least one policy summary")
+    metric_names = sorted(
+        key
+        for key, value in summaries[0].items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    )
+    if any(
+        not isinstance(summary.get(name), (int, float)) or isinstance(summary.get(name), bool)
+        for summary in summaries
+        for name in metric_names
+    ):
+        raise ValueError("FADA evaluation policy summaries have inconsistent numeric fields")
+    terminal_counts: dict[str, int] = {}
+    for summary in summaries:
+        reason = summary.get("terminal_reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("FADA evaluation policy summary requires terminal_reason")
+        terminal_counts[reason] = terminal_counts.get(reason, 0) + 1
+    return {
+        "metrics": aggregate_numeric_summaries(summaries, metric_names=metric_names),
+        "terminal_counts": dict(sorted(terminal_counts.items())),
+    }
+
+
+def aggregate_numeric_summaries(
+    summaries: list[dict[str, Any]],
+    *,
+    metric_names: list[str] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Aggregate a consistent set of numeric diagnostic records."""
+
+    if not summaries:
+        raise ValueError("FADA evaluation requires at least one numeric summary")
+    names = (
+        sorted(
+            key
+            for key, value in summaries[0].items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        )
+        if metric_names is None
+        else metric_names
+    )
+    if any(
+        not isinstance(summary.get(name), (int, float)) or isinstance(summary.get(name), bool)
+        for summary in summaries
+        for name in names
+    ):
+        raise ValueError("FADA evaluation numeric summaries have inconsistent fields")
+    return {
+        name: _sample_statistics([float(summary[name]) for summary in summaries]) for name in names
+    }
+
+
+def aggregate_improvement_summaries(
+    comparisons: list[dict[str, float]],
+) -> dict[str, dict[str, float]]:
+    """Aggregate paired deltas; positive values and wins mean adapted is better."""
+
+    if not comparisons:
+        raise ValueError("FADA evaluation requires at least one paired comparison")
+    names = sorted(comparisons[0])
+    if any(set(comparison) != set(names) for comparison in comparisons):
+        raise ValueError("FADA evaluation comparisons have inconsistent fields")
+    result: dict[str, dict[str, float]] = {}
+    for name in names:
+        values = [float(comparison[name]) for comparison in comparisons]
+        stats = _sample_statistics(values)
+        stats["paired_win_fraction"] = float(np.mean(np.asarray(values) > 0.0))
+        result[name] = stats
+    return result

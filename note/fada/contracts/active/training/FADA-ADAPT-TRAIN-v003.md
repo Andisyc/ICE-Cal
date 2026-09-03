@@ -20,3 +20,7 @@ The official Stage-D source reader admits only schema 5. The official Stage-C co
 schema 5 and `fada-adapted/v3`; it rejects historical adapted schemas before environment creation.
 The generic deployable reader may load `fada-adapted/v1` and `fada-adapted/v2` through an isolated
 legacy injector and must never reinterpret their all-Linear target manifest as the v3 Q/V design.
+
+Post-training evaluation is read-only. It reconstructs the same validated causal target-batch
+schema independently for each policy rollout and runs Planner/IDM inference under `no_grad`; no
+evaluation tensor may enter the Stage-D optimizer or checkpoint payload.
