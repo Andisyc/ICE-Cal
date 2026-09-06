@@ -35,6 +35,12 @@ Do not start a second training process unless concurrent training was explicitly
 
 ## Foreground privileged-Oracle command
 
+The stand/walk baseline uses `mujoco_fada_privileged_oracle_grouped_dr_lineage`:
+live privileged inputs, 30% standing commands, no gait-phase input, no phase
+Reward or height cost. It retains the grouped domain-randomization curriculum.
+The command-phase experimental task is preserved for old-run comparison; do
+not select it for this baseline or resume its checkpoint into this run.
+
 This command intentionally does not use `nohup`. It reserves at least two, or roughly one eighth,
 of the logical CPUs for SSH and starts from `1024` MuJoCo environments instead of the profile's
 `2048`-environment maximum.
@@ -51,7 +57,7 @@ if [ "$TRAIN_LAST_CPU" -lt 0 ]; then
   exit 1
 fi
 
-RUN_DIR=/ssd1/cyx/ICE-Cal/model/FADAPrivilegedOracle_v015_seed1
+RUN_DIR=/ssd1/cyx/ICE-Cal/logs/FADAPrivilegedOracle_no_gait_seed1
 mkdir -p "$RUN_DIR"
 
 taskset -c "0-${TRAIN_LAST_CPU}" \
@@ -66,10 +72,10 @@ env \
   NUMEXPR_NUM_THREADS=4 \
   PYTHONUNBUFFERED=1 \
   PYTHONPATH=/ssd1/cyx/ICE-Cal/src \
-  ICE_CAL_ORACLE_LINEAGE_ID=fada-v015-seed1 \
-uv run --no-sync python scripts/train_offpolicy.py \
+  ICE_CAL_ORACLE_LINEAGE_ID=no-gait-baseline-seed1 \
+uv run --frozen --no-sync python scripts/train_offpolicy.py \
   algo=sac \
-  task=sac/g1_walk_flat/mujoco_fada_privileged_oracle \
+  task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage \
   training.device=cuda:0 \
   training.no_play=true \
   training.log_dir="$RUN_DIR" \
@@ -112,4 +118,3 @@ before terminating it.
 A responsive launch proves only that the selected process can start inside this resource envelope.
 It does not prove convergence, policy quality, checkpoint superiority, Planner-IDM readiness, or
 deployment safety.
-

@@ -98,6 +98,28 @@ def test_v016_single_reward_validator_rejects_retired_authority() -> None:
         )
 
 
+def test_grouped_oracle_baseline_disables_gait_and_keeps_live_privilege(monkeypatch):
+    cfg = _compose("sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage", monkeypatch)
+    runtime = resolve_privileged_locomotion_sac_runtime(
+        OmegaConf.to_container(cfg.algo, resolve=True)
+    )
+    runtime.validate_training_config(cfg)
+    assert cfg.algo.actor.oracle_behavior_profile == "phase_neutral_mixed_v1"
+    assert cfg.env.gait_phase_enabled is False
+    assert cfg.env.fada_privileged_observation.enabled is True
+    assert cfg.algo.actor.fixed_privileged_input is False
+    assert cfg.env.commands.rel_standing_envs == pytest.approx(0.3)
+    assert cfg.env.commands.vel_limit[1][0] > 0
+    assert cfg.reward.scales.feet_phase == 0
+    assert cfg.reward.scales.feet_phase_contact == 0
+    assert cfg.reward.scales.feet_phase_contrast == 0
+    assert cfg.reward.gait_constraint.enabled is False
+    _assert_no_stand_authority(cfg.reward)
+    cfg.reward.scales.feet_phase = 1.0
+    with pytest.raises(ValueError, match="gait reward"):
+        runtime.validate_training_config(cfg)
+
+
 def test_v016_runtime_preflight_rejects_mode_and_nested_stand_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
