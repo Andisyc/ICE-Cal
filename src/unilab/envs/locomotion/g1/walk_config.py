@@ -184,11 +184,23 @@ class G1RewardConfig:
             self.mode = RewardModeConfig(**self.mode)
         if self.feet_phase_mode not in {
             "legacy",
+            "original_command_height_v1",
             "command_height_v1",
             "command_height_v2",
             "command_height_v3",
         }:
             raise ValueError("unsupported feet_phase_mode")
+        if self.feet_phase_mode == "original_command_height_v1":
+            import math
+
+            for name in (
+                "feet_phase_swing_height",
+                "feet_phase_command_speed_scale",
+                "feet_phase_turn_length",
+                "feet_phase_tracking_sigma",
+            ):
+                if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                    raise ValueError(f"{name} must be finite and positive")
         if self.feet_phase_mode in {"command_height_v1", "command_height_v2", "command_height_v3"}:
             import math
 

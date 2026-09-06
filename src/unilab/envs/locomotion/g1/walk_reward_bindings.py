@@ -34,6 +34,7 @@ from unilab.envs.locomotion.g1.walk_math import (
     compute_gait_phase_contrast_violation,
     compute_gait_phase_height_violation,
     compute_tracking_gate,
+    original_command_height_targets,
     phase_height_targets_v3,
 )
 from unilab.envs.locomotion.g1.walk_reward import (
@@ -507,7 +508,16 @@ class G1WalkRewardBindings:
             if self._reward_cfg.feet_phase_mode == "command_height_v3":
                 return np.exp(-0.5 * cost)
             return -0.5 * cost if self._reward_cfg.feet_phase_mode == "command_height_v2" else -cost
-        left_target, right_target = compute_feet_phase_height_targets(gait_phase, swing_height)
+        if self._reward_cfg.feet_phase_mode == "original_command_height_v1":
+            left_target, right_target = original_command_height_targets(
+                gait_phase,
+                ctx.info["commands"],
+                swing_height,
+                self._reward_cfg.feet_phase_command_speed_scale,
+                self._reward_cfg.feet_phase_turn_length,
+            )
+        else:
+            left_target, right_target = compute_feet_phase_height_targets(gait_phase, swing_height)
         stance_z = np.minimum(left_foot[:, 2], right_foot[:, 2])
         left_height = left_foot[:, 2] - stance_z
         right_height = right_foot[:, 2] - stance_z

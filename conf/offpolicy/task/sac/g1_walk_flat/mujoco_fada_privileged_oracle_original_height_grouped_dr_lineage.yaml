@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage
+  - _self_
+
+# Original curve and relative-foot-height exponential reward; only amplitude is conditioned.
+algo:
+  actor:
+    oracle_behavior_profile: original_height_mixed_v1
+reward:
+  feet_phase_mode: original_command_height_v1
+  feet_phase_swing_height: 0.06
+  feet_phase_command_speed_scale: 0.3
+  feet_phase_turn_length: 0.3
+  # Original denominator has units m^2, not the standard-deviation scale used by v3.
+  feet_phase_tracking_sigma: 0.04
+  min_forward_speed_for_gait_reward: 0.0
+play_profile:
+  env:
+    commands:
+      vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]

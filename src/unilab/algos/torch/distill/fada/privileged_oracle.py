@@ -28,6 +28,7 @@ FADA_ORACLE_PHASE_LOCOMOTION_PROFILE = "phase_locomotion_v1"
 FADA_ORACLE_COMMAND_PHASE_PROFILE = "command_phase_mixed_v1"
 FADA_ORACLE_SIMPLE_HEIGHT_PROFILE = "simple_height_mixed_v1"
 FADA_ORACLE_PHASE_HEIGHT_PROFILE = "phase_height_mixed_v3"
+FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE = "original_height_mixed_v1"
 FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
     {
         FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
@@ -35,6 +36,7 @@ FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
         FADA_ORACLE_SIMPLE_HEIGHT_PROFILE,
         FADA_ORACLE_PHASE_HEIGHT_PROFILE,
+        FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE,
     }
 )
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -113,6 +115,11 @@ _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_SIMPLE_HEIGHT_PROFILE] = replace(
 
 _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_PHASE_HEIGHT_PROFILE] = replace(
     _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_SIMPLE_HEIGHT_PROFILE],
+)
+
+
+_FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE] = replace(
+    _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_PHASE_HEIGHT_PROFILE],
 )
 
 
@@ -473,9 +480,18 @@ def validate_fada_single_reward(
         FADA_ORACLE_COMMAND_PHASE_PROFILE: "command_height_v1",
         FADA_ORACLE_SIMPLE_HEIGHT_PROFILE: "command_height_v2",
         FADA_ORACLE_PHASE_HEIGHT_PROFILE: "command_height_v3",
+        FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE: "original_command_height_v1",
     }.get(behavior_profile, "legacy")
     if reward_config.get("feet_phase_mode", "legacy") != expected_mode:
         raise ValueError(f"{behavior_profile} requires feet_phase_mode={expected_mode}")
+    if behavior_profile == FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE:
+        for name, expected in {
+            "feet_phase_command_speed_scale": 0.3,
+            "feet_phase_turn_length": 0.3,
+            "min_forward_speed_for_gait_reward": 0.0,
+        }.items():
+            if _numeric(reward_config.get(name, 0.0), name=name) != expected:
+                raise ValueError(f"{behavior_profile} requires {name}={expected}")
     if behavior_profile in {
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
         FADA_ORACLE_SIMPLE_HEIGHT_PROFILE,
@@ -498,6 +514,7 @@ def validate_fada_single_reward(
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
         FADA_ORACLE_SIMPLE_HEIGHT_PROFILE,
         FADA_ORACLE_PHASE_HEIGHT_PROFILE,
+        FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE,
     }:
         spec = fada_oracle_behavior_spec(behavior_profile)
         expected_phase_scales = {

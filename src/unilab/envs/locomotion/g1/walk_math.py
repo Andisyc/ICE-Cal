@@ -92,6 +92,26 @@ def compute_feet_phase_height_targets(
     return left_target, right_target
 
 
+def original_command_height_targets(
+    phase: np.ndarray,
+    commands: np.ndarray,
+    max_height: float,
+    speed_scale: float,
+    turn_length: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Scale the original curve by the v3 command-demand amplitude mapping."""
+    if phase.ndim != 2 or phase.shape[1] != 2 or commands.shape != (phase.shape[0], 3):
+        raise ValueError("original command height requires (N, 2) phase and (N, 3) commands")
+    if not np.all(np.isfinite(phase)) or not np.all(np.isfinite(commands)):
+        raise ValueError("original command height inputs must be finite")
+    if any(not np.isfinite(v) or v <= 0 for v in (max_height, speed_scale, turn_length)):
+        raise ValueError("original command height scales must be finite and positive")
+    demand = np.sqrt(np.sum(commands[:, :2] ** 2, axis=1) + (turn_length * commands[:, 2]) ** 2)
+    amplitude = max_height * demand / (demand + speed_scale)
+    left, right = compute_feet_phase_height_targets(phase, 1.0)
+    return left * amplitude, right * amplitude
+
+
 def command_phase_amplitude(
     commands: np.ndarray, speed_scale: float, turn_length: float
 ) -> np.ndarray:

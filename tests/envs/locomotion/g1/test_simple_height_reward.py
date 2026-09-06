@@ -82,6 +82,7 @@ def test_simple_height_binding_tracks_current_command_and_phase():
     [
         ("simple_height", "command_height_v2"),
         ("phase_height_v3", "command_height_v3"),
+        ("original_height", "original_command_height_v1"),
     ],
 )
 def test_simple_height_task_runtime_admission(monkeypatch, task, mode):
@@ -119,3 +120,17 @@ def test_simple_height_task_runtime_admission(monkeypatch, task, mode):
     assert override["gait_phase_enabled"] is True
     assert cfg.algo.max_iterations == 5000
     assert cfg.algo.save_interval == 240
+    if mode == "original_command_height_v1":
+        assert cfg.reward.feet_phase_tracking_sigma == 0.04
+        assert cfg.reward.min_forward_speed_for_gait_reward == 0
+        assert cfg.reward.gait_constraint.enabled is False
+        assert cfg.env.gait_phase_init_mode == "offset_phase"
+        from unilab.algos.torch.distill.fada.privileged_oracle import validate_fada_single_reward
+
+        reward_cfg = OmegaConf.to_container(cfg.reward, resolve=True)
+        with pytest.raises(ValueError, match="feet_phase_tracking_sigma"):
+            validate_fada_single_reward(
+                reward_scales=reward_cfg["scales"],
+                reward_config=dict(reward_cfg, feet_phase_tracking_sigma=0.03),
+                behavior_profile="original_height_mixed_v1",
+            )
