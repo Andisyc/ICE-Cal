@@ -156,6 +156,41 @@ def test_fada_oracle_loader_runs_privileged_actor_from_env_observation(tmp_path:
     assert torch.isfinite(torch.from_numpy(actions)).all()
 
 
+def test_fada_oracle_loader_keeps_legacy_schema2_phase_neutral_checkpoint_readable(
+    tmp_path: Path,
+) -> None:
+    from unilab.algos.torch.distill.fada.oracle import (
+        LoadedFADAPrivilegedOraclePolicy,
+        load_fada_oracle_policy,
+    )
+
+    checkpoint = tmp_path / "legacy_model_240.pt"
+    _save_privileged_oracle(checkpoint)
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    payload["fada_privileged_oracle"]["schema_version"] = 2
+    payload["fada_privileged_oracle"].pop("behavior_profile")
+    torch.save(payload, checkpoint)
+
+    oracle = load_fada_oracle_policy(
+        checkpoint,
+        DistillationTeacherSpec(
+            obs_dim=3,
+            action_dim=2,
+            algo_type="privileged_locomotion_sac",
+            actor_hidden_dim=16,
+            use_layer_norm=False,
+            obs_normalization=True,
+            priv_info_embed_dim=2,
+            priv_mlp_hidden_dims=(4, 2),
+            priv_info_normalization=True,
+        ),
+        device="cpu",
+    )
+
+    assert isinstance(oracle, LoadedFADAPrivilegedOraclePolicy)
+    assert oracle.behavior_profile == "phase_neutral_mixed_v1"
+
+
 def test_fada_collector_supplies_critic_tail_to_privileged_oracle() -> None:
     class PrivilegedOracle(torch.nn.Module):
         obs_dim = 3
@@ -278,9 +313,18 @@ def _privileged_collector_contract_fixture():
                     "heading_command": False,
                 },
             },
+            "reward": {
+                "scales": {
+                    "feet_phase": 0.0,
+                    "feet_phase_contrast": 0.0,
+                    "feet_phase_contact": 0.0,
+                },
+                "gait_constraint": {"enabled": False, "penalty_scale": 0.0},
+            },
         }
     )
     checkpoint_identity = {
+        "schema_version": 2,
         "privileged_schema": "g1_fada_privileged_v1",
         "task_name": "G1WalkFlat",
         "backend": "mujoco",

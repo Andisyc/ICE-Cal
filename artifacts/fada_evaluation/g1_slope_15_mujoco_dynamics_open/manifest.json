@@ -3,10 +3,9 @@
   "files": [
     "zero_shot.mp4",
     "adapted.mp4",
-    "metrics.json",
-    "zero_shot_flat.mp4",
-    "adapted_flat.mp4"
+    "metrics.json"
   ],
+  "lateral_boundary_mode": "open",
   "representative_command": [
     0.79921875,
     0.0,

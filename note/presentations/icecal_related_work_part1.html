@@ -73,8 +73,20 @@
     .scenario-table th:nth-child(2) { width: 32%; }
     .scenario-table th:nth-child(3) { width: 30%; }
     .scenario-table th:nth-child(4) { width: 22%; }
-    .scenario-note { margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
-    footer { padding: 20px 0 34px; color: #61707a; border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.scenario-note { margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.trend-table { min-width: 1120px; }
+.trend-table th:nth-child(1) { width: 13%; }
+.trend-table th:nth-child(2) { width: 20%; }
+.trend-table th:nth-child(3) { width: 24%; }
+.trend-table th:nth-child(4) { width: 24%; }
+.trend-table th:nth-child(5) { width: 19%; }
+.trend-table a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid rgba(65,217,255,.36); }
+.trend-table a:hover { border-bottom-color: var(--cyan); }
+.trend-shift { color: var(--ink); font-weight: 650; }
+.trend-open { color: #ffd38a; }
+.trend-verdict { margin-top: 18px; padding: 16px 18px; border-left: 3px solid var(--orange); background: rgba(255,154,61,.07); color: #dce6eb; line-height: 1.65; }
+.trend-verdict strong { color: var(--orange); }
+footer { padding: 20px 0 34px; color: #61707a; border-top: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
     dialog { width: min(460px, calc(100% - 32px)); border: 1px solid var(--cyan); border-radius: 4px; padding: 0; color: var(--ink); background: #111d25; box-shadow: 0 24px 80px rgba(0,0,0,.55); }
     dialog::backdrop { background: rgba(1,6,9,.72); backdrop-filter: blur(4px); }
     .dialog-inner { padding: 23px; } .dialog-inner h3 { margin: 0 0 12px; font-size: 23px; } .dialog-inner p { color: #b9c6ce; line-height: 1.65; } .close { border: 1px solid var(--line); padding: 8px 12px; color: var(--ink); background: transparent; cursor: pointer; }
@@ -158,9 +170,53 @@
           <tr><td>ReactiveBFM / ADAPT</td><td>在行走中加入外力、失衡或突发扰动。</td><td>当前参考不再适合机器人的瞬时状态。</td><td>通过恢复、重规划或 disturbance observer 改变输入和决策。</td></tr>
         </tbody>
       </table></div>
-      <p class="scenario-note">这些工作不是先选择一个网络模块，再寻找应用场景。它们先制造“原策略在新条件下不再适用”的情形，再根据误差发生的位置决定校准 Planner、Tracker、参考接口或整个策略。</p>
-    </section>
-  </main>
+<p class="scenario-note">这些工作不是先选择一个网络模块，再寻找应用场景。它们先制造“原策略在新条件下不再适用”的情形，再根据误差发生的位置决定校准 Planner、Tracker、参考接口或整个策略。</p>
+</section>
+<section class="scenario-section" aria-labelledby="trend-title">
+  <div class="section-label"><h2 id="trend-title">2026：问题设定正在怎样变化</h2><span class="hint">不是统一走向 Planner，而是重新分配校准权</span></div>
+  <div class="scenario-wrap"><table class="scenario-table trend-table">
+    <thead><tr><th>研究分支</th><th>过去的默认</th><th>2026 年的新问题</th><th>代表工作与校准对象</th><th>仍未解决</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="trend-shift">真机校准</span></td>
+        <td>识别准确物理参数，或用真机 Reward 继续训练策略。</td>
+        <td>真机数据很少、不同步，也没有 Reward、专家标签或外部动捕时，如何仍然获得有效校准信号？</td>
+        <td><a href="https://arxiv.org/abs/2604.11090">Distribution Matching</a> 校准模拟器；<a href="https://arxiv.org/abs/2606.28476">FADA</a> 冻结 Planner、监督微调 IDM。</td>
+        <td class="trend-open">同一批执行证据应该修改模拟器、执行模块，还是上游意图？</td>
+      </tr>
+      <tr>
+        <td><span class="trend-shift">Planner 校准</span></td>
+        <td>Planner 只需生成语义正确、运动自然的参考。</td>
+        <td>参考还必须适合机器人当前状态、当前 Tracker 能力和真实执行速度；否则误差会持续累积。</td>
+        <td><a href="https://arxiv.org/abs/2606.30362">ReactiveBFM</a> 根据真实状态闭环重规划；<a href="https://arxiv.org/abs/2606.18772">HALOMI</a> 做 Controller-aware reference adaptation；<a href="https://arxiv.org/abs/2608.20087">AdaPT</a> 将执行速度反馈给 Planner。</td>
+        <td class="trend-open">少量无 Reward 真机数据能否判断“何时必须改参考”？</td>
+      </tr>
+      <tr>
+        <td><span class="trend-shift">Tracker 校准</span></td>
+        <td>在干净、密集、同步的参考轨迹上提高 tracking accuracy。</td>
+        <td>真实 Planner 会输出不完美、OOD、低频或不完整参考；局部跟踪误差还会转化为长期位姿漂移。</td>
+        <td><a href="https://arxiv.org/abs/2604.17335">Motion Generation + Tracking</a> 用冻结生成器闭环微调 Tracker；<a href="https://arxiv.org/abs/2602.15060">CLOT</a> 引入全局位姿反馈；<a href="https://arxiv.org/abs/2606.25706">Async Tracking</a> 处理规划—执行频率失配。</td>
+        <td class="trend-open">Tracker 应吸收多少误差，何时继续追踪反而会破坏任务？</td>
+      </tr>
+      <tr>
+        <td><span class="trend-shift">Planner–Tracker 联动</span></td>
+        <td>单向级联：Planner 生成参考，Tracker 被动执行。</td>
+        <td>两端的数据分布彼此改变。只更新一端会使另一端成为新的 OOD 输入来源。</td>
+        <td><a href="https://arxiv.org/abs/2603.13707">REFINE-DP</a> 联合优化 Planner 与 Controller；<a href="https://arxiv.org/abs/2608.01410">GenTrack</a> 交替对齐 Generator 与 Tracker；<a href="https://arxiv.org/abs/2609.00677">ADAPT</a> 直接合并为闭环 text-to-action policy。</td>
+        <td class="trend-open">显式拆分、交替训练与端到端控制，尚无统一答案。</td>
+      </tr>
+      <tr>
+        <td><span class="trend-shift">接口设计</span></td>
+        <td>默认使用速度、密集关节轨迹或固定 latent 作为控制接口。</td>
+        <td>接口本身决定 Planner 能表达什么、Tracker 能执行什么，也决定哪一层可以被安全校准。</td>
+        <td><a href="https://arxiv.org/abs/2606.06493">HANDOFF</a> 重新设计 Task Planner 与 Whole-Body Controller 之间的紧凑显式 command space。</td>
+        <td class="trend-open">什么接口既保留任务语义，又能暴露动力学变化后的可执行性？</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <div class="trend-verdict"><strong>前沿判断：</strong>2026 年的共同趋势不是“所有系统都需要显式 Planner”。真正变化的是：生成意图、真实执行与反馈恢复必须进入同一个闭环。对 ICE-Cal 更一般的切入点，是用少量无 Reward 真机轨迹决定误差应由意图侧、执行侧，还是两侧共同吸收。</div>
+</section>
+</main>
   <footer><div class="wrap">ICE-Cal · Related Work / Part 01 · 分类依据：真机数据是否进入参数或模型更新</div></footer>
   <dialog id="paper-dialog"><div class="dialog-inner"><h3 id="dialog-title"></h3><p id="dialog-detail"></p><button class="close" id="dialog-close">关掉</button></div></dialog>
   <script>

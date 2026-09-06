@@ -144,6 +144,17 @@ class G1WalkEnv(
     def __init__(self, cfg: G1WalkEnvCfg, num_envs=1, backend_type="mujoco"):
         if cfg.reward_config is None:
             raise ValueError("reward_config must be provided via Hydra configuration")
+        if cfg.reward_config.feet_phase_mode == "command_height_v1":
+            canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
+            if cfg.scene.fragment_files or cfg.scene.terrain is not None:
+                raise ValueError("command_height_v1 forbids terrain or scene fragments")
+            if (
+                backend_type != "mujoco"
+                or epath.Path(cfg.scene.model_file).resolve() != canonical_scene.resolve()
+            ):
+                raise ValueError("command_height_v1 requires the canonical MuJoCo G1 flat scene")
+            if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "offset_phase":
+                raise ValueError("command_height_v1 requires enabled offset gait phase")
         progress_cfg = cfg.forward_progress_termination
         if progress_cfg.grace_steps <= 0:
             raise ValueError("forward_progress_termination.grace_steps must be positive")

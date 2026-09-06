@@ -1,8 +1,9 @@
-source_checkpoint_path: planner_idm_v022_cpu_limited.pt
+source_checkpoint_path: model/planner_idm_phase_locomotion_v023.pt
+source_behavior_profile: phase_locomotion_v1
 expected_source_checkpoint_sha256: null
-target_artifact_path: artifacts/fada_target/${target_domain.target_domain_id}/target.pt
+target_artifact_path: artifacts/fada_target_phase_v023/${target_domain.target_domain_id}/target.pt
 expected_target_artifact_sha256: null
-output_checkpoint_path: artifacts/fada_adaptation/${target_domain.target_domain_id}_v3.pt
+output_checkpoint_path: artifacts/fada_adaptation_phase_v023/${target_domain.target_domain_id}.pt
 
 device: cpu
 confirm_train: false
@@ -20,4 +21,3 @@ validation_fraction: 0.1
 seed: 0
 max_updates: 400
 max_grad_norm: 1.0
-

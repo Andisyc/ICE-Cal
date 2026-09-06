@@ -26,6 +26,7 @@ from unilab.envs.locomotion.g1.walk_actuator_randomization import (
 )
 from unilab.envs.locomotion.g1.walk_config import GaitConstraintConfig
 from unilab.envs.locomotion.g1.walk_math import (
+    command_phase_amplitude,
     compute_command_active_mask,
     compute_external_command_mask,
     sample_g1_walk_commands,
@@ -372,6 +373,13 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         gait_phase = self._sample_gait_phase(env, num_reset)
         self._apply_standing_reset_phase(env, gait_phase, gait_enabled)
         updates = {"gait_phase": gait_phase, "gait_enabled": gait_enabled}
+        reward_cfg = getattr(env.cfg, "reward_config", None)
+        if getattr(reward_cfg, "feet_phase_mode", "legacy") == "command_height_v1":
+            updates["command_phase_amplitude"] = command_phase_amplitude(
+                commands,
+                reward_cfg.feet_phase_command_speed_scale,
+                reward_cfg.feet_phase_turn_length,
+            )
         if getattr(env.cfg.commands, "heading_command", False):
             updates["heading_commands"] = sample_heading_commands(env, num_reset)
         if getattr(env.cfg.commands, "observe_height_command", False) or getattr(

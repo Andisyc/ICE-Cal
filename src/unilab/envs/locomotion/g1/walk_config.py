@@ -123,6 +123,11 @@ class G1RewardConfig:
     min_base_height: float
     max_tilt_deg: float
     min_forward_speed_for_gait_reward: float = 0.0
+    feet_phase_mode: str = "legacy"
+    feet_phase_command_speed_scale: float = 0.3
+    feet_phase_turn_length: float = 0.3
+    feet_phase_settling_tau: float = 0.15
+    feet_phase_height_scale: float = 0.09
     stand_recovery_lin_vel_xy_threshold: float = 0.2
     stand_recovery_tilt_deg_threshold: float = 8.0
     close_feet_threshold: float = 0.15
@@ -177,6 +182,23 @@ class G1RewardConfig:
             self.gait_constraint = GaitConstraintConfig(**self.gait_constraint)
         if isinstance(self.mode, dict):
             self.mode = RewardModeConfig(**self.mode)
+        if self.feet_phase_mode not in {"legacy", "command_height_v1"}:
+            raise ValueError("unsupported feet_phase_mode")
+        if self.feet_phase_mode == "command_height_v1":
+            import math
+
+            for name in (
+                "feet_phase_command_speed_scale",
+                "feet_phase_turn_length",
+                "feet_phase_settling_tau",
+                "feet_phase_height_scale",
+                "feet_phase_swing_height",
+            ):
+                value = getattr(self, name)
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError(f"{name} must be finite and positive")
+            if self.scales.get("feet_phase", 0.0) <= 0:
+                raise ValueError("command height cost requires a positive feet_phase weight")
 
 
 @dataclass

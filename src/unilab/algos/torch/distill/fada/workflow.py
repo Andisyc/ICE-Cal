@@ -151,9 +151,23 @@ def run_fada_training_owner(
             loaded_intermediate_oracles.append(
                 dependencies.load_fada_oracle_policy(intermediate_path, teacher_spec, device="cpu")
             )
+    source_behavior_profile = OmegaConf.select(
+        fada_cfg, "source_behavior_profile", default=None
+    )
+    teacher_behavior_profile = OmegaConf.select(
+        cfg, "teacher.behavior_profile", default=None
+    )
+    if source_behavior_profile != teacher_behavior_profile:
+        raise ValueError(
+            "FADA source and teacher behavior profiles must match: "
+            f"source={source_behavior_profile!r} teacher={teacher_behavior_profile!r}"
+        )
     validate_loaded_fada_oracle_lineage(
         loaded_final_oracle,
         loaded_intermediate_oracles,
+        expected_behavior_profile=(
+            None if teacher_behavior_profile is None else str(teacher_behavior_profile)
+        ),
     )
     policy = FADAPlannerIDMPolicy(config).to(device)
     trainer = FADATrainer(

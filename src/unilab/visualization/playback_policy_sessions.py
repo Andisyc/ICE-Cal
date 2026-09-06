@@ -51,9 +51,10 @@ def _offpolicy_checkpoint_actor_input_dim(checkpoint: Mapping[str, Any]) -> int 
         )
 
         dimensions = fada_metadata.get("dimensions")
-        if fada_metadata.get(
-            "schema_version"
-        ) == FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION and isinstance(dimensions, Mapping):
+        if fada_metadata.get("schema_version") in {
+            2,
+            FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION,
+        } and isinstance(dimensions, Mapping):
             obs_dim = dimensions.get("obs")
             if isinstance(obs_dim, int) and not isinstance(obs_dim, bool) and obs_dim > 0:
                 return obs_dim

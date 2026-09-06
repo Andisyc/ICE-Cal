@@ -138,6 +138,7 @@ def _apply_valid_privileged_oracle_profile(cfg: SimpleNamespace) -> None:
         "commands",
         SimpleNamespace(rel_transition_envs=0.0),
     )
+    cfg.env.commands.rel_standing_envs = 0.3
     cfg.env.commands.vel_limit = [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     cfg.env.commands.resampling_time = 0.0
     cfg.env.commands.heading_command = False

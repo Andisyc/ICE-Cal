@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -22,8 +22,104 @@ from unilab.envs.locomotion.g1.fada_privileged import (
 
 FADA_ORACLE_INTERMEDIATE_ITERATIONS = tuple(range(240, 4801, 240))
 FADA_ORACLE_FINAL_ITERATION = 5000
-FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION = 2
+FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION = 3
+FADA_ORACLE_PHASE_NEUTRAL_PROFILE = "phase_neutral_mixed_v1"
+FADA_ORACLE_PHASE_LOCOMOTION_PROFILE = "phase_locomotion_v1"
+FADA_ORACLE_COMMAND_PHASE_PROFILE = "command_phase_mixed_v1"
+FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
+    {
+        FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+        FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
+        FADA_ORACLE_COMMAND_PHASE_PROFILE,
+    }
+)
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class FADAOracleBehaviorSpec:
+    ctrl_dt: float
+    mode_observation: bool
+    gait_phase_enabled: bool
+    gait_phase_init_mode: str | None
+    rel_standing_envs: float
+    rel_transition_envs: float
+    command_resampling_time: float
+    heading_command: bool
+    feet_phase: float
+    feet_phase_contrast: float
+    feet_phase_contact: float
+    gait_frequency: float | None
+    feet_phase_swing_height: float | None
+    feet_phase_tracking_sigma: float | None
+    gait_constraint_enabled: bool
+    gait_constraint_penalty_scale: float
+
+
+_FADA_ORACLE_BEHAVIOR_SPECS = {
+    FADA_ORACLE_PHASE_NEUTRAL_PROFILE: FADAOracleBehaviorSpec(
+        ctrl_dt=0.02,
+        mode_observation=False,
+        gait_phase_enabled=False,
+        gait_phase_init_mode=None,
+        rel_standing_envs=0.3,
+        rel_transition_envs=0.0,
+        command_resampling_time=0.0,
+        heading_command=False,
+        feet_phase=0.0,
+        feet_phase_contrast=0.0,
+        feet_phase_contact=0.0,
+        gait_frequency=None,
+        feet_phase_swing_height=None,
+        feet_phase_tracking_sigma=None,
+        gait_constraint_enabled=False,
+        gait_constraint_penalty_scale=0.0,
+    ),
+    FADA_ORACLE_PHASE_LOCOMOTION_PROFILE: FADAOracleBehaviorSpec(
+        ctrl_dt=0.02,
+        mode_observation=False,
+        gait_phase_enabled=True,
+        gait_phase_init_mode="offset_phase",
+        rel_standing_envs=0.0,
+        rel_transition_envs=0.0,
+        command_resampling_time=0.0,
+        heading_command=False,
+        feet_phase=5.0,
+        feet_phase_contrast=0.0,
+        feet_phase_contact=0.0,
+        gait_frequency=1.5,
+        feet_phase_swing_height=0.09,
+        feet_phase_tracking_sigma=0.04,
+        gait_constraint_enabled=False,
+        gait_constraint_penalty_scale=0.0,
+    ),
+}
+
+_FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_COMMAND_PHASE_PROFILE] = replace(
+    _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_PHASE_LOCOMOTION_PROFILE],
+    rel_standing_envs=0.3,
+    command_resampling_time=4.0,
+    feet_phase=1.0,
+)
+
+
+def fada_oracle_behavior_spec(behavior_profile: str) -> FADAOracleBehaviorSpec:
+    try:
+        return _FADA_ORACLE_BEHAVIOR_SPECS[behavior_profile]
+    except KeyError as exc:
+        raise ValueError(f"unsupported FADA Oracle behavior profile: {behavior_profile!r}") from exc
+
+
+def _numeric(value: object, *, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric")
+    return float(value)
+
+
+def _identity_int(value: object, *, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    return value
 
 
 def _canonical_json_sha256(value: Any) -> str:
@@ -67,6 +163,7 @@ class FADAOracleCheckpointIdentity:
             "asset_sha256": contract.asset_sha256,
             "config_hashes": dict(contract.config_hashes),
             "actor_directly_privileged": True,
+            "behavior_profile": contract.behavior_profile,
         }
 
 
@@ -86,6 +183,7 @@ class FADAOracleCheckpointContract:
     privileged_field_slices: tuple[tuple[str, int, int], ...]
     asset_sha256: str
     config_hashes: tuple[tuple[str, str], ...]
+    behavior_profile: str = FADA_ORACLE_PHASE_NEUTRAL_PROFILE
 
     def __post_init__(self) -> None:
         if not self.oracle_lineage_id.strip():
@@ -114,6 +212,8 @@ class FADAOracleCheckpointContract:
         for key, digest in self.config_hashes:
             if not key or not _SHA256_RE.fullmatch(digest):
                 raise ValueError("config_hashes must contain lowercase SHA-256 digests")
+        if self.behavior_profile not in FADA_ORACLE_BEHAVIOR_PROFILES:
+            raise ValueError(f"unsupported FADA Oracle behavior profile: {self.behavior_profile!r}")
 
     def identity_for_iteration(self, iteration: int) -> FADAOracleCheckpointIdentity:
         iteration = int(iteration)
@@ -161,6 +261,73 @@ def validate_fada_oracle_checkpoint_payload(
         if actual[key] != expected_value:
             raise ValueError(f"checkpoint identity {key} mismatch")
     return expected
+
+
+def normalize_fada_oracle_checkpoint_identity(
+    identity: Mapping[str, object],
+) -> dict[str, object]:
+    """Normalize legacy identities without granting them phase authority."""
+
+    normalized = dict(identity)
+    schema_version = normalized.get("schema_version")
+    if schema_version == 2:
+        legacy_profile = normalized.get("behavior_profile", FADA_ORACLE_PHASE_NEUTRAL_PROFILE)
+        if legacy_profile != FADA_ORACLE_PHASE_NEUTRAL_PROFILE:
+            raise ValueError("legacy FADA Oracle schema is phase-neutral only")
+        normalized["behavior_profile"] = FADA_ORACLE_PHASE_NEUTRAL_PROFILE
+    elif schema_version == FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION:
+        behavior_profile = normalized.get("behavior_profile")
+        if behavior_profile not in FADA_ORACLE_BEHAVIOR_PROFILES:
+            raise ValueError("FADA Oracle checkpoint behavior_profile is missing or unsupported")
+    else:
+        raise ValueError(f"unsupported FADA Oracle checkpoint schema: {schema_version!r}")
+    return normalized
+
+
+def validate_fada_oracle_behavior_environment(
+    env_cfg: Any,
+    behavior_profile: str,
+) -> None:
+    """Validate environment fields that change the meaning of Actor observations."""
+
+    spec = fada_oracle_behavior_spec(behavior_profile)
+    if not math.isclose(float(getattr(env_cfg, "ctrl_dt", -1.0)), spec.ctrl_dt):
+        raise ValueError(f"FADA Oracle {behavior_profile} ctrl_dt mismatch")
+    if bool(getattr(env_cfg, "mode_observation", True)) != spec.mode_observation:
+        raise ValueError(f"FADA Oracle {behavior_profile} mode_observation mismatch")
+    if bool(getattr(env_cfg, "gait_phase_enabled", False)) != spec.gait_phase_enabled:
+        raise ValueError(f"FADA Oracle {behavior_profile} gait phase enabled mismatch")
+    if (
+        spec.gait_phase_init_mode is not None
+        and str(getattr(env_cfg, "gait_phase_init_mode", "")) != spec.gait_phase_init_mode
+    ):
+        raise ValueError(
+            f"phase locomotion Oracle requires gait_phase_init_mode={spec.gait_phase_init_mode}"
+        )
+    commands = getattr(env_cfg, "commands", None)
+    if not math.isclose(
+        float(getattr(commands, "rel_standing_envs", -1.0)), spec.rel_standing_envs
+    ):
+        raise ValueError(f"FADA Oracle {behavior_profile} commands.rel_standing_envs mismatch")
+    if not math.isclose(
+        float(getattr(commands, "rel_transition_envs", -1.0)),
+        spec.rel_transition_envs,
+    ):
+        raise ValueError("FADA Oracle forbids transition-mode samples")
+    if not math.isclose(
+        float(getattr(commands, "resampling_time", -1.0)),
+        spec.command_resampling_time,
+    ):
+        raise ValueError(
+            f"FADA Oracle command resampling mismatch: expected {spec.command_resampling_time}"
+        )
+    if bool(getattr(commands, "heading_command", True)) != spec.heading_command:
+        raise ValueError("FADA Oracle forbids heading command mode")
+    if list(getattr(commands, "vel_limit", []) or []) != [
+        [-0.6, -0.4, -0.8],
+        [1.0, 0.4, 0.8],
+    ]:
+        raise ValueError("FADA Oracle command vel_limit mismatch")
 
 
 class FADAOracleCheckpointGateway:
@@ -257,7 +424,7 @@ def validate_no_gait_reward(reward_scales: Mapping[str, object]) -> None:
         if not any(token in normalized for token in forbidden_tokens):
             continue
         try:
-            scale = float(raw_scale)
+            scale = _numeric(raw_scale, name=f"gait reward {name!r}")
         except (TypeError, ValueError) as exc:
             raise ValueError(f"gait reward {name!r} must be numeric and zero") from exc
         if scale != 0.0:
@@ -285,10 +452,51 @@ def validate_fada_single_reward(
     *,
     reward_scales: Mapping[str, object],
     reward_config: Mapping[str, object],
+    behavior_profile: str = FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
 ) -> None:
-    """Validate the v016 phase-neutral single locomotion Reward contract."""
+    """Validate the single locomotion Reward for one named source behavior."""
 
-    validate_no_gait_reward(reward_scales)
+    expected_mode = (
+        "command_height_v1" if behavior_profile == FADA_ORACLE_COMMAND_PHASE_PROFILE else "legacy"
+    )
+    if reward_config.get("feet_phase_mode", "legacy") != expected_mode:
+        raise ValueError(f"{behavior_profile} requires feet_phase_mode={expected_mode}")
+    if behavior_profile == FADA_ORACLE_COMMAND_PHASE_PROFILE:
+        for name, expected in {
+            "feet_phase_command_speed_scale": 0.3,
+            "feet_phase_turn_length": 0.3,
+            "feet_phase_settling_tau": 0.15,
+            "feet_phase_height_scale": 0.09,
+        }.items():
+            if _numeric(reward_config.get(name), name=name) != expected:
+                raise ValueError(f"{behavior_profile} requires {name}={expected}")
+    if behavior_profile == FADA_ORACLE_PHASE_NEUTRAL_PROFILE:
+        validate_no_gait_reward(reward_scales)
+    elif behavior_profile in {
+        FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
+        FADA_ORACLE_COMMAND_PHASE_PROFILE,
+    }:
+        spec = fada_oracle_behavior_spec(behavior_profile)
+        expected_phase_scales = {
+            "feet_phase": spec.feet_phase,
+            "feet_phase_contrast": spec.feet_phase_contrast,
+            "feet_phase_contact": spec.feet_phase_contact,
+        }
+        for name, expected in expected_phase_scales.items():
+            if _numeric(reward_scales.get(name, 0.0), name=f"reward.scales.{name}") != expected:
+                raise ValueError(
+                    f"phase locomotion Oracle requires reward.scales.{name}={expected}"
+                )
+        expected_phase_config = {
+            "gait_frequency": spec.gait_frequency,
+            "feet_phase_swing_height": spec.feet_phase_swing_height,
+            "feet_phase_tracking_sigma": spec.feet_phase_tracking_sigma,
+        }
+        for name, expected in expected_phase_config.items():
+            if _numeric(reward_config.get(name), name=f"reward.{name}") != expected:
+                raise ValueError(f"phase locomotion Oracle requires reward.{name}={expected}")
+    else:
+        raise ValueError(f"unsupported FADA Oracle behavior profile: {behavior_profile!r}")
     reward_mode = reward_config.get("mode")
     if isinstance(reward_mode, Mapping) and reward_mode:
         raise ValueError("FADA Oracle single Reward forbids reward.mode dispatcher")
@@ -297,9 +505,10 @@ def validate_fada_single_reward(
     gait_constraint = reward_config.get("gait_constraint", {})
     if not isinstance(gait_constraint, Mapping):
         raise ValueError("FADA Oracle gait_constraint must be a mapping")
-    if float(gait_constraint.get("penalty_scale", 0.0)) != 0.0:
+    spec = fada_oracle_behavior_spec(behavior_profile)
+    if float(gait_constraint.get("penalty_scale", 0.0)) != spec.gait_constraint_penalty_scale:
         raise ValueError("FADA Oracle gait constraint penalty_scale must be zero")
-    if bool(gait_constraint.get("enabled", False)):
+    if bool(gait_constraint.get("enabled", False)) != spec.gait_constraint_enabled:
         raise ValueError("FADA Oracle gait constraint mode must be disabled")
 
 
@@ -308,6 +517,7 @@ class AdmittedFADAOracleLineage:
     oracle_lineage_id: str
     intermediate_iterations: tuple[int, ...]
     final_iteration: int
+    behavior_profile: str
 
 
 def validate_fada_oracle_lineage(
@@ -317,17 +527,19 @@ def validate_fada_oracle_lineage(
         raise ValueError(
             "oracle lineage iterations must contain exactly 20 intermediate + 1 final record"
         )
-    lineage_ids = {str(record.get("oracle_lineage_id", "")) for record in records}
+    schema_versions = {record.get("schema_version") for record in records}
+    if len(schema_versions) != 1:
+        raise ValueError("oracle lineage checkpoint schema mismatch")
+    normalized_records = [normalize_fada_oracle_checkpoint_identity(record) for record in records]
+    lineage_ids = {str(record.get("oracle_lineage_id", "")) for record in normalized_records}
     if len(lineage_ids) != 1 or "" in lineage_ids:
         raise ValueError("oracle lineage records must share one non-empty lineage id")
-    if {record.get("task_name") for record in records} != {"G1WalkFlat"}:
+    if {record.get("task_name") for record in normalized_records} != {"G1WalkFlat"}:
         raise ValueError("oracle lineage task must be exactly G1WalkFlat")
-    if {record.get("privileged_schema") for record in records} != {FADA_PRIVILEGED_SCHEMA}:
-        raise ValueError("oracle lineage privileged schema mismatch")
-    if {record.get("schema_version") for record in records} != {
-        FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION
+    if {record.get("privileged_schema") for record in normalized_records} != {
+        FADA_PRIVILEGED_SCHEMA
     }:
-        raise ValueError("oracle lineage checkpoint schema mismatch")
+        raise ValueError("oracle lineage privileged schema mismatch")
     stable_identity_keys = (
         "backend",
         "action_scale",
@@ -339,19 +551,26 @@ def validate_fada_oracle_lineage(
         "asset_sha256",
         "config_hashes",
         "actor_directly_privileged",
+        "behavior_profile",
     )
     for key in stable_identity_keys:
-        if any(key not in record for record in records):
+        if any(key not in record for record in normalized_records):
             raise ValueError(f"oracle lineage missing {key}")
-        if len({_canonical_json_sha256(record[key]) for record in records}) != 1:
+        if len({_canonical_json_sha256(record[key]) for record in normalized_records}) != 1:
             raise ValueError(f"oracle lineage {key} mismatch")
-    intermediate = tuple(int(record.get("iteration", -1)) for record in records[:-1])
+    intermediate = tuple(
+        _identity_int(record.get("iteration"), name="oracle iteration")
+        for record in normalized_records[:-1]
+    )
     if intermediate != FADA_ORACLE_INTERMEDIATE_ITERATIONS:
         raise ValueError("oracle intermediate iterations must be exactly 240..4800 by 240")
-    if any(record.get("role") != "idm_coverage" for record in records[:-1]):
+    if any(record.get("role") != "idm_coverage" for record in normalized_records[:-1]):
         raise ValueError("oracle intermediate checkpoint role must be idm_coverage")
-    final = records[-1]
-    if int(final.get("iteration", -1)) != FADA_ORACLE_FINAL_ITERATION:
+    final = normalized_records[-1]
+    if (
+        _identity_int(final.get("iteration"), name="oracle final iteration")
+        != FADA_ORACLE_FINAL_ITERATION
+    ):
         raise ValueError("oracle final iteration must be 5000")
     if final.get("role") != "final_oracle":
         raise ValueError("oracle final checkpoint role must be final_oracle")
@@ -359,23 +578,30 @@ def validate_fada_oracle_lineage(
         oracle_lineage_id=next(iter(lineage_ids)),
         intermediate_iterations=intermediate,
         final_iteration=FADA_ORACLE_FINAL_ITERATION,
+        behavior_profile=str(final["behavior_profile"]),
     )
 
 
 __all__ = [
     "AdmittedFADAOracleLineage",
     "FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION",
+    "FADA_ORACLE_PHASE_LOCOMOTION_PROFILE",
+    "FADA_ORACLE_PHASE_NEUTRAL_PROFILE",
     "FADA_ORACLE_FINAL_ITERATION",
     "FADA_ORACLE_INTERMEDIATE_ITERATIONS",
     "FADA_PRIVILEGED_SCHEMA",
     "FADAOracleCheckpointContract",
     "FADAOracleCheckpointGateway",
     "FADAOracleCheckpointIdentity",
+    "FADAOracleBehaviorSpec",
     "G1FADAPrivilegedLayout",
     "G1FADAPrivilegedObservation",
     "build_g1_fada_privileged_layout",
     "canonical_fada_config_sha256",
+    "fada_oracle_behavior_spec",
     "pack_g1_fada_privileged_observation",
+    "normalize_fada_oracle_checkpoint_identity",
+    "validate_fada_oracle_behavior_environment",
     "seal_fada_oracle_checkpoint",
     "validate_fada_single_reward",
     "validate_fada_oracle_checkpoint_payload",

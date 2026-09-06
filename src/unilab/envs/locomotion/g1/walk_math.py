@@ -92,6 +92,61 @@ def compute_feet_phase_height_targets(
     return left_target, right_target
 
 
+def command_phase_amplitude(
+    commands: np.ndarray, speed_scale: float, turn_length: float
+) -> np.ndarray:
+    commands = np.asarray(commands)
+    if commands.ndim != 2 or commands.shape[1] != 3 or not np.all(np.isfinite(commands)):
+        raise ValueError("command phase requires finite (N, 3) commands")
+    if (
+        not np.isfinite(speed_scale)
+        or speed_scale <= 0
+        or not np.isfinite(turn_length)
+        or turn_length <= 0
+    ):
+        raise ValueError("command phase speed scale and turn length must be positive")
+    speed_squared = np.sum(commands[:, :2] ** 2, axis=1) + (turn_length * commands[:, 2]) ** 2
+    return speed_squared / (speed_squared + speed_scale**2)
+
+
+def update_command_phase_amplitude(
+    previous: np.ndarray, target: np.ndarray, dt: float, tau: float
+) -> np.ndarray:
+    if not np.isfinite(dt) or dt <= 0 or not np.isfinite(tau) or tau <= 0:
+        raise ValueError("command phase dt and tau must be positive")
+    if (
+        previous.shape != target.shape
+        or not np.all(np.isfinite(previous))
+        or not np.all(np.isfinite(target))
+    ):
+        raise ValueError("command phase amplitude states must match and be finite")
+    return target + (previous - target) * np.exp(-dt / tau)
+
+
+def command_phase_height_targets(
+    phase: np.ndarray, amplitude: np.ndarray, swing_height: float
+) -> np.ndarray:
+    if phase.ndim != 2 or phase.shape[1] != 2 or amplitude.shape != (phase.shape[0],):
+        raise ValueError("command phase requires (N, 2) phase and (N,) amplitude")
+    if not np.all(np.isfinite(phase)) or not np.all(np.isfinite(amplitude)):
+        raise ValueError("command phase inputs must be finite")
+    phi = np.remainder(phase, 2 * np.pi)
+    swing = np.where(phi < np.pi, np.sin(phi) ** 2, 0.0)
+    return swing_height * amplitude[:, None] * swing
+
+
+def command_phase_height_cost(
+    actual: np.ndarray, target: np.ndarray, height_scale: float
+) -> np.ndarray:
+    if actual.shape != target.shape or actual.ndim != 2 or actual.shape[1] != 2:
+        raise ValueError("command phase heights must both have shape (N, 2)")
+    if not np.all(np.isfinite(actual)) or not np.all(np.isfinite(target)):
+        raise ValueError("command phase heights must be finite")
+    if not np.isfinite(height_scale) or height_scale <= 0:
+        raise ValueError("command phase height scale must be positive")
+    return np.sum(((actual - target) / height_scale) ** 2, axis=1)
+
+
 def _scalarize_sensor_values(sensor_values: np.ndarray) -> np.ndarray:
     sensor_array = np.asarray(sensor_values, dtype=get_global_dtype())
     if sensor_array.ndim == 1:

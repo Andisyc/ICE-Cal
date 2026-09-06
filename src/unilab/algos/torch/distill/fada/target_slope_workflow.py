@@ -30,6 +30,7 @@ from unilab.algos.torch.distill.fada.target_data import save_fada_target_artifac
 from unilab.algos.torch.distill.fada.target_domain import (
     FADATargetDomainSpec,
     assert_nominal_slope_environment,
+    assert_phase_locomotion_target_environment,
     resolve_fada_target_domain,
 )
 from unilab.algos.torch.distill.fada.target_rollout import target_tracking_camera_kwargs
@@ -94,6 +95,10 @@ def preflight_fada_slope_collection(
         cfg,
         domain,
         task_choice=get_hydra_runtime_choice(cfg, "task"),
+    )
+    assert_phase_locomotion_target_environment(
+        cfg,
+        behavior_profile=str(cfg.collection.source_behavior_profile),
     )
     if _integer(cfg, "collection.num_envs", positive=True) != 1:
         raise ValueError("FADA slope collection requires collection.num_envs=1")
@@ -175,7 +180,8 @@ def run_fada_slope_collection(
     root = Path(root_dir).resolve()
     preflight = preflight_fada_slope_collection(cfg, root_dir=root)
     loaded = assert_fada_target_collection_checkpoint(
-        load_policy_fn(preflight.checkpoint_path, device=str(cfg.collection.device))
+        load_policy_fn(preflight.checkpoint_path, device=str(cfg.collection.device)),
+        expected_behavior_profile=str(cfg.collection.source_behavior_profile),
     )
     policy = loaded.policy
     assert_fada_active_route_contract(

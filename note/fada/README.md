@@ -5,7 +5,8 @@ engineering transition, and the superseded Support–Query implementation lineag
 
 ## Current semantic boundary
 
-Active `FADA-METHOD-v022` and `FADA-TRAIN-v022` own source-policy construction. The current teacher is
+Active `FADA-METHOD-v023` and `FADA-TRAIN-v023` own the dedicated phase-locomotion incline route.
+`FADA-METHOD-v022` and `FADA-TRAIN-v022` remain the phase-neutral mixed-behavior baseline. The v023 teacher is
 a live-privileged SAC Actor/Critic trained on one G1WalkFlat/MuJoCo task and one locomotion Reward.
 Its typed privileged vector is normalized and fed consistently to Collector and Learner. An
 iteration curriculum expands left-knee actuator strength together with Kp/Kd, friction, mass, COM,

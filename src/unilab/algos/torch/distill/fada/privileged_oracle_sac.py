@@ -12,6 +12,7 @@ from unilab.algos.torch.distill.fada.privileged_oracle import (
     FADAOracleCheckpointContract,
     FADAOracleCheckpointGateway,
     canonical_fada_config_sha256,
+    validate_fada_oracle_behavior_environment,
     validate_fada_oracle_checkpoint_payload,
     validate_fada_single_reward,
 )
@@ -244,6 +245,9 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             privileged_field_slices=tuple(layout_identity.field_slices),
             asset_sha256=str(layout_identity.asset_sha256),
             config_hashes=config_hashes,
+            behavior_profile=str(
+                self.actor_cfg.get("oracle_behavior_profile", "phase_neutral_mixed_v1")
+            ),
         )
         return kwargs
 
@@ -339,20 +343,12 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             raise ValueError("g1_fada_privileged_v1 schema mismatch")
         if bool(getattr(cfg.env, "mode_observation", False)):
             raise ValueError("privileged_locomotion_sac forbids mode observation")
-        if bool(getattr(cfg.env, "gait_phase_enabled", True)):
-            raise ValueError("privileged_locomotion_sac requires gait phase to be disabled")
-        commands_cfg = getattr(cfg.env, "commands", None)
+        behavior_profile = str(
+            actor_items.get("oracle_behavior_profile", "phase_neutral_mixed_v1")
+        )
+        validate_fada_oracle_behavior_environment(cfg.env, behavior_profile)
         if float(getattr(cfg.env, "ctrl_dt", 0.0)) != 0.02:
             raise ValueError("privileged_locomotion_sac requires ctrl_dt=0.02")
-        if float(getattr(commands_cfg, "rel_transition_envs", 0.0)) != 0.0:
-            raise ValueError("privileged_locomotion_sac forbids transition-mode samples")
-        if float(getattr(commands_cfg, "resampling_time", -1.0)) != 0.0:
-            raise ValueError("privileged_locomotion_sac forbids command resampling")
-        if bool(getattr(commands_cfg, "heading_command", True)):
-            raise ValueError("privileged_locomotion_sac forbids heading command mode")
-        vel_limit = getattr(commands_cfg, "vel_limit", None)
-        if list(vel_limit or []) != [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]:
-            raise ValueError("privileged_locomotion_sac command vel_limit mismatch")
         curriculum_cfg = getattr(cfg.env, "curriculum", None)
         curriculum_required = unsealed_validation or privileged_grouped_dr_lineage
         if bool(getattr(curriculum_cfg, "enabled", True)) != curriculum_required:
@@ -380,6 +376,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         validate_fada_single_reward(
             reward_scales=_object_items(cfg.reward.scales),
             reward_config=_object_items(cfg.reward),
+            behavior_profile=behavior_profile,
         )
 
 

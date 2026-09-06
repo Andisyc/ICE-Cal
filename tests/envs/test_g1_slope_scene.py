@@ -44,6 +44,21 @@ def test_slope_scene_has_exact_geometry_and_ground_independent_contacts(angle_de
     assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor") == -1
 
 
+@pytest.mark.parametrize("angle_deg", [10, 15])
+def test_wide_slope_scene_preserves_longitudinal_geometry(angle_deg: int) -> None:
+    scene = ROOT / f"src/unilab/assets/robots/g1/scene_slope_{angle_deg}_wide.xml"
+    model = mujoco.MjModel.from_xml_path(str(scene))
+    approach_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "approach")
+    slope_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"slope_{angle_deg}")
+
+    np.testing.assert_allclose(model.geom_size[approach_id], [1.25, 10.0, 0.05])
+    np.testing.assert_allclose(model.geom_size[slope_id], [4.0, 10.0, 0.05])
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    slope_x_axis = data.geom_xmat[slope_id].reshape(3, 3)[:, 0]
+    assert np.rad2deg(np.arctan2(slope_x_axis[2], slope_x_axis[0])) == pytest.approx(angle_deg)
+
+
 class _SensorBackend:
     def get_sensor_data(self, name: str) -> np.ndarray:
         values = {

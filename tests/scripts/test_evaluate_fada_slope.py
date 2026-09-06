@@ -7,10 +7,15 @@ import numpy as np
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill import FADAArchitectureConfig
+from unilab.algos.torch.distill.fada import target_evaluation as target_evaluation_owner
 from unilab.algos.torch.distill.fada.target_collector import FADASlopeEpisodePolicy
-from unilab.algos.torch.distill.fada.target_domain import FADASlopeGeometry
+from unilab.algos.torch.distill.fada.target_domain import (
+    FADASlopeGeometry,
+    resolve_fada_target_domain,
+)
 from unilab.algos.torch.distill.fada.target_evaluation import _evaluation_commands, _run_pair
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +108,12 @@ class _EarlyTerminalEnv(_Env):
         return state
 
 
+class _OutsideNarrowSlopeEnv(_Env):
+    def get_foot_pos(self):
+        x = 0.1 * self.step_count
+        return np.asarray([[[x, 0.5, 0.0], [x, -0.5, 0.0]]])
+
+
 def test_evaluation_config_owns_same_condition_pair_and_flat_regression() -> None:
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
         cfg = compose(config_name="fada_slope_evaluate", return_hydra_config=True)
@@ -124,8 +135,58 @@ def test_slope_10_evaluation_uses_its_own_condition_and_outputs() -> None:
 
     assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
     assert cfg.target_domain.target_domain_id == "g1_slope_10_mujoco"
-    assert cfg.evaluation.adapted_checkpoint_path.endswith("g1_slope_10_mujoco_v3.pt")
+    assert cfg.evaluation.adapted_checkpoint_path.endswith("g1_slope_10_mujoco.pt")
+    assert "fada_evaluation_phase_v023" in cfg.evaluation.output_dir
     assert cfg.evaluation.output_dir.endswith("g1_slope_10_mujoco")
+
+
+def test_dynamics_evaluation_uses_wide_slope_without_replacing_standard_mode() -> None:
+    with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
+        cfg = compose(
+            config_name="fada_slope_evaluate",
+            overrides=["evaluation=fada_slope_dynamics"],
+            return_hydra_config=True,
+        )
+
+    assert cfg.hydra.runtime.choices.evaluation == "fada_slope_dynamics"
+    assert cfg.evaluation.lateral_boundary_mode == "open"
+    assert cfg.evaluation.slope_scene_model_file.endswith("scene_slope_15_wide.xml")
+    assert cfg.evaluation.output_dir.endswith("g1_slope_15_mujoco_dynamics_open")
+    assert "fada_evaluation_phase_v023" in cfg.evaluation.output_dir
+    assert cfg.evaluation.run_flat_regression is False
+
+
+def test_slope_10_dynamics_evaluation_selects_its_matching_wide_scene() -> None:
+    with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
+        cfg = compose(
+            config_name="fada_slope_evaluate",
+            overrides=["target_domain=slope_10", "evaluation=fada_slope_dynamics"],
+            return_hydra_config=True,
+        )
+
+    assert cfg.target_domain.target_domain_id == "g1_slope_10_mujoco"
+    assert cfg.evaluation.slope_scene_model_file.endswith("scene_slope_10_wide.xml")
+    assert cfg.evaluation.output_dir.endswith("g1_slope_10_mujoco_dynamics_open")
+
+
+def test_open_dynamics_scene_rejects_cross_angle_override() -> None:
+    resolver = getattr(target_evaluation_owner, "_open_slope_scene_path", None)
+    assert resolver is not None, "evaluation owner must validate its open-slope scene identity"
+    with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
+        cfg = compose(
+            config_name="fada_slope_evaluate",
+            overrides=["target_domain=slope_10", "evaluation=fada_slope_dynamics"],
+            return_hydra_config=True,
+        )
+    OmegaConf.update(
+        cfg,
+        "evaluation.slope_scene_model_file",
+        "src/unilab/assets/robots/g1/scene_slope_15_wide.xml",
+        merge=False,
+    )
+
+    with pytest.raises(ValueError, match="does not match.*target domain"):
+        resolver(cfg, resolve_fada_target_domain(cfg), ROOT)
 
 
 def test_evaluation_selects_twenty_unique_domain_commands_and_representative() -> None:
@@ -180,3 +241,24 @@ def test_rollout_pair_rejects_policy_that_terminates_before_one_causal_window() 
             ramp_steps=0,
             episode_policy=None,
         )
+
+
+def test_open_boundary_rollout_records_lateral_exit_without_terminating() -> None:
+    env = _OutsideNarrowSlopeEnv()
+    policy = _Policy()
+    geometry = FADASlopeGeometry(15.0, 0.8, 1.5, 8.0, 0.25, 0.5)
+
+    zero, adapted = _run_pair(
+        env,
+        policy,
+        policy,
+        command=np.asarray([0.8, 0.0, 0.0], dtype=np.float32),
+        control_steps=4,
+        ramp_steps=0,
+        episode_policy=FADASlopeEpisodePolicy(geometry, ((0.8, 0.0, 0.0),)),
+        terminate_on_foot_exit=False,
+    )
+
+    assert zero.trajectory.terminal_reason == "horizon"
+    assert adapted.trajectory.terminal_reason == "horizon"
+    assert len(zero.trajectory.physics_states) == len(adapted.trajectory.physics_states) == 4

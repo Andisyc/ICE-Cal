@@ -9,6 +9,7 @@ target_domain:
   task: sac/g1_walk_flat/mujoco_fada_slope_15
   task_name: G1WalkFlat
   backend: mujoco
+  dynamics_evaluation_scene_model_file: src/unilab/assets/robots/g1/scene_slope_15_wide.xml
   # Fixed-seed stratified trials reproduce FADA's randomized-command sim-to-sim collection
   # without enabling environment or dynamics randomization.
   command_sampling:

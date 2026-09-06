@@ -1,0 +1,20 @@
+source_checkpoint_path: model/planner_idm_phase_locomotion_v023.pt
+source_behavior_profile: phase_locomotion_v1
+adapted_checkpoint_path: artifacts/fada_adaptation_phase_v023/${target_domain.target_domain_id}.pt
+output_dir: artifacts/fada_evaluation_phase_v023/${target_domain.target_domain_id}_dynamics_open
+expected_source_checkpoint_sha256: null
+expected_adapted_checkpoint_sha256: null
+
+device: cpu
+num_trials: 20
+representative_forward_speed_mps: 0.8
+control_steps: 600
+ramp_steps: 25
+seed: 1
+record_video: true
+run_flat_regression: false
+
+# This mode isolates uphill dynamics from lateral path keeping. The physical
+# slope is widened and foot_exit remains observable but is not terminal.
+lateral_boundary_mode: open
+slope_scene_model_file: ${target_domain.dynamics_evaluation_scene_model_file}

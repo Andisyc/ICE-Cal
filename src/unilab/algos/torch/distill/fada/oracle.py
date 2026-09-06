@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
@@ -12,7 +12,12 @@ from torch import nn
 
 from unilab.algos.torch.common.actor_factory import build_actor
 from unilab.algos.torch.common.normalization import EmpiricalNormalization
-from unilab.algos.torch.distill.fada.privileged_oracle import validate_fada_oracle_lineage
+from unilab.algos.torch.distill.fada.privileged_oracle import (
+    normalize_fada_oracle_checkpoint_identity,
+    validate_fada_oracle_behavior_environment,
+    validate_fada_oracle_lineage,
+    validate_fada_single_reward,
+)
 from unilab.algos.torch.distill.learning.playback import load_distillation_student_policy
 from unilab.algos.torch.distill.learning.teacher import (
     DistillationTeacherSpec,
@@ -22,6 +27,16 @@ from unilab.algos.torch.distill.learning.teacher import (
 from unilab.algos.torch.hora.observations import split_hora_obs_with_priv_info
 
 _FADA_ORACLE_COMMAND_LIMITS = ((-0.6, -0.4, -0.8), (1.0, 0.4, 0.8))
+
+
+class _PrivilegedActor(Protocol):
+    def explore(
+        self,
+        obs: torch.Tensor,
+        priv_info: torch.Tensor,
+        *,
+        deterministic: bool,
+    ) -> torch.Tensor: ...
 
 
 def _is_distillation_student_checkpoint(payload: object) -> bool:
@@ -41,7 +56,7 @@ class LoadedFADAPrivilegedOraclePolicy(nn.Module):
         obs_dim: int,
         critic_obs_dim: int,
         action_dim: int,
-        obs_normalizer: nn.Module | None,
+        obs_normalizer: EmpiricalNormalization | None,
         checkpoint_identity: Mapping[str, object],
     ) -> None:
         super().__init__()
@@ -53,6 +68,7 @@ class LoadedFADAPrivilegedOraclePolicy(nn.Module):
         self.obs_normalizer = obs_normalizer
         self.checkpoint_identity = dict(checkpoint_identity)
         self.oracle_lineage_id = str(checkpoint_identity.get("oracle_lineage_id", ""))
+        self.behavior_profile = str(checkpoint_identity.get("behavior_profile", ""))
         self.eval()
         for parameter in self.parameters():
             parameter.requires_grad_(False)
@@ -66,8 +82,9 @@ class LoadedFADAPrivilegedOraclePolicy(nn.Module):
             )
         actor_obs = obs
         if self.obs_normalizer is not None:
-            actor_obs = self.obs_normalizer(actor_obs, update=False)
-        action = self.actor.explore(actor_obs, priv_info, deterministic=True)
+            actor_obs = self.obs_normalizer.forward(actor_obs, update=False)
+        actor = cast(_PrivilegedActor, self.actor)
+        action = actor.explore(actor_obs, priv_info, deterministic=True)
         if action.shape != (obs.shape[0], self.action_dim):
             raise ValueError(f"privileged Oracle action shape mismatch: {tuple(action.shape)}")
         return action
@@ -127,26 +144,23 @@ def validate_fada_oracle_environment_contract(
         raise ValueError("privileged Oracle Collector requires ctrl_dt=0.02")
     if bool(cfg.env.mode_observation):
         raise ValueError("privileged Oracle Collector requires mode_observation=false")
-    if bool(cfg.env.gait_phase_enabled):
+    normalized_identity = normalize_fada_oracle_checkpoint_identity(checkpoint_identity)
+    checkpoint_profile = str(normalized_identity["behavior_profile"])
+    teacher_cfg = getattr(cfg, "teacher", None)
+    configured_profile = getattr(teacher_cfg, "behavior_profile", checkpoint_profile)
+    if str(configured_profile) != checkpoint_profile:
         raise ValueError(
-            "privileged Oracle Collector requires gait_phase_enabled=false; "
-            "same-shape nonzero phase inputs invalidate the checkpoint normalizer"
+            "privileged Oracle Collector behavior profile mismatch: "
+            f"checkpoint={checkpoint_profile!r} collector={configured_profile!r}"
         )
+    validate_fada_oracle_behavior_environment(cfg.env, checkpoint_profile)
+    validate_fada_single_reward(
+        reward_scales=dict(cfg.reward.scales),
+        reward_config=dict(cfg.reward),
+        behavior_profile=checkpoint_profile,
+    )
 
     commands = cfg.env.commands
-    command_contract = {
-        "rel_standing_envs": (float(commands.rel_standing_envs), 0.3),
-        "rel_transition_envs": (float(commands.rel_transition_envs), 0.0),
-        "resampling_time": (float(commands.resampling_time), 0.0),
-    }
-    for command_name, (command_value, required_value) in command_contract.items():
-        if not np.isclose(command_value, required_value):
-            raise ValueError(
-                f"privileged Oracle Collector commands.{command_name} mismatch: "
-                f"expected={required_value} observed={command_value}"
-            )
-    if bool(commands.heading_command):
-        raise ValueError("privileged Oracle Collector requires commands.heading_command=false")
     observed_limits = tuple(tuple(float(value) for value in row) for row in commands.vel_limit)
     if observed_limits != _FADA_ORACLE_COMMAND_LIMITS:
         raise ValueError(
@@ -173,7 +187,7 @@ def validate_fada_oracle_environment_contract(
     identity_getter = getattr(env, "get_fada_privileged_checkpoint_identity", None)
     if not callable(identity_getter):
         raise ValueError("Collector environment does not expose FADA checkpoint identity")
-    environment_identity = identity_getter()
+    environment_identity = cast(Any, identity_getter())
     identity_fields = {
         "body_names": tuple(environment_identity.body_names),
         "actuated_joint_names": tuple(environment_identity.actuated_joint_names),
@@ -210,6 +224,7 @@ def _privileged_checkpoint_metadata(payload: Mapping[str, object]) -> Mapping[st
     metadata = payload.get("fada_privileged_oracle")
     if not isinstance(metadata, Mapping):
         raise ValueError("checkpoint missing fada_privileged_oracle identity")
+    metadata = normalize_fada_oracle_checkpoint_identity(metadata)
     dimensions = metadata.get("dimensions")
     if not isinstance(dimensions, Mapping):
         raise ValueError("privileged Oracle checkpoint identity missing dimensions")
@@ -274,10 +289,16 @@ def _load_privileged_oracle_policy(
 def validate_loaded_fada_oracle_lineage(
     final_policy: nn.Module,
     intermediate_policies: list[nn.Module],
+    *,
+    expected_behavior_profile: str | None = None,
 ) -> None:
     """Validate the complete privileged 20+1 lineage before env construction."""
 
     if not isinstance(final_policy, LoadedFADAPrivilegedOraclePolicy):
+        if expected_behavior_profile is not None:
+            raise ValueError(
+                "FADA source behavior profile requires a privileged Oracle checkpoint"
+            )
         if any(
             isinstance(policy, LoadedFADAPrivilegedOraclePolicy) for policy in intermediate_policies
         ):
@@ -293,7 +314,16 @@ def validate_loaded_fada_oracle_lineage(
         if isinstance(policy, LoadedFADAPrivilegedOraclePolicy)
     ]
     records.append(final_policy.checkpoint_identity)
-    validate_fada_oracle_lineage(records)
+    admitted = validate_fada_oracle_lineage(records)
+    if (
+        expected_behavior_profile is not None
+        and admitted.behavior_profile != expected_behavior_profile
+    ):
+        raise ValueError(
+            "FADA Oracle lineage behavior profile mismatch: "
+            f"expected={expected_behavior_profile!r} "
+            f"observed={admitted.behavior_profile!r}"
+        )
 
 
 def load_fada_oracle_policy(
@@ -353,6 +383,8 @@ def reload_fada_oracle_policy_(
         assert isinstance(replacement, LoadedFADAPrivilegedOraclePolicy)
         if replacement.oracle_lineage_id != policy.oracle_lineage_id:
             raise ValueError("intermediate Oracle checkpoint lineage mismatch")
+        if replacement.behavior_profile != policy.behavior_profile:
+            raise ValueError("intermediate Oracle checkpoint behavior profile mismatch")
         policy.actor.load_state_dict(replacement.actor.state_dict(), strict=True)
         if (policy.obs_normalizer is None) != (replacement.obs_normalizer is None):
             raise ValueError("Oracle observation normalizer ownership changed during reload")

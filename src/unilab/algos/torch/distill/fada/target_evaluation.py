@@ -18,6 +18,7 @@ from omegaconf import DictConfig, OmegaConf
 from unilab.algos.torch.distill.fada.adaptation_checkpoint import (
     FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION,
     assert_fada_adaptation_source_checkpoint,
+    assert_fada_target_collection_checkpoint,
     load_fada_deployable_policy_checkpoint,
 )
 from unilab.algos.torch.distill.fada.model import FADAPlannerIDMPolicy
@@ -42,9 +43,11 @@ from unilab.algos.torch.distill.fada.target_data import (
     FADATargetBatch,
 )
 from unilab.algos.torch.distill.fada.target_domain import (
+    FADA_SLOPE_WIDE_SCENE_BY_TARGET_DOMAIN_ID,
     FADASlopeGeometry,
     FADATargetDomainSpec,
     assert_nominal_slope_environment,
+    assert_phase_locomotion_target_environment,
     resolve_fada_target_domain,
 )
 from unilab.algos.torch.distill.fada.target_evaluation_diagnostics import (
@@ -70,6 +73,27 @@ ROOT_DIR = Path(__file__).resolve().parents[6]
 def _path(value: Any, root: Path) -> Path:
     path = Path(str(value)).expanduser()
     return path.resolve() if path.is_absolute() else (root / path).resolve()
+
+
+def _open_slope_scene_path(
+    cfg: DictConfig,
+    domain: FADATargetDomainSpec,
+    root: Path,
+) -> Path:
+    raw_path = OmegaConf.select(cfg, "evaluation.slope_scene_model_file")
+    if raw_path is None:
+        raise ValueError("FADA open-boundary slope evaluation requires a scene")
+    scene_path = _path(raw_path, root)
+    expected_name = FADA_SLOPE_WIDE_SCENE_BY_TARGET_DOMAIN_ID.get(
+        domain.target_domain_id
+    )
+    if expected_name is None or scene_path.name != expected_name:
+        raise ValueError(
+            "FADA open-boundary slope scene does not match the selected target domain"
+        )
+    if not scene_path.is_file():
+        raise FileNotFoundError(f"FADA wide slope scene not found: {scene_path}")
+    return scene_path
 
 
 def _seed_all(seed: int) -> None:
@@ -139,6 +163,7 @@ def _rollout(
     control_steps: int,
     ramp_steps: int,
     episode_policy: FADASlopeEpisodePolicy | None,
+    terminate_on_foot_exit: bool,
 ) -> FADAEvaluationRollout:
     env.restore_rollout_snapshot(snapshot)
     controller = FADAPlaybackController(policy, device=next(policy.parameters()).device)
@@ -191,6 +216,10 @@ def _rollout(
             semantic_reason = episode_policy.classify(
                 base_pos_w=base[0], feet_pos_w=feet[0], done=False
             ).terminal_reason
+            if semantic_reason == "foot_exit" and not terminate_on_foot_exit:
+                semantic_reason = (
+                    "finish" if episode_policy.geometry.has_finished(base[0]) else None
+                )
         step_terminal_reason = lifecycle_reason or semantic_reason
         if step_terminal_reason is None and not done:
             records.append(
@@ -254,6 +283,7 @@ def _run_pair(
     control_steps: int,
     ramp_steps: int,
     episode_policy: FADASlopeEpisodePolicy | None,
+    terminate_on_foot_exit: bool = True,
 ) -> tuple[FADAEvaluationRollout, FADAEvaluationRollout]:
     env.set_autoreset(False)
     env.reset_all()
@@ -266,6 +296,7 @@ def _run_pair(
         control_steps=control_steps,
         ramp_steps=ramp_steps,
         episode_policy=episode_policy,
+        terminate_on_foot_exit=terminate_on_foot_exit,
     )
     adapted = _rollout(
         env,
@@ -275,6 +306,7 @@ def _run_pair(
         control_steps=control_steps,
         ramp_steps=ramp_steps,
         episode_policy=episode_policy,
+        terminate_on_foot_exit=terminate_on_foot_exit,
     )
     return zero, adapted
 
@@ -358,6 +390,7 @@ def _evaluate_command_pairs(
     ramp_steps: int,
     geometry: FADASlopeGeometry | None,
     representative_index: int,
+    terminate_on_foot_exit: bool,
 ) -> tuple[
     list[dict[str, Any]],
     tuple[FADAEvaluationRollout, FADAEvaluationRollout],
@@ -377,6 +410,7 @@ def _evaluate_command_pairs(
             control_steps=control_steps,
             ramp_steps=ramp_steps,
             episode_policy=episode_policy,
+            terminate_on_foot_exit=terminate_on_foot_exit,
         )
         if geometry is None:
             zero_summary = _flat_summary(zero.trajectory)
@@ -422,9 +456,16 @@ def run_fada_target_evaluation(
     root = Path(root_dir).resolve()
     domain = resolve_fada_target_domain(cfg)
     assert_nominal_slope_environment(cfg, domain, task_choice=get_hydra_runtime_choice(cfg, "task"))
+    assert_phase_locomotion_target_environment(
+        cfg,
+        behavior_profile=str(cfg.evaluation.source_behavior_profile),
+    )
     geometry = domain.slope
     if geometry is None:
         raise ValueError("FADA slope evaluation requires slope geometry")
+    boundary_mode = str(OmegaConf.select(cfg, "evaluation.lateral_boundary_mode"))
+    if boundary_mode not in {"canonical", "open"}:
+        raise ValueError("evaluation.lateral_boundary_mode must be canonical or open")
     source_path = _path(cfg.evaluation.source_checkpoint_path, root)
     adapted_path = _path(cfg.evaluation.adapted_checkpoint_path, root)
     output_dir = _path(cfg.evaluation.output_dir, root)
@@ -438,9 +479,13 @@ def run_fada_target_evaluation(
         if expected is not None and str(expected) != observed:
             raise ValueError(f"FADA evaluation {label} checkpoint SHA-256 mismatch")
     source = assert_fada_adaptation_source_checkpoint(
-        load_policy_fn(source_path, device=str(cfg.evaluation.device))
+        load_policy_fn(source_path, device=str(cfg.evaluation.device)),
+        expected_behavior_profile=str(cfg.evaluation.source_behavior_profile),
     )
-    adapted = load_policy_fn(adapted_path, device=str(cfg.evaluation.device))
+    adapted = assert_fada_target_collection_checkpoint(
+        load_policy_fn(adapted_path, device=str(cfg.evaluation.device)),
+        expected_behavior_profile=str(cfg.evaluation.source_behavior_profile),
+    )
     if adapted.checkpoint.get("schema_version") != FADA_ADAPTED_CHECKPOINT_SCHEMA_VERSION:
         raise ValueError("FADA evaluation adapted checkpoint must use fada-adapted/v3")
     if adapted.checkpoint.get("target_domain_id") != domain.target_domain_id:
@@ -465,12 +510,16 @@ def run_fada_target_evaluation(
     seed = int(cfg.evaluation.seed)
     ensure_registries_fn()
     _seed_all(seed)
+    slope_override = BackendAdapter(
+        cfg, root_dir=root, algo_name="sac"
+    ).build_task_env_cfg_override()
+    if boundary_mode == "open":
+        wide_scene = _open_slope_scene_path(cfg, domain, root)
+        slope_override.setdefault("scene", {})["model_file"] = str(wide_scene)
     env = create_env_fn(
         cfg,
         num_envs=1,
-        env_cfg_override=BackendAdapter(
-            cfg, root_dir=root, algo_name="sac"
-        ).build_task_env_cfg_override(),
+        env_cfg_override=slope_override,
         sim_backend=domain.backend,
     )
     flat_env = None
@@ -484,6 +533,7 @@ def run_fada_target_evaluation(
             ramp_steps=ramp_steps,
             geometry=geometry,
             representative_index=representative_index,
+            terminate_on_foot_exit=boundary_mode == "canonical",
         )
         metrics: dict[str, Any] = {
             "trial_count": len(commands),
@@ -515,6 +565,7 @@ def run_fada_target_evaluation(
                 ramp_steps=ramp_steps,
                 geometry=None,
                 representative_index=representative_index,
+                terminate_on_foot_exit=True,
             )
             metrics["flat_regression"] = {
                 "trials": flat_trials,
@@ -564,6 +615,7 @@ def run_fada_target_evaluation(
                         "trial_count": len(commands),
                         "representative_trial_index": representative_index,
                         "representative_command": list(commands[representative_index]),
+                        "lateral_boundary_mode": boundary_mode,
                         "source_checkpoint_sha256": file_sha256(source_path),
                         "adapted_checkpoint_sha256": file_sha256(adapted_path),
                         "files": files,

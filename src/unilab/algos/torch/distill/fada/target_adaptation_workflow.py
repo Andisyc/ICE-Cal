@@ -29,12 +29,16 @@ from unilab.algos.torch.distill.fada.adaptation_checkpoint import (
 )
 from unilab.algos.torch.distill.fada.checkpoint import load_fada_policy_checkpoint
 from unilab.algos.torch.distill.fada.observation import assert_fada_active_route_contract
+from unilab.algos.torch.distill.fada.privileged_oracle import (
+    FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+)
 from unilab.algos.torch.distill.fada.target_data import (
     FADATargetBatch,
     load_fada_target_artifact,
 )
 from unilab.algos.torch.distill.fada.target_domain import (
     assert_nominal_slope_environment,
+    assert_phase_locomotion_target_environment,
     resolve_fada_target_domain,
 )
 from unilab.algos.torch.distill.workflow import file_sha256
@@ -90,6 +94,10 @@ def _assert_identity(cfg: DictConfig) -> Any:
     task_choice = get_hydra_runtime_choice(cfg, "task")
     if domain.kind == "slope":
         assert_nominal_slope_environment(cfg, domain, task_choice=task_choice)
+        assert_phase_locomotion_target_environment(
+            cfg,
+            behavior_profile=str(cfg.adaptation.source_behavior_profile),
+        )
     else:
         if task_choice != domain.task:
             raise ValueError(f"FADA adaptation requires task={domain.task}")
@@ -184,7 +192,14 @@ def preflight_fada_adaptation(
                 f"FADA {label} SHA-256 mismatch: expected={expected} observed={observed}"
             )
     loaded_source = assert_fada_adaptation_source_checkpoint(
-        load_fada_policy_checkpoint(source_path, device=str(cfg.adaptation.device))
+        load_fada_policy_checkpoint(source_path, device=str(cfg.adaptation.device)),
+        expected_behavior_profile=str(
+            OmegaConf.select(
+                cfg,
+                "adaptation.source_behavior_profile",
+                default=FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+            )
+        ),
     )
     assert_fada_active_route_contract(
         observation_contract=loaded_source.policy.config.observation_contract,

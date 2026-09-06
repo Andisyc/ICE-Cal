@@ -9,6 +9,7 @@ target_domain:
   task: sac/g1_walk_flat/mujoco_fada_slope_10
   task_name: G1WalkFlat
   backend: mujoco
+  dynamics_evaluation_scene_model_file: src/unilab/assets/robots/g1/scene_slope_10_wide.xml
   command_sampling:
     forward_speed_range: [0.75, 0.85]
     num_trials: 64

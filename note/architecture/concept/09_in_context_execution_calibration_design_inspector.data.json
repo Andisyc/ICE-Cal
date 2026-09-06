@@ -94,11 +94,11 @@
       "details": [
         {
           "heading": "1. 源策略来自 ICE-Cal Privileged Oracle",
-          "text": "v022 teacher 在单一 G1WalkFlat/MuJoCo 任务上训练。Actor 读取 98-D 任务观测以及类型化特权向量的 32-D embedding，Critic 读取同一特权尾部；Collector 与 Learner 共用并持久化特权归一化统计。训练使用按迭代推进的 grouped DR：左膝执行器强度、Kp/Kd、摩擦、质量、COM 与 DoF 偏置逐级展开，delay 与 push 关闭。20 个 intermediate checkpoints 与 final checkpoint 仍必须来自同一次 sealed 训练并共享 oracle_lineage_id。当前 G1WalkFlat_live_priv_grouped_dr_v022 是成功的 validation run，但只按 1000 轮保存且不 seal，因此不能直接进入 IDM。"
+          "text": "v023 incline route 在单一 G1WalkFlat/MuJoCo 任务上训练专用 locomotion Oracle。Actor 读取 98-D 任务观测以及类型化特权向量的 32-D embedding，Critic 读取同一特权尾部；Collector 与 Learner 共用并持久化特权归一化统计。训练保留 v022 的 iteration-based grouped DR；20 个 intermediate checkpoints 与 final checkpoint 必须来自同一次 schema-3 sealed 训练，共享 oracle_lineage_id 与 phase_locomotion_v1。v022 继续作为 phase-neutral mixed-behavior baseline。"
         },
         {
-          "heading": "2. Gait Phase 完全退出控制权",
-          "text": "整个任务只使用一套 locomotion Reward：Command 只改变速度跟踪目标，零指令不进入独立站立/恢复 Reward，非零指令也不进入独立行走 Reward；mode dispatcher 与全部 stand_* Reward 永久退役。禁止 Gait/feet-phase Reward。原有两维 gait-phase 槽只为保持 98→66/29/3 契约而保留，reset、observation 与 step 中恒为零；不采样、不推进，不参与 Reward 或 constraint。feet_phase、feet_phase_contrast、feet_phase_contact 必须为 0，gait constraint 必须关闭；预检发现越界即拒绝启动。"
+          "heading": "2. v023 使用专用 Gait Phase Locomotion",
+          "text": "incline route 不再要求一个 Oracle 同时承担静止站立。两维 sin(Phi), cos(Phi) 在 98-D Actor observation 中启用，并由 g1_fada_state_v2 保留到 66-D student observation；offset_phase 与 UniLab 成熟的 feet_phase Reward 负责形成交替步态。rel_standing_envs=0，stand/transition replay 退出该 route；不增加额外直线或 yaw Reward。schema/profile 预检阻止旧 v022 checkpoint 因维度相同而静默混入。"
         },
         {
           "heading": "3. Planner 看历史动作，但 future 不含动作",

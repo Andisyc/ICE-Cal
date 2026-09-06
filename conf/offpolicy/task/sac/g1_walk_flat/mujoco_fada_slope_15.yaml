@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - /task/sac/g1_walk_flat/mujoco_fada_target
+  - /task/sac/g1_walk_flat/mujoco_fada_target_phase_locomotion
   - _self_
 
 env:

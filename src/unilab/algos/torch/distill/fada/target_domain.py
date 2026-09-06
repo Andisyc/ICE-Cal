@@ -8,6 +8,11 @@ from typing import Any, Literal, cast
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
+from unilab.algos.torch.distill.fada.privileged_oracle import (
+    FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
+    fada_oracle_behavior_spec,
+)
+
 
 def _finite_float(raw: Any, name: str) -> float:
     value = float(raw)
@@ -157,6 +162,11 @@ FADA_SLOPE_GEOMETRY_BY_TARGET_DOMAIN_ID = {
     "g1_slope_15_mujoco": FADA_SLOPE_15_GEOMETRY,
 }
 
+FADA_SLOPE_WIDE_SCENE_BY_TARGET_DOMAIN_ID = {
+    "g1_slope_10_mujoco": "scene_slope_10_wide.xml",
+    "g1_slope_15_mujoco": "scene_slope_15_wide.xml",
+}
+
 
 @dataclass(frozen=True)
 class FADATargetDomainSpec:
@@ -226,6 +236,45 @@ def assert_nominal_slope_environment(
     torque_rfi = OmegaConf.select(cfg, "env.domain_rand.torque_rfi_fraction")
     if isinstance(torque_rfi, bool) or float(torque_rfi) != 0.0:
         raise ValueError("FADA target env.domain_rand.torque_rfi_fraction must be 0.0")
+
+
+def assert_phase_locomotion_target_environment(
+    cfg: DictConfig,
+    *,
+    behavior_profile: str,
+) -> None:
+    """Seal phase semantics that share the same observation tensor shape."""
+
+    if behavior_profile != FADA_ORACLE_PHASE_LOCOMOTION_PROFILE:
+        raise ValueError(
+            f"unsupported FADA slope source behavior profile: {behavior_profile!r}"
+        )
+    spec = fada_oracle_behavior_spec(behavior_profile)
+    required = {
+        "env.ctrl_dt": spec.ctrl_dt,
+        "env.mode_observation": spec.mode_observation,
+        "env.gait_phase_enabled": spec.gait_phase_enabled,
+        "env.gait_phase_init_mode": spec.gait_phase_init_mode,
+        "env.commands.rel_standing_envs": spec.rel_standing_envs,
+        "env.commands.rel_transition_envs": spec.rel_transition_envs,
+        "env.commands.resampling_time": spec.command_resampling_time,
+        "env.commands.heading_command": spec.heading_command,
+        "reward.scales.feet_phase": spec.feet_phase,
+        "reward.scales.feet_phase_contrast": spec.feet_phase_contrast,
+        "reward.scales.feet_phase_contact": spec.feet_phase_contact,
+        "reward.gait_frequency": spec.gait_frequency,
+        "reward.feet_phase_swing_height": spec.feet_phase_swing_height,
+        "reward.feet_phase_tracking_sigma": spec.feet_phase_tracking_sigma,
+        "reward.gait_constraint.enabled": spec.gait_constraint_enabled,
+        "reward.gait_constraint.penalty_scale": spec.gait_constraint_penalty_scale,
+    }
+    for path, expected in required.items():
+        observed = OmegaConf.select(cfg, path)
+        if observed != expected:
+            raise ValueError(
+                f"FADA {behavior_profile} target requires {path}={expected!r}, "
+                f"got {observed!r}"
+            )
 
 
 def _mapping(cfg: DictConfig, key: str) -> dict[str, Any] | None:

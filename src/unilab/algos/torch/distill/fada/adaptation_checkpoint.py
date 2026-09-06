@@ -22,6 +22,10 @@ from unilab.algos.torch.distill.fada.checkpoint import (
     load_fada_policy_checkpoint,
 )
 from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig, FADAPlannerIDMPolicy
+from unilab.algos.torch.distill.fada.privileged_oracle import (
+    FADA_ORACLE_BEHAVIOR_PROFILES,
+    FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+)
 from unilab.algos.torch.distill.fada.target_data import (
     FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
     FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
@@ -35,6 +39,8 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 def assert_fada_adaptation_source_checkpoint(
     loaded: LoadedFADAPlannerIDMPolicy,
+    *,
+    expected_behavior_profile: str | None = None,
 ) -> LoadedFADAPlannerIDMPolicy:
     """Keep Stage-C/D pinned to the current complete FADA source schema."""
 
@@ -47,11 +53,17 @@ def assert_fada_adaptation_source_checkpoint(
             "FADA adaptation requires current schema-"
             f"{FADA_CHECKPOINT_SCHEMA_VERSION} source checkpoint"
         )
+    _assert_checkpoint_behavior_profile(
+        checkpoint,
+        expected_behavior_profile=expected_behavior_profile,
+    )
     return loaded
 
 
 def assert_fada_target_collection_checkpoint(
     loaded: LoadedFADAPlannerIDMPolicy,
+    *,
+    expected_behavior_profile: str | None = None,
 ) -> LoadedFADAPlannerIDMPolicy:
     """Admit current source and adapted policies to post-training collection."""
 
@@ -64,7 +76,39 @@ def assert_fada_target_collection_checkpoint(
         raise ValueError(
             "FADA target collection requires a schema-5 source or fada-adapted/v3 checkpoint"
         )
+    assert isinstance(checkpoint, Mapping)
+    _assert_checkpoint_behavior_profile(
+        checkpoint,
+        expected_behavior_profile=expected_behavior_profile,
+    )
     return loaded
+
+
+def fada_checkpoint_behavior_profile(checkpoint: Mapping[str, Any]) -> str:
+    """Read source behavior identity; pre-v023 artifacts are phase-neutral."""
+
+    runtime_config = checkpoint.get("runtime_config")
+    if not isinstance(runtime_config, Mapping):
+        return FADA_ORACLE_PHASE_NEUTRAL_PROFILE
+    profile = runtime_config.get(
+        "source_behavior_profile", FADA_ORACLE_PHASE_NEUTRAL_PROFILE
+    )
+    if profile not in FADA_ORACLE_BEHAVIOR_PROFILES:
+        raise ValueError(f"unsupported FADA source behavior profile: {profile!r}")
+    return str(profile)
+
+
+def _assert_checkpoint_behavior_profile(
+    checkpoint: Mapping[str, Any],
+    *,
+    expected_behavior_profile: str | None,
+) -> None:
+    observed = fada_checkpoint_behavior_profile(checkpoint)
+    if expected_behavior_profile is not None and observed != expected_behavior_profile:
+        raise ValueError(
+            "FADA checkpoint behavior profile mismatch: "
+            f"expected={expected_behavior_profile!r} observed={observed!r}"
+        )
 
 
 def _validate_sha256(name: str, value: Any) -> str:

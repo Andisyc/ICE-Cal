@@ -96,6 +96,8 @@ def test_slope_config_selects_nominal_target_only_collection() -> None:
     assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
     assert cfg.target_domain.target_domain_id == "g1_slope_15_mujoco"
     assert cfg.collection.output_dir.endswith("g1_slope_15_mujoco")
+    assert "fada_target_phase_v023" in cfg.collection.output_dir
+    assert cfg.collection.source_behavior_profile == "phase_locomotion_v1"
     assert cfg.env.scene.model_file.endswith("scene_slope_15.xml")
     assert cfg.env.noise_config.level == 0.0
     assert cfg.env.domain_rand.actuator_strength.enabled is False
@@ -305,7 +307,11 @@ def test_slope_stage_c_publishes_only_target_bundle_outputs(tmp_path: Path) -> N
         cfg,
         root_dir=ROOT_DIR,
         load_policy_fn=lambda *_a, **_k: SimpleNamespace(
-            policy=policy, checkpoint={"schema_version": 5}
+            policy=policy,
+            checkpoint={
+                "schema_version": 5,
+                "runtime_config": {"source_behavior_profile": "phase_locomotion_v1"},
+            },
         ),
         ensure_registries_fn=lambda: None,
         create_env_fn=lambda *_a, **_k: Env(),

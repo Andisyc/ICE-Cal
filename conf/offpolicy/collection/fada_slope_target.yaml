@@ -1,6 +1,7 @@
-policy_checkpoint_path: planner_idm_v022_cpu_limited.pt
+policy_checkpoint_path: model/planner_idm_phase_locomotion_v023.pt
+source_behavior_profile: phase_locomotion_v1
 expected_checkpoint_sha256: null
-output_dir: artifacts/fada_target/${target_domain.target_domain_id}
+output_dir: artifacts/fada_target_phase_v023/${target_domain.target_domain_id}
 
 num_envs: 1
 control_steps: 6000
@@ -17,4 +18,3 @@ observation_key: obs
 student_projection: g1_fada_state_v2
 student_drop_index: null
 command_info_keys: [commands]
-

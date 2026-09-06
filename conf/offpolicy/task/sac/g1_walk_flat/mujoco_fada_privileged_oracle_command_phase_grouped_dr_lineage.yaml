@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_phase_locomotion_grouped_dr_lineage
+  - _self_
+
+# Experimental unified stand/walk height cost; legacy source policies are unchanged.
+algo:
+  actor:
+    oracle_behavior_profile: command_phase_mixed_v1
+env:
+  commands:
+    rel_standing_envs: 0.3
+    resampling_time: 4.0
+reward:
+  scales:
+    feet_phase: 1.0
+  feet_phase_mode: command_height_v1
+  feet_phase_command_speed_scale: 0.3
+  feet_phase_turn_length: 0.3
+  feet_phase_settling_tau: 0.15
+  feet_phase_height_scale: 0.09

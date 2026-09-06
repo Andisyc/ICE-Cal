@@ -42,6 +42,7 @@ from unilab.envs.locomotion.g1.walk_control import (
 )
 from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
     build_upper_body_pose_weights,
+    command_phase_amplitude,
     compute_aggregated_foot_contact,
     compute_aggregated_foot_contact_count,
     compute_command_active_mask,
@@ -58,6 +59,7 @@ from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
     sample_g1_walk_commands,
     sample_gait_phase_pairs,
     sample_reset_base_qvel,
+    update_command_phase_amplitude,
 )
 
 
@@ -236,6 +238,21 @@ class G1WalkControlBindings:
     def apply_action(self, actions: np.ndarray, state: NpEnvState) -> np.ndarray:
         state.info["last_actions"] = state.info.get("current_actions", np.zeros_like(actions))
         state.info["current_actions"] = actions
+        if (
+            getattr(getattr(self._cfg, "reward_config", None), "feet_phase_mode", "legacy")
+            == "command_height_v1"
+        ):
+            target = command_phase_amplitude(
+                state.info["commands"],
+                self._reward_cfg.feet_phase_command_speed_scale,
+                self._reward_cfg.feet_phase_turn_length,
+            )
+            state.info["command_phase_amplitude"] = update_command_phase_amplitude(
+                state.info["command_phase_amplitude"],
+                target,
+                self._cfg.ctrl_dt,
+                self._reward_cfg.feet_phase_settling_tau,
+            )
 
         gait_phase = state.info.get(
             "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())

@@ -67,7 +67,8 @@ def test_slope_adaptation_reads_target_only_v3_artifact() -> None:
 
     assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
     assert cfg.adaptation.target_artifact_path.endswith("g1_slope_15_mujoco/target.pt")
-    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_15_mujoco_v3.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_15_mujoco.pt")
+    assert "fada_adaptation_phase_v023" in cfg.adaptation.output_checkpoint_path
     assert cfg.adaptation.rank == 8
 
 
@@ -76,7 +77,7 @@ def test_slope_10_adaptation_uses_its_own_artifact_and_checkpoint() -> None:
 
     assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
     assert cfg.adaptation.target_artifact_path.endswith("g1_slope_10_mujoco/target.pt")
-    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_10_mujoco_v3.pt")
+    assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_10_mujoco.pt")
 
 
 def _config() -> FADAArchitectureConfig:
@@ -96,7 +97,11 @@ def _config() -> FADAArchitectureConfig:
     )
 
 
-def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
+def _artifacts(
+    tmp_path: Path,
+    *,
+    behavior_profile: str = "phase_neutral_mixed_v1",
+) -> tuple[Path, Path, str, str]:
     config = _config()
     policy = FADAPlannerIDMPolicy(config)
     source = tmp_path / "source.pt"
@@ -112,7 +117,10 @@ def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
         trainer,
         completed_iterations=5,
         samples_seen=100,
-        runtime_config={"training_schedule": "alternating_idm_then_planner"},
+        runtime_config={
+            "training_schedule": "alternating_idm_then_planner",
+            "source_behavior_profile": behavior_profile,
+        },
     )
     source_sha = file_sha256(source)
     rows = 6
@@ -153,7 +161,9 @@ def _artifacts(tmp_path: Path) -> tuple[Path, Path, str, str]:
 def _slope_artifacts(
     tmp_path: Path, *, repeated_episode_commands: bool
 ) -> tuple[Path, Path, str, str]:
-    source, legacy_target, source_sha, _ = _artifacts(tmp_path)
+    source, legacy_target, source_sha, _ = _artifacts(
+        tmp_path, behavior_profile="phase_locomotion_v1"
+    )
     payload = torch.load(legacy_target, map_location="cpu", weights_only=True)
     batch = FADATargetBatch(**payload["batch"])
     speeds = [0.75, 0.75, 0.75] if repeated_episode_commands else [0.75, 0.8, 0.85]
