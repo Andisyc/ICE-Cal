@@ -97,7 +97,7 @@ def _plain_value(value: Any) -> Any:
 
 
 def _validate_gain_targeted_domain_randomization(
-    domain_rand: Any, *, allow_grouped: bool = False
+    domain_rand: Any, *, allow_grouped: bool = False, allow_nominal_strength: bool = False
 ) -> None:
     forbidden_flags = (
         ("randomize_ground_friction", "ground friction"),
@@ -137,10 +137,16 @@ def _validate_gain_targeted_domain_randomization(
         raise ValueError("privileged_locomotion_sac requires single_candidate sampling mode")
     if list(getattr(strength, "candidate_actuator_indices", [])) != [3]:
         raise ValueError("privileged_locomotion_sac requires left-knee actuator index 3")
-    if list(getattr(strength, "multiplier_range", [])) != [0.8, 1.0]:
+    nominal_strength = allow_nominal_strength and list(
+        getattr(strength, "multiplier_range", [])
+    ) == [1.0, 1.0]
+    if not nominal_strength and list(getattr(strength, "multiplier_range", [])) != [0.8, 1.0]:
         raise ValueError("privileged_locomotion_sac requires multiplier range [0.8, 1.0]")
-    if float(getattr(strength, "nominal_probability", -1.0)) != 0.3:
-        raise ValueError("privileged_locomotion_sac requires nominal probability 0.3")
+    expected_probability = 1.0 if nominal_strength else 0.3
+    if float(getattr(strength, "nominal_probability", -1.0)) != expected_probability:
+        raise ValueError(
+            f"privileged_locomotion_sac requires nominal probability {expected_probability}"
+        )
     if bool(getattr(strength, "include_in_critic_obs", True)):
         raise ValueError(
             "privileged_locomotion_sac forbids duplicate actuator-strength Critic tail"
@@ -366,6 +372,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             _validate_gain_targeted_domain_randomization(
                 cfg.env.domain_rand,
                 allow_grouped=grouped_dr,
+                allow_nominal_strength=behavior_profile == "original_height_mixed_v1",
             )
             curriculum_enabled = bool(
                 getattr(cfg.env.domain_rand.actuator_strength, "curriculum_enabled", False)

@@ -121,6 +121,37 @@ def test_simple_height_task_runtime_admission(monkeypatch, task, mode):
     assert cfg.algo.max_iterations == 5000
     assert cfg.algo.save_interval == 240
     if mode == "original_command_height_v1":
+        from unilab.envs.locomotion.g1.walk_actuator_randomization import (
+            sample_actuator_strength_multipliers,
+            validate_actuator_strength_config,
+        )
+
+        strength = cfg.env.domain_rand.actuator_strength
+        validate_actuator_strength_config(strength, expected_actions=29)
+        assert strength.group_curriculum_enabled is True
+        for level, (low, probability) in enumerate(
+            zip(
+                strength.curriculum_multiplier_lows,
+                strength.curriculum_nominal_probabilities,
+                strict=True,
+            )
+        ):
+            multipliers = sample_actuator_strength_multipliers(
+                strength,
+                num_reset=128,
+                expected_actions=29,
+                curriculum_profile=(level, low, probability),
+            )
+            np.testing.assert_array_equal(multipliers, np.ones((128, 29)))
+        np.testing.assert_array_equal(
+            sample_actuator_strength_multipliers(
+                strength,
+                num_reset=128,
+                expected_actions=29,
+                curriculum_profile=None,
+            ),
+            np.ones((128, 29)),
+        )
         assert cfg.reward.feet_phase_tracking_sigma == 0.04
         assert cfg.reward.min_forward_speed_for_gait_reward == 0
         assert cfg.reward.gait_constraint.enabled is False

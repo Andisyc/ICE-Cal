@@ -7,6 +7,14 @@ defaults:
 algo:
   actor:
     oracle_behavior_profile: original_height_mixed_v1
+env:
+  domain_rand:
+    actuator_strength:
+      # Keep the shared DR curriculum, but never weaken the left knee.
+      multiplier_range: [1.0, 1.0]
+      nominal_probability: 1.0
+      curriculum_multiplier_lows: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      curriculum_nominal_probabilities: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 reward:
   feet_phase_mode: original_command_height_v1
   feet_phase_swing_height: 0.06
