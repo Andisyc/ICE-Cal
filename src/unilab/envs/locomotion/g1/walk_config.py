@@ -177,7 +177,15 @@ class G1RewardConfig:
         ]
     )
 
+    # Squared-error denominators, not standard deviations.
+    tracking_lin_vel_sigma: float | None = None
+    tracking_ang_vel_sigma: float | None = None
+
     def __post_init__(self) -> None:
+        for name in ("tracking_lin_vel_sigma", "tracking_ang_vel_sigma"):
+            value = getattr(self, name)
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{name} must be finite and positive")
         if isinstance(self.gait_constraint, dict):
             self.gait_constraint = GaitConstraintConfig(**self.gait_constraint)
         if isinstance(self.mode, dict):
@@ -191,8 +199,6 @@ class G1RewardConfig:
         }:
             raise ValueError("unsupported feet_phase_mode")
         if self.feet_phase_mode == "original_command_height_v1":
-            import math
-
             for name in (
                 "feet_phase_swing_height",
                 "feet_phase_command_speed_scale",
@@ -202,8 +208,6 @@ class G1RewardConfig:
                 if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                     raise ValueError(f"{name} must be finite and positive")
         if self.feet_phase_mode in {"command_height_v1", "command_height_v2", "command_height_v3"}:
-            import math
-
             for name in (
                 "feet_phase_command_speed_scale",
                 "feet_phase_turn_length",

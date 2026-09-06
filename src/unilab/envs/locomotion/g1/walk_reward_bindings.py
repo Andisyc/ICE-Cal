@@ -227,6 +227,8 @@ class G1WalkRewardBindings:
             num_envs=self._num_envs,
             default_angles=self.default_angles,
             tracking_sigma=self._reward_cfg.tracking_sigma,
+            tracking_lin_vel_sigma=self._reward_cfg.tracking_lin_vel_sigma,
+            tracking_ang_vel_sigma=self._reward_cfg.tracking_ang_vel_sigma,
             base_height_target=height_target,
             base_height=self._terrain_relative_base_height(),
             gravity=gravity,

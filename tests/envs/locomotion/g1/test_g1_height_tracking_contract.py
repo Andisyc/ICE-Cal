@@ -57,7 +57,10 @@ def _fake_g1_reward_context(
     env._backend = _FakeBasePosBackend(base_pos)
     env.default_angles = np.zeros((0,), dtype=dtype)
     env._pose_weights = None
-    env._reward_cfg = SimpleNamespace(tracking_sigma=0.25, base_height_target=fallback_height)
+    env._reward_cfg = SimpleNamespace(
+        tracking_sigma=0.25, base_height_target=fallback_height,
+        tracking_lin_vel_sigma=None, tracking_ang_vel_sigma=None,
+    )
     zeros3 = np.zeros((env._num_envs, 3), dtype=dtype)
     zeros0 = np.zeros((env._num_envs, 0), dtype=dtype)
     return env._build_reward_context(info, zeros3, zeros3, zeros3, zeros0, zeros0)
