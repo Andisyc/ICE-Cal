@@ -100,6 +100,7 @@ _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_COMMAND_PHASE_PROFILE] = replace(
     rel_standing_envs=0.3,
     command_resampling_time=4.0,
     feet_phase=1.0,
+    feet_phase_swing_height=0.06,
 )
 
 

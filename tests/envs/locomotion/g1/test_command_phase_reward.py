@@ -135,9 +135,21 @@ def test_command_phase_config_composes_and_validates(monkeypatch):
         OmegaConf.to_container(cfg.algo, resolve=True)
     )
     runtime.validate_training_config(cfg)
+    assert cfg.reward.feet_phase_swing_height == 0.06
+    assert cfg.reward.feet_phase_height_scale == 0.09
     assert cfg.env.commands.rel_standing_envs == 0.3
     assert cfg.env.commands.resampling_time == 4.0
     reward = OmegaConf.to_container(cfg.reward, resolve=True)
+    from unilab.algos.torch.distill.fada.privileged_oracle import fada_oracle_behavior_spec
+
+    assert fada_oracle_behavior_spec("phase_locomotion_v1").feet_phase_swing_height == 0.09
+    wrong_height = dict(reward, feet_phase_swing_height=0.09)
+    with pytest.raises(ValueError, match="feet_phase_swing_height"):
+        validate_fada_single_reward(
+            reward_scales=reward["scales"],
+            reward_config=wrong_height,
+            behavior_profile="command_phase_mixed_v1",
+        )
     with pytest.raises(ValueError, match="feet_phase_mode"):
         validate_fada_single_reward(
             reward_scales=reward["scales"],
