@@ -356,15 +356,19 @@ def test_backend_adapter_fada_play_profile_is_fully_nominal() -> None:
     assert play_override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
 
 
+@pytest.mark.parametrize("task", [
+    "mujoco_fada_privileged_oracle",
+    "mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage",
+])
 def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, task: str,
 ) -> None:
     monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-lineage")
     checkpoint = "/tmp/privileged_oracle.pt"
     cfg = _offpolicy_cfg(
         [
             "algo=sac",
-            "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+            f"task=sac/g1_walk_flat/{task}",
             "training.play_only=true",
             f"training.play_checkpoint_path={checkpoint}",
         ]
@@ -377,6 +381,8 @@ def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
     assert training_override["domain_rand"]["actuator_strength"]["enabled"] is True
     domain_rand = play_override["domain_rand"]
     assert domain_rand["actuator_strength"]["enabled"] is False
+    assert domain_rand["actuator_strength"]["curriculum_enabled"] is False
+    assert domain_rand["actuator_strength"]["group_curriculum_enabled"] is False
     for name in (
         "randomize_kp",
         "randomize_kd",

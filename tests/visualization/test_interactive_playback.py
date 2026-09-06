@@ -37,6 +37,44 @@ from unilab.visualization.interactive_playback import (
 _VEL_LIMIT = [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
 
 
+@pytest.mark.parametrize("play_only", [True, False])
+def test_interactive_sac_applies_play_profile_after_checkpoint_contract(monkeypatch, play_only):
+    from omegaconf import OmegaConf
+
+    from unilab.visualization import playback_checkpoint_contract, playback_viewer
+
+    cfg = OmegaConf.create({
+        "training": {"play_only": play_only},
+        "env": {},
+        "play_profile": {
+            "enabled": True,
+            "env": {"noise_config": {"level": 0.0}, "reset_base_qvel_limit": 0.0},
+        },
+    })
+    restored = {
+        "noise_config": {"level": 1.0},
+        "reset_base_qvel_limit": 0.5,
+        "control_config": {"action_scale": 0.25},
+    }
+    monkeypatch.setattr(
+        playback_checkpoint_contract, "_load_checkpoint_run_config",
+        lambda args: {"config": {"env": restored}},
+    )
+    monkeypatch.setattr(
+        "train_offpolicy.build_offpolicy_env_cfg_override", lambda algo, cfg: {},
+    )
+    # Stop at the simulator boundary; contract restoration and profile application stay real.
+    monkeypatch.setattr(playback_viewer, "create_env", lambda cfg, **kw: kw["env_cfg_override"])
+    factory = playback_viewer._build_interactive_env_factory(
+        SimpleNamespace(task="test_task"), cfg, algo="sac", available_backends=("mujoco",),
+    )
+    result = factory(1)
+    assert result["noise_config"]["level"] == (0.0 if play_only else 1.0)
+    assert result["reset_base_qvel_limit"] == (0.0 if play_only else 0.5)
+    assert result["control_config"]["action_scale"] == 0.25
+    assert restored["noise_config"]["level"] == 1.0
+
+
 def test_default_fada_playback_owner_accepts_source_and_adapted_checkpoints() -> None:
     from unilab.algos.torch.distill import load_fada_deployable_policy_checkpoint
 

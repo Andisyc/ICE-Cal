@@ -35,9 +35,14 @@ class BackendAdapter:
 
         return env_cfg_override
 
-    def build_play_env_cfg_override(self) -> dict[str, Any]:
-        """Build play-mode overrides from an optional backend-agnostic play profile."""
-        env_cfg_override = self.build_task_env_cfg_override()
+    def build_play_env_cfg_override(
+        self, env_cfg_override: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Apply the play profile after optional checkpoint environment restoration."""
+        env_cfg_override = (
+            self.build_task_env_cfg_override()
+            if env_cfg_override is None else dict(env_cfg_override)
+        )
         play_profile = getattr(self.cfg, "play_profile", None)
         if (
             play_profile is None

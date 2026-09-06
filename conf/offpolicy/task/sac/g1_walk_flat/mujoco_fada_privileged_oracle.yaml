@@ -64,6 +64,8 @@ play_profile:
       randomize_reset_pose: false
       actuator_strength:
         enabled: false
+        curriculum_enabled: false
+        group_curriculum_enabled: false
       randomize_kp: false
       randomize_kd: false
       randomize_ground_friction: false
