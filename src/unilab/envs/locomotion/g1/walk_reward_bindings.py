@@ -466,10 +466,19 @@ class G1WalkRewardBindings:
             "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
         )
         swing_height = self._reward_cfg.feet_phase_swing_height
-        if self._reward_cfg.feet_phase_mode == "command_height_v1":
-            target = command_phase_height_targets(
-                gait_phase, ctx.info["command_phase_amplitude"], swing_height
-            )
+        if self._reward_cfg.feet_phase_mode in {"command_height_v1", "command_height_v2"}:
+            if self._reward_cfg.feet_phase_mode == "command_height_v2":
+                commands = ctx.info["commands"]
+                demand = np.sqrt(
+                    np.sum(commands[:, :2] ** 2, axis=1)
+                    + (self._reward_cfg.feet_phase_turn_length * commands[:, 2]) ** 2
+                )
+                amplitude = swing_height * demand / self._reward_cfg.feet_phase_command_speed_scale
+                target = amplitude[:, None] * ((1.0 + np.sin(gait_phase)) / 2.0) ** 2
+            else:
+                target = command_phase_height_targets(
+                    gait_phase, ctx.info["command_phase_amplitude"], swing_height
+                )
             # Canonical flat G1: foot site is 2 mm below the sole reference.
             actual = np.column_stack(
                 [
@@ -479,9 +488,10 @@ class G1WalkRewardBindings:
                     + 0.002 * self._backend.get_sensor_data("right_foot_upvector")[:, 2],
                 ]
             )
-            return -command_phase_height_cost(
+            cost = command_phase_height_cost(
                 actual, target, self._reward_cfg.feet_phase_height_scale
             )
+            return -0.5 * cost if self._reward_cfg.feet_phase_mode == "command_height_v2" else -cost
         left_target, right_target = compute_feet_phase_height_targets(gait_phase, swing_height)
         stance_z = np.minimum(left_foot[:, 2], right_foot[:, 2])
         left_height = left_foot[:, 2] - stance_z

@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage
+  - _self_
+
+# Current-command linear amplitude, alternating height targets, mean squared error.
+algo:
+  actor:
+    oracle_behavior_profile: simple_height_mixed_v1
+reward:
+  feet_phase_mode: command_height_v2

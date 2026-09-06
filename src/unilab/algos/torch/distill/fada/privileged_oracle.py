@@ -26,11 +26,13 @@ FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION = 3
 FADA_ORACLE_PHASE_NEUTRAL_PROFILE = "phase_neutral_mixed_v1"
 FADA_ORACLE_PHASE_LOCOMOTION_PROFILE = "phase_locomotion_v1"
 FADA_ORACLE_COMMAND_PHASE_PROFILE = "command_phase_mixed_v1"
+FADA_ORACLE_SIMPLE_HEIGHT_PROFILE = "simple_height_mixed_v1"
 FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
     {
         FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
         FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
+        FADA_ORACLE_SIMPLE_HEIGHT_PROFILE,
     }
 )
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -101,6 +103,9 @@ _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_COMMAND_PHASE_PROFILE] = replace(
     command_resampling_time=4.0,
     feet_phase=1.0,
     feet_phase_swing_height=0.06,
+)
+_FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_SIMPLE_HEIGHT_PROFILE] = replace(
+    _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_COMMAND_PHASE_PROFILE],
 )
 
 
@@ -457,12 +462,13 @@ def validate_fada_single_reward(
 ) -> None:
     """Validate the single locomotion Reward for one named source behavior."""
 
-    expected_mode = (
-        "command_height_v1" if behavior_profile == FADA_ORACLE_COMMAND_PHASE_PROFILE else "legacy"
-    )
+    expected_mode = {
+        FADA_ORACLE_COMMAND_PHASE_PROFILE: "command_height_v1",
+        FADA_ORACLE_SIMPLE_HEIGHT_PROFILE: "command_height_v2",
+    }.get(behavior_profile, "legacy")
     if reward_config.get("feet_phase_mode", "legacy") != expected_mode:
         raise ValueError(f"{behavior_profile} requires feet_phase_mode={expected_mode}")
-    if behavior_profile == FADA_ORACLE_COMMAND_PHASE_PROFILE:
+    if behavior_profile in {FADA_ORACLE_COMMAND_PHASE_PROFILE, FADA_ORACLE_SIMPLE_HEIGHT_PROFILE}:
         for name, expected in {
             "feet_phase_command_speed_scale": 0.3,
             "feet_phase_turn_length": 0.3,
@@ -476,6 +482,7 @@ def validate_fada_single_reward(
     elif behavior_profile in {
         FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
+        FADA_ORACLE_SIMPLE_HEIGHT_PROFILE,
     }:
         spec = fada_oracle_behavior_spec(behavior_profile)
         expected_phase_scales = {

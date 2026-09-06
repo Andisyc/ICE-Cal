@@ -182,9 +182,9 @@ class G1RewardConfig:
             self.gait_constraint = GaitConstraintConfig(**self.gait_constraint)
         if isinstance(self.mode, dict):
             self.mode = RewardModeConfig(**self.mode)
-        if self.feet_phase_mode not in {"legacy", "command_height_v1"}:
+        if self.feet_phase_mode not in {"legacy", "command_height_v1", "command_height_v2"}:
             raise ValueError("unsupported feet_phase_mode")
-        if self.feet_phase_mode == "command_height_v1":
+        if self.feet_phase_mode in {"command_height_v1", "command_height_v2"}:
             import math
 
             for name in (

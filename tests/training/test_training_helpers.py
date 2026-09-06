@@ -359,6 +359,7 @@ def test_backend_adapter_fada_play_profile_is_fully_nominal() -> None:
 @pytest.mark.parametrize("task", [
     "mujoco_fada_privileged_oracle",
     "mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage",
+    "mujoco_fada_privileged_oracle_simple_height_grouped_dr_lineage",
 ])
 def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
     monkeypatch: pytest.MonkeyPatch, task: str,
