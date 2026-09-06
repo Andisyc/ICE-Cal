@@ -12,4 +12,4 @@ reward:
   feet_phase_swing_height: 0.06
   feet_phase_command_speed_scale: 0.3
   feet_phase_turn_length: 0.3
-  feet_phase_height_scale: 0.09
+  feet_phase_height_scale: 0.03

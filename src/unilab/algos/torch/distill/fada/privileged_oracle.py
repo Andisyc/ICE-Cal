@@ -485,7 +485,9 @@ def validate_fada_single_reward(
             "feet_phase_command_speed_scale": 0.3,
             "feet_phase_turn_length": 0.3,
             "feet_phase_settling_tau": 0.15,
-            "feet_phase_height_scale": 0.09,
+            "feet_phase_height_scale": (
+                0.03 if behavior_profile == FADA_ORACLE_PHASE_HEIGHT_PROFILE else 0.09
+            ),
         }.items():
             if _numeric(reward_config.get(name), name=name) != expected:
                 raise ValueError(f"{behavior_profile} requires {name}={expected}")

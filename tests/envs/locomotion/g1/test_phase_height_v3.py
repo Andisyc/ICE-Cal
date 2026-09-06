@@ -66,7 +66,7 @@ def test_binding_prefers_correct_leg_and_grounded_stop():
             feet_phase_swing_height=0.06,
             feet_phase_command_speed_scale=0.3,
             feet_phase_turn_length=0.3,
-            feet_phase_height_scale=0.09,
+            feet_phase_height_scale=0.03,
         ),
     )
     ctx = SimpleNamespace(
@@ -80,8 +80,12 @@ def test_binding_prefers_correct_leg_and_grounded_stop():
         return G1WalkRewardBindings._reward_feet_phase(owner, ctx)[0]
 
     assert reward() == 1
+    backend.heights = [0.02, 0]
+    np.testing.assert_allclose(reward(), np.exp(-1 / 18))
+    backend.heights = [0, 0]
+    np.testing.assert_allclose(reward(), np.exp(-0.5))
     backend.heights = [0, 0.03]
-    np.testing.assert_allclose(reward(), np.exp(-1 / 9))
+    np.testing.assert_allclose(reward(), np.exp(-1))
     ctx.info["commands"][:] = 0
     lifted = reward()
     backend.heights = [0, 0]

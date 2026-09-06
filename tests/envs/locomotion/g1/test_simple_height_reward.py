@@ -108,6 +108,7 @@ def test_simple_height_task_runtime_admission(monkeypatch, task, mode):
     )
     runtime.validate_training_config(cfg)
     assert cfg.reward.feet_phase_mode == mode
+    assert cfg.reward.feet_phase_height_scale == (0.03 if mode == "command_height_v3" else 0.09)
     assert cfg.reward.scales.feet_phase == 1.0
     assert cfg.reward.scales.feet_phase_contact == 0
     assert cfg.reward.scales.feet_phase_contrast == 0
