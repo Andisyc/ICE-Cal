@@ -16,7 +16,7 @@ if (( last_cpu < 0 )); then
   exit 1
 fi
 run_stamp=$(date +%Y%m%d-%H%M%S)
-run_dir="$PWD/logs/FADAPrivilegedOracle_simple_height_${run_stamp}"
+run_dir="$PWD/logs/FADAPrivilegedOracle_phase_height_v3_${run_stamp}"
 cache_root=/ssd1/chengyuxuan/icecal_cache
 mkdir -p "$run_dir" "$cache_root/tmp" "$cache_root/uv" \
   "$cache_root/triton" "$cache_root/torchinductor" "$cache_root/torch"
@@ -28,11 +28,11 @@ export TMPDIR="$cache_root/tmp"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0
 export PYTHONUNBUFFERED=1 PYTHONPATH="$PWD/src"
-export ICE_CAL_ORACLE_LINEAGE_ID="simple-height-${run_stamp}"
+export ICE_CAL_ORACLE_LINEAGE_ID="phase-height-v3-${run_stamp}"
 taskset -c "0-${last_cpu}" nice -n 5 ionice -c2 -n5 \
   uv run --frozen --no-sync python scripts/train_offpolicy.py \
   algo=sac \
-  task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_simple_height_grouped_dr_lineage \
+  task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_phase_height_v3_grouped_dr_lineage \
   training.device=cuda:0 training.no_play=true training.log_dir="$run_dir" \
   algo.num_envs=512 algo.batch_size=2048 algo.max_iterations=5000 \
   2>&1 | tee "$run_dir/train.log"

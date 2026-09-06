@@ -77,7 +77,14 @@ def test_simple_height_binding_tracks_current_command_and_phase():
     )
 
 
-def test_simple_height_task_runtime_admission(monkeypatch):
+@pytest.mark.parametrize(
+    "task, mode",
+    [
+        ("simple_height", "command_height_v2"),
+        ("phase_height_v3", "command_height_v3"),
+    ],
+)
+def test_simple_height_task_runtime_admission(monkeypatch, task, mode):
     from pathlib import Path
 
     from hydra import compose, initialize_config_dir
@@ -93,21 +100,21 @@ def test_simple_height_task_runtime_admission(monkeypatch):
         cfg = compose(
             config_name="config",
             overrides=[
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_simple_height_grouped_dr_lineage"
+                f"task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_{task}_grouped_dr_lineage"
             ],
         )
     runtime = resolve_privileged_locomotion_sac_runtime(
         OmegaConf.to_container(cfg.algo, resolve=True)
     )
     runtime.validate_training_config(cfg)
-    assert cfg.reward.feet_phase_mode == "command_height_v2"
+    assert cfg.reward.feet_phase_mode == mode
     assert cfg.reward.scales.feet_phase == 1.0
     assert cfg.reward.scales.feet_phase_contact == 0
     assert cfg.reward.scales.feet_phase_contrast == 0
     from unilab.training.backend_adapter import BackendAdapter
 
     override = BackendAdapter(cfg, root_dir=root).build_task_env_cfg_override()
-    assert override["reward_config"]["feet_phase_mode"] == "command_height_v2"
+    assert override["reward_config"]["feet_phase_mode"] == mode
     assert override["gait_phase_enabled"] is True
     assert cfg.algo.max_iterations == 5000
     assert cfg.algo.save_interval == 240

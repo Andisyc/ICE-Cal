@@ -34,6 +34,7 @@ from unilab.envs.locomotion.g1.walk_math import (
     compute_gait_phase_contrast_violation,
     compute_gait_phase_height_violation,
     compute_tracking_gate,
+    phase_height_targets_v3,
 )
 from unilab.envs.locomotion.g1.walk_reward import (
     normalized_corridor_violation,
@@ -466,8 +467,20 @@ class G1WalkRewardBindings:
             "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
         )
         swing_height = self._reward_cfg.feet_phase_swing_height
-        if self._reward_cfg.feet_phase_mode in {"command_height_v1", "command_height_v2"}:
-            if self._reward_cfg.feet_phase_mode == "command_height_v2":
+        if self._reward_cfg.feet_phase_mode in {
+            "command_height_v1",
+            "command_height_v2",
+            "command_height_v3",
+        }:
+            if self._reward_cfg.feet_phase_mode == "command_height_v3":
+                target = phase_height_targets_v3(
+                    gait_phase,
+                    ctx.info["commands"],
+                    swing_height,
+                    self._reward_cfg.feet_phase_command_speed_scale,
+                    self._reward_cfg.feet_phase_turn_length,
+                )
+            elif self._reward_cfg.feet_phase_mode == "command_height_v2":
                 commands = ctx.info["commands"]
                 demand = np.sqrt(
                     np.sum(commands[:, :2] ** 2, axis=1)
@@ -491,6 +504,8 @@ class G1WalkRewardBindings:
             cost = command_phase_height_cost(
                 actual, target, self._reward_cfg.feet_phase_height_scale
             )
+            if self._reward_cfg.feet_phase_mode == "command_height_v3":
+                return np.exp(-0.5 * cost)
             return -0.5 * cost if self._reward_cfg.feet_phase_mode == "command_height_v2" else -cost
         left_target, right_target = compute_feet_phase_height_targets(gait_phase, swing_height)
         stance_z = np.minimum(left_foot[:, 2], right_foot[:, 2])

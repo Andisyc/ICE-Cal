@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_privileged_oracle_simple_height_grouped_dr_lineage
+  - _self_
+
+# Half-cycle Bezier swing, half-cycle grounded support, bounded height amplitude.
+algo:
+  actor:
+    oracle_behavior_profile: phase_height_mixed_v3
+reward:
+  feet_phase_mode: command_height_v3
+  feet_phase_swing_height: 0.06
+  feet_phase_command_speed_scale: 0.3
+  feet_phase_turn_length: 0.3
+  feet_phase_height_scale: 0.09

@@ -135,6 +135,29 @@ def command_phase_height_targets(
     return swing_height * amplitude[:, None] * swing
 
 
+def phase_height_targets_v3(
+    phase: np.ndarray,
+    commands: np.ndarray,
+    max_height: float,
+    speed_scale: float,
+    turn_length: float,
+) -> np.ndarray:
+    """Half-cycle Bezier swing followed by grounded support; command-scaled height."""
+    if phase.ndim != 2 or phase.shape[1] != 2 or commands.shape != (phase.shape[0], 3):
+        raise ValueError("phase height requires (N, 2) phase and (N, 3) commands")
+    if not np.all(np.isfinite(phase)) or not np.all(np.isfinite(commands)):
+        raise ValueError("phase height inputs must be finite")
+    if any(not np.isfinite(v) or v <= 0 for v in (max_height, speed_scale, turn_length)):
+        raise ValueError("phase height scales must be finite and positive")
+    demand = np.sqrt(np.sum(commands[:, :2] ** 2, axis=1) + (turn_length * commands[:, 2]) ** 2)
+    amplitude = max_height * demand / (demand + speed_scale)
+    p = np.remainder(phase, 2 * np.pi) / (2 * np.pi)
+    # Mirror the two swing quarters; support occupies the remaining half-cycle.
+    u = np.where(p < 0.25, 4 * p, 2 - 4 * p)
+    swing = np.where(p < 0.5, u**2 * (3 - 2 * u), 0.0)
+    return amplitude[:, None] * swing
+
+
 def command_phase_height_cost(
     actual: np.ndarray, target: np.ndarray, height_scale: float
 ) -> np.ndarray:
