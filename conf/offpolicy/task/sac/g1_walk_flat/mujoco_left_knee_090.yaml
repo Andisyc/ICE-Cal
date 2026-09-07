@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - /task/sac/g1_walk_flat/mujoco_no_gait_single_reward
+  - /task/sac/g1_walk_flat/mujoco_clean_baseline
   - _self_
 
 # Controlled teacher playback profile: fixed 0.4 m/s straight command and a

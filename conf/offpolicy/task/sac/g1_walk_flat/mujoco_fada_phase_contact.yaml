@@ -1,0 +1,54 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_source
+  - _self_
+
+# FADA-METHOD-v024 / FADA-TRAIN-v024 final Source Oracle selector.
+algo:
+  actor:
+    oracle_behavior_profile: command_gated_phase_contact_v1
+
+env:
+  gait_phase_enabled: true
+  gait_phase_init_mode: command_gated
+  command_gated_phase_contact:
+    enabled: true
+    command_xy_dead_zone: 0.1
+    command_yaw_dead_zone: 0.1
+    linear_intensity_span: 0.9
+    yaw_intensity_span: 0.7
+    min_frequency: 0.7
+    max_frequency: 1.5
+    duty_factor: 0.55
+    contact_force_threshold: 1.0
+    force_balance_epsilon: 1.0e-6
+    startup_phase: [0.0, 3.141592653589793]
+    stand_phase: [3.141592653589793, 3.141592653589793]
+  commands:
+    rel_standing_envs: 0.3
+    rel_transition_envs: 0.0
+    small_xy_threshold: 0.0
+    resampling_time: 4.0
+    heading_command: false
+  domain_rand:
+    actuator_strength:
+      # v024 source training does not apply the historical left-knee-only
+      # attenuation. Generic all-joint Kp/Kd DR below remains active.
+      enabled: false
+      curriculum_enabled: false
+      group_curriculum_enabled: false
+
+reward:
+  feet_phase_mode: phase_contact_v1
+  scales:
+    feet_phase: 0.0
+    feet_phase_contrast: 0.0
+    feet_phase_contact: 0.0
+    phase_contact: 1.0
+    null_foot_force_balance: -1.0
+    null_torque_relaxation: -0.1
+
+play_profile:
+  env:
+    commands:
+      resampling_time: 0.0

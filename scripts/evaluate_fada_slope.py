@@ -1,10 +1,11 @@
 """CLI for same-condition FADA slope evaluation."""
+
 import json
 
 import hydra
 from omegaconf import DictConfig
 
-from unilab.algos.torch.distill.fada.target_evaluation import run_fada_target_evaluation
+from unilab.algos.torch.distill.fada.target.evaluation import run_fada_target_evaluation
 
 
 @hydra.main(version_base="1.3", config_path="../conf/offpolicy", config_name="fada_slope_evaluate")

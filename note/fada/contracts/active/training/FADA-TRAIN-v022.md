@@ -11,13 +11,13 @@ scope: 5000-iteration live-privileged grouped-DR teacher, sealed 20+1 lineage, t
 
 ## Unit A — privileged SAC teacher
 
-Compose `mujoco_fada_privileged_oracle_live_input_dr_curriculum` for one 5000-iteration
+Compose `mujoco_fada_source` for one 5000-iteration
 `G1WalkFlat/MuJoCo` run. The Actor and Critic consume normalized live
 `g1_fada_privileged_v1` information. Penalty curriculum remains enabled, while grouped physical
 randomization expands by the iteration schedule defined in `FADA-METHOD-v022`.
 
-The fixed-input, live-input nominal, and grouped-DR profiles are diagnostic or policy-quality
-profiles. They do not become the source lineage merely because a terminal run finishes.
+Retired fixed-input and live-input diagnostic profiles are historical evidence. They are no
+longer selectable training identities.
 
 ## Unit A persistence gate
 
@@ -25,10 +25,10 @@ The authoritative source lineage must save `model_240.pt, model_480.pt, …, mod
 `model_5000.pt` under one `oracle_lineage_id`, with one sealed checkpoint contract and consistent
 configuration/layout hashes.
 
-Current code couples `privileged_dr_curriculum_validation=true` to `checkpoint_mode=validation` and
-`save_interval=1000`. Consequently the successful v022 validation run cannot provide the required
-intermediate checkpoints. The next engineering unit is to add a sealed grouped-DR lineage profile
-without changing the successful perturbation schedule or privileged-input normalization path.
+The canonical `mujoco_fada_source` profile decouples the historical validation identity from the
+sealed source identity while preserving the successful perturbation schedule and privileged-input
+normalization path. It specifies `checkpoint_mode=sealed` and `save_interval=240`; it has not yet
+produced a trained 20+1 lineage.
 
 ## Unit B — Planner–IDM
 
@@ -65,9 +65,12 @@ or the non-v005 uniform replay path.
 ## Current status
 
 - Live privileged input and normalization: implemented and exercised.
-- Iteration-based grouped DR curriculum: implemented and exercised.
+- Historical iteration-based grouped DR curriculum: implemented and exercised in the old observed
+  run, but disabled in the current source training profile together with left-knee-only strength DR.
+- Current broad physical DR: generic all-joint Kp/Kd and the remaining configured physical axes are
+  enabled without the retired actuator-strength/group curriculum.
 - Qualitative v022 policy quality: Reward and episode length observed high; exact metrics not sealed.
-- Sealed grouped-DR 20+1 lineage: not implemented and not trained.
+- Sealed current-profile 20+1 lineage: not implemented and not trained.
 - Planner–IDM transition: blocked only on the missing admitted lineage and subsequent runtime audit.
 - Speed-stratified Unit B replay: implemented with offline owner, integration, and lifecycle tests;
   no new training or policy-quality claim.

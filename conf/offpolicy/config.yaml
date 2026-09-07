@@ -1,11 +1,21 @@
+# Off-policy 的 Hydra 组合根。这个文件只定义跨任务的运行、日志和回放默认值。
+# 它不拥有 Domain Randomization；Oracle 的 DR 请看：
+# conf/offpolicy/task/sac/g1_walk_flat/mujoco_fada_source.yaml -> env.domain_rand
 defaults:
+  # _self_ 放在最前：后加载的 algo/task 配置可以覆盖这里的同名默认值。
   - _self_
+  # 默认算法；命令行 `algo=...` 可替换整个算法配置组。
   - algo: sac
+  # task 路径跟随 algo。训练 Oracle 时应显式选择
+  # `task=sac/g1_walk_flat/mujoco_fada_source`。
   - task: ${algo}/g1_walk_flat/mujoco
 
 training:
+  # 任务与设备身份。sim_backend 是所选 task profile 的身份字段，不能单独用它切后端。
   task_name: G1WalkFlat
   device: null
+
+  # 实验记录器。null 表示不在本层指定，由运行环境或 tracker 决定。
   logger: tensorboard
   wandb_project: unilab
   wandb_entity: null
@@ -16,28 +26,44 @@ training:
   wandb_notes: null
   wandb_mode: null
   sim_backend: mujoco
+
+  # 数值异常保护：保留最近若干步，并在发现 NaN 时最多导出指定数量的环境。
   nan_guard:
     enabled: true
     buffer_size: 100
     max_envs_to_dump: 5
     output_dir: null
+
+  # 训练执行选项。
   num_gpus: 1
   use_amp: true
+
+  # 回放/训练模式。play_only 只回放；no_play 跳过训练结束后的自动回放。
   play_only: false
   play_checkpoint_path: null
   no_play: false
+
+  # 跨后端回放默认严格校验策略 I/O 契约。
   sim2sim_strict: true
   play_render_mode: auto
   export_onnx: true
+
+  # 默认回放规模和相机参数；task profile 或命令行可覆盖。
   play_env_num: 16
   play_steps: 800
   cam_distance: 6.0
   cam_elevation: -20.0
   cam_azimuth: 90.0
+
+  # 日志目录。log_dir 通常指向一次具体 run；null 交给应用层生成。
   log_root: null
   log_dir: null
+
+  # Collector/Learner 同步与 Replay 预取策略。
   no_sync_collection: false
   env_steps_per_sync: 1
+
+  # 性能追踪默认关闭；启用后可选择线程时间和 CUDA event。
   trace_enabled: false
   trace_output_dir: null
   trace_thread_time: false
@@ -46,8 +72,11 @@ training:
   verbose_metrics: false
 
 interactive:
+  # 交互回放默认值，不参与 Oracle 训练的 DR 采样。
   action_mode: zero
   policy_obs_mode: auto
+
+  # 目标与 Reward 调试可视化。
   show_target_bodies: false
   show_reward_debug: false
   target_show_axes: false
@@ -61,12 +90,16 @@ interactive:
   reward_debug_ang_vel_scale: 0.05
   reward_debug_show_connectors: false
   reward_debug_show_global_anchor: false
+
+  # 相机跟随设置；null 表示沿用 training 中的相机值。
   camera_follow_body: true
   camera_focus_body_name: ""
   camera_height_offset: 0.15
   camera_distance: null
   camera_elevation: null
   camera_azimuth: null
+
+  # 回放速度、暂停状态和键盘控制步长。
   use_env_visual_model: true
   speed: 1.0
   start_paused: false
@@ -76,9 +109,11 @@ interactive:
   keyboard_step_height: 0.01
 
 env:
+  # 通用环境默认值；具体 Observation/Reward/DR 由 task profile 拥有。
   post_step_forward_sensor: false
 
 hydra:
+  # 保持当前工作目录，禁止 Hydra 自动建立输出子目录或切换 cwd。
   run:
     dir: .
   output_subdir: null

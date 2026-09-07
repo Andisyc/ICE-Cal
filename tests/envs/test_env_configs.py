@@ -314,6 +314,7 @@ def test_g1_walk_env_feet_phase_reward_is_gated_by_forward_speed():
         "RewardCfg",
         (),
         {
+            "feet_phase_mode": "legacy",
             "feet_phase_swing_height": 0.09,
             "feet_phase_tracking_sigma": 0.008,
             "min_forward_speed_for_gait_reward": 0.05,

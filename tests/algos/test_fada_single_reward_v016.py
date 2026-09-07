@@ -40,9 +40,9 @@ def _assert_no_stand_authority(value: object, *, path: str = "reward") -> None:
 def test_v016_nominal_profile_is_single_reward_phase_neutral_and_unprivileged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    profile = CONF_DIR / "task/sac/g1_walk_flat/mujoco_no_gait_single_reward.yaml"
+    profile = CONF_DIR / "task/sac/g1_walk_flat/mujoco_clean_baseline.yaml"
     assert profile.is_file(), "v016 nominal single-Reward profile is missing"
-    cfg = _compose("sac/g1_walk_flat/mujoco_no_gait_single_reward", monkeypatch)
+    cfg = _compose("sac/g1_walk_flat/mujoco_clean_baseline", monkeypatch)
 
     assert cfg.algo.get("runtime_impl") is None
     assert cfg.env.gait_phase_enabled is False
@@ -60,15 +60,19 @@ def test_v016_nominal_profile_is_single_reward_phase_neutral_and_unprivileged(
 def test_v016_privileged_profile_inherits_exact_nominal_reward(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    nominal = _compose("sac/g1_walk_flat/mujoco_no_gait_single_reward", monkeypatch)
-    privileged = _compose("sac/g1_walk_flat/mujoco_fada_privileged_oracle", monkeypatch)
+    nominal = _compose("sac/g1_walk_flat/mujoco_clean_baseline", monkeypatch)
+    privileged = _compose("sac/g1_walk_flat/mujoco_fada_source", monkeypatch)
 
     assert OmegaConf.to_container(privileged.reward, resolve=True) == OmegaConf.to_container(
         nominal.reward, resolve=True
     )
     assert privileged.env.fada_privileged_observation.enabled is True
-    assert privileged.env.domain_rand.actuator_strength.enabled is True
+    assert privileged.env.domain_rand.actuator_strength.enabled is False
+    assert privileged.env.domain_rand.actuator_strength.curriculum_enabled is False
+    assert privileged.env.domain_rand.actuator_strength.group_curriculum_enabled is False
     assert privileged.env.domain_rand.actuator_strength.candidate_actuator_indices == [3]
+    assert privileged.env.domain_rand.randomize_kp is True
+    assert privileged.env.domain_rand.randomize_kd is True
 
 
 def test_v016_single_reward_validator_rejects_retired_authority() -> None:
@@ -99,7 +103,7 @@ def test_v016_single_reward_validator_rejects_retired_authority() -> None:
 
 
 def test_grouped_oracle_baseline_disables_gait_and_keeps_live_privilege(monkeypatch):
-    cfg = _compose("sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage", monkeypatch)
+    cfg = _compose("sac/g1_walk_flat/mujoco_fada_source", monkeypatch)
     runtime = resolve_privileged_locomotion_sac_runtime(
         OmegaConf.to_container(cfg.algo, resolve=True)
     )
@@ -123,7 +127,7 @@ def test_grouped_oracle_baseline_disables_gait_and_keeps_live_privilege(monkeypa
 def test_v016_runtime_preflight_rejects_mode_and_nested_stand_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cfg = _compose("sac/g1_walk_flat/mujoco_fada_privileged_oracle", monkeypatch)
+    cfg = _compose("sac/g1_walk_flat/mujoco_fada_source", monkeypatch)
     runtime = resolve_privileged_locomotion_sac_runtime(
         OmegaConf.to_container(cfg.algo, resolve=True)
     )

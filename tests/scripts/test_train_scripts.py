@@ -1324,9 +1324,7 @@ def test_distill_single_entry_persistent_execution_routes_factory_and_closes_ser
         mod.WorkflowScenarioSpec("stand", "role", ("stand",), 0.5),
         mod.WorkflowScenarioSpec("walk_flat", "role", ("walk_flat",), 0.5),
     )
-    monkeypatch.setattr(
-        distill_entry_plan, "_workflow_scenario_specs", lambda *_args: scenarios
-    )
+    monkeypatch.setattr(distill_entry_plan, "_workflow_scenario_specs", lambda *_args: scenarios)
     monkeypatch.setattr(
         distill_entry_workflow,
         "run_bootstrap_workflow",
@@ -4510,7 +4508,8 @@ def test_offpolicy_configured_actor_continuation_dispatches_strict_loader(
 def test_offpolicy_main_failure_summary_and_skips_playback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    mod = _offpolicy()
+    import unilab.training.offpolicy.application as mod
+
     cfg = _offpolicy_cfg(
         [
             f"training.log_dir={tmp_path}",
@@ -4563,7 +4562,7 @@ def test_offpolicy_main_failure_summary_and_skips_playback(
     )
 
     with pytest.raises(RuntimeError, match="collector died"):
-        mod.main.__wrapped__(cfg)
+        mod.run_offpolicy(cfg)
 
     assert captured["tracker_started"] is True
     assert captured["tracker_finished"] is True
@@ -4738,7 +4737,8 @@ def test_play_offpolicy_can_skip_onnx_export_and_still_record_video(
 ):
     import torch
 
-    mod = _offpolicy()
+    import unilab.training.offpolicy.playback as mod
+
     cfg = _offpolicy_cfg(
         [
             "algo=sac",
@@ -4846,7 +4846,8 @@ def test_play_offpolicy_uses_hora_sac_actor_and_priv_info(
 ):
     import torch
 
-    mod = _offpolicy()
+    import unilab.training.offpolicy.playback as mod
+
     cfg = _offpolicy_cfg(
         [
             "algo=sac",
@@ -6107,7 +6108,9 @@ def test_play_interactive_infers_missing_g1_mode_observation_from_checkpoint_dim
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99)
+    monkeypatch.setattr(
+        playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99
+    )
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",
@@ -6137,7 +6140,9 @@ def test_play_interactive_infers_missing_g1_height_command_contract(
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 100)
+    monkeypatch.setattr(
+        playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 100
+    )
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",
@@ -6171,7 +6176,9 @@ def test_play_interactive_does_not_infer_g1_height_for_legacy_checkpoint(
         "resolve_task_checkpoint_path",
         lambda *args, **kwargs: (checkpoint, tmp_path),
     )
-    monkeypatch.setattr(playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99)
+    monkeypatch.setattr(
+        playback_checkpoint_contract, "_checkpoint_actor_input_dim", lambda args: 99
+    )
     args = types.SimpleNamespace(
         algo="sac",
         task="G1WalkFlat",

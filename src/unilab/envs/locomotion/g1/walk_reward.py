@@ -15,6 +15,87 @@ def normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.nda
     return np.square(excess / tolerance)
 
 
+def phase_contact_mismatch_cost(
+    gait_phase: np.ndarray,
+    left_force_z: np.ndarray,
+    right_force_z: np.ndarray,
+    *,
+    duty_factor: float,
+    contact_force_threshold: float,
+) -> np.ndarray:
+    phase = np.asarray(gait_phase, dtype=get_global_dtype())
+    if phase.ndim != 2 or phase.shape[1] != 2 or not np.isfinite(phase).all():
+        raise ValueError(f"gait_phase must be finite with shape (N, 2), got {phase.shape}")
+    duty_factor = float(duty_factor)
+    contact_force_threshold = float(contact_force_threshold)
+    if not 0.5 < duty_factor < 1.0:
+        raise ValueError("duty_factor must be in (0.5, 1.0)")
+    if not np.isfinite(contact_force_threshold) or contact_force_threshold <= 0.0:
+        raise ValueError("contact_force_threshold must be finite and positive")
+    left = np.asarray(left_force_z, dtype=phase.dtype)
+    right = np.asarray(right_force_z, dtype=phase.dtype)
+    if left.shape != (phase.shape[0],) or right.shape != left.shape:
+        raise ValueError("foot vertical forces must match gait_phase rows")
+    if not np.isfinite(left).all() or not np.isfinite(right).all():
+        raise ValueError("foot vertical forces must be finite")
+
+    phase_cycle = np.mod(phase, 2.0 * np.pi)
+    stance_boundary = np.asarray(duty_factor * (2.0 * np.pi), dtype=phase_cycle.dtype)
+    stance_expected = phase_cycle < stance_boundary
+    contact_measured = np.column_stack(
+        [left > contact_force_threshold, right > contact_force_threshold]
+    )
+    return np.asarray(
+        np.mean(stance_expected != contact_measured, axis=1), dtype=get_global_dtype()
+    )
+
+
+def null_foot_force_balance_l1(
+    left_force_z: np.ndarray,
+    right_force_z: np.ndarray,
+    is_null: np.ndarray,
+    *,
+    epsilon: float,
+) -> np.ndarray:
+    left = np.asarray(left_force_z, dtype=get_global_dtype())
+    right = np.asarray(right_force_z, dtype=get_global_dtype())
+    null = np.asarray(is_null, dtype=np.bool_)
+    if left.ndim != 1 or right.shape != left.shape or null.shape != left.shape:
+        raise ValueError("foot forces and null mask must be matching rank-one arrays")
+    epsilon = float(epsilon)
+    if not np.isfinite(epsilon) or epsilon <= 0.0:
+        raise ValueError("epsilon must be finite and positive")
+    if not np.isfinite(left).all() or not np.isfinite(right).all():
+        raise ValueError("foot vertical forces must be finite")
+    left = np.maximum(left, 0.0)
+    right = np.maximum(right, 0.0)
+    total = left + right
+    imbalance = np.where(
+        total > epsilon,
+        np.abs(left - right) / np.maximum(total, epsilon),
+        1.0,
+    )
+    return np.asarray(imbalance * null, dtype=get_global_dtype())
+
+
+def null_torque_relaxation_l2(
+    torques: np.ndarray,
+    tau_max: np.ndarray,
+    is_null: np.ndarray,
+) -> np.ndarray:
+    torque = np.asarray(torques, dtype=get_global_dtype())
+    limits = np.asarray(tau_max, dtype=get_global_dtype())
+    null = np.asarray(is_null, dtype=np.bool_)
+    if torque.ndim != 2:
+        raise ValueError("torques must have shape (N, A)")
+    if limits.shape != (torque.shape[1],) or null.shape != (torque.shape[0],):
+        raise ValueError("torque limits and null mask must match torque dimensions")
+    if not np.isfinite(torque).all() or not np.isfinite(limits).all() or np.any(limits <= 0.0):
+        raise ValueError("torques and positive torque limits must be finite")
+    normalized = np.clip(torque, -limits[None, :], limits[None, :]) / limits[None, :]
+    return np.asarray(np.mean(np.square(normalized), axis=1) * null, dtype=get_global_dtype())
+
+
 def stand_action_l2(actions: np.ndarray, stand_mask: np.ndarray) -> np.ndarray:
     return np.asarray(
         np.sum(np.square(actions), axis=1) * stand_mask,
@@ -86,9 +167,7 @@ def stand_fall_l2(
     if gravity is None or base_height is None:
         return np.zeros(stand_mask.shape, dtype=get_global_dtype())
     tilt = np.arccos(np.clip(gravity[:, 2], -1.0, 1.0))
-    fallen = (tilt > np.deg2rad(float(max_tilt_deg))) | (
-        base_height < float(min_base_height)
-    )
+    fallen = (tilt > np.deg2rad(float(max_tilt_deg))) | (base_height < float(min_base_height))
     return np.asarray(fallen.astype(get_global_dtype()) * stand_mask, dtype=get_global_dtype())
 
 

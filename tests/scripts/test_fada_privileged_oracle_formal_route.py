@@ -28,14 +28,19 @@ from unilab.training import BackendAdapter, create_env
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _compose_offline_oracle_config(*, num_envs: int = 1, batch_size: int = 4):
+def _compose_offline_oracle_config(
+    *,
+    num_envs: int = 1,
+    batch_size: int = 4,
+    task_selector: str = "sac/g1_walk_flat/mujoco_fada_source",
+):
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
         return compose(
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                f"task={task_selector}",
                 "training.device=cpu",
                 "training.use_amp=false",
                 f"algo.num_envs={num_envs}",
@@ -161,7 +166,7 @@ def test_v016_privileged_oracle_official_offline_transaction(
 
 
 @pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
-def test_v016_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_strata(
+def test_v022_official_env_disables_left_knee_strength_but_keeps_generic_gain_dr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "formal-gain-v016")
@@ -181,15 +186,20 @@ def test_v016_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_stra
     try:
         state = env.init_state()
         assert state.obs is not None
+        assert cfg.env.domain_rand.actuator_strength.enabled is False
+        assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
+        assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+        assert cfg.env.domain_rand.randomize_kp is True
+        assert cfg.env.domain_rand.randomize_kd is True
         kp_scale = np.asarray(state.info["fada_kp_scale"], dtype=np.float32)
         kd_scale = np.asarray(state.info["fada_kd_scale"], dtype=np.float32)
         assert kp_scale.shape == (rows, 29)
-        np.testing.assert_allclose(kp_scale, kd_scale)
-        np.testing.assert_allclose(kp_scale[:, :3], 1.0)
-        np.testing.assert_allclose(kp_scale[:, 4:], 1.0)
-        assert np.all((kp_scale[:, 3] >= 0.8) & (kp_scale[:, 3] <= 1.0))
-        assert np.any(kp_scale[:, 3] < 1.0)
-        assert np.any(kp_scale[:, 3] == 1.0)
+        assert kd_scale.shape == (rows, 29)
+        assert np.isfinite(kp_scale).all()
+        assert np.isfinite(kd_scale).all()
+        assert np.any(np.abs(kp_scale - 1.0) > 1.0e-6)
+        assert np.any(np.abs(kd_scale - 1.0) > 1.0e-6)
+        assert np.any(np.abs(kp_scale - kd_scale) > 1.0e-6)
         assert state.obs["obs"].shape == (rows, 98)
         assert state.obs["critic"].shape == (rows, 303)
         np.testing.assert_array_equal(state.obs["obs"][:, -2:], 0.0)
@@ -201,6 +211,71 @@ def test_v016_official_env_is_phase_neutral_and_exposes_only_left_knee_gain_stra
         assert np.isfinite(state.obs["obs"]).all()
         assert np.isfinite(state.obs["critic"]).all()
         assert np.isfinite(state.reward).all()
+    finally:
+        env.close()
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered in cast:RuntimeWarning")
+def test_v024_official_env_runs_with_left_knee_strength_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "runtime-smoke-v024-left-knee-off")
+    rows = 32
+    cfg = _compose_offline_oracle_config(
+        num_envs=rows,
+        batch_size=rows,
+        task_selector="sac/g1_walk_flat/mujoco_fada_phase_contact",
+    )
+    runner = build_runner("sac", cfg)
+    assert isinstance(runner, DoubleBufferOffPolicyRunner)
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+    assert cfg.env.domain_rand.randomize_kp is True
+    assert cfg.env.domain_rand.randomize_kd is True
+
+    ensure_registries()
+    override = BackendAdapter(cfg, root_dir=ROOT, algo_name="sac").build_task_env_cfg_override()
+    np.random.seed(20260907)
+    env = create_env(
+        cfg,
+        num_envs=rows,
+        env_cfg_override=override,
+        sim_backend="mujoco",
+    )
+    assert env.action_space is not None
+    assert env.action_space.shape is not None
+    try:
+        before = env.init_state()
+        assert before.obs is not None
+        assert before.info is not None
+        commands = np.asarray(before.info["commands"], dtype=np.float32)
+        phase = np.asarray(before.info["gait_phase"], dtype=np.float32)
+        null_mask = np.all(commands == 0.0, axis=1)
+        assert np.any(null_mask)
+        assert np.any(~null_mask)
+        np.testing.assert_allclose(phase[null_mask], np.pi)
+        np.testing.assert_allclose(phase[~null_mask, 0], 0.0)
+        np.testing.assert_allclose(phase[~null_mask, 1], np.pi)
+
+        kp_scale = np.asarray(before.info["fada_kp_scale"], dtype=np.float32)
+        kd_scale = np.asarray(before.info["fada_kd_scale"], dtype=np.float32)
+        assert kp_scale.shape == (rows, 29)
+        assert kd_scale.shape == (rows, 29)
+        assert np.any(np.abs(kp_scale - 1.0) > 1.0e-6)
+        assert np.any(np.abs(kd_scale - 1.0) > 1.0e-6)
+        assert np.any(np.abs(kp_scale - kd_scale) > 1.0e-6)
+
+        actions = np.zeros((rows, env.action_space.shape[0]), dtype=np.float32)
+        after = env.step(actions)
+        assert after.obs is not None
+        assert after.info is not None
+        assert after.obs["obs"].shape == (rows, 98)
+        assert after.obs["critic"].shape == (rows, 303)
+        assert np.isfinite(after.obs["obs"]).all()
+        assert np.isfinite(after.obs["critic"]).all()
+        assert np.isfinite(after.reward).all()
+        assert not np.any(after.info["command_gated_actuator_target_valid"])
     finally:
         env.close()
 

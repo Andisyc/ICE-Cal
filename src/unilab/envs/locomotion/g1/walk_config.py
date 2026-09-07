@@ -100,6 +100,49 @@ class GaitConstraintConfig:
 
 
 @dataclass
+class G1CommandGatedPhaseContactConfig:
+    enabled: bool = False
+    command_xy_dead_zone: float = 0.1
+    command_yaw_dead_zone: float = 0.1
+    linear_intensity_span: float = 0.9
+    yaw_intensity_span: float = 0.7
+    min_frequency: float = 0.7
+    max_frequency: float = 1.5
+    duty_factor: float = 0.55
+    contact_force_threshold: float = 1.0
+    force_balance_epsilon: float = 1.0e-6
+    startup_phase: list[float] = field(default_factory=lambda: [0.0, math.pi])
+    stand_phase: list[float] = field(default_factory=lambda: [math.pi, math.pi])
+
+    def validate(self) -> None:
+        non_negative = ("command_xy_dead_zone", "command_yaw_dead_zone")
+        positive = (
+            "linear_intensity_span",
+            "yaw_intensity_span",
+            "min_frequency",
+            "max_frequency",
+            "contact_force_threshold",
+            "force_balance_epsilon",
+        )
+        for name in non_negative:
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative")
+        for name in positive:
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.max_frequency < self.min_frequency:
+            raise ValueError("max_frequency must be at least min_frequency")
+        if not 0.5 < float(self.duty_factor) < 1.0:
+            raise ValueError("duty_factor must be in (0.5, 1.0)")
+        for name in ("startup_phase", "stand_phase"):
+            phase = np.asarray(getattr(self, name), dtype=np.float64)
+            if phase.shape != (2,) or not np.isfinite(phase).all():
+                raise ValueError(f"{name} must contain two finite radian phases")
+
+
+@dataclass
 class RewardModeConfig:
     enabled: bool = False
     standing_enabled: bool = False
@@ -188,6 +231,7 @@ class G1RewardConfig:
             "command_height_v1",
             "command_height_v2",
             "command_height_v3",
+            "phase_contact_v1",
         }:
             raise ValueError("unsupported feet_phase_mode")
         if self.feet_phase_mode == "original_command_height_v1":
@@ -256,6 +300,9 @@ class G1WalkEnvCfg(G1BaseCfg):
     domain_rand: G1DomainRandConfig = field(default_factory=G1DomainRandConfig)
     gait_phase_enabled: bool = True
     gait_phase_init_mode: str = "offset_phase"
+    command_gated_phase_contact: G1CommandGatedPhaseContactConfig = field(
+        default_factory=G1CommandGatedPhaseContactConfig
+    )
     mode_observation: bool = False
     reset_base_qvel_limit: float = 0.5
     standing_reset_base_qvel_limit: float = 0.0
@@ -271,6 +318,19 @@ class G1WalkEnvCfg(G1BaseCfg):
 
     def validate(self) -> None:
         super().validate()
+        self.command_gated_phase_contact.validate()
+        if self.command_gated_phase_contact.enabled:
+            if not self.gait_phase_enabled or self.gait_phase_init_mode != "command_gated":
+                raise ValueError(
+                    "command-gated phase contact requires enabled command_gated gait phase"
+                )
+            if (
+                self.reward_config is None
+                or self.reward_config.feet_phase_mode != "phase_contact_v1"
+            ):
+                raise ValueError(
+                    "command-gated phase contact requires reward feet_phase_mode=phase_contact_v1"
+                )
         if self.action_execution_fault is not None:
             self.action_execution_fault.validate()
         if self.fada_privileged_observation.enabled:

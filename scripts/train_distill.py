@@ -86,12 +86,12 @@ from unilab.algos.torch.distill.entry_workflow import (
     _workflow_scenario_specs,
     run_single_entry_workflow,
 )
-from unilab.algos.torch.distill.fada.async_config import (
-    teacher_spec as build_fada_teacher_spec,
-)
-from unilab.algos.torch.distill.fada_workflow import (
+from unilab.algos.torch.distill.fada.planner_idm.training import (
     FADAWorkflowDependencies,
     run_fada_training_owner,
+)
+from unilab.algos.torch.distill.fada.planner_idm.training import (
+    teacher_spec as build_fada_teacher_spec,
 )
 from unilab.algos.torch.distill.g1_persistent_worker import (
     build_persistent_g1_distillation_runtime,

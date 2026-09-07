@@ -246,7 +246,7 @@ def test_privileged_source_task_composes_alternating_training_and_randomization(
         "logs/fada/planner_idm_privileged_v022/source_batches"
     )
     assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_privileged_v022.pt"
-    assert cfg.teacher.task.endswith("mujoco_fada_privileged_oracle_grouped_dr_lineage")
+    assert cfg.teacher.task.endswith("mujoco_fada_source")
     assert cfg.env.fada_privileged_observation.enabled is True
     assert cfg.env.ctrl_dt == pytest.approx(0.02)
     assert cfg.env.mode_observation is False

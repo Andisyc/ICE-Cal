@@ -111,53 +111,6 @@ def test_reset_initializes_amplitude_from_commands():
     np.testing.assert_allclose(result["command_phase_amplitude"], [0.0, 0.5])
 
 
-def test_command_phase_config_composes_and_validates(monkeypatch):
-    from pathlib import Path
-
-    from hydra import compose, initialize_config_dir
-    from omegaconf import OmegaConf
-
-    from unilab.algos.torch.distill.fada.privileged_oracle import validate_fada_single_reward
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "command-phase-test")
-    root = Path(__file__).resolve().parents[4]
-    with initialize_config_dir(config_dir=str(root / "conf/offpolicy"), version_base="1.3"):
-        cfg = compose(
-            config_name="config",
-            overrides=[
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage"
-            ],
-        )
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        OmegaConf.to_container(cfg.algo, resolve=True)
-    )
-    runtime.validate_training_config(cfg)
-    assert cfg.reward.feet_phase_swing_height == 0.06
-    assert cfg.reward.feet_phase_height_scale == 0.09
-    assert cfg.env.commands.rel_standing_envs == 0.3
-    assert cfg.env.commands.resampling_time == 4.0
-    reward = OmegaConf.to_container(cfg.reward, resolve=True)
-    from unilab.algos.torch.distill.fada.privileged_oracle import fada_oracle_behavior_spec
-
-    assert fada_oracle_behavior_spec("phase_locomotion_v1").feet_phase_swing_height == 0.09
-    wrong_height = dict(reward, feet_phase_swing_height=0.09)
-    with pytest.raises(ValueError, match="feet_phase_swing_height"):
-        validate_fada_single_reward(
-            reward_scales=reward["scales"],
-            reward_config=wrong_height,
-            behavior_profile="command_phase_mixed_v1",
-        )
-    with pytest.raises(ValueError, match="feet_phase_mode"):
-        validate_fada_single_reward(
-            reward_scales=reward["scales"],
-            reward_config=reward,
-            behavior_profile="phase_locomotion_v1",
-        )
-
-
 def test_new_mode_rejects_composed_terrain_before_backend_creation():
     from types import SimpleNamespace
 

@@ -14,8 +14,6 @@ from unilab.envs.locomotion.common.commands import (
     apply_heading_yaw_feedback,
     sample_heading_commands,
     sample_height_commands,
-    sample_velocity_commands,
-    zero_small_xy_commands,
 )
 from unilab.envs.locomotion.common.rewards import RewardContext
 from unilab.envs.locomotion.g1.calibration_fault import (
@@ -33,12 +31,19 @@ from unilab.envs.locomotion.g1.fada_privileged import (
     pack_fada_runtime_observation,
 )
 from unilab.envs.locomotion.g1.walk_commands import (
+    canonicalize_g1_commands,
     command_resample_mask,
     freeze_inactive_gait_phase,
+    resolve_g1_command_gait_state,
+    sample_g1_walk_commands,
 )
+from unilab.envs.locomotion.g1.walk_config import G1CommandGatedPhaseContactConfig
 from unilab.envs.locomotion.g1.walk_control import (
     advance_gait_phase,
+    estimate_clipped_pd_torque,
     select_authority_actions,
+    step_command_gait_phase,
+    transition_command_gait_phase,
 )
 from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
     build_upper_body_pose_weights,
@@ -56,7 +61,6 @@ from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
     compute_gait_phase_contrast_violation,
     compute_gait_phase_height_violation,
     compute_tracking_gate,
-    sample_g1_walk_commands,
     sample_gait_phase_pairs,
     sample_reset_base_qvel,
     update_command_phase_amplitude,
@@ -64,8 +68,45 @@ from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
 
 
 class G1WalkControlBindings:
+    def _command_gated_phase_contact_cfg(self) -> G1CommandGatedPhaseContactConfig:
+        cfg = getattr(
+            self._cfg,
+            "command_gated_phase_contact",
+            G1CommandGatedPhaseContactConfig(),
+        )
+        if isinstance(cfg, dict):
+            cfg = G1CommandGatedPhaseContactConfig(**cfg)
+            self._cfg.command_gated_phase_contact = cfg
+        return cfg
+
+    def _command_gated_phase_contact_enabled(self) -> bool:
+        return bool(self._command_gated_phase_contact_cfg().enabled)
+
+    def _resolve_command_gait_state(self, commands: np.ndarray):
+        cfg = self._command_gated_phase_contact_cfg()
+        return resolve_g1_command_gait_state(
+            commands,
+            xy_dead_zone=cfg.command_xy_dead_zone,
+            yaw_dead_zone=cfg.command_yaw_dead_zone,
+            linear_intensity_span=cfg.linear_intensity_span,
+            yaw_intensity_span=cfg.yaw_intensity_span,
+            min_frequency=cfg.min_frequency,
+            max_frequency=cfg.max_frequency,
+        )
+
+    def _canonicalize_command_gait_state(self, commands: np.ndarray):
+        cfg = self._command_gated_phase_contact_cfg()
+        canonical = canonicalize_g1_commands(
+            commands,
+            xy_dead_zone=cfg.command_xy_dead_zone,
+            yaw_dead_zone=cfg.command_yaw_dead_zone,
+        )
+        return self._resolve_command_gait_state(canonical)
+
     def _command_active_mask(self, info: dict) -> np.ndarray:
         commands = info.get("commands", np.zeros((self._num_envs, 3), dtype=get_global_dtype()))
+        if self._command_gated_phase_contact_enabled():
+            return np.asarray(~self._resolve_command_gait_state(commands).is_null)
         cfg = self._gait_constraint_cfg()
         return compute_command_active_mask(
             commands,
@@ -83,6 +124,8 @@ class G1WalkControlBindings:
             commands_arr = commands_arr[None, :]
         if commands_arr.ndim != 2:
             raise ValueError(f"commands must have shape (N, C), got {commands_arr.shape}")
+        if self._command_gated_phase_contact_enabled():
+            return np.asarray(~self._resolve_command_gait_state(commands_arr).is_null)
         cfg = self._gait_constraint_cfg()
         return compute_command_active_mask(
             commands_arr,
@@ -134,6 +177,11 @@ class G1WalkControlBindings:
         return np.asarray(np.maximum(gait_enabled, recovery), dtype=get_global_dtype())
 
     def _stand_phase_array(self) -> np.ndarray:
+        if self._command_gated_phase_contact_enabled():
+            return np.asarray(
+                self._command_gated_phase_contact_cfg().stand_phase,
+                dtype=get_global_dtype(),
+            )
         cfg = self._gait_constraint_cfg()
         stand_phase = np.asarray(cfg.stand_phase, dtype=get_global_dtype())
         if stand_phase.shape != (2,):
@@ -187,7 +235,118 @@ class G1WalkControlBindings:
         active = self._dynamic_mode_mask(info).astype(bool)
         self._log_action_authority(info, raw_actions, exec_actions, active)
 
+    def _advance_command_state_for_reward(self, info: dict) -> None:
+        if not self._command_gated_phase_contact_enabled():
+            self._update_legacy_commands(info)
+            return
+        commands = info.get("commands")
+        if commands is None:
+            return
+        state = self._canonicalize_command_gait_state(commands)
+        cfg = self._command_gated_phase_contact_cfg()
+        previous_null = np.asarray(info.get("command_is_null", state.is_null), dtype=np.bool_)
+        if previous_null.shape != state.is_null.shape:
+            raise ValueError("command_is_null must match command rows")
+        phase = np.asarray(
+            info.get("gait_phase", np.zeros((state.commands.shape[0], 2))),
+            dtype=get_global_dtype(),
+        )
+        info["commands"] = state.commands
+        info["gait_phase"] = step_command_gait_phase(
+            phase,
+            was_null=previous_null,
+            is_null=state.is_null,
+            frequency=state.frequency,
+            ctrl_dt=float(self._cfg.ctrl_dt),
+            startup_phase=np.asarray(cfg.startup_phase, dtype=get_global_dtype()),
+            stand_phase=np.asarray(cfg.stand_phase, dtype=get_global_dtype()),
+        )
+        info["command_is_null"] = state.is_null
+        info["gait_enabled"] = np.asarray(~state.is_null, dtype=get_global_dtype())
+        info["command_intensity"] = state.intensity
+        info["gait_frequency"] = state.frequency
+
     def _update_commands(self, info: dict) -> None:
+        """Compatibility entrypoint; runtime uses the explicit transaction name."""
+
+        self._advance_command_state_for_reward(info)
+
+    def _commit_command_state_for_next_observation(self, info: dict) -> None:
+        if not self._command_gated_phase_contact_enabled():
+            return
+        commands = info.get("commands")
+        if commands is None:
+            return
+        commands_arr = np.asarray(commands, dtype=get_global_dtype()).copy()
+        previous_state = self._resolve_command_gait_state(commands_arr)
+        resampling_time = float(getattr(self._cfg.commands, "resampling_time", 0.0))
+        if resampling_time > 0.0:
+            interval_steps = max(int(round(resampling_time / self._cfg.ctrl_dt)), 1)
+            steps = np.asarray(info.get("steps", np.zeros((self._num_envs,), dtype=np.uint32)))
+            completed_steps = steps.astype(np.uint64, copy=False) + 1
+            resample_mask = command_resample_mask(completed_steps, interval_steps=interval_steps)
+            if np.any(resample_mask):
+                num_resample = int(np.count_nonzero(resample_mask))
+                commands_arr[resample_mask] = sample_g1_walk_commands(self, num_resample)
+                if getattr(self._cfg.commands, "heading_command", False):
+                    heading_commands = self._ensure_heading_commands(info, commands_arr.shape[0])
+                    heading_commands[resample_mask] = sample_heading_commands(self, num_resample)
+                    info["heading_commands"] = heading_commands
+        if getattr(self._cfg.commands, "heading_command", False):
+            heading_commands = self._ensure_heading_commands(info, commands_arr.shape[0])
+            base_quat = np.asarray(self._backend.get_base_quat(), dtype=get_global_dtype())
+            if base_quat.shape[0] == commands_arr.shape[0]:
+                stiffness = float(getattr(self._cfg.commands, "heading_control_stiffness", 0.5))
+                apply_heading_yaw_feedback(
+                    commands_arr, base_quat, heading_commands, stiffness=stiffness
+                )
+        self._publish_command_state_transition(
+            info,
+            commands_arr,
+            was_null=previous_state.is_null,
+        )
+
+    def _synchronize_external_command_for_observation(self, info: dict) -> None:
+        """Commit an externally written command without advancing or resampling."""
+
+        if not self._command_gated_phase_contact_enabled():
+            return
+        commands = info.get("commands")
+        if commands is None:
+            return
+        commands_arr = np.asarray(commands, dtype=get_global_dtype())
+        previous_null = np.asarray(
+            info.get("command_is_null", np.all(commands_arr == 0.0, axis=1)),
+            dtype=np.bool_,
+        )
+        if previous_null.shape != (commands_arr.shape[0],):
+            raise ValueError("command_is_null must match command rows")
+        self._publish_command_state_transition(info, commands_arr, was_null=previous_null)
+
+    def _publish_command_state_transition(
+        self,
+        info: dict,
+        commands: np.ndarray,
+        *,
+        was_null: np.ndarray,
+    ) -> None:
+        next_state = self._canonicalize_command_gait_state(commands)
+        cfg = self._command_gated_phase_contact_cfg()
+        phase = np.asarray(info["gait_phase"], dtype=get_global_dtype())
+        info["gait_phase"] = transition_command_gait_phase(
+            phase,
+            was_null=was_null,
+            is_null=next_state.is_null,
+            startup_phase=np.asarray(cfg.startup_phase, dtype=get_global_dtype()),
+            stand_phase=np.asarray(cfg.stand_phase, dtype=get_global_dtype()),
+        )
+        info["commands"] = next_state.commands
+        info["command_is_null"] = next_state.is_null
+        info["gait_enabled"] = np.asarray(~next_state.is_null, dtype=get_global_dtype())
+        info["command_intensity"] = next_state.intensity
+        info["gait_frequency"] = next_state.frequency
+
+    def _update_legacy_commands(self, info: dict) -> None:
         commands = info.get("commands")
         if commands is None:
             return
@@ -254,30 +413,31 @@ class G1WalkControlBindings:
                 self._reward_cfg.feet_phase_settling_tau,
             )
 
-        gait_phase = state.info.get(
-            "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
-        )
-        gait_enabled = bool(getattr(self._cfg, "gait_phase_enabled", True))
-        gait_cfg = self._gait_constraint_cfg() if gait_enabled else None
-        freeze_inactive = bool(
-            gait_cfg is not None and gait_cfg.enabled and gait_cfg.freeze_phase_in_stand_mode
-        )
-        state.info["gait_phase"] = advance_gait_phase(
-            np.asarray(gait_phase, dtype=get_global_dtype()),
-            active=(
-                self._dynamic_mode_mask(state.info).astype(bool)
-                if freeze_inactive
-                else np.ones((self._num_envs,), dtype=bool)
-            ),
-            delta=self._gait_phase_delta,
-            enabled=gait_enabled,
-            freeze_inactive=freeze_inactive,
-            stand_phase=(
-                self._stand_phase_array()
-                if freeze_inactive
-                else np.zeros((2,), dtype=get_global_dtype())
-            ),
-        )
+        if not self._command_gated_phase_contact_enabled():
+            gait_phase = state.info.get(
+                "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
+            )
+            gait_enabled = bool(getattr(self._cfg, "gait_phase_enabled", True))
+            gait_cfg = self._gait_constraint_cfg() if gait_enabled else None
+            freeze_inactive = bool(
+                gait_cfg is not None and gait_cfg.enabled and gait_cfg.freeze_phase_in_stand_mode
+            )
+            state.info["gait_phase"] = advance_gait_phase(
+                np.asarray(gait_phase, dtype=get_global_dtype()),
+                active=(
+                    self._dynamic_mode_mask(state.info).astype(bool)
+                    if freeze_inactive
+                    else np.ones((self._num_envs,), dtype=bool)
+                ),
+                delta=self._gait_phase_delta,
+                enabled=gait_enabled,
+                freeze_inactive=freeze_inactive,
+                stand_phase=(
+                    self._stand_phase_array()
+                    if freeze_inactive
+                    else np.zeros((2,), dtype=get_global_dtype())
+                ),
+            )
 
         authority_actions = self._actions_for_execution(actions, state.info)
         state.info["authority_actions"] = authority_actions
@@ -314,6 +474,48 @@ class G1WalkControlBindings:
                 kp=kp,
                 tau_max=self._fada_tau_max,
             )
+        if self._command_gated_phase_contact_enabled():
+            state.info["command_gated_actuator_target"] = np.asarray(
+                ctrl, dtype=get_global_dtype()
+            ).copy()
+            state.info["command_gated_actuator_target_valid"] = np.ones(
+                (self._num_envs,), dtype=np.bool_
+            )
         if self._debug_action_trace_enabled():
             state.info["_g1_action_trace_ctrl"] = ctrl
         return ctrl
+
+    def _refresh_command_gated_torque(
+        self,
+        info: dict,
+        dof_pos: np.ndarray,
+        dof_vel: np.ndarray,
+    ) -> None:
+        if not self._command_gated_phase_contact_enabled():
+            return
+        target = info.get("command_gated_actuator_target")
+        valid = np.asarray(
+            info.get("command_gated_actuator_target_valid", np.zeros(self._num_envs)),
+            dtype=np.bool_,
+        )
+        if target is None or valid.shape != (self._num_envs,) or not np.all(valid):
+            raise ValueError("v024 actual step requires a valid final actuator target")
+        if self._fada_base_kp is None or self._fada_base_kd is None or self._fada_tau_max is None:
+            raise ValueError("v024 torque requires cached PD gains and actuator force limits")
+        kp_scale = np.asarray(info.get("fada_kp_scale"), dtype=get_global_dtype())
+        kd_scale = np.asarray(info.get("fada_kd_scale"), dtype=get_global_dtype())
+        expected_shape = (self._num_envs, self._num_action)
+        if kp_scale.shape != expected_shape or kd_scale.shape != expected_shape:
+            raise ValueError("v024 torque requires per-row FADA Kp/Kd scales")
+        kp = kp_scale * np.asarray(self._fada_base_kp)[None, :]
+        kd = kd_scale * np.asarray(self._fada_base_kd)[None, :]
+        info["torques"] = estimate_clipped_pd_torque(
+            np.asarray(target, dtype=get_global_dtype()),
+            np.asarray(dof_pos, dtype=get_global_dtype()),
+            np.asarray(dof_vel, dtype=get_global_dtype()),
+            kp,
+            kd,
+            np.asarray(self._fada_tau_max, dtype=get_global_dtype()),
+        )
+        valid.fill(False)
+        info["command_gated_actuator_target_valid"] = valid

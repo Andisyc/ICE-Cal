@@ -15,11 +15,13 @@ import torch
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from unilab.algos.torch.distill.fada.async_config import teacher_spec
-from unilab.algos.torch.distill.fada.oracle import load_fada_oracle_policy
-from unilab.algos.torch.distill.fada_collector import FADACollectionSpec
-from unilab.algos.torch.distill.fada_source_diagnostics import run_fada_coverage_diagnostic
-from unilab.algos.torch.distill.fada_training import load_fada_policy_checkpoint
+from unilab.algos.torch.distill.fada.planner_idm import load_fada_policy_checkpoint
+from unilab.algos.torch.distill.fada.source.diagnostics import (
+    FADACollectionSpec,
+    load_fada_oracle_policy,
+    run_fada_coverage_diagnostic,
+    teacher_spec,
+)
 from unilab.base.registry import ensure_registries
 from unilab.training import BackendAdapter, create_env
 
@@ -131,9 +133,7 @@ def main() -> int:
     try:
         prepare_shadow = getattr(env, "prepare_isolated_rollout_branch", None)
         if not callable(prepare_shadow):
-            raise TypeError(
-                "coverage diagnostic requires env.prepare_isolated_rollout_branch()"
-            )
+            raise TypeError("coverage diagnostic requires env.prepare_isolated_rollout_branch()")
         prepare_shadow()
         report = run_fada_coverage_diagnostic(
             env,

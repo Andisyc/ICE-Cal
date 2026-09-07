@@ -1,0 +1,73 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco
+  - _self_
+
+# Canonical full-action Context teacher (formerly the v005-v007 chain).
+training:
+  task_name: G1WalkFlat
+  sim_backend: mujoco
+  no_play: true
+  no_sync_collection: false
+  env_steps_per_sync: 1
+
+interactive:
+  action_mode: policy
+  keyboard: false
+
+algo:
+  runtime_impl: privileged_full_action_sac
+  runtime_resolver: unilab.algos.torch.fada_context.privileged_full_action_sac:resolve_privileged_full_action_sac_runtime
+  load_run: "-1"
+  actor_warm_start_checkpoint: null
+  num_envs: 2048
+  batch_size: 8192
+  replay_buffer_n: 512
+  updates_per_step: 8
+  learning_starts: 10
+  policy_frequency: 4
+  max_iterations: 1000
+  save_interval: 100
+  use_symmetry: false
+  actor_lr: 0.00003
+  actor:
+    nominal_initialization_checkpoint: checkpoints/oracles/G1WalkFlat/model_5000.pt
+    nominal_action_anchor_coef: 10.0
+    priv_info_dim: 29
+    priv_info_embed_dim: 16
+    priv_mlp_hidden_dims: [128, 64, 16]
+
+env:
+  commands:
+    vel_limit: [[0.4, 0.0, 0.0], [0.4, 0.0, 0.0]]
+    rel_standing_envs: 0.0
+    rel_transition_envs: 0.0
+  reset_base_qvel_limit: 0.0
+  curriculum:
+    enabled: false
+  forward_progress_termination:
+    enabled: true
+    grace_steps: 50
+    min_command_forward_speed: 0.1
+    min_average_forward_speed: 0.2
+  domain_rand:
+    randomize_kp: false
+    randomize_kd: false
+    actuator_strength:
+      enabled: true
+      include_in_critic_obs: true
+      multipliers:
+        [1.0, 1.0, 1.0, 0.9, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+reward:
+  straight_line_lateral_tolerance_m: 0.10
+  straight_line_yaw_tolerance_rad: 0.10
+  scales:
+    penalty_lateral_displacement: -20.0
+    penalty_yaw_drift: -10.0
+    penalty_lateral_corridor_violation: -20.0
+    penalty_yaw_corridor_violation: -20.0

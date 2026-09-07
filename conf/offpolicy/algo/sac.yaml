@@ -1,36 +1,73 @@
 # @package algo
+# SAC 算法默认配置。这里只拥有 Learner、网络、Replay 和更新节奏；不拥有环境 DR。
+# Oracle task 会覆盖其中一部分值；实际 DR 位于
+# conf/offpolicy/task/sac/g1_walk_flat/mujoco_fada_source.yaml -> env.domain_rand。
+
+# 算法注册身份和日志名。
 algo: sac
 algo_log_name: fast_sac
+
+# 可选研究 Runtime。null 使用普通 FastSAC；Oracle task 会显式注入 privileged runtime。
 runtime_impl: null
 runtime_resolver: null
+
+# 恢复/热启动入口；-1/null 表示默认不从指定 run 或 Actor checkpoint 热启动。
 load_run: "-1"
 actor_warm_start_checkpoint: null
 actor_warm_start_adapter: null
+
+# 随机种子和并行环境数。
 seed: 1
 num_envs: 4096
+
+# 每次更新的样本数；Replay 容量 = replay_buffer_n × num_envs 条 transition。
 batch_size: 8192
 replay_buffer_n: 512
+
+# 每轮环境交互后的 Learner 更新次数；每 policy_frequency 次更新一次 Actor。
 updates_per_step: 4
+
+# 至少收集 learning_starts × num_envs 条数据（同时不低于一个 batch）后开始学习。
 learning_starts: 1
 policy_frequency: 4
+
+# Collector 每产生多少环境步同步一次权重/数据边界。
 env_steps_per_sync: 1
+
+# 默认训练和保存周期；Oracle task 将其覆盖为 5000 / 240。
 max_iterations: 500
 save_interval: 500
+
+# 折扣因子与 Target Q 软更新系数。
 gamma: 0.97
 tau: 0.125
+
+# Actor/Critic 优化器学习率。
 actor_lr: 3.0e-4
 critic_lr: 3.0e-4
+
+# 普通 FastSAC 的隐藏层宽度和 distributional critic 原子数。
 actor_hidden_dim: 512
 critic_hidden_dim: 768
 num_atoms: 101
+
+# 输入归一化、LayerNorm 和对称性增强开关。
 obs_normalization: true
 use_layer_norm: true
 use_symmetry: false
+
+# Actor 的扩展字段容器；Oracle task 在这里加入 lineage 与 privileged encoder 配置。
 actor: {}
+
+# SAC 专属的温度、梯度和编译参数。
 algo_params:
+  # 熵温度 alpha 的学习率与初值。
   alpha_lr: 3.0e-4
   alpha_init: 0.01
+  # 目标熵相对动作维度的比例；0.0 沿用当前实现的零比例目标。
   target_entropy_ratio: 0.0
+  # 0.0 表示不启用梯度范数裁剪。
   max_grad_norm: 0.0
+  # 自动选择混合精度 dtype；默认允许 torch.compile。
   amp_dtype: auto
   use_compile: true

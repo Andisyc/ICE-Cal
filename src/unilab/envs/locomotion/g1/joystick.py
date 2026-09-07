@@ -57,11 +57,13 @@ from unilab.envs.locomotion.g1.fada_privileged import (
 from unilab.envs.locomotion.g1.walk_commands import (
     command_resample_mask,
     freeze_inactive_gait_phase,
+    sample_g1_walk_commands,
 )
 from unilab.envs.locomotion.g1.walk_config import (  # noqa: F401
     CurriculumConfig,
     ForwardProgressTerminationConfig,
     G1ActuatorStrengthConfig,
+    G1CommandGatedPhaseContactConfig,
     G1DomainRandConfig,
     G1RewardConfig,
     G1StandHeightCfg,
@@ -100,7 +102,6 @@ from unilab.envs.locomotion.g1.walk_math import (  # noqa: F401
     compute_gait_phase_contrast_violation,
     compute_gait_phase_height_violation,
     compute_tracking_gate,
-    sample_g1_walk_commands,
     sample_gait_phase_pairs,
     sample_reset_base_qvel,
 )
@@ -159,6 +160,20 @@ class G1WalkEnv(
                 raise ValueError("command_height_v1 requires the canonical MuJoCo G1 flat scene")
             if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "offset_phase":
                 raise ValueError("command_height_v1 requires enabled offset gait phase")
+        if cfg.reward_config.feet_phase_mode == "phase_contact_v1":
+            canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
+            phase_contact_cfg = cfg.command_gated_phase_contact
+            if not phase_contact_cfg.enabled:
+                raise ValueError("phase_contact_v1 requires command-gated phase contact")
+            if cfg.scene.fragment_files or cfg.scene.terrain is not None:
+                raise ValueError("phase_contact_v1 forbids terrain or scene fragments")
+            if (
+                backend_type != "mujoco"
+                or epath.Path(cfg.scene.model_file).resolve() != canonical_scene.resolve()
+            ):
+                raise ValueError("phase_contact_v1 requires the canonical MuJoCo G1 flat scene")
+            if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "command_gated":
+                raise ValueError("phase_contact_v1 requires enabled command-gated gait phase")
         progress_cfg = cfg.forward_progress_termination
         if progress_cfg.grace_steps <= 0:
             raise ValueError("forward_progress_termination.grace_steps must be positive")

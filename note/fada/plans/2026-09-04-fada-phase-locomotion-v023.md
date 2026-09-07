@@ -1,5 +1,8 @@
 # FADA v023 Phase-Locomotion Source Plan
 
+Status: historical / superseded by FADA-METHOD-v024 on 2026-09-07. This plan was not run and cannot
+authorize training. `mujoco_fada_phase` remains only a compatibility and comparison profile.
+
 ## Accepted behavior
 
 Replace the active FADA source-policy route with a dedicated locomotion-only privileged Oracle
@@ -44,4 +47,3 @@ LoRA parameter ownership.
 - Focused FADA tests, impacted regressions, Ruff, Pyright on changed files, and diff checks close the
   offline engineering unit. No training, simulation, policy-quality, deployment, commit, or push is
   authorized by this plan.
-

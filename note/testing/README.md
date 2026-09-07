@@ -1,19 +1,25 @@
 # ICE-Cal test-design registry
 
-`module_test_cards.md` is the confirmed test-design authority for
-`FADA-CONTEXT-METHOD-v008` + `FADA-CONTEXT-TRAIN-v007`.
+There is currently no Module Test receipt for the active Source v024 or Context v009 Contracts.
+Design activation and documentation checks do not establish module correctness.
 
-Current v008/v007 evidence:
+## Historical Context evidence
 
-- `module_test_manifest.json`: 3 owner/public-boundary rows, 12 semantic cases,
-  zero missing cases, `MODULE-CORRECT`, validator-admitted offline.
-- `calibratable_tracker_module_test_evidence.json`: the 35-file active semantic surface,
-  338-test affected-suite identity, Ruff, mypy, diff-check, and explicit evidence boundaries.
-- `calibratable_tracker_module_test_control_board.json`: concise current status.
+The files in this directory bind earlier Context implementations:
 
-`module_test_control_board.json`, `module_test_evidence.json`, and the existing formal audit JSON
-files bind the superseded v006/v005 query-conditioned implementation and remain historical. Current
-module correctness uses design identity
-`ICA-DP-01..10-calibratable-tracker-configurable-active-axes` and Contract identity
-`FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007`. The current evidence is offline module and
-persistence evidence; it does not claim formal readiness, training efficacy, or policy quality.
+- `module_test_cards.md`, `module_test_manifest.json`,
+  `calibratable_tracker_module_test_evidence.json`, and
+  `calibratable_tracker_module_test_control_board.json` cover
+  `FADA-CONTEXT-METHOD-v008 + FADA-CONTEXT-TRAIN-v007`.
+- `module_test_control_board.json`, `module_test_evidence.json`, and the formal-audit JSON files
+  cover the still older v006/v005 route.
+
+Those receipts remain immutable historical evidence. Their internal `MODULE-CORRECT` or formal
+statuses do not transfer to the active data-driven Context v009 design or to the v024 Oracle.
+
+## Next test-design owner
+
+The next v024 engineering unit must create new Module Test Cards covering command dead-zone order,
+exact null-command identity, phase freeze/advance, contact truth tables, bounded Reward, observation
+visibility, checkpoint behavior profile and target-route isolation. Until those cards and tests are
+confirmed, module correctness is unclaimed.

@@ -3,8 +3,8 @@
   "mode": "design-inspector",
   "identity": {
     "atlas_id": "ICE-CAL-CALIBRATABLE-TRACKER-DESIGN-INSPECTOR",
-    "repository": "ICE-Cal@codex/in-context-execution-calibration@bdc4e420e390+content-sha256:4daeac6d96b3ae6454d72372e9971867692c276d3d7eee89b8b095eec81d9194",
-    "contract_id": "FADA-CONTEXT-METHOD-v008+FADA-CONTEXT-TRAIN-v007",
+    "repository": "ICE-Cal@main@b56566d0ad51c0e4c557a3cdf0ddc93e5a887b35+working-tree-20260907",
+    "contract_id": "FADA-METHOD-v024+FADA-TRAIN-v024;FADA-CONTEXT-METHOD-v009+FADA-CONTEXT-TRAIN-v008",
     "current": true
   },
   "authority": {
@@ -24,9 +24,12 @@
   "source_links": [
     {"path": "note/architecture/concept/08_trajectory_conditioned_execution_alignment.data.json", "line": 1},
     {"path": "note/architecture/concept/09_in_context_execution_calibration_design_inspector.data.json", "line": 1},
-    {"path": "note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v008.md", "line": 1},
-    {"path": "note/fada/contracts/active/training/FADA-CONTEXT-TRAIN-v007.md", "line": 1},
-    {"path": "note/fada/plans/2026-08-23-configurable-axis-training-refactor.md", "line": 1},
+    {"path": "note/fada/contracts/active/method/FADA-METHOD-v024.md", "line": 1},
+    {"path": "note/fada/contracts/active/training/FADA-TRAIN-v024.md", "line": 1},
+    {"path": "note/fada/plans/2026-09-07-command-gated-phase-contact-oracle.md", "line": 1},
+    {"path": "note/fada/governance/2026-09-07-v024-command-gated-phase-contact-design-confirmed.json", "line": 1},
+    {"path": "note/fada/contracts/active/method/FADA-CONTEXT-METHOD-v009.md", "line": 1},
+    {"path": "note/fada/contracts/active/training/FADA-CONTEXT-TRAIN-v008.md", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration.py", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration_data.py", "line": 1},
     {"path": "src/unilab/algos/torch/fada_context/calibration_training/types.py", "line": 1},
@@ -43,18 +46,18 @@
   ],
   "runtime_receipts": [
     {
-      "claim_id": "ICA-DP-01-10-V008-V007-MODULE",
+      "claim_id": "ICA-DP-01-10-V008-V007-HISTORICAL-MODULE",
       "producer": "module-alignment-test",
       "status": "MODULE-CORRECT",
       "path": "note/testing/module_test_manifest.json",
-      "current": true
+      "current": false
     },
     {
-      "claim_id": "ICA-DP-01-10-V008-V007-FINAL-GATE",
+      "claim_id": "ICA-DP-01-10-V008-V007-HISTORICAL-FINAL-GATE",
       "producer": "code-review-expert",
       "status": "FINAL_GATE_PASS",
       "path": "note/fada/reviews/2026-08-23-configurable-axis-final-gate.json",
-      "current": true
+      "current": false
     },
     {
       "claim_id": "ICA-DP-08-V006-V005-HISTORICAL-FORMAL",
@@ -65,13 +68,13 @@
     }
   ],
   "acceptance": {
-    "semantic_checks": "module-manifest-admitted-offline",
+    "semantic_checks": "v024-and-context-v009-design-only",
     "standalone_data_sync": "current",
     "browser_visual": "not-rerun",
-    "implementation_status": "implemented-offline",
-    "module_alignment": "MODULE-CORRECT",
-    "maintainability": "FINAL_GATE_PASS",
-    "official_offline_route": "not-run-for-v008-v007",
+    "implementation_status": "not-implemented-for-v024-and-context-v009",
+    "module_alignment": "not-run-for-current-contracts",
+    "maintainability": "not-reviewed-for-current-contracts",
+    "official_offline_route": "not-run-for-current-contracts",
     "human_long_run_authority": "not-requested",
     "policy_quality": "not-evaluated"
   }

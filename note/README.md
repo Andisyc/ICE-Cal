@@ -14,26 +14,28 @@ copying active Contract semantics.
 | Layer | Current artifact | Status |
 |---|---|---|
 | Concept Figure | `architecture/08_in_context_execution_calibration.html` | Synchronized with ICA-DP-08 |
-| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Human-confirmed v022 privileged source teacher + axis-bank calibration |
-| Active FADA Contract lineage | `fada/contracts/README.md` | Source v022 plus active Context v009/v008 |
-| Source engineering transition | `fada/plans/2026-08-29-fada-v022-grouped-dr-lineage.md` | Grouped-DR policy validated; sealed 20+1 lineage pending |
-| Calibration engineering transition | `fada/plans/2026-08-23-configurable-axis-training-refactor.md` | Offline implemented and independently reviewed |
-| Source governance | `fada/governance/2026-08-29-v022-privileged-teacher-design-confirmed.json` | v022 DESIGN-CONFIRMED; sealed lineage pending |
-| Context governance | `governance.json` | CLOSED / OFFLINE EVIDENCE ONLY |
+| Design Inspector | `architecture/09_in_context_execution_calibration_design_inspector.html` | Source v024 plus Context v009 design projection; no implementation claim |
+| Project governance | `governance/README.md` | Separates Source Oracle, Adaptation and Context authority |
+| Active FADA Contract lineage | `fada/contracts/README.md` | Source v024, Adapt v003 and Context v009/v008 |
+| Source design transition | `fada/plans/2026-09-07-command-gated-phase-contact-oracle.md` | v024 implemented and offline-tested; formal runtime pending; not run |
+| Source governance | `fada/governance/2026-09-07-v024-command-gated-phase-contact-design-confirmed.json` | v024 design activation receipt |
+| Source module specification | `fada/testing/v024_module_test_cards.md` and `fada/testing/v024_reward_ordering_card.json` | Module oracles executed; six policy-ordering relations still require training evidence |
+| Context governance | `governance.json` | Legacy v1 receipt for Context v009 activation only; not project-wide status |
 
-The Concept Figure and Inspector retain the data-driven perturbation basis, while source v022
-defines how the privileged teacher and frozen Planner–Tracker are created and active Context
-Contracts define one ordered active subset per calibration transaction. Fresh v008/v007
-module evidence covers the local implementation; v007/v006 receipts remain historical. No offline
+The Concept Figure and Inspector project two connected but separately versioned objects: v024 owns
+how the privileged source Oracle decides between standing and walking, while Context v009 owns how a
+frozen Planner–Tracker is calibrated. Adapt v003 remains the target-domain LoRA route. Historical
+v022/v023 source and v008/v007 Context evidence cannot authorize the current designs. No offline
 document authorizes training, simulation, deployment, or policy-quality claims.
 
 ## Recall order
 
-1. Read this registry and `governance.json`.
+1. Read this registry and `governance/README.md`.
 2. Open the Concept Figure and Design Inspector under `architecture/`.
 3. Read `fada/README.md`, then `fada/contracts/README.md` for current semantic authority.
-4. Read the current engineering plan, Module Test Cards, checklist, and task canvas before any code
-   work; use old evidence only for historical questions.
+4. For Source Oracle work, read the v024 plan and Contracts. For Context work, read v009/v008.
+5. Require a current engineering plan, Module Test Cards and impact scan before code work; use old
+   evidence only for historical questions.
 
 ## Retained domains
 

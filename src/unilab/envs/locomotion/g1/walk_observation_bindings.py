@@ -141,6 +141,10 @@ class G1WalkObservationBindings:
             array = np.asarray(values)
             return array if row_indices is None else array[row_indices]
 
+        torques = info.get("torques")
+        phase_contact_cfg = getattr(self._cfg, "command_gated_phase_contact", None)
+        if bool(getattr(phase_contact_cfg, "enabled", False)) and torques is None:
+            raise ValueError("v024 privileged observation requires explicit torque provenance")
         return pack_fada_runtime_observation(
             body_names=self._fada_body_names,
             tau_max=self._fada_tau_max,
@@ -153,7 +157,7 @@ class G1WalkObservationBindings:
             ),
             root_clearance=select_backend_rows(self._terrain_relative_base_height()),
             torques=np.asarray(
-                info.get("torques", np.zeros((rows, self._num_action))),
+                np.zeros((rows, self._num_action)) if torques is None else torques,
                 dtype=get_global_dtype(),
             ),
             info=info,

@@ -1,0 +1,220 @@
+# @package _global_
+# 当前可执行的 v022 phase-neutral Source Oracle 配置。
+# 本文件继承通用 MuJoCo G1WalkFlat，然后显式覆盖 Oracle 的算法、观测、Reward 和 DR。
+# 注意：当前权威 v024 尚未实现；不要把本配置误称为 v024。
+defaults:
+  # 基础环境、控制和 Reward 默认值来自这个 task profile。
+  - /task/sac/g1_walk_flat/mujoco
+  # _self_ 在后，因此本文件的同名字段覆盖基础 task。
+  - _self_
+
+# Canonical v022 phase-neutral source teacher. Values are explicit so this
+# identity does not depend on the history of diagnostic experiments.
+training:
+  # Backend 身份由 task profile 一起选择；不要只覆盖 sim_backend 来切后端。
+  task_name: G1WalkFlat
+  sim_backend: mujoco
+
+algo:
+  # 将普通 SAC 替换为 FADA live-privileged SAC Runtime。
+  runtime_impl: privileged_locomotion_sac
+  runtime_resolver: unilab.algos.torch.distill.fada.source.runtime:resolve_privileged_locomotion_sac_runtime
+
+  # 三个 diagnostic/validation 开关均关闭：这是正式 sealed 训练身份，不是诊断 profile。
+  privileged_input_diagnostic: false
+  privileged_nominal_validation: false
+  privileged_dr_curriculum_validation: false
+
+  # 启用 grouped-DR lineage，并要求使用 sealed Checkpoint 契约保存谱系元数据。
+  privileged_grouped_dr_lineage: true
+  checkpoint_mode: sealed
+
+  # Oracle 的并行规模、启动等待、训练预算、保存周期和每步更新次数。
+  num_envs: 2048
+  learning_starts: 10
+  max_iterations: 5000
+  save_interval: 240
+  updates_per_step: 8
+
+  # Oracle 不使用左右对称增强；其余为折扣、distributional Q 支撑和观测归一化。
+  use_symmetry: false
+  gamma: 0.99
+  value_support_min: -30.0
+  value_support_max: 30.0
+  obs_normalization: true
+  actor:
+    # 必填的训练谱系 ID，由环境变量注入；同一 sealed run 的 Checkpoint 必须共享该身份。
+    oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
+    # v022 行为身份：混合站立/行走，但不使用 gait phase。
+    oracle_behavior_profile: phase_neutral_mixed_v1
+    # false 表示每个环境读取实际采样的 privileged 信息，而不是固定标称向量。
+    fixed_privileged_input: false
+    # Privileged 向量经 256 -> 128 -> 32 MLP 编码，再与普通 Actor 观测拼接。
+    priv_info_embed_dim: 32
+    priv_mlp_hidden_dims: [256, 128, 32]
+    # Collector 与 Learner 对 privileged 输入使用并持久化同一归一化统计量。
+    priv_info_normalization: true
+  algo_params:
+    # Oracle 覆盖通用 SAC 的熵温度初值。
+    alpha_init: 0.001
+    target_entropy_ratio: 0.0
+
+env:
+  # 50 Hz 控制周期；关闭 mode observation 和 gait phase 输入。
+  ctrl_dt: 0.02
+  mode_observation: false
+  gait_phase_enabled: false
+  fada_privileged_observation:
+    # Critic observation 尾部追加 schema 化的 FADA 特权向量；Runtime 同时供 Actor 编码。
+    enabled: true
+    schema: g1_fada_privileged_v1
+  commands:
+    # 30% 环境采样站立指令；其余环境采样速度指令，不启用 transition 组。
+    rel_standing_envs: 0.3
+    rel_transition_envs: 0.0
+    small_xy_threshold: 0.0
+    # [下界, 上界]，每行依次为 vx、vy、yaw rate。
+    vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
+    # 0.0 表示沿用当前环境的每次 reset/既定时机采样语义，而非定时重采样。
+    resampling_time: 0.0
+    heading_command: false
+  curriculum:
+    # 任务难度/指令课程；它和下面的 DR 课程是两个独立机制。
+    enabled: true
+    initial_scale: 0.5
+    min_scale: 0.5
+    max_scale: 1.0
+    level_down_threshold: 150.0
+    level_up_threshold: 750.0
+    degree: 0.001
+  noise_config:
+    # 观测噪声：仅关节角和关节速度为非零；这不是物理参数 DR。
+    level: 1.0
+    scale_gyro: 0.0
+    scale_gravity: 0.0
+    scale_joint_angle: 0.01
+    scale_joint_vel: 0.1
+    scale_linvel: 0.0
+
+  # ── Oracle 训练的 Domain Randomization 主配置 ──────────────────────────
+  # 所有物理 DR 都由 G1WalkDomainRandomizationProvider 在 reset/低频边界消费。
+  # 左膝专用 actuator-strength 轴已停用；其余通用物理 DR 仍直接使用下方范围。
+  domain_rand:
+    actuator_strength:
+      # 历史兼容字段保留，但训练不再单独衰减 actuator index 3（左膝）。
+      enabled: false
+      sampling_mode: single_candidate
+      candidate_actuator_indices: [3]
+      multiplier_range: [0.8, 1.0]
+      nominal_probability: 0.3
+      include_in_critic_obs: false
+
+      # 禁用轴不能继续驱动自身课程或 grouped-DR 课程。
+      curriculum_enabled: false
+      curriculum_multiplier_lows: [1.0, 0.98, 0.95, 0.9, 0.85, 0.8]
+      curriculum_nominal_probabilities: [1.0, 0.8, 0.7, 0.5, 0.4, 0.3]
+      curriculum_promote_threshold: 800.0
+      curriculum_demote_threshold: 500.0
+      curriculum_update_episodes: 1024
+
+      group_curriculum_enabled: false
+      group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+
+      # 按训练 iteration 推进六个等级，而不是按平均 episode 长度推进。
+      curriculum_progress_mode: iterations
+      curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
+      # 若终止率超过 10%，课程最多回退一级，并经过冷却/恢复保持期后再推进。
+      curriculum_max_termination_rate: 0.1
+      curriculum_brake_cooldown_steps: 100
+      curriculum_recovery_hold_steps: 500
+
+    # 关节伺服增益 DR：围绕标称值 1.0 对所有关节分别缩放。
+    randomize_kp: true
+    kp_multiplier_range: [0.9, 1.1]
+    randomize_kd: true
+    kd_multiplier_range: [0.9, 1.1]
+
+    # 地面摩擦乘数 DR。
+    randomize_ground_friction: true
+    ground_friction_multiplier_range: [0.8, 1.2]
+
+    # Base 质量使用加性偏移（kg）；其他 body 质量使用乘性缩放。
+    randomize_base_mass: true
+    added_mass_range: [-1.5, 1.5]
+    randomize_body_mass: true
+    body_mass_multiplier_range: [0.9, 1.1]
+
+    # COM 在 x/y/z 三轴分别加入米制偏移。
+    random_com: true
+    com_offset_x: [-0.05, 0.05]
+    com_offset_y: [-0.05, 0.05]
+    com_offset_z: [-0.05, 0.05]
+
+    # 当前 v022 Source Oracle 明确关闭的 DR 轴。
+    randomize_gravity: false
+    randomize_dof_armature: false
+
+    # 关节位置零偏 DR，范围单位为 rad；Grouped DR 到 scale >= 0.6 才启用。
+    randomize_dof_position_bias: true
+    dof_position_bias_range: [-0.025, 0.025]
+
+    # 0.0/false 表示当前不注入力矩 RFI、控制延迟或外部推搡。
+    torque_rfi_fraction: 0.0
+    randomize_control_delay: false
+    push_robots: false
+
+reward:
+  # v022 phase-neutral Reward：基础跟踪/稳定项保留，相位相关项全部为 0。
+  scales:
+    tracking_lin_vel: 2.0
+    tracking_ang_vel: 1.5
+    penalty_ang_vel_xy: -1.0
+    penalty_orientation: -10.0
+    penalty_action_rate: -4.0
+    pose: -0.5
+    penalty_feet_ori: -20.0
+    feet_phase: 0.0
+    feet_phase_contrast: 0.0
+    feet_phase_contact: 0.0
+    alive: 10.0
+  gait_constraint:
+    # 不启用额外 gait constraint；与 gait_phase_enabled=false 对齐。
+    enabled: false
+    penalty_scale: 0.0
+
+play_profile:
+  # 回放专用覆盖：训练完成后查看策略时关闭课程、噪声和全部 DR，避免随机条件干扰观察。
+  # 这里不会反向改变上面的训练配置。
+  enabled: true
+  env:
+    commands:
+      rel_standing_envs: 1.0
+      rel_transition_envs: 0.0
+      resampling_time: 0.0
+      heading_command: false
+      random_height_during_walking: false
+    reset_base_qvel_limit: 0.0
+    standing_reset_base_qvel_limit: 0.0
+    curriculum:
+      enabled: false
+    noise_config:
+      level: 0.0
+    domain_rand:
+      # 回放 reset 使用标称姿态/物理参数；左膝增益随机化也在此关闭。
+      randomize_reset_pose: false
+      actuator_strength:
+        enabled: false
+        curriculum_enabled: false
+        group_curriculum_enabled: false
+      randomize_kp: false
+      randomize_kd: false
+      randomize_ground_friction: false
+      randomize_base_mass: false
+      randomize_body_mass: false
+      random_com: false
+      randomize_gravity: false
+      randomize_dof_armature: false
+      randomize_dof_position_bias: false
+      randomize_control_delay: false
+      torque_rfi_fraction: 0.0
+      push_robots: false

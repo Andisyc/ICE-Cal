@@ -356,15 +356,10 @@ def test_backend_adapter_fada_play_profile_is_fully_nominal() -> None:
     assert play_override["standing_reset_base_qvel_limit"] == pytest.approx(0.0)
 
 
-@pytest.mark.parametrize("task", [
-    "mujoco_fada_privileged_oracle",
-    "mujoco_fada_privileged_oracle_command_phase_grouped_dr_lineage",
-    "mujoco_fada_privileged_oracle_simple_height_grouped_dr_lineage",
-    "mujoco_fada_privileged_oracle_phase_height_v3_grouped_dr_lineage",
-    "mujoco_fada_privileged_oracle_original_height_grouped_dr_lineage",
-])
+@pytest.mark.parametrize("task", ["mujoco_fada_source", "mujoco_fada_phase"])
 def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
-    monkeypatch: pytest.MonkeyPatch, task: str,
+    monkeypatch: pytest.MonkeyPatch,
+    task: str,
 ) -> None:
     monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-lineage")
     checkpoint = "/tmp/privileged_oracle.pt"
@@ -381,7 +376,14 @@ def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
     play_override = BackendAdapter(cfg, root_dir=_ROOT_DIR).build_play_env_cfg_override()
 
     assert cfg.training.play_checkpoint_path == checkpoint
-    assert training_override["domain_rand"]["actuator_strength"]["enabled"] is True
+    assert training_override["domain_rand"]["actuator_strength"]["enabled"] is False
+    assert (
+        training_override["domain_rand"]["actuator_strength"]["curriculum_enabled"] is False
+    )
+    assert (
+        training_override["domain_rand"]["actuator_strength"]["group_curriculum_enabled"]
+        is False
+    )
     domain_rand = play_override["domain_rand"]
     assert domain_rand["actuator_strength"]["enabled"] is False
     assert domain_rand["actuator_strength"]["curriculum_enabled"] is False

@@ -25,18 +25,16 @@ The fixed-zero privileged-input profile is diagnostic only. The active teacher u
 values; deployability is recovered by downstream Planner–IDM distillation rather than by pretending
 that the teacher Actor is privilege-free.
 
-## Grouped perturbation curriculum
+## Physical perturbation profile
 
-Teacher training begins near nominal dynamics and expands one grouped perturbation distribution by
-training iteration. Levels change at iterations `0, 500, 1200, 2000, 3000, 4000`, with group scales
-`0.0, 0.2, 0.4, 0.6, 0.8, 1.0`. The left-knee actuator-strength lower bound progresses through
-`1.0, 0.98, 0.95, 0.9, 0.85, 0.8`, while its nominal probability progresses through
-`1.0, 0.8, 0.7, 0.5, 0.4, 0.3`.
+Current source training disables the historical left-knee-only actuator-strength axis and both its
+actuator-strength and grouped-curriculum switches. Generic all-joint Kp/Kd multipliers
+`[0.9,1.1]`, friction `[0.8,1.2]`, added base mass `[-1.5,1.5]`, body-mass scale `[0.9,1.1]`, COM
+offsets `[-0.05,0.05]`, and DoF position bias `[-0.025,0.025]` remain active at their configured
+ranges. Control delay and external pushes remain disabled.
 
-The final group includes Kp/Kd multipliers `[0.9,1.1]`, friction `[0.8,1.2]`, added base mass
-`[-1.5,1.5]`, body-mass scale `[0.9,1.1]`, COM offsets `[-0.05,0.05]`, and DoF position bias
-`[-0.025,0.025]`. Control delay and external pushes remain disabled. Episode termination may brake
-curriculum advancement; training quality does not choose the nominal iteration boundaries.
+The previously observed `G1WalkFlat_live_priv_grouped_dr_v022` run used the retired grouped
+curriculum. It remains historical evidence only and does not describe the current training profile.
 
 ## Planner–IDM and persistence
 

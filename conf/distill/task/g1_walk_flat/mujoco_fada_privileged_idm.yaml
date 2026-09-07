@@ -59,7 +59,7 @@ env:
 
 teacher:
   algo_type: privileged_locomotion_sac
-  task: sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage
+  task: sac/g1_walk_flat/mujoco_fada_source
   checkpoint_path: null
   load_run: "-1"
   checkpoint: 5000

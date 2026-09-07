@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
 from omegaconf import OmegaConf
 
 from unilab.algos.torch.distill.fada.privileged_oracle import (
+    FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
+    FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
     FADA_PRIVILEGED_SCHEMA,
     FADAOracleCheckpointContract,
     FADAOracleCheckpointGateway,
@@ -97,7 +100,7 @@ def _plain_value(value: Any) -> Any:
 
 
 def _validate_gain_targeted_domain_randomization(
-    domain_rand: Any, *, allow_grouped: bool = False, allow_nominal_strength: bool = False
+    domain_rand: Any, *, allow_grouped: bool = False, allow_disabled_strength: bool = False
 ) -> None:
     forbidden_flags = (
         ("randomize_ground_friction", "ground friction"),
@@ -131,22 +134,49 @@ def _validate_gain_targeted_domain_randomization(
         raise ValueError("privileged_locomotion_sac forbids torque RFI")
 
     strength = getattr(domain_rand, "actuator_strength", None)
-    if strength is None or not bool(getattr(strength, "enabled", False)):
+    if strength is None:
         raise ValueError("privileged_locomotion_sac requires actuator strength randomization")
+    strength_enabled = bool(getattr(strength, "enabled", False))
+    if not strength_enabled:
+        if not allow_disabled_strength:
+            raise ValueError("privileged_locomotion_sac requires actuator strength randomization")
+        if bool(getattr(strength, "include_in_critic_obs", False)):
+            raise ValueError("disabled actuator strength cannot add a duplicate Critic tail")
+        if bool(getattr(strength, "curriculum_enabled", False)):
+            raise ValueError("disabled actuator strength cannot enable its curriculum")
+        if bool(getattr(strength, "group_curriculum_enabled", False)):
+            raise ValueError("disabled actuator strength cannot enable grouped curriculum")
+        return
     if str(getattr(strength, "sampling_mode", "")) != "single_candidate":
         raise ValueError("privileged_locomotion_sac requires single_candidate sampling mode")
-    if list(getattr(strength, "candidate_actuator_indices", [])) != [3]:
-        raise ValueError("privileged_locomotion_sac requires left-knee actuator index 3")
-    nominal_strength = allow_nominal_strength and list(
-        getattr(strength, "multiplier_range", [])
-    ) == [1.0, 1.0]
-    if not nominal_strength and list(getattr(strength, "multiplier_range", [])) != [0.8, 1.0]:
-        raise ValueError("privileged_locomotion_sac requires multiplier range [0.8, 1.0]")
-    expected_probability = 1.0 if nominal_strength else 0.3
-    if float(getattr(strength, "nominal_probability", -1.0)) != expected_probability:
-        raise ValueError(
-            f"privileged_locomotion_sac requires nominal probability {expected_probability}"
+    candidate_indices = list(getattr(strength, "candidate_actuator_indices", []))
+    if (
+        not candidate_indices
+        or any(
+            not isinstance(index, int) or isinstance(index, bool) or index < 0
+            for index in candidate_indices
         )
+        or len(set(candidate_indices)) != len(candidate_indices)
+    ):
+        raise ValueError(
+            "privileged_locomotion_sac requires unique non-negative candidate actuator indices"
+        )
+    multiplier_range = list(getattr(strength, "multiplier_range", []))
+    if len(multiplier_range) != 2:
+        raise ValueError("privileged_locomotion_sac requires a two-value multiplier range")
+    multiplier_low, multiplier_high = (float(value) for value in multiplier_range)
+    if (
+        not math.isfinite(multiplier_low)
+        or not math.isfinite(multiplier_high)
+        or multiplier_low <= 0.0
+        or multiplier_low > multiplier_high
+    ):
+        raise ValueError(
+            "privileged_locomotion_sac requires a finite positive ordered multiplier range"
+        )
+    nominal_probability = float(getattr(strength, "nominal_probability", float("nan")))
+    if not math.isfinite(nominal_probability) or not 0.0 <= nominal_probability <= 1.0:
+        raise ValueError("privileged_locomotion_sac requires nominal_probability in [0, 1]")
     if bool(getattr(strength, "include_in_critic_obs", True)):
         raise ValueError(
             "privileged_locomotion_sac forbids duplicate actuator-strength Critic tail"
@@ -188,9 +218,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                 self.actor_cfg.get("priv_mlp_hidden_dims", (256, 128, 32))
             ),
             "priv_info_normalization": bool(self.actor_cfg.get("priv_info_normalization", True)),
-            "fixed_privileged_input": bool(
-                self.actor_cfg.get("fixed_privileged_input", False)
-            ),
+            "fixed_privileged_input": bool(self.actor_cfg.get("fixed_privileged_input", False)),
             "oracle_lineage_id": str(self.actor_cfg.get("oracle_lineage_id", "")),
             "privileged_schema": FADA_PRIVILEGED_SCHEMA,
         }
@@ -268,9 +296,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         return FADAOracleCheckpointGateway(contract).save
 
     def validate_training_config(self, cfg: Any) -> None:
-        privileged_input_diagnostic = bool(
-            getattr(cfg.algo, "privileged_input_diagnostic", False)
-        )
+        privileged_input_diagnostic = bool(getattr(cfg.algo, "privileged_input_diagnostic", False))
         privileged_nominal_validation = bool(
             getattr(cfg.algo, "privileged_nominal_validation", False)
         )
@@ -280,14 +306,17 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         privileged_grouped_dr_lineage = bool(
             getattr(cfg.algo, "privileged_grouped_dr_lineage", False)
         )
-        if sum(
-            (
-                privileged_input_diagnostic,
-                privileged_nominal_validation,
-                privileged_dr_curriculum_validation,
-                privileged_grouped_dr_lineage,
+        if (
+            sum(
+                (
+                    privileged_input_diagnostic,
+                    privileged_nominal_validation,
+                    privileged_dr_curriculum_validation,
+                    privileged_grouped_dr_lineage,
+                )
             )
-        ) > 1:
+            > 1
+        ):
             raise ValueError("privileged validation modes are mutually exclusive")
         if getattr(cfg.training, "task_name", None) != "G1WalkFlat":
             raise ValueError("privileged_locomotion_sac requires task G1WalkFlat")
@@ -296,8 +325,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
         expected_iterations = 500 if privileged_input_diagnostic else 5000
         if int(getattr(cfg.algo, "max_iterations", -1)) != expected_iterations:
             raise ValueError(
-                "privileged_locomotion_sac requires "
-                f"max_iterations={expected_iterations}"
+                f"privileged_locomotion_sac requires max_iterations={expected_iterations}"
             )
         unsealed_validation = (
             privileged_input_diagnostic
@@ -312,8 +340,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             expected_save_interval = 240
         if int(getattr(cfg.algo, "save_interval", -1)) != expected_save_interval:
             raise ValueError(
-                "privileged_locomotion_sac requires "
-                f"save_interval={expected_save_interval}"
+                f"privileged_locomotion_sac requires save_interval={expected_save_interval}"
             )
         if privileged_grouped_dr_lineage and (
             str(getattr(cfg.algo, "checkpoint_mode", "sealed")) != "sealed"
@@ -349,9 +376,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             raise ValueError("g1_fada_privileged_v1 schema mismatch")
         if bool(getattr(cfg.env, "mode_observation", False)):
             raise ValueError("privileged_locomotion_sac forbids mode observation")
-        behavior_profile = str(
-            actor_items.get("oracle_behavior_profile", "phase_neutral_mixed_v1")
-        )
+        behavior_profile = str(actor_items.get("oracle_behavior_profile", "phase_neutral_mixed_v1"))
         validate_fada_oracle_behavior_environment(cfg.env, behavior_profile)
         if float(getattr(cfg.env, "ctrl_dt", 0.0)) != 0.02:
             raise ValueError("privileged_locomotion_sac requires ctrl_dt=0.02")
@@ -366,18 +391,25 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                     "nominal privileged validation requires actuator strength randomization disabled"
                 )
         else:
-            grouped_dr = (
-                privileged_dr_curriculum_validation or privileged_grouped_dr_lineage
-            )
+            grouped_dr = privileged_dr_curriculum_validation or privileged_grouped_dr_lineage
             _validate_gain_targeted_domain_randomization(
                 cfg.env.domain_rand,
                 allow_grouped=grouped_dr,
-                allow_nominal_strength=behavior_profile == "original_height_mixed_v1",
+                allow_disabled_strength=behavior_profile
+                in {
+                    "phase_neutral_mixed_v1",
+                    "original_height_mixed_v1",
+                    FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
+                    FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
+                },
+            )
+            strength_enabled = bool(
+                getattr(cfg.env.domain_rand.actuator_strength, "enabled", False)
             )
             curriculum_enabled = bool(
                 getattr(cfg.env.domain_rand.actuator_strength, "curriculum_enabled", False)
             )
-            if curriculum_enabled != grouped_dr:
+            if strength_enabled and curriculum_enabled != grouped_dr:
                 raise ValueError("actuator strength curriculum mode mismatch")
         _validate_oracle_noise_profile(cfg.env.noise_config)
         validate_fada_single_reward(

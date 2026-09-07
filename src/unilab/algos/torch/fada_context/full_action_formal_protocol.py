@@ -8,7 +8,7 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher_full_action_v007"
+FORMAL_TASK_CONFIG = "sac/g1_walk_flat/mujoco_context_teacher"
 FORMAL_EVALUATION_SEEDS = (101, 102, 103, 104, 105)
 FORMAL_EVALUATION_NUM_ENVS = 256
 FORMAL_EVALUATION_STEPS = 400

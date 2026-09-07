@@ -1,4 +1,6 @@
-# Original height reward control experiment
+# Retired original-height control experiment
+
+Status: historical. This profile is not an active training entrypoint.
 
 Identity: `original_height_mixed_v1`; mode: `original_command_height_v1`.
 
@@ -28,15 +30,16 @@ v3: relative-height measurement and the original error denominator also differ.
 Equal vertical translations of both feet remain indistinguishable under the
 original reward. Zero targets alone therefore do not guarantee physical contact.
 
-Training entry (after syncing to the server):
+The historical training selector and dedicated launcher were retired on
+2026-09-07. Use one of the canonical identities instead:
 
 ```bash
 cd /ssd1/cyx/ICE-Cal
-bash scripts/train_original_height_oracle.sh
+uv run --frozen --no-sync python scripts/train_offpolicy.py \
+  algo=sac \
+  task=sac/g1_walk_flat/mujoco_clean_baseline
 ```
 
-The entry uses 512 environments, batch size 2048, 5000 iterations, a new timestamped
-lineage/log directory and the existing 240-iteration save cadence. It does not
-resume or overwrite the root checkpoint. Old tasks and the v3 launcher are preserved.
-The new play profile permits incremental keyboard velocity commands and inherits
-nominal domain-randomization settings.
+Use `mujoco_fada_source` only when the phase-neutral privileged source teacher and
+its grouped domain randomization are intended. This document preserves the old
+reward semantics as evidence; it no longer defines an executable workflow.

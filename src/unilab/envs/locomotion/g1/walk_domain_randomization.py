@@ -24,12 +24,16 @@ from unilab.envs.locomotion.g1.walk_actuator_randomization import (
     scale_symmetric_range,
     validate_actuator_strength_config,
 )
+from unilab.envs.locomotion.g1.walk_commands import (
+    resolve_g1_command_gait_state,
+    sample_g1_walk_commands,
+)
 from unilab.envs.locomotion.g1.walk_config import GaitConstraintConfig
+from unilab.envs.locomotion.g1.walk_control import reset_command_gait_phase
 from unilab.envs.locomotion.g1.walk_math import (
     command_phase_amplitude,
     compute_command_active_mask,
     compute_external_command_mask,
-    sample_g1_walk_commands,
 )
 from unilab.envs.locomotion.g1.walk_reset_randomization import (
     freeze_standing_phase,
@@ -369,6 +373,34 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
     def _build_extra_info_updates_for_commands(
         self, env: Any, num_reset: int, commands: np.ndarray
     ) -> dict[str, np.ndarray]:
+        phase_contact_cfg = getattr(env.cfg, "command_gated_phase_contact", None)
+        if bool(getattr(phase_contact_cfg, "enabled", False)):
+            command_state = resolve_g1_command_gait_state(
+                commands,
+                xy_dead_zone=float(phase_contact_cfg.command_xy_dead_zone),
+                yaw_dead_zone=float(phase_contact_cfg.command_yaw_dead_zone),
+                linear_intensity_span=float(phase_contact_cfg.linear_intensity_span),
+                yaw_intensity_span=float(phase_contact_cfg.yaw_intensity_span),
+                min_frequency=float(phase_contact_cfg.min_frequency),
+                max_frequency=float(phase_contact_cfg.max_frequency),
+            )
+            gait_phase = reset_command_gait_phase(
+                command_state.is_null,
+                startup_phase=np.asarray(phase_contact_cfg.startup_phase, dtype=get_global_dtype()),
+                stand_phase=np.asarray(phase_contact_cfg.stand_phase, dtype=get_global_dtype()),
+            )
+            updates = {
+                "gait_phase": gait_phase,
+                "gait_enabled": np.asarray(~command_state.is_null, dtype=get_global_dtype()),
+                "command_is_null": command_state.is_null,
+                "command_intensity": command_state.intensity,
+                "gait_frequency": command_state.frequency,
+                "torques": np.zeros((num_reset, env._num_action), dtype=get_global_dtype()),
+                "command_gated_actuator_target_valid": np.zeros((num_reset,), dtype=np.bool_),
+            }
+            return G1WalkDomainRandomizationProvider._add_optional_command_updates(
+                env, num_reset, updates
+            )
         gait_enabled = self._command_gait_mask(env, commands)
         gait_phase = self._sample_gait_phase(env, num_reset)
         self._apply_standing_reset_phase(env, gait_phase, gait_enabled)
@@ -380,6 +412,14 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
                 reward_cfg.feet_phase_command_speed_scale,
                 reward_cfg.feet_phase_turn_length,
             )
+        return G1WalkDomainRandomizationProvider._add_optional_command_updates(
+            env, num_reset, updates
+        )
+
+    @staticmethod
+    def _add_optional_command_updates(
+        env: Any, num_reset: int, updates: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
         if getattr(env.cfg.commands, "heading_command", False):
             updates["heading_commands"] = sample_heading_commands(env, num_reset)
         if getattr(env.cfg.commands, "observe_height_command", False) or getattr(
@@ -395,6 +435,20 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         return updates
 
     def _command_gait_mask(self, env: Any, commands: np.ndarray) -> np.ndarray:
+        phase_contact_cfg = getattr(env.cfg, "command_gated_phase_contact", None)
+        if bool(getattr(phase_contact_cfg, "enabled", False)):
+            return np.asarray(
+                ~resolve_g1_command_gait_state(
+                    commands,
+                    xy_dead_zone=float(phase_contact_cfg.command_xy_dead_zone),
+                    yaw_dead_zone=float(phase_contact_cfg.command_yaw_dead_zone),
+                    linear_intensity_span=float(phase_contact_cfg.linear_intensity_span),
+                    yaw_intensity_span=float(phase_contact_cfg.yaw_intensity_span),
+                    min_frequency=float(phase_contact_cfg.min_frequency),
+                    max_frequency=float(phase_contact_cfg.max_frequency),
+                ).is_null,
+                dtype=get_global_dtype(),
+            )
         reward_cfg = getattr(env.cfg, "reward_config", None)
         gait_cfg = getattr(reward_cfg, "gait_constraint", None)
         if isinstance(gait_cfg, dict):

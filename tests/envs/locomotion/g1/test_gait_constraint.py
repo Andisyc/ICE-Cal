@@ -186,7 +186,7 @@ def test_v016_single_reward_prefers_tracking_and_survival_without_command_dispat
     with initialize(config_path="../../../../conf/offpolicy", version_base="1.3"):
         cfg = compose(
             config_name="config",
-            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_no_gait_single_reward"],
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_clean_baseline"],
         )
 
     reward_payload = OmegaConf.to_container(cfg.reward, resolve=True)

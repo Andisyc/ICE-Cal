@@ -4,11 +4,11 @@ This directory owns the ICE-Cal Concept Figure and Design Inspector, together wi
 needed to open them. The pages were initially migrated from FEMR, but their target-repository role is
 now ICE-Cal architecture documentation.
 
-The updated Design Inspector is the human projection for the v022 live-privileged grouped-DR source
-teacher and the current axis-bank calibratable-Tracker design. The active source and Context
-Contracts remain the complete semantic authority. Current implementation evidence is linked
-separately through `atlas_manifest.json`; the figures themselves remain research-design artifacts
-rather than runtime evidence.
+The Design Inspector projects the active v024 command-gated phase/contact Source Oracle and the
+v009 data-driven correction-basis Context design. The active Source and Context Contracts remain the
+complete semantic authority. Current implementation evidence is linked separately through
+`atlas_manifest.json`; the figures themselves remain research-design artifacts rather than runtime
+evidence. v024 and Context v009 are not implemented merely because they are visible here.
 
 ## Open locally
 

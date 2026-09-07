@@ -65,7 +65,7 @@ def _compose_slope(*overrides: str) -> DictConfig:
 def test_slope_adaptation_reads_target_only_v3_artifact() -> None:
     cfg = _compose_slope()
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.adaptation.target_artifact_path.endswith("g1_slope_15_mujoco/target.pt")
     assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_15_mujoco.pt")
     assert "fada_adaptation_phase_v023" in cfg.adaptation.output_checkpoint_path
@@ -75,7 +75,7 @@ def test_slope_adaptation_reads_target_only_v3_artifact() -> None:
 def test_slope_10_adaptation_uses_its_own_artifact_and_checkpoint() -> None:
     cfg = _compose_slope("target_domain=slope_10")
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.adaptation.target_artifact_path.endswith("g1_slope_10_mujoco/target.pt")
     assert cfg.adaptation.output_checkpoint_path.endswith("g1_slope_10_mujoco.pt")
 
@@ -282,9 +282,7 @@ def test_slope_preflight_rejects_repeated_commands_across_episodes(tmp_path: Pat
 
 def test_slope_10_preflight_rejects_slope_15_artifact_geometry(tmp_path: Path) -> None:
     module = _load_script()
-    source, target, source_sha, _ = _slope_artifacts(
-        tmp_path, repeated_episode_commands=False
-    )
+    source, target, source_sha, _ = _slope_artifacts(tmp_path, repeated_episode_commands=False)
     payload = torch.load(target, map_location="cpu", weights_only=True)
     payload["metadata"]["target_domain_id"] = "g1_slope_10_mujoco"
     torch.save(payload, target)

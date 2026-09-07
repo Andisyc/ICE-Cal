@@ -93,7 +93,7 @@ def test_target_config_has_one_paired_bundle_mode() -> None:
 def test_slope_config_selects_nominal_target_only_collection() -> None:
     cfg = _compose_slope()
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.target_domain.target_domain_id == "g1_slope_15_mujoco"
     assert cfg.collection.output_dir.endswith("g1_slope_15_mujoco")
     assert "fada_target_phase_v023" in cfg.collection.output_dir
@@ -113,7 +113,7 @@ def test_slope_config_selects_nominal_target_only_collection() -> None:
 def test_slope_10_config_selects_an_independent_nominal_target() -> None:
     cfg = _compose_slope("target_domain=slope_10")
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.target_domain.target_domain_id == "g1_slope_10_mujoco"
     assert cfg.target_domain.slope.angle_deg == 10.0
     assert cfg.collection.output_dir.endswith("g1_slope_10_mujoco")

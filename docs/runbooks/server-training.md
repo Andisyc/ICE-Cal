@@ -35,11 +35,15 @@ Do not start a second training process unless concurrent training was explicitly
 
 ## Foreground privileged-Oracle command
 
-The stand/walk baseline uses `mujoco_fada_privileged_oracle_grouped_dr_lineage`:
+The phase-neutral privileged FADA source uses `mujoco_fada_source`:
 live privileged inputs, 30% standing commands, no gait-phase input, no phase
-Reward or height cost. It retains the grouped domain-randomization curriculum.
-The command-phase experimental task is preserved for old-run comparison; do
-not select it for this baseline or resume its checkpoint into this run.
+Reward or height cost. The current v024 Oracle instead selects
+`mujoco_fada_phase_contact`. Both profiles disable the historical left-knee-only
+actuator-strength axis and its curriculum; generic all-joint Kp/Kd and the remaining
+physical domain randomization stay enabled.
+Superseded command/simple/height experiment tasks are no longer active selectors.
+Do not resume their checkpoints into this source lineage unless their checkpoint
+metadata passes the canonical source contract.
 
 This command intentionally does not use `nohup`. It reserves at least two, or roughly one eighth,
 of the logical CPUs for SSH and starts from `1024` MuJoCo environments instead of the profile's
@@ -75,7 +79,7 @@ env \
   ICE_CAL_ORACLE_LINEAGE_ID=no-gait-baseline-seed1 \
 uv run --frozen --no-sync python scripts/train_offpolicy.py \
   algo=sac \
-  task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage \
+  task=sac/g1_walk_flat/mujoco_fada_source \
   training.device=cuda:0 \
   training.no_play=true \
   training.log_dir="$RUN_DIR" \
@@ -85,6 +89,11 @@ uv run --frozen --no-sync python scripts/train_offpolicy.py \
 The selected task profile still owns the algorithm, Reward, maximum iterations, save interval,
 checkpoint lineage, and domain-randomization semantics. The command overrides only the operational
 environment count and device/log identities.
+
+For a genuinely clean comparison baseline, select
+`task=sac/g1_walk_flat/mujoco_clean_baseline`, use a distinct `RUN_DIR`, and omit
+`ICE_CAL_ORACLE_LINEAGE_ID`. That profile has no gait reward, privileged Actor input,
+actuator-strength randomization, grouped physical randomization, or curriculum.
 
 ## Resource adjustment rule
 

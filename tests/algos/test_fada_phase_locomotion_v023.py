@@ -59,18 +59,22 @@ def _compose(config_dir: Path, config_name: str, *overrides: str):
 
 
 def test_phase_oracle_checkpoint_seals_explicit_behavior_profile() -> None:
-    record = _contract(
-        behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE
-    ).identity_for_iteration(FADA_ORACLE_FINAL_ITERATION).to_record()
+    record = (
+        _contract(behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE)
+        .identity_for_iteration(FADA_ORACLE_FINAL_ITERATION)
+        .to_record()
+    )
 
     assert record["schema_version"] == FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION == 3
     assert record["behavior_profile"] == FADA_ORACLE_PHASE_LOCOMOTION_PROFILE
 
 
 def test_legacy_oracle_schema_is_only_phase_neutral() -> None:
-    legacy = _contract(
-        behavior_profile=FADA_ORACLE_PHASE_NEUTRAL_PROFILE
-    ).identity_for_iteration(FADA_ORACLE_FINAL_ITERATION).to_record()
+    legacy = (
+        _contract(behavior_profile=FADA_ORACLE_PHASE_NEUTRAL_PROFILE)
+        .identity_for_iteration(FADA_ORACLE_FINAL_ITERATION)
+        .to_record()
+    )
     legacy["schema_version"] = 2
     legacy.pop("behavior_profile")
 
@@ -84,9 +88,9 @@ def test_legacy_oracle_schema_is_only_phase_neutral() -> None:
 
 def test_oracle_lineage_rejects_mixed_behavior_profiles() -> None:
     records = [
-        _contract(
-            behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE
-        ).identity_for_iteration(iteration).to_record()
+        _contract(behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE)
+        .identity_for_iteration(iteration)
+        .to_record()
         for iteration in (*FADA_ORACLE_INTERMEDIATE_ITERATIONS, FADA_ORACLE_FINAL_ITERATION)
     ]
     records[0]["behavior_profile"] = FADA_ORACLE_PHASE_NEUTRAL_PROFILE
@@ -97,9 +101,9 @@ def test_oracle_lineage_rejects_mixed_behavior_profiles() -> None:
 
 def test_oracle_lineage_rejects_mixed_schema_versions() -> None:
     records = [
-        _contract(
-            behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE
-        ).identity_for_iteration(iteration).to_record()
+        _contract(behavior_profile=FADA_ORACLE_PHASE_LOCOMOTION_PROFILE)
+        .identity_for_iteration(iteration)
+        .to_record()
         for iteration in (*FADA_ORACLE_INTERMEDIATE_ITERATIONS, FADA_ORACLE_FINAL_ITERATION)
     ]
     records[0]["schema_version"] = 2
@@ -116,7 +120,7 @@ def test_phase_oracle_and_stage_b_configs_share_walk_only_contract(
     oracle = _compose(
         ROOT / "conf/offpolicy",
         "config",
-        "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_phase_locomotion_grouped_dr_lineage",
+        "task=sac/g1_walk_flat/mujoco_fada_phase",
     )
     stage_b = _compose(
         ROOT / "conf/distill",
@@ -141,9 +145,7 @@ def test_phase_oracle_and_stage_b_configs_share_walk_only_contract(
 
     resolved_algo = OmegaConf.to_container(oracle.algo, resolve=True)
     assert isinstance(resolved_algo, dict)
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        cast(dict[str, Any], resolved_algo)
-    )
+    runtime = resolve_privileged_locomotion_sac_runtime(cast(dict[str, Any], resolved_algo))
     assert runtime is not None
     runtime.validate_training_config(oracle)
 
@@ -236,12 +238,12 @@ def test_stage_d_rejects_same_shape_phase_neutral_source() -> None:
     loaded = cast(
         LoadedFADAPlannerIDMPolicy,
         SimpleNamespace(
-        checkpoint={
-            "schema_version": 5,
-            "runtime_config": {
-                "source_behavior_profile": FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+            checkpoint={
+                "schema_version": 5,
+                "runtime_config": {
+                    "source_behavior_profile": FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
+                },
             },
-        },
         ),
     )
 

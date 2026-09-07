@@ -15,6 +15,7 @@ from unilab.dtype_config import get_global_dtype
 from unilab.envs.common.rotation import np_wrap_to_pi, np_yaw_from_quat
 from unilab.envs.locomotion.common import rewards
 from unilab.envs.locomotion.common.rewards import RewardContext
+from unilab.envs.locomotion.g1.fada_privileged import split_net_contact_sensor
 from unilab.envs.locomotion.g1.walk_config import (
     G1RewardConfig,
     GaitConstraintConfig,
@@ -39,6 +40,9 @@ from unilab.envs.locomotion.g1.walk_math import (
 )
 from unilab.envs.locomotion.g1.walk_reward import (
     normalized_corridor_violation,
+    null_foot_force_balance_l1,
+    null_torque_relaxation_l2,
+    phase_contact_mismatch_cost,
     resolve_stand_height_target,
     stand_action_l2,
     stand_contact_balance_l1,
@@ -103,6 +107,9 @@ class G1WalkRewardBindings:
             "feet_phase": self._reward_feet_phase,
             "feet_phase_contrast": self._reward_feet_phase_contrast,
             "feet_phase_contact": self._reward_feet_phase_contact,
+            "phase_contact": self._reward_phase_contact,
+            "null_foot_force_balance": self._reward_null_foot_force_balance,
+            "null_torque_relaxation": self._reward_null_torque_relaxation,
             "feet_double_stance": self._reward_feet_double_stance,
             "feet_air_time": self._reward_feet_air_time,
             "alive": rewards.alive,
@@ -559,6 +566,65 @@ class G1WalkRewardBindings:
         right_match = np.asarray(right_contact == right_target_contact, dtype=get_global_dtype())
         reward = np.asarray(0.5 * (left_match + right_match), dtype=get_global_dtype())
         return np.asarray(reward * self._gait_reward_gate(ctx.linvel), dtype=get_global_dtype())
+
+    def _exact_null_command_mask(self, ctx: RewardContext) -> np.ndarray:
+        commands = np.asarray(ctx.info["commands"], dtype=get_global_dtype())
+        if commands.ndim != 2 or commands.shape[1] != 3:
+            raise ValueError("commands must have shape (N, 3)")
+        published = ctx.info.get("command_is_null")
+        exact = np.all(commands == 0.0, axis=1)
+        if published is None:
+            return exact
+        published_mask = np.asarray(published, dtype=np.bool_)
+        if published_mask.shape != exact.shape or not np.array_equal(published_mask, exact):
+            raise ValueError("published command_is_null disagrees with canonical command")
+        return published_mask
+
+    def _net_foot_force_z(self) -> tuple[np.ndarray, np.ndarray]:
+        left_force, _ = split_net_contact_sensor(
+            self._backend.get_sensor_data("left_foot_net_contact")
+        )
+        right_force, _ = split_net_contact_sensor(
+            self._backend.get_sensor_data("right_foot_net_contact")
+        )
+        return (
+            np.asarray(left_force[:, 2], dtype=get_global_dtype()),
+            np.asarray(right_force[:, 2], dtype=get_global_dtype()),
+        )
+
+    def _reward_phase_contact(self, ctx: RewardContext):
+        cfg = self._cfg.command_gated_phase_contact
+        left_force_z, right_force_z = self._net_foot_force_z()
+        cost = phase_contact_mismatch_cost(
+            np.asarray(ctx.info["gait_phase"], dtype=get_global_dtype()),
+            left_force_z,
+            right_force_z,
+            duty_factor=float(cfg.duty_factor),
+            contact_force_threshold=float(cfg.contact_force_threshold),
+        )
+        return np.asarray(-cost, dtype=get_global_dtype())
+
+    def _reward_null_foot_force_balance(self, ctx: RewardContext):
+        cfg = self._cfg.command_gated_phase_contact
+        left_force_z, right_force_z = self._net_foot_force_z()
+        return null_foot_force_balance_l1(
+            left_force_z,
+            right_force_z,
+            self._exact_null_command_mask(ctx),
+            epsilon=float(cfg.force_balance_epsilon),
+        )
+
+    def _reward_null_torque_relaxation(self, ctx: RewardContext):
+        torques = ctx.info.get("torques")
+        if torques is None:
+            raise ValueError("v024 torque relaxation requires proven actuator torque")
+        if self._fada_tau_max is None:
+            raise ValueError("v024 torque relaxation requires actuator force limits")
+        return null_torque_relaxation_l2(
+            np.asarray(torques, dtype=get_global_dtype()),
+            np.asarray(self._fada_tau_max, dtype=get_global_dtype()),
+            self._exact_null_command_mask(ctx),
+        )
 
     def _reward_feet_double_stance(self, ctx: RewardContext):
         commands = ctx.info.get("commands", np.zeros((self._num_envs, 3), dtype=get_global_dtype()))

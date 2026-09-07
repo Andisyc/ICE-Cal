@@ -80,7 +80,7 @@ def test_privileged_oracle_env_reset_materializes_exact_critic_tail(
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
             ],
         )
     ensure_registries()

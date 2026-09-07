@@ -12,7 +12,7 @@ def _slope_cfg():
             "target_domain": {
                 "target_domain_id": "g1_slope_15_mujoco",
                 "kind": "slope",
-                "task": "sac/g1_walk_flat/mujoco_fada_slope_15",
+                "task": "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion",
                 "task_name": "G1WalkFlat",
                 "backend": "mujoco",
                 "command_sequence": [[0.75, 0.0, 0.0], [0.8, 0.0, 0.0], [0.85, 0.0, 0.0]],
@@ -224,7 +224,7 @@ def test_nominal_slope_environment_rejects_each_nonnominal_field(path: str, valu
         assert_nominal_slope_environment(
             cfg,
             resolve_fada_target_domain(cfg),
-            task_choice="sac/g1_walk_flat/mujoco_fada_slope_15",
+            task_choice="sac/g1_walk_flat/mujoco_fada_target_phase_locomotion",
         )
 
 
@@ -275,5 +275,5 @@ def test_nominal_slope_environment_rejects_geometry_drift(field: str) -> None:
         assert_nominal_slope_environment(
             cfg,
             resolve_fada_target_domain(cfg),
-            task_choice="sac/g1_walk_flat/mujoco_fada_slope_15",
+            task_choice="sac/g1_walk_flat/mujoco_fada_target_phase_locomotion",
         )

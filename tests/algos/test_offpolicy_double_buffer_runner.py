@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
+import importlib
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -52,24 +51,14 @@ def test_checkpoint_saver_port_preserves_default_and_supports_owner_gateway(
     )
     scheduled_path = scheduled_runner._save_iteration_checkpoint(tmp_path, iteration=240)
     assert scheduled_path == str(tmp_path / "model_240.pt")
-    assert scheduled_calls == [
-        (scheduled_runner.learner, tmp_path / "model_240.pt", 240)
-    ]
+    assert scheduled_calls == [(scheduled_runner.learner, tmp_path / "model_240.pt", 240)]
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+
 _CONF_DIR = Path(__file__).parent.parent.parent / "conf"
 
 
-def _load_script(name: str):
-    path = _SCRIPTS_DIR / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _offpolicy():
-    return _load_script("train_offpolicy")
+    return importlib.import_module("unilab.training.offpolicy.factory")
 
 
 def _offpolicy_cfg(overrides=None):
@@ -210,7 +199,6 @@ def test_sac_portable_devices_allow_cpu_pinned_double_buffer(
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod
@@ -267,7 +255,6 @@ def test_sac_compile_override_is_passed_to_learner(monkeypatch: pytest.MonkeyPat
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod
@@ -526,7 +513,6 @@ def test_sac_double_buffer_dispatches_to_correct_runner(monkeypatch: pytest.Monk
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod
@@ -573,7 +559,6 @@ def test_hora_sac_dispatches_through_double_buffer_runner(monkeypatch: pytest.Mo
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.offpolicy.double_buffer_runner as db_mod
@@ -626,7 +611,6 @@ def test_sac_double_buffer_one_tick_prefetch_mode_passed(monkeypatch: pytest.Mon
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod
@@ -680,7 +664,6 @@ def test_default_sac_dispatches_to_double_buffer_runner(monkeypatch: pytest.Monk
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod
@@ -1038,7 +1021,6 @@ def test_sac_double_buffer_verbose_metrics_passed(monkeypatch: pytest.MonkeyPatc
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr(mod, "ensure_registries", lambda: None)
     monkeypatch.setattr(mod, "create_env", lambda *args, **kwargs: _FakeEnv())
 
     import unilab.algos.torch.fast_sac.learner as learner_mod

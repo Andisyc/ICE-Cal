@@ -285,7 +285,7 @@ def test_runtime_preflight_rejects_hydra_gait_reward_override(
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
                 "reward.scales.feet_phase=1.0",
             ],
         )
@@ -297,7 +297,7 @@ def test_runtime_preflight_rejects_hydra_gait_reward_override(
         runtime.validate_training_config(cfg)
 
 
-def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_free(
+def test_privileged_oracle_hydra_profile_is_single_reward_gait_free_grouped_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from hydra import compose, initialize_config_dir
@@ -312,7 +312,7 @@ def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_f
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
             ],
         )
 
@@ -332,7 +332,7 @@ def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_f
     assert cfg.env.commands.vel_limit == [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     assert cfg.env.commands.resampling_time == pytest.approx(0.0)
     assert cfg.env.commands.heading_command is False
-    assert cfg.env.curriculum.enabled is False
+    assert cfg.env.curriculum.enabled is True
     assert cfg.algo.gamma ** round(2.0 / cfg.env.ctrl_dt) > 0.35
     ideal_return_upper = (
         cfg.env.ctrl_dt
@@ -356,25 +356,27 @@ def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_f
     assert cfg.reward.scales.feet_phase_contrast == pytest.approx(0.0)
     assert cfg.reward.scales.feet_phase_contact == pytest.approx(0.0)
     domain_rand = cfg.env.domain_rand
-    assert domain_rand.randomize_ground_friction is False
-    assert domain_rand.random_com is False
-    assert domain_rand.randomize_base_mass is False
-    assert domain_rand.randomize_body_mass is False
+    assert domain_rand.randomize_ground_friction is True
+    assert domain_rand.random_com is True
+    assert domain_rand.randomize_base_mass is True
+    assert domain_rand.randomize_body_mass is True
     assert domain_rand.randomize_gravity is False
     assert domain_rand.randomize_dof_armature is False
-    assert domain_rand.randomize_kp is False
-    assert domain_rand.randomize_kd is False
-    assert domain_rand.randomize_dof_position_bias is False
+    assert domain_rand.randomize_kp is True
+    assert domain_rand.randomize_kd is True
+    assert domain_rand.randomize_dof_position_bias is True
     assert domain_rand.torque_rfi_fraction == pytest.approx(0.0)
     assert domain_rand.randomize_control_delay is False
     assert domain_rand.push_robots is False
     strength = domain_rand.actuator_strength
-    assert strength.enabled is True
+    assert strength.enabled is False
     assert strength.sampling_mode == "single_candidate"
     assert strength.candidate_actuator_indices == [3]
     assert strength.multiplier_range == [0.8, 1.0]
     assert strength.nominal_probability == pytest.approx(0.3)
     assert strength.include_in_critic_obs is False
+    assert strength.curriculum_enabled is False
+    assert strength.group_curriculum_enabled is False
     assert cfg.env.noise_config.scale_joint_angle == pytest.approx(0.01)
     assert cfg.env.noise_config.scale_joint_vel == pytest.approx(0.1)
 
@@ -396,165 +398,9 @@ def test_privileged_oracle_hydra_profile_is_single_task_single_reward_and_gait_f
     assert override["commands"]["resampling_time"] == pytest.approx(0.0)
     assert override["commands"]["heading_command"] is False
     assert override["ctrl_dt"] == pytest.approx(0.02)
-    assert override["curriculum"]["enabled"] is False
+    assert override["curriculum"]["enabled"] is True
     assert "mode" not in override["reward_config"]
     assert override["reward_config"]["gait_constraint"]["enabled"] is False
-
-
-def test_privileged_oracle_fixed_input_curriculum_diagnostic_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from hydra import compose, initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-    from omegaconf import OmegaConf
-
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-diagnostic")
-    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
-        cfg = compose(
-            "config",
-            overrides=[
-                "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_fixed_input_curriculum",
-            ],
-        )
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        OmegaConf.to_container(cfg.algo, resolve=True)
-    )
-
-    assert runtime is not None
-    assert cfg.algo.actor.fixed_privileged_input is True
-    assert cfg.algo.privileged_input_diagnostic is True
-    assert runtime.build_model_kwargs(obs_dim=98, critic_obs_dim=303)[
-        "fixed_privileged_input"
-    ] is True
-    assert cfg.algo.max_iterations == 500
-    assert cfg.algo.save_interval == 0
-    assert cfg.env.curriculum.enabled is True
-    assert cfg.env.curriculum.initial_scale == pytest.approx(0.5)
-    assert cfg.env.domain_rand.actuator_strength.enabled is False
-    runtime.validate_training_config(cfg)
-
-
-def test_privileged_oracle_live_input_curriculum_control_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from hydra import compose, initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-    from omegaconf import OmegaConf
-
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-live-control")
-    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
-        cfg = compose(
-            "config",
-            overrides=[
-                "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_curriculum",
-            ],
-        )
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        OmegaConf.to_container(cfg.algo, resolve=True)
-    )
-
-    assert runtime is not None
-    assert cfg.algo.privileged_input_diagnostic is True
-    assert cfg.algo.actor.fixed_privileged_input is False
-    assert cfg.algo.max_iterations == 500
-    assert cfg.algo.save_interval == 0
-    assert cfg.env.curriculum.enabled is True
-    assert cfg.env.domain_rand.actuator_strength.enabled is False
-    runtime.validate_training_config(cfg)
-
-
-def test_privileged_oracle_live_input_nominal_5k_validation_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from hydra import compose, initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-    from omegaconf import OmegaConf
-
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-live-nominal-5k")
-    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
-        cfg = compose(
-            "config",
-            overrides=[
-                "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_nominal_5k",
-            ],
-        )
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        OmegaConf.to_container(cfg.algo, resolve=True)
-    )
-
-    assert runtime is not None
-    assert cfg.algo.privileged_input_diagnostic is False
-    assert cfg.algo.privileged_nominal_validation is True
-    assert cfg.algo.actor.fixed_privileged_input is False
-    assert cfg.algo.max_iterations == 5000
-    assert cfg.algo.save_interval == 1000
-    assert cfg.env.curriculum.enabled is True
-    assert cfg.env.domain_rand.actuator_strength.enabled is False
-    runtime.validate_training_config(cfg)
-
-
-def test_privileged_oracle_live_input_dr_curriculum_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from hydra import compose, initialize_config_dir
-    from hydra.core.global_hydra import GlobalHydra
-    from omegaconf import OmegaConf
-
-    from unilab.algos.torch.distill.fada_privileged_oracle_sac import (
-        resolve_privileged_locomotion_sac_runtime,
-    )
-
-    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "unit-test-live-dr-curriculum")
-    conf_dir = Path(__file__).resolve().parents[2] / "conf/offpolicy"
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
-        cfg = compose(
-            "config",
-            overrides=[
-                "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_live_input_dr_curriculum",
-            ],
-        )
-    runtime = resolve_privileged_locomotion_sac_runtime(
-        OmegaConf.to_container(cfg.algo, resolve=True)
-    )
-
-    strength = cfg.env.domain_rand.actuator_strength
-    assert runtime is not None
-    assert cfg.algo.privileged_dr_curriculum_validation is True
-    assert cfg.algo.max_iterations == 5000
-    assert cfg.algo.save_interval == 1000
-    assert cfg.env.curriculum.enabled is True
-    assert strength.enabled is True
-    assert strength.curriculum_enabled is True
-    assert strength.curriculum_multiplier_lows == [1.0, 0.98, 0.95, 0.9, 0.85, 0.8]
-    assert strength.curriculum_nominal_probabilities == [1.0, 0.8, 0.7, 0.5, 0.4, 0.3]
-    assert strength.group_curriculum_enabled is True
-    assert cfg.env.domain_rand.randomize_control_delay is False
-    assert cfg.env.domain_rand.push_robots is False
-    assert runtime.build_checkpoint_saver(SimpleNamespace()) is None
-    runtime.validate_training_config(cfg)
 
 
 def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpoints(
@@ -577,7 +423,7 @@ def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpo
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle_grouped_dr_lineage",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
             ],
         )
     runtime = resolve_privileged_locomotion_sac_runtime(
@@ -589,12 +435,14 @@ def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpo
     assert cfg.algo.privileged_grouped_dr_lineage is True
     assert cfg.algo.save_interval == 240
     assert cfg.algo.checkpoint_mode == "sealed"
-    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+    assert cfg.env.domain_rand.randomize_kp is True
+    assert cfg.env.domain_rand.randomize_kd is True
     runtime.validate_training_config(cfg)
     saver = runtime.build_checkpoint_saver(
-        SimpleNamespace(
-            checkpoint_contract=_sealed_checkpoint_contract(lineage_id=lineage_id)
-        )
+        SimpleNamespace(checkpoint_contract=_sealed_checkpoint_contract(lineage_id=lineage_id))
     )
     assert callable(saver)
 
@@ -610,7 +458,7 @@ def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpo
         ("env.commands.vel_limit", [[0.0, 0.0, 0.0], [1.0, 0.4, 0.8]], "vel_limit"),
         ("env.commands.resampling_time", 1.0, "resampling"),
         ("env.commands.heading_command", True, "heading command"),
-        ("env.curriculum.enabled", True, "curriculum"),
+        ("env.curriculum.enabled", False, "curriculum"),
     ],
 )
 def test_privileged_oracle_preflight_rejects_unsealed_training_profile(
@@ -635,7 +483,7 @@ def test_privileged_oracle_preflight_rejects_unsealed_training_profile(
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
             ],
         )
     OmegaConf.update(cfg, path, value, merge=False, force_add=True)
@@ -650,23 +498,13 @@ def test_privileged_oracle_preflight_rejects_unsealed_training_profile(
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        ("env.domain_rand.randomize_ground_friction", True, "ground friction"),
-        ("env.domain_rand.random_com", True, "COM"),
-        ("env.domain_rand.randomize_base_mass", True, "base mass"),
-        ("env.domain_rand.randomize_body_mass", True, "body mass"),
         ("env.domain_rand.randomize_gravity", True, "gravity"),
         ("env.domain_rand.randomize_dof_armature", True, "armature"),
-        ("env.domain_rand.randomize_kp", True, "independent Kp"),
-        ("env.domain_rand.randomize_kd", True, "independent Kd"),
-        ("env.domain_rand.randomize_dof_position_bias", True, "position bias"),
         ("env.domain_rand.torque_rfi_fraction", 0.01, "torque RFI"),
-        ("env.domain_rand.randomize_control_delay", True, "control delay"),
-        ("env.domain_rand.push_robots", True, "push"),
-        ("env.domain_rand.actuator_strength.enabled", False, "actuator strength"),
         ("env.domain_rand.actuator_strength.sampling_mode", "fixed", "sampling mode"),
-        ("env.domain_rand.actuator_strength.candidate_actuator_indices", [9], "index 3"),
-        ("env.domain_rand.actuator_strength.multiplier_range", [0.7, 1.0], r"\[0.8, 1.0\]"),
-        ("env.domain_rand.actuator_strength.nominal_probability", 0.5, "probability 0.3"),
+        ("env.domain_rand.actuator_strength.candidate_actuator_indices", [], "indices"),
+        ("env.domain_rand.actuator_strength.multiplier_range", [0.0, 1.0], "range"),
+        ("env.domain_rand.actuator_strength.nominal_probability", 1.5, r"\[0, 1\]"),
         ("env.domain_rand.actuator_strength.include_in_critic_obs", True, "duplicate"),
     ],
 )
@@ -690,7 +528,17 @@ def test_privileged_oracle_preflight_rejects_non_targeted_domain_randomization(
     with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
         cfg = compose(
             "config",
-            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle"],
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_source"],
+        )
+    if path.startswith("env.domain_rand.actuator_strength.") and not path.endswith(
+        "include_in_critic_obs"
+    ):
+        OmegaConf.update(cfg, "env.domain_rand.actuator_strength.enabled", True, merge=False)
+        OmegaConf.update(
+            cfg, "env.domain_rand.actuator_strength.curriculum_enabled", True, merge=False
+        )
+        OmegaConf.update(
+            cfg, "env.domain_rand.actuator_strength.group_curriculum_enabled", True, merge=False
         )
     OmegaConf.update(cfg, path, value, merge=False, force_add=True)
     runtime = resolve_privileged_locomotion_sac_runtime(
@@ -732,7 +580,7 @@ def test_privileged_oracle_preflight_rejects_observation_noise_drift(
     with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
         cfg = compose(
             "config",
-            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle"],
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_source"],
         )
     OmegaConf.update(cfg, path, value, merge=False, force_add=True)
     runtime = resolve_privileged_locomotion_sac_runtime(
@@ -1116,7 +964,7 @@ def test_runtime_builds_training_contract_and_owner_checkpoint_saver(
             "config",
             overrides=[
                 "algo=sac",
-                "task=sac/g1_walk_flat/mujoco_fada_privileged_oracle",
+                "task=sac/g1_walk_flat/mujoco_fada_source",
             ],
         )
     runtime = resolve_privileged_locomotion_sac_runtime(

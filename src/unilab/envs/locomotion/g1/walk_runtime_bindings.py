@@ -60,6 +60,19 @@ def publish_walk_termination_provenance(
 
 
 class G1WalkRuntimeBindings:
+    def _command_gated_physics_step_pending(self, info: dict) -> bool:
+        if not self._command_gated_phase_contact_enabled():
+            return True
+        valid = np.asarray(
+            info.get("command_gated_actuator_target_valid", np.zeros(self._num_envs)),
+            dtype=np.bool_,
+        )
+        if valid.shape != (self._num_envs,):
+            raise ValueError("v024 actuator target validity must match env rows")
+        if np.any(valid) and not np.all(valid):
+            raise ValueError("v024 actuator target validity cannot be partial")
+        return bool(np.all(valid))
+
     def _debug_action_trace_enabled(self) -> bool:
         return action_trace_enabled()
 
@@ -171,12 +184,22 @@ class G1WalkRuntimeBindings:
         )
 
     def update_state(self, state: NpEnvState) -> NpEnvState:
-        self._update_commands(state.info)
+        physics_step_pending = self._command_gated_physics_step_pending(state.info)
+        command_gated = self._command_gated_phase_contact_enabled()
+        if physics_step_pending:
+            self._advance_command_state_for_reward(state.info)
         linvel = self.get_local_linvel()
         gyro = self.get_gyro()
         gravity = self._backend.get_sensor_data(self._cfg.sensor.upvector)
         dof_pos = self.get_dof_pos()
         dof_vel = self.get_dof_vel()
+        if physics_step_pending:
+            self._refresh_command_gated_torque(state.info, dof_pos, dof_vel)
+
+        if command_gated and not physics_step_pending:
+            self._synchronize_external_command_for_observation(state.info)
+            obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
+            return state.replace(obs=obs)
 
         max_tilt_rad = np.deg2rad(self._reward_cfg.max_tilt_deg)
         tilt = np.arccos(np.clip(gravity[:, 2], -1, 1))
@@ -203,6 +226,8 @@ class G1WalkRuntimeBindings:
             dof_pos=dof_pos,
             dof_vel=dof_vel,
         )
+        if physics_step_pending:
+            self._commit_command_state_for_next_observation(state.info)
         obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 

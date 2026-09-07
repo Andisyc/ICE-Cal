@@ -40,7 +40,9 @@ for (const required of [
   "PCHIP",
   "只执行第一步",
   "c=0 等价标称",
-  "禁止 Gait/feet-phase Reward",
+  "Command 门控相位接触调度",
+  "不跟踪脚高",
+  "command_gated_phase_contact_v1",
   "action-free future",
 ]) {
   assert.ok(text.includes(required), `missing current design decision: ${required}`);

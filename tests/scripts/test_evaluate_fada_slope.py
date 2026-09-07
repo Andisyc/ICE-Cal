@@ -118,7 +118,7 @@ def test_evaluation_config_owns_same_condition_pair_and_flat_regression() -> Non
     with initialize_config_dir(config_dir=str(ROOT / "conf/offpolicy"), version_base="1.3"):
         cfg = compose(config_name="fada_slope_evaluate", return_hydra_config=True)
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_15"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.evaluation.num_trials == 20
     assert cfg.evaluation.representative_forward_speed_mps == 0.8
     assert "command" not in cfg.evaluation
@@ -133,7 +133,7 @@ def test_slope_10_evaluation_uses_its_own_condition_and_outputs() -> None:
             return_hydra_config=True,
         )
 
-    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_slope_10"
+    assert cfg.hydra.runtime.choices.task == "sac/g1_walk_flat/mujoco_fada_target_phase_locomotion"
     assert cfg.target_domain.target_domain_id == "g1_slope_10_mujoco"
     assert cfg.evaluation.adapted_checkpoint_path.endswith("g1_slope_10_mujoco.pt")
     assert "fada_evaluation_phase_v023" in cfg.evaluation.output_dir
