@@ -48,8 +48,6 @@ class RewardContext:
     # ── optional state populated for rough / biped tasks ────────────
     joint_range: np.ndarray | None = None  # (num_action, 2) — [lower, upper]
     linvel_yaw: np.ndarray | None = None  # (N, 3) — base linvel in yaw frame
-    tracking_lin_vel_sigma: float | None = None
-    tracking_ang_vel_sigma: float | None = None
 
 
 # ── tracking rewards ─────────────────────────────────────────────────
@@ -59,16 +57,14 @@ def tracking_lin_vel(ctx: RewardContext) -> np.ndarray:
     """Exponential reward for tracking commanded xy linear velocity."""
     commands = ctx.info["commands"]
     lin_vel_error = np.sum(np.square(commands[:, :2] - ctx.linvel[:, :2]), axis=1)
-    sigma = ctx.tracking_sigma if ctx.tracking_lin_vel_sigma is None else ctx.tracking_lin_vel_sigma
-    return np.exp(-lin_vel_error / sigma)  # type: ignore[no-any-return]
+    return np.exp(-lin_vel_error / ctx.tracking_sigma)  # type: ignore[no-any-return]
 
 
 def tracking_ang_vel(ctx: RewardContext) -> np.ndarray:
     """Exponential reward for tracking commanded yaw angular velocity."""
     commands = ctx.info["commands"]
     ang_vel_error = np.square(commands[:, 2] - ctx.gyro[:, 2])
-    sigma = ctx.tracking_sigma if ctx.tracking_ang_vel_sigma is None else ctx.tracking_ang_vel_sigma
-    return np.exp(-ang_vel_error / sigma)  # type: ignore[no-any-return]
+    return np.exp(-ang_vel_error / ctx.tracking_sigma)  # type: ignore[no-any-return]
 
 
 def forward_progress(ctx: RewardContext) -> np.ndarray:
