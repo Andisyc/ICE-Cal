@@ -189,15 +189,18 @@ def test_g1_actuator_strength_curriculum_starts_with_nominal_sampling() -> None:
     np.testing.assert_allclose(plan.info_updates["privileged_actuator_strength"], 1.0)
 
 
-def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors() -> None:
+@pytest.mark.parametrize("knee_enabled", [True, False])
+def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors(
+    knee_enabled: bool,
+) -> None:
     provider = G1WalkDomainRandomizationProvider()
     strength = G1ActuatorStrengthConfig(
-        enabled=True,
+        enabled=knee_enabled,
         sampling_mode="single_candidate",
         candidate_actuator_indices=[3],
         multiplier_range=[0.8, 1.0],
         nominal_probability=0.3,
-        curriculum_enabled=True,
+        curriculum_enabled=knee_enabled,
         curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
         curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
         group_curriculum_enabled=True,
@@ -246,14 +249,15 @@ def test_g1_grouped_dr_curriculum_scales_static_then_temporal_and_push_factors()
     assert final.push_robots is False
 
 
-def test_g1_curriculum_metrics_are_written_without_episode_completion() -> None:
+@pytest.mark.parametrize("knee_enabled", [True, False])
+def test_g1_curriculum_metrics_are_written_without_episode_completion(knee_enabled: bool) -> None:
     strength = G1ActuatorStrengthConfig(
-        enabled=True,
+        enabled=knee_enabled,
         sampling_mode="single_candidate",
         candidate_actuator_indices=[3],
         multiplier_range=[0.8, 1.0],
         nominal_probability=0.3,
-        curriculum_enabled=True,
+        curriculum_enabled=knee_enabled,
         curriculum_multiplier_lows=[1.0, 0.98, 0.95, 0.9, 0.85, 0.8],
         curriculum_nominal_probabilities=[1.0, 0.8, 0.7, 0.5, 0.4, 0.3],
         group_curriculum_enabled=True,
@@ -271,13 +275,17 @@ def test_g1_curriculum_metrics_are_written_without_episode_completion() -> None:
 
     env._write_curriculum_log(info)
 
-    assert info["log"] == {
+    expected = {
         "curriculum/average_episode_length": 900.0,
-        "curriculum/actuator_strength_level": 0.0,
-        "curriculum/actuator_strength_low": 1.0,
-        "curriculum/actuator_strength_nominal_probability": 1.0,
         "curriculum/domain_randomization_scale": 0.0,
     }
+    if knee_enabled:
+        expected.update({
+            "curriculum/actuator_strength_level": 0.0,
+            "curriculum/actuator_strength_low": 1.0,
+            "curriculum/actuator_strength_nominal_probability": 1.0,
+        })
+    assert info["log"] == expected
 
 
 def test_g1_iteration_curriculum_follows_schedule_and_quality_brake() -> None:

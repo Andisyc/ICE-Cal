@@ -382,7 +382,7 @@ def test_backend_adapter_privileged_oracle_play_profile_is_fully_nominal(
     )
     assert (
         training_override["domain_rand"]["actuator_strength"]["group_curriculum_enabled"]
-        is False
+        is True
     )
     domain_rand = play_override["domain_rand"]
     assert domain_rand["actuator_strength"]["enabled"] is False

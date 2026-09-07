@@ -376,7 +376,7 @@ def test_privileged_oracle_hydra_profile_is_single_reward_gait_free_grouped_sour
     assert strength.nominal_probability == pytest.approx(0.3)
     assert strength.include_in_critic_obs is False
     assert strength.curriculum_enabled is False
-    assert strength.group_curriculum_enabled is False
+    assert strength.group_curriculum_enabled is True
     assert cfg.env.noise_config.scale_joint_angle == pytest.approx(0.01)
     assert cfg.env.noise_config.scale_joint_vel == pytest.approx(0.1)
 
@@ -437,7 +437,7 @@ def test_privileged_oracle_grouped_dr_lineage_profile_seals_intermediate_checkpo
     assert cfg.algo.checkpoint_mode == "sealed"
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
-    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
     assert cfg.env.domain_rand.randomize_kp is True
     assert cfg.env.domain_rand.randomize_kd is True
     runtime.validate_training_config(cfg)

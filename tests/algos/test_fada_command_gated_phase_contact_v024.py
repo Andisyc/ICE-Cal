@@ -92,7 +92,6 @@ def test_v024_profile_composes_as_one_final_command_gated_behavior(
     ("path", "message"),
     [
         ("env.domain_rand.actuator_strength.curriculum_enabled", "its curriculum"),
-        ("env.domain_rand.actuator_strength.group_curriculum_enabled", "grouped curriculum"),
         ("env.domain_rand.actuator_strength.include_in_critic_obs", "duplicate Critic tail"),
     ],
 )

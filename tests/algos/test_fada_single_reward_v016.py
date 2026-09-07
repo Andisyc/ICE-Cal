@@ -69,7 +69,7 @@ def test_v016_privileged_profile_inherits_exact_nominal_reward(
     assert privileged.env.fada_privileged_observation.enabled is True
     assert privileged.env.domain_rand.actuator_strength.enabled is False
     assert privileged.env.domain_rand.actuator_strength.curriculum_enabled is False
-    assert privileged.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+    assert privileged.env.domain_rand.actuator_strength.group_curriculum_enabled is True
     assert privileged.env.domain_rand.actuator_strength.candidate_actuator_indices == [3]
     assert privileged.env.domain_rand.randomize_kp is True
     assert privileged.env.domain_rand.randomize_kd is True

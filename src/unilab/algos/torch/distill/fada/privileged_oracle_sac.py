@@ -21,6 +21,9 @@ from unilab.algos.torch.distill.fada.privileged_oracle import (
 )
 from unilab.algos.torch.hora.sac_learner import HoraSACLearner
 from unilab.algos.torch.offpolicy.runtime import OffPolicyRuntime
+from unilab.envs.locomotion.g1.walk_actuator_randomization import (
+    validate_grouped_domain_rand_curriculum,
+)
 
 FADA_PRIVILEGED_SAC_RUNTIME_IMPL = "privileged_locomotion_sac"
 
@@ -137,6 +140,10 @@ def _validate_gain_targeted_domain_randomization(
     if strength is None:
         raise ValueError("privileged_locomotion_sac requires actuator strength randomization")
     strength_enabled = bool(getattr(strength, "enabled", False))
+    if bool(getattr(strength, "group_curriculum_enabled", False)):
+        if not allow_grouped:
+            raise ValueError("this runtime forbids grouped curriculum")
+        validate_grouped_domain_rand_curriculum(strength)
     if not strength_enabled:
         if not allow_disabled_strength:
             raise ValueError("privileged_locomotion_sac requires actuator strength randomization")
@@ -144,8 +151,6 @@ def _validate_gain_targeted_domain_randomization(
             raise ValueError("disabled actuator strength cannot add a duplicate Critic tail")
         if bool(getattr(strength, "curriculum_enabled", False)):
             raise ValueError("disabled actuator strength cannot enable its curriculum")
-        if bool(getattr(strength, "group_curriculum_enabled", False)):
-            raise ValueError("disabled actuator strength cannot enable grouped curriculum")
         return
     if str(getattr(strength, "sampling_mode", "")) != "single_candidate":
         raise ValueError("privileged_locomotion_sac requires single_candidate sampling mode")

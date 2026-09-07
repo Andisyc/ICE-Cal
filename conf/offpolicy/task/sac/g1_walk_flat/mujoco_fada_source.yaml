@@ -105,7 +105,7 @@ env:
 
   # ── Oracle 训练的 Domain Randomization 主配置 ──────────────────────────
   # 所有物理 DR 都由 G1WalkDomainRandomizationProvider 在 reset/低频边界消费。
-  # 左膝专用 actuator-strength 轴已停用；其余通用物理 DR 仍直接使用下方范围。
+  # 左膝专用轴停用；其余物理 DR 从标称值开始，按课程逐步扩展到下方范围。
   domain_rand:
     actuator_strength:
       # 历史兼容字段保留，但训练不再单独衰减 actuator index 3（左膝）。
@@ -116,7 +116,7 @@ env:
       nominal_probability: 0.3
       include_in_critic_obs: false
 
-      # 禁用轴不能继续驱动自身课程或 grouped-DR 课程。
+      # 左膝自身课程关闭；下方其他物理 DR 的课程独立运行。
       curriculum_enabled: false
       curriculum_multiplier_lows: [1.0, 0.98, 0.95, 0.9, 0.85, 0.8]
       curriculum_nominal_probabilities: [1.0, 0.8, 0.7, 0.5, 0.4, 0.3]
@@ -124,10 +124,10 @@ env:
       curriculum_demote_threshold: 500.0
       curriculum_update_episodes: 1024
 
-      group_curriculum_enabled: false
+      group_curriculum_enabled: true
       group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 
-      # 按训练 iteration 推进六个等级，而不是按平均 episode 长度推进。
+      # 其他物理 DR 按训练 iteration 推进六个等级。
       curriculum_progress_mode: iterations
       curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
       # 若终止率超过 10%，课程最多回退一级，并经过冷却/恢复保持期后再推进。

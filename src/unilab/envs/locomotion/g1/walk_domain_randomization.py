@@ -23,6 +23,7 @@ from unilab.envs.locomotion.g1.walk_actuator_randomization import (
     sample_actuator_strength_multipliers,
     scale_symmetric_range,
     validate_actuator_strength_config,
+    validate_grouped_domain_rand_curriculum,
 )
 from unilab.envs.locomotion.g1.walk_commands import (
     resolve_g1_command_gait_state,
@@ -105,11 +106,35 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         level = min(self._actuator_strength_curriculum_level, len(lows) - 1)
         return level, float(lows[level]), float(probabilities[level])
 
+    def _validated_curriculum_config(self, env: Any) -> Any | None:
+        """Resolve an active DR schedule without requiring an active knee fault."""
+
+        cfg = getattr(env.cfg.domain_rand, "actuator_strength", None)
+        if cfg is None:
+            return None
+        if bool(getattr(cfg, "group_curriculum_enabled", False)):
+            validate_grouped_domain_rand_curriculum(cfg)
+            if bool(getattr(cfg, "enabled", False)):
+                self._validated_actuator_strength_config(env)
+            return cfg
+        if bool(getattr(cfg, "enabled", False)) and bool(
+            getattr(cfg, "curriculum_enabled", False)
+        ):
+            return self._validated_actuator_strength_config(env)
+        return None
+
+    def grouped_domain_rand_curriculum_profile(self, env: Any) -> tuple[int, float]:
+        cfg = self._validated_curriculum_config(env)
+        if cfg is None or not bool(getattr(cfg, "group_curriculum_enabled", False)):
+            raise ValueError("grouped domain randomization curriculum is not enabled")
+        level = min(self._actuator_strength_curriculum_level, len(cfg.group_curriculum_scales) - 1)
+        return level, float(cfg.group_curriculum_scales[level])
+
     def update_actuator_strength_curriculum(
         self, env: Any, average_episode_length: float, num_completed: int
     ) -> bool:
-        strength_cfg = self._validated_actuator_strength_config(env)
-        if strength_cfg is None or not bool(getattr(strength_cfg, "curriculum_enabled", False)):
+        strength_cfg = self._validated_curriculum_config(env)
+        if strength_cfg is None:
             return False
         self._actuator_strength_curriculum_pending_episodes += int(num_completed)
         if self._actuator_strength_curriculum_pending_episodes < int(
@@ -118,7 +143,12 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             return False
         self._actuator_strength_curriculum_pending_episodes = 0
         previous = self._actuator_strength_curriculum_level
-        last = len(strength_cfg.curriculum_multiplier_lows) - 1
+        levels = (
+            strength_cfg.group_curriculum_scales
+            if strength_cfg.group_curriculum_enabled
+            else strength_cfg.curriculum_multiplier_lows
+        )
+        last = len(levels) - 1
         if average_episode_length >= float(strength_cfg.curriculum_promote_threshold):
             self._actuator_strength_curriculum_level = min(previous + 1, last)
         elif average_episode_length <= float(strength_cfg.curriculum_demote_threshold):
@@ -128,7 +158,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
     def update_iteration_curriculum(
         self, env: Any, iteration: int, terminated_fraction: float
     ) -> bool:
-        strength_cfg = self._validated_actuator_strength_config(env)
+        strength_cfg = self._validated_curriculum_config(env)
         if (
             strength_cfg is None
             or str(getattr(strength_cfg, "curriculum_progress_mode", "episode_quality"))
@@ -177,13 +207,12 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
 
     def effective_grouped_domain_rand_config(self, env: Any) -> Any:
         cfg = env.cfg.domain_rand
-        strength_cfg = self._validated_actuator_strength_config(env)
+        strength_cfg = getattr(cfg, "actuator_strength", None)
         if strength_cfg is None or not bool(
             getattr(strength_cfg, "group_curriculum_enabled", False)
         ):
             return cfg
-        level, _, _ = self.actuator_strength_curriculum_profile(env)
-        scale = float(strength_cfg.group_curriculum_scales[level])
+        _, scale = self.grouped_domain_rand_curriculum_profile(env)
         effective = copy.copy(cfg)
         static_enabled = scale > 0.0
         for field_name in (

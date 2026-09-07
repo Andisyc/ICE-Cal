@@ -263,17 +263,21 @@ class G1WalkRuntimeBindings:
         if self._penalty_curriculum is not None:
             log["curriculum/penalty_scale"] = float(self._penalty_curriculum.current_scale)
         strength_cfg = getattr(self._cfg.domain_rand, "actuator_strength", None)
-        if bool(getattr(strength_cfg, "curriculum_enabled", False)):
+        strength_curriculum = bool(getattr(strength_cfg, "enabled", False)) and bool(
+            getattr(strength_cfg, "curriculum_enabled", False)
+        )
+        grouped_curriculum = bool(getattr(strength_cfg, "group_curriculum_enabled", False))
+        if strength_curriculum:
             level, low, nominal_probability = (
                 self._fada_dr_provider.actuator_strength_curriculum_profile(self)
             )
             log["curriculum/actuator_strength_level"] = float(level)
             log["curriculum/actuator_strength_low"] = low
             log["curriculum/actuator_strength_nominal_probability"] = nominal_probability
-            if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
-                log["curriculum/domain_randomization_scale"] = float(
-                    strength_cfg.group_curriculum_scales[level]
-                )
+        if grouped_curriculum:
+            _, scale = self._fada_dr_provider.grouped_domain_rand_curriculum_profile(self)
+            log["curriculum/domain_randomization_scale"] = scale
+        if strength_curriculum or grouped_curriculum:
             if (
                 str(getattr(strength_cfg, "curriculum_progress_mode", "episode_quality"))
                 == "iterations"

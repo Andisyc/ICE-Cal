@@ -64,7 +64,7 @@ def test_canonical_fada_source_disables_left_knee_strength_without_gait(
     assert list(cfg.env.domain_rand.actuator_strength.multiplier_range) == [0.8, 1.0]
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
-    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
     assert cfg.env.domain_rand.randomize_kp is True
     assert cfg.env.domain_rand.randomize_kd is True
     assert cfg.algo.privileged_grouped_dr_lineage is True

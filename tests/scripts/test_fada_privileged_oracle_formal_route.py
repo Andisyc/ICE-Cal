@@ -188,7 +188,7 @@ def test_v022_official_env_disables_left_knee_strength_but_keeps_generic_gain_dr
         assert state.obs is not None
         assert cfg.env.domain_rand.actuator_strength.enabled is False
         assert cfg.env.domain_rand.actuator_strength.curriculum_enabled is False
-        assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is False
+        assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
         assert cfg.env.domain_rand.randomize_kp is True
         assert cfg.env.domain_rand.randomize_kd is True
         kp_scale = np.asarray(state.info["fada_kp_scale"], dtype=np.float32)
@@ -197,9 +197,9 @@ def test_v022_official_env_disables_left_knee_strength_but_keeps_generic_gain_dr
         assert kd_scale.shape == (rows, 29)
         assert np.isfinite(kp_scale).all()
         assert np.isfinite(kd_scale).all()
-        assert np.any(np.abs(kp_scale - 1.0) > 1.0e-6)
-        assert np.any(np.abs(kd_scale - 1.0) > 1.0e-6)
-        assert np.any(np.abs(kp_scale - kd_scale) > 1.0e-6)
+        # Grouped DR starts nominal, independently of the disabled knee fault.
+        np.testing.assert_allclose(kp_scale, 1.0)
+        np.testing.assert_allclose(kd_scale, 1.0)
         assert state.obs["obs"].shape == (rows, 98)
         assert state.obs["critic"].shape == (rows, 303)
         np.testing.assert_array_equal(state.obs["obs"][:, -2:], 0.0)

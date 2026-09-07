@@ -47,6 +47,7 @@ class G1ActuatorStrengthConfig:
     curriculum_promote_threshold: float = 800.0
     curriculum_demote_threshold: float = 500.0
     curriculum_update_episodes: int = 1024
+    # Physical DR schedule: independent of enabled/curriculum_enabled above.
     group_curriculum_enabled: bool = False
     group_curriculum_scales: list[float] = field(default_factory=list)
     curriculum_progress_mode: str = "episode_quality"

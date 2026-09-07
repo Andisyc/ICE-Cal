@@ -19,6 +19,7 @@ def validate_actuator_strength_config(
             raise ValueError(
                 "domain_rand.actuator_strength.include_in_critic_obs requires enabled=true"
             )
+        validate_grouped_domain_rand_curriculum(strength_cfg)
         return None
 
     sampling_mode = str(getattr(strength_cfg, "sampling_mode", "fixed"))
@@ -104,17 +105,42 @@ def validate_actuator_strength_curriculum(
     if int(strength_cfg.curriculum_update_episodes) <= 0:
         raise ValueError("actuator strength curriculum_update_episodes must be positive")
     if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
-        scales = np.asarray(strength_cfg.group_curriculum_scales, dtype=np.float64)
-        if scales.shape != lows.shape or not np.isfinite(scales).all():
+        validate_grouped_domain_rand_curriculum(strength_cfg)
+        if len(strength_cfg.group_curriculum_scales) != len(lows):
             raise ValueError("group curriculum scales must align with actuator strength levels")
-        if (
-            scales[0] != 0.0
-            or scales[-1] != 1.0
-            or np.any(scales < 0.0)
-            or np.any(scales > 1.0)
-            or np.any(np.diff(scales) < 0.0)
-        ):
-            raise ValueError("group curriculum scales must ascend from 0 to 1")
+    _validate_curriculum_progress(strength_cfg, num_levels=len(lows))
+
+
+def validate_grouped_domain_rand_curriculum(cfg: Any) -> None:
+    """Validate the physical DR schedule independently of knee fault sampling.
+
+    Keep the existing schedule fields for config compatibility; the knee's
+    enabled flag and multiplier schedule do not own grouped randomization.
+    """
+
+    if not bool(getattr(cfg, "group_curriculum_enabled", False)):
+        return
+    scales = np.asarray(cfg.group_curriculum_scales, dtype=np.float64)
+    if scales.ndim != 1 or scales.size == 0 or not np.isfinite(scales).all():
+        raise ValueError("group curriculum scales must be a non-empty finite list")
+    if (
+        scales[0] != 0.0
+        or scales[-1] != 1.0
+        or np.any(scales < 0.0)
+        or np.any(scales > 1.0)
+        or np.any(np.diff(scales) < 0.0)
+    ):
+        raise ValueError("group curriculum scales must ascend from 0 to 1")
+    promote = float(cfg.curriculum_promote_threshold)
+    demote = float(cfg.curriculum_demote_threshold)
+    if not np.isfinite([promote, demote]).all() or not demote < promote:
+        raise ValueError("group curriculum thresholds must satisfy down < up")
+    if int(cfg.curriculum_update_episodes) <= 0:
+        raise ValueError("curriculum_update_episodes must be positive")
+    _validate_curriculum_progress(cfg, num_levels=len(scales))
+
+
+def _validate_curriculum_progress(strength_cfg: Any, *, num_levels: int) -> None:
     progress_mode = str(
         getattr(strength_cfg, "curriculum_progress_mode", "episode_quality")
     )
@@ -125,7 +151,7 @@ def validate_actuator_strength_curriculum(
             strength_cfg.curriculum_iteration_boundaries, dtype=np.int64
         )
         if (
-            boundaries.shape != lows.shape
+            boundaries.shape != (num_levels,)
             or boundaries[0] != 0
             or np.any(np.diff(boundaries) <= 0)
         ):
@@ -169,4 +195,3 @@ def sample_actuator_strength_multipliers(
     selected = np.random.choice(candidates, size=anomaly_rows.size, replace=True)
     sampled[anomaly_rows, selected] = np.random.uniform(low, high, size=anomaly_rows.size)
     return sampled
-
