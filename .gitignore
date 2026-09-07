@@ -96,4 +96,4 @@ src/unilab/assets/checkpoints/**/*.onnx
 src/unilab/assets/robots/**/tmp*.xml
 logs
 ./artifacts/fada_evaluation/
-./model
+/model/
