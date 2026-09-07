@@ -287,6 +287,15 @@ class ForwardProgressTerminationConfig:
 
 
 @dataclass
+class G1WalkCommandsConfig(Commands):
+    """Optional command-only dead zone, independent of gait scheduling."""
+
+    dead_zone_enabled: bool = False
+    dead_zone_xy: float = 0.1
+    dead_zone_yaw: float = 0.1
+
+
+@dataclass
 class G1WalkEnvCfg(G1BaseCfg):
     scene: SceneCfg = field(
         default_factory=lambda: SceneCfg(
@@ -295,7 +304,7 @@ class G1WalkEnvCfg(G1BaseCfg):
     )
     max_episode_seconds: float = 20.0
     init_state: InitState = field(default_factory=InitState)
-    commands: Commands = field(default_factory=Commands)
+    commands: G1WalkCommandsConfig = field(default_factory=G1WalkCommandsConfig)
     reward_config: G1RewardConfig | None = None
     domain_rand: G1DomainRandConfig = field(default_factory=G1DomainRandConfig)
     gait_phase_enabled: bool = True

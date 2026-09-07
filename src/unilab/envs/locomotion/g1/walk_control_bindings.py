@@ -31,6 +31,7 @@ from unilab.envs.locomotion.g1.fada_privileged import (
     pack_fada_runtime_observation,
 )
 from unilab.envs.locomotion.g1.walk_commands import (
+    apply_g1_command_dead_zone,
     canonicalize_g1_commands,
     command_resample_mask,
     freeze_inactive_gait_phase,
@@ -374,6 +375,8 @@ class G1WalkControlBindings:
                     commands_arr, base_quat, heading_commands, stiffness=stiffness
                 )
 
+        # This path also refreshes keyboard commands before playback inference.
+        commands_arr = apply_g1_command_dead_zone(commands_arr, self._cfg.commands)
         info["commands"] = commands_arr
         cfg = self._gait_constraint_cfg()
         if cfg.enabled and cfg.freeze_phase_in_stand_mode:

@@ -64,6 +64,8 @@ env:
   ctrl_dt: 0.02
   mode_observation: false
   gait_phase_enabled: false
+  command_gated_phase_contact:
+    enabled: false
   fada_privileged_observation:
     # Critic observation 尾部追加 schema 化的 FADA 特权向量；Runtime 同时供 Actor 编码。
     enabled: true
@@ -73,6 +75,11 @@ env:
     rel_standing_envs: 0.3
     rel_transition_envs: 0.0
     small_xy_threshold: 0.0
+    # D1-only ablation: override dead_zone_enabled=true for both train and play.
+    # Leave false when replaying or reproducing the unmodified baseline.
+    dead_zone_enabled: false
+    dead_zone_xy: 0.1
+    dead_zone_yaw: 0.1
     # [下界, 上界]，每行依次为 vx、vy、yaw rate。
     vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     # 0.0 表示沿用当前环境的每次 reset/既定时机采样语义，而非定时重采样。
@@ -176,6 +183,9 @@ reward:
     feet_phase: 0.0
     feet_phase_contrast: 0.0
     feet_phase_contact: 0.0
+    phase_contact: 0.0
+    null_foot_force_balance: 0.0
+    null_torque_relaxation: 0.0
     alive: 10.0
   gait_constraint:
     # 不启用额外 gait constraint；与 gait_phase_enabled=false 对齐。

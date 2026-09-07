@@ -54,6 +54,18 @@ def canonicalize_g1_commands(
     return canonical
 
 
+def apply_g1_command_dead_zone(commands: np.ndarray, command_cfg: Any) -> np.ndarray:
+    """Apply the standalone ablation without changing phase or reward state."""
+
+    if not getattr(command_cfg, "dead_zone_enabled", False):
+        return commands
+    return canonicalize_g1_commands(
+        commands,
+        xy_dead_zone=float(command_cfg.dead_zone_xy),
+        yaw_dead_zone=float(command_cfg.dead_zone_yaw),
+    )
+
+
 def resolve_g1_command_gait_state(
     commands: np.ndarray,
     *,
@@ -105,7 +117,7 @@ def sample_g1_walk_commands(env: Any, num_samples: int) -> np.ndarray:
     commands = sample_velocity_commands(np.random.default_rng(), num_samples, low, high)
     phase_contact_cfg = getattr(env.cfg, "command_gated_phase_contact", None)
     command_gated = bool(getattr(phase_contact_cfg, "enabled", False))
-    if not command_gated:
+    if not command_gated and not getattr(env.cfg.commands, "dead_zone_enabled", False):
         zero_small_xy_commands(
             commands,
             threshold=float(getattr(env.cfg.commands, "small_xy_threshold", 0.0)),
@@ -140,6 +152,7 @@ def sample_g1_walk_commands(env: Any, num_samples: int) -> np.ndarray:
         commands[draw < standing_prob] = 0.0
     if getattr(env.cfg.commands, "heading_command", False):
         commands[:, 2] = 0.0
+    commands = apply_g1_command_dead_zone(commands, env.cfg.commands)
     return np.asarray(commands, dtype=get_global_dtype())
 
 
