@@ -22,6 +22,7 @@ def phase_contact_mismatch_cost(
     *,
     duty_factor: float,
     contact_force_threshold: float,
+    is_null: np.ndarray | None = None,
 ) -> np.ndarray:
     phase = np.asarray(gait_phase, dtype=get_global_dtype())
     if phase.ndim != 2 or phase.shape[1] != 2 or not np.isfinite(phase).all():
@@ -42,6 +43,12 @@ def phase_contact_mismatch_cost(
     phase_cycle = np.mod(phase, 2.0 * np.pi)
     stance_boundary = np.asarray(duty_factor * (2.0 * np.pi), dtype=phase_cycle.dtype)
     stance_expected = phase_cycle < stance_boundary
+    if is_null is not None:
+        null = np.asarray(is_null, dtype=np.bool_)
+        if null.shape != (phase.shape[0],):
+            raise ValueError("null command mask must match gait_phase rows")
+        # A standing command requests double support without resetting the clock.
+        stance_expected[null] = True
     contact_measured = np.column_stack(
         [left > contact_force_threshold, right > contact_force_threshold]
     )

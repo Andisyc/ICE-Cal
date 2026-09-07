@@ -160,10 +160,11 @@ class G1WalkEnv(
                 raise ValueError("command_height_v1 requires the canonical MuJoCo G1 flat scene")
             if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "offset_phase":
                 raise ValueError("command_height_v1 requires enabled offset gait phase")
-        if cfg.reward_config.feet_phase_mode == "phase_contact_v1":
+        if cfg.reward_config.feet_phase_mode in {"phase_contact_v1", "fixed_phase_contact_v1"}:
             canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
             phase_contact_cfg = cfg.command_gated_phase_contact
-            if not phase_contact_cfg.enabled:
+            fixed_contact = cfg.reward_config.feet_phase_mode == "fixed_phase_contact_v1"
+            if not fixed_contact and not phase_contact_cfg.enabled:
                 raise ValueError("phase_contact_v1 requires command-gated phase contact")
             if cfg.scene.fragment_files or cfg.scene.terrain is not None:
                 raise ValueError("phase_contact_v1 forbids terrain or scene fragments")
@@ -172,8 +173,9 @@ class G1WalkEnv(
                 or epath.Path(cfg.scene.model_file).resolve() != canonical_scene.resolve()
             ):
                 raise ValueError("phase_contact_v1 requires the canonical MuJoCo G1 flat scene")
-            if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "command_gated":
-                raise ValueError("phase_contact_v1 requires enabled command-gated gait phase")
+            expected_phase_mode = "offset_phase" if fixed_contact else "command_gated"
+            if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != expected_phase_mode:
+                raise ValueError(f"phase contact requires enabled {expected_phase_mode} gait phase")
         progress_cfg = cfg.forward_progress_termination
         if progress_cfg.grace_steps <= 0:
             raise ValueError("forward_progress_termination.grace_steps must be positive")

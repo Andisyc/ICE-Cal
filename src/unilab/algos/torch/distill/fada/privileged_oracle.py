@@ -30,6 +30,7 @@ FADA_ORACLE_SIMPLE_HEIGHT_PROFILE = "simple_height_mixed_v1"
 FADA_ORACLE_PHASE_HEIGHT_PROFILE = "phase_height_mixed_v3"
 FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE = "original_height_mixed_v1"
 FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE = "command_gated_phase_contact_v1"
+FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE = "fixed_phase_contact_v1"
 FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
     {
         FADA_ORACLE_PHASE_NEUTRAL_PROFILE,
@@ -39,6 +40,7 @@ FADA_ORACLE_BEHAVIOR_PROFILES = frozenset(
         FADA_ORACLE_PHASE_HEIGHT_PROFILE,
         FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE,
         FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
+        FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE,
     }
 )
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -131,6 +133,14 @@ _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE] = r
     command_resampling_time=4.0,
     feet_phase=0.0,
     feet_phase_contact=0.0,
+)
+
+
+_FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE] = replace(
+    _FADA_ORACLE_BEHAVIOR_SPECS[FADA_ORACLE_PHASE_NEUTRAL_PROFILE],
+    gait_phase_enabled=True,
+    gait_phase_init_mode="offset_phase",
+    gait_frequency=1.5,
 )
 
 
@@ -359,6 +369,16 @@ def validate_fada_oracle_behavior_environment(
         [1.0, 0.4, 0.8],
     ]:
         raise ValueError("FADA Oracle command vel_limit mismatch")
+    if behavior_profile == FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE:
+        contact_cfg = getattr(env_cfg, "command_gated_phase_contact", None)
+        if bool(getattr(contact_cfg, "enabled", False)):
+            raise ValueError("fixed phase contact forbids the command-gated state machine")
+        if bool(getattr(commands, "dead_zone_enabled", False)):
+            raise ValueError("fixed phase contact ablation requires the command dead zone off")
+        for name, expected_value in {"duty_factor": 0.55, "contact_force_threshold": 1.0}.items():
+            observed = _numeric(getattr(contact_cfg, name, None), name=name)
+            if not math.isclose(observed, expected_value):
+                raise ValueError(f"fixed phase contact requires {name}={expected_value}")
     if behavior_profile == FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE:
         command_gait = getattr(env_cfg, "command_gated_phase_contact", None)
         expected = {
@@ -518,6 +538,7 @@ def validate_fada_single_reward(
         FADA_ORACLE_PHASE_HEIGHT_PROFILE: "command_height_v3",
         FADA_ORACLE_ORIGINAL_HEIGHT_PROFILE: "original_command_height_v1",
         FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE: "phase_contact_v1",
+        FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE: "fixed_phase_contact_v1",
     }.get(behavior_profile, "legacy")
     if reward_config.get("feet_phase_mode", "legacy") != expected_mode:
         raise ValueError(f"{behavior_profile} requires feet_phase_mode={expected_mode}")
@@ -546,21 +567,29 @@ def validate_fada_single_reward(
                 raise ValueError(f"{behavior_profile} requires {name}={expected}")
     if behavior_profile == FADA_ORACLE_PHASE_NEUTRAL_PROFILE:
         validate_no_gait_reward(reward_scales)
-    elif behavior_profile == FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE:
+    elif behavior_profile in {
+        FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
+        FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE,
+    }:
+        fixed_contact = behavior_profile == FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE
         expected_scales = {
             "feet_phase": 0.0,
             "feet_phase_contrast": 0.0,
             "feet_phase_contact": 0.0,
             "phase_contact": 1.0,
-            "null_foot_force_balance": -1.0,
-            "null_torque_relaxation": -0.1,
+            "null_foot_force_balance": 0.0 if fixed_contact else -1.0,
+            "null_torque_relaxation": 0.0 if fixed_contact else -0.1,
         }
         for name, expected in expected_scales.items():
             observed = _numeric(reward_scales.get(name, 0.0), name=f"reward.scales.{name}")
             if not math.isclose(observed, expected):
                 raise ValueError(
-                    f"command-gated phase-contact Oracle requires reward.scales.{name}={expected}"
+                    f"{behavior_profile} requires reward.scales.{name}={expected}"
                 )
+        if fixed_contact and _numeric(
+            reward_config.get("gait_frequency"), name="gait_frequency"
+        ) != 1.5:
+            raise ValueError("fixed phase contact requires gait_frequency=1.5")
     elif behavior_profile in {
         FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
         FADA_ORACLE_COMMAND_PHASE_PROFILE,
@@ -678,6 +707,7 @@ __all__ = [
     "AdmittedFADAOracleLineage",
     "FADA_ORACLE_CHECKPOINT_SCHEMA_VERSION",
     "FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE",
+    "FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE",
     "FADA_ORACLE_PHASE_LOCOMOTION_PROFILE",
     "FADA_ORACLE_PHASE_NEUTRAL_PROFILE",
     "FADA_ORACLE_FINAL_ITERATION",

@@ -601,6 +601,11 @@ class G1WalkRewardBindings:
             right_force_z,
             duty_factor=float(cfg.duty_factor),
             contact_force_threshold=float(cfg.contact_force_threshold),
+            is_null=(
+                self._exact_null_command_mask(ctx)
+                if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v1"
+                else None
+            ),
         )
         return np.asarray(-cost, dtype=get_global_dtype())
 

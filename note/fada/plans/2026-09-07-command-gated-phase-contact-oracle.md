@@ -197,3 +197,26 @@ dispatcher、确定性相位状态机、双通道指令强度、速度相关步�
 - WBC-AGILE：`agile/rl_env/mdp/commands/commands.py`（`min_vel_norm`、
   `UniformVelocityGaitBaseHeightCommand` 冻结时钟）、
   `agile/rl_env/mdp/rewards/aestetic_rewards.py`（null-cmd 门控站立组）。
+
+## 8. 消融观察与下一步（2026-09-08）
+
+用户对比修复前后的 checkpoint 回放，确认恢复 DR Curriculum 后，机器人在较大
+速度命令下的迈步幅度更大；此前更倾向于蹭地或保守的小碎步。当前版本仍不能在
+零命令下稳定站立，会缓慢失衡摔倒。以上为用户的定性回放观察，未记录量化步长。
+
+代码检查发现：关闭左膝专用随机化时，其他物理随机化的课程也被一并关闭，导致
+增益、摩擦、质量、重心和关节零偏从训练开始就使用完整扰动范围。修复后左膝
+专用随机化仍关闭，其他物理扰动恢复从标称状态逐步增加。用户的 checkpoint
+对比支持此前解释：尚未学会稳定迈步就同时承受多种物理扰动，可能让训练收敛到
+蹭地或小碎步。采用恢复 DR Curriculum 的版本作为后续基线，不再重复验证此问题。
+
+下一步建议只重新开启原第 1 点命令死区：
+`env.commands.dead_zone_enabled=true`。保留
+`env.domain_rand.actuator_strength.enabled=false`、
+`env.domain_rand.actuator_strength.curriculum_enabled=false` 和
+`env.domain_rand.actuator_strength.group_curriculum_enabled=true`；其余 Reward、
+相位、网络、训练规模和预算不变。使用独立输出目录重新训练 5000 轮，与当前
+死区关闭的基线对照，观察零速/极小命令行为及较高速迈步是否保留。
+
+死区只将极小命令归零，不直接解决精确零命令下的平衡问题。本条记录未执行
+新训练，也未开启新的站立奖励或相位机制。
