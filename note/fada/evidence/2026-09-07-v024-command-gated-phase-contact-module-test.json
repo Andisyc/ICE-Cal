@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "design_identity": "FADA-METHOD-v024/FADA-TRAIN-v024/command_gated_phase_contact_v1",
-  "checkout_identity": "b56566d0ad51c0e4c557a3cdf0ddc93e5a887b35+v024-working-tree-20260907",
+  "checkout_identity": "main@ba981793e4f2a8dc8e632760d5adc7370c84ecaf",
   "modules": [
     {
       "id": "FADA-V024-COMMAND",
