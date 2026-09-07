@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from unilab.algos.torch.distill.fada.privileged_oracle import (
     FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
     FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE,
+    FADA_ORACLE_FIXED_PHASE_CONTACT_V2_PROFILE,
     FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
     FADA_PRIVILEGED_SCHEMA,
     FADAOracleCheckpointContract,
@@ -408,6 +409,7 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
                     FADA_ORACLE_PHASE_LOCOMOTION_PROFILE,
                     FADA_ORACLE_COMMAND_GATED_PHASE_CONTACT_PROFILE,
                     FADA_ORACLE_FIXED_PHASE_CONTACT_PROFILE,
+                    FADA_ORACLE_FIXED_PHASE_CONTACT_V2_PROFILE,
                 },
             )
             strength_enabled = bool(

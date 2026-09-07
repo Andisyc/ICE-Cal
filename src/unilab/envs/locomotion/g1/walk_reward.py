@@ -15,31 +15,19 @@ def normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.nda
     return np.square(excess / tolerance)
 
 
-def phase_contact_mismatch_cost(
+def phase_stance_targets(
     gait_phase: np.ndarray,
-    left_force_z: np.ndarray,
-    right_force_z: np.ndarray,
     *,
     duty_factor: float,
-    contact_force_threshold: float,
     is_null: np.ndarray | None = None,
 ) -> np.ndarray:
+    """Desired support mask, shared by contact and stance-only foot orientation."""
     phase = np.asarray(gait_phase, dtype=get_global_dtype())
     if phase.ndim != 2 or phase.shape[1] != 2 or not np.isfinite(phase).all():
         raise ValueError(f"gait_phase must be finite with shape (N, 2), got {phase.shape}")
     duty_factor = float(duty_factor)
-    contact_force_threshold = float(contact_force_threshold)
     if not 0.5 < duty_factor < 1.0:
         raise ValueError("duty_factor must be in (0.5, 1.0)")
-    if not np.isfinite(contact_force_threshold) or contact_force_threshold <= 0.0:
-        raise ValueError("contact_force_threshold must be finite and positive")
-    left = np.asarray(left_force_z, dtype=phase.dtype)
-    right = np.asarray(right_force_z, dtype=phase.dtype)
-    if left.shape != (phase.shape[0],) or right.shape != left.shape:
-        raise ValueError("foot vertical forces must match gait_phase rows")
-    if not np.isfinite(left).all() or not np.isfinite(right).all():
-        raise ValueError("foot vertical forces must be finite")
-
     phase_cycle = np.mod(phase, 2.0 * np.pi)
     stance_boundary = np.asarray(duty_factor * (2.0 * np.pi), dtype=phase_cycle.dtype)
     stance_expected = phase_cycle < stance_boundary
@@ -49,6 +37,30 @@ def phase_contact_mismatch_cost(
             raise ValueError("null command mask must match gait_phase rows")
         # A standing command requests double support without resetting the clock.
         stance_expected[null] = True
+    return stance_expected
+
+
+def phase_contact_mismatch_cost(
+    gait_phase: np.ndarray,
+    left_force_z: np.ndarray,
+    right_force_z: np.ndarray,
+    *,
+    duty_factor: float,
+    contact_force_threshold: float,
+    is_null: np.ndarray | None = None,
+) -> np.ndarray:
+    stance_expected = phase_stance_targets(
+        gait_phase, duty_factor=duty_factor, is_null=is_null
+    )
+    contact_force_threshold = float(contact_force_threshold)
+    if not np.isfinite(contact_force_threshold) or contact_force_threshold <= 0.0:
+        raise ValueError("contact_force_threshold must be finite and positive")
+    left = np.asarray(left_force_z, dtype=get_global_dtype())
+    right = np.asarray(right_force_z, dtype=get_global_dtype())
+    if left.shape != (stance_expected.shape[0],) or right.shape != left.shape:
+        raise ValueError("foot vertical forces must match gait_phase rows")
+    if not np.isfinite(left).all() or not np.isfinite(right).all():
+        raise ValueError("foot vertical forces must be finite")
     contact_measured = np.column_stack(
         [left > contact_force_threshold, right > contact_force_threshold]
     )

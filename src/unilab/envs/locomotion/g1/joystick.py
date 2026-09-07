@@ -160,10 +160,14 @@ class G1WalkEnv(
                 raise ValueError("command_height_v1 requires the canonical MuJoCo G1 flat scene")
             if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "offset_phase":
                 raise ValueError("command_height_v1 requires enabled offset gait phase")
-        if cfg.reward_config.feet_phase_mode in {"phase_contact_v1", "fixed_phase_contact_v1"}:
+        if cfg.reward_config.feet_phase_mode in {
+            "phase_contact_v1", "fixed_phase_contact_v1", "fixed_phase_contact_v2"
+        }:
             canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
             phase_contact_cfg = cfg.command_gated_phase_contact
-            fixed_contact = cfg.reward_config.feet_phase_mode == "fixed_phase_contact_v1"
+            fixed_contact = cfg.reward_config.feet_phase_mode in {
+                "fixed_phase_contact_v1", "fixed_phase_contact_v2"
+            }
             if not fixed_contact and not phase_contact_cfg.enabled:
                 raise ValueError("phase_contact_v1 requires command-gated phase contact")
             if cfg.scene.fragment_files or cfg.scene.terrain is not None:

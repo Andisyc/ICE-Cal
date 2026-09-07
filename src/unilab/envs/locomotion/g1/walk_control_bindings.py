@@ -238,7 +238,10 @@ class G1WalkControlBindings:
 
     def _advance_command_state_for_reward(self, info: dict) -> None:
         if not self._command_gated_phase_contact_enabled():
-            self._update_legacy_commands(info)
+            # v2 scores the command the action actually observed; resampling
+            # happens only after reward, before the next observation.
+            if self._reward_cfg.feet_phase_mode != "fixed_phase_contact_v2":
+                self._update_legacy_commands(info)
             return
         commands = info.get("commands")
         if commands is None:
@@ -274,6 +277,8 @@ class G1WalkControlBindings:
 
     def _commit_command_state_for_next_observation(self, info: dict) -> None:
         if not self._command_gated_phase_contact_enabled():
+            if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v2":
+                self._update_legacy_commands(info)
             return
         commands = info.get("commands")
         if commands is None:

@@ -234,6 +234,7 @@ class G1RewardConfig:
             "command_height_v3",
             "phase_contact_v1",
             "fixed_phase_contact_v1",
+            "fixed_phase_contact_v2",
         }:
             raise ValueError("unsupported feet_phase_mode")
         if self.feet_phase_mode == "original_command_height_v1":
@@ -332,7 +333,9 @@ class G1WalkEnvCfg(G1BaseCfg):
         self.command_gated_phase_contact.validate()
         if (
             self.reward_config is not None
-            and self.reward_config.feet_phase_mode == "fixed_phase_contact_v1"
+            and self.reward_config.feet_phase_mode in {
+                "fixed_phase_contact_v1", "fixed_phase_contact_v2"
+            }
         ):
             if self.command_gated_phase_contact.enabled:
                 raise ValueError("fixed phase contact forbids the command-gated state machine")

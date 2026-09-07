@@ -43,6 +43,7 @@ from unilab.envs.locomotion.g1.walk_reward import (
     null_foot_force_balance_l1,
     null_torque_relaxation_l2,
     phase_contact_mismatch_cost,
+    phase_stance_targets,
     resolve_stand_height_target,
     stand_action_l2,
     stand_contact_balance_l1,
@@ -603,11 +604,16 @@ class G1WalkRewardBindings:
             contact_force_threshold=float(cfg.contact_force_threshold),
             is_null=(
                 self._exact_null_command_mask(ctx)
-                if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v1"
+                if self._reward_cfg.feet_phase_mode in {
+                    "fixed_phase_contact_v1", "fixed_phase_contact_v2"
+                }
                 else None
             ),
         )
-        return np.asarray(-cost, dtype=get_global_dtype())
+        # v2 follows the framework's positive-cost / negative-weight convention.
+        # Keep v1's signed return for historical checkpoint reward reconstruction.
+        sign = 1.0 if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v2" else -1.0
+        return np.asarray(sign * cost, dtype=get_global_dtype())
 
     def _reward_null_foot_force_balance(self, ctx: RewardContext):
         cfg = self._cfg.command_gated_phase_contact
@@ -645,6 +651,18 @@ class G1WalkRewardBindings:
     def _reward_feet_ori(self, ctx: RewardContext):
         left_foot_quat = self._backend.get_sensor_data("left_foot_quat")
         right_foot_quat = self._backend.get_sensor_data("right_foot_quat")
+        if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v2":
+            stance = phase_stance_targets(
+                ctx.info["gait_phase"],
+                duty_factor=float(self._cfg.command_gated_phase_contact.duty_factor),
+                is_null=self._exact_null_command_mask(ctx),
+            )
+            # Gate by requested support, not measured contact: lifting a support
+            # foot must not erase its orientation cost. Null commands keep both.
+            return (
+                np.sum(np.square(left_foot_quat[:, 1:3]), axis=1) * stance[:, 0]
+                + np.sum(np.square(right_foot_quat[:, 1:3]), axis=1) * stance[:, 1]
+            )
         return (
             np.square(left_foot_quat[:, 1])
             + np.square(left_foot_quat[:, 2])
