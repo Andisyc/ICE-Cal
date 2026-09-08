@@ -97,6 +97,8 @@ class BackendAdapter:
         """Print the resolved experiment inputs, including explicit playback overrides."""
         if str(getattr(self.cfg.training, "task_name", "")) != "G1WalkFlat":
             return
+        if not bool(getattr(self.cfg.training, "report_effective_settings", False)):
+            return
         from unilab.envs.locomotion.g1.walk_config import normalize_g1_gait_reward
 
         reward = normalize_g1_gait_reward(env.get("reward_config", {}))
