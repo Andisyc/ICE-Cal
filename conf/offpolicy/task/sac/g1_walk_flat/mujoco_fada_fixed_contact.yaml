@@ -108,7 +108,7 @@ env:
       # 关闭此课程 = 直接应用已开启 DR 的完整范围，不是关闭 DR。
       group_curriculum_enabled: true
       group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-      curriculum_progress_mode: iterations
+      curriculum_progress_mode: episode_quality
       curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
       curriculum_max_termination_rate: 0.1
       curriculum_brake_cooldown_steps: 100
