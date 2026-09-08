@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
 from typing import Any, Callable
 
 from omegaconf import DictConfig, OmegaConf
@@ -79,7 +80,50 @@ class BackendAdapter:
         return env_cfg_override
 
     def _apply_env_profile(self, env_cfg_override: dict[str, Any], env_profile: Any) -> None:
-        env_cfg_override.update(self._to_plain_dict(env_profile))
+        def merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+            result = deepcopy(base)
+            for key, value in patch.items():
+                result[key] = (
+                    merge(result[key], value)
+                    if isinstance(value, dict) and isinstance(result.get(key), dict)
+                    else deepcopy(value)
+                )
+            return result
+
+        merged = merge(env_cfg_override, self._to_plain_dict(env_profile))
+        env_cfg_override.update(merged)
+
+    def report_effective_settings(self, env: dict[str, Any], *, mode: str) -> None:
+        """Print the resolved experiment inputs, including explicit playback overrides."""
+        if str(getattr(self.cfg.training, "task_name", "")) != "G1WalkFlat":
+            return
+        from unilab.envs.locomotion.g1.walk_config import normalize_g1_gait_reward
+
+        reward = normalize_g1_gait_reward(env.get("reward_config", {}))
+        curriculum = env.get("curriculum", {})
+        scale = float(curriculum.get("initial_scale", 0.5)) if curriculum.get("enabled", False) else 1.0
+        penalties = set(reward.get("penalty_curriculum_terms", ()))
+        print(f"\n[G1 配置表 · {mode}] 命令行覆盖已合并；范围为配置上限，DR 课程可缩小实际范围。")
+        print("Reward 项 | 配置权重 | 初始有效权重")
+        for name, weight in reward["scales"].items():
+            effective = weight * scale if name in penalties else weight
+            print(f"  {name}: {weight:g} | {effective:g}" + ("（关闭）" if weight == 0 else ""))
+        print(f"相位输入={env.get('gait_phase_enabled', True)}；模式={reward['feet_phase_mode']}；"
+              f"固定步频={reward.get('gait_frequency')}；支撑脚姿态约束={reward.get('feet_orientation_stance_only', False)}")
+        dr = env.get("domain_rand", {})
+        flags = {key: value for key, value in dr.items() if isinstance(value, bool)}
+        print("DR 开关：" + "；".join(f"{key}={'开' if value else '关'}" for key, value in flags.items()))
+        ranges = {key: value for key, value in dr.items() if key not in flags and key != "actuator_strength"}
+        for key, value in ranges.items():
+            print(f"  DR.{key}={value}")
+        strength = dr.get("actuator_strength", {})
+        print(f"固定关节故障={strength.get('enabled', False)}；随机单关节削弱已移除")
+        print(f"DR 课程={strength.get('group_curriculum_enabled', False)}；"
+              f"等级={strength.get('group_curriculum_scales')}；轮次={strength.get('curriculum_iteration_boundaries')}")
+        print(f"Reward 课程={curriculum.get('enabled', False)}；初始倍率={scale:g}")
+        print(f"命令={env.get('commands', {})}")
+        print(f"门控时钟={env.get('command_gated_phase_contact', {})}")
+        print(f"观测噪声={env.get('noise_config', {})}\n")
 
     def _resolve_root_relative_path(self, path_value: str) -> str:
         candidate = Path(path_value)

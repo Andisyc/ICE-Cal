@@ -37,6 +37,7 @@ class PenaltyCurriculum:
         level_down_threshold: float = 150.0,
         level_up_threshold: float = 750.0,
         degree: float = 0.001,
+        penalty_names: list[str] | None = None,
     ):
         self.env = env
         self.enabled = enabled
@@ -46,6 +47,7 @@ class PenaltyCurriculum:
         self.level_down_threshold = level_down_threshold
         self.level_up_threshold = level_up_threshold
         self.degree = degree
+        self._configured_penalty_names = penalty_names
 
         # Store original penalty weights
         self.penalty_names: list[str] = []
@@ -56,9 +58,14 @@ class PenaltyCurriculum:
             self._apply_initial_scale()
 
     def _identify_penalties(self) -> None:
-        """Identify penalty rewards (negative scales)."""
+        """Use explicit migrated membership, or the usual negative-scale convention."""
         for name, scale in self.env.cfg.reward_config.scales.items():
-            if scale < 0:
+            selected = (
+                scale < 0
+                if self._configured_penalty_names is None
+                else name in self._configured_penalty_names
+            )
+            if selected:
                 self.penalty_names.append(name)
                 self.original_weights[name] = scale
 

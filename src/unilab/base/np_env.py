@@ -281,6 +281,7 @@ class NpEnv(ABEnv):
         truncated = self._compute_truncated(self._state)
         np.logical_or(self._state.truncated, truncated, out=self._state.truncated)
 
+        self._on_step_completed(self._state)
         done = self._state.terminated | self._state.truncated
         t0 = time.perf_counter()
         if self._autoreset and np.any(done):
@@ -573,6 +574,9 @@ class NpEnv(ABEnv):
     @abc.abstractmethod
     def update_state(self, state: NpEnvState) -> NpEnvState:
         """Subclasses compute observation, reward, and termination state."""
+
+    def _on_step_completed(self, state: NpEnvState) -> None:
+        """Observe completed counters and all end causes before autoreset."""
 
     @property
     def play_capabilities(self) -> EnvPlayCapabilities:

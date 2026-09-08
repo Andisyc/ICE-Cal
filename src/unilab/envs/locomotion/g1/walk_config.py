@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -28,7 +28,7 @@ from unilab.envs.locomotion.g1.fada_privileged import (
 
 @dataclass
 class G1ActuatorStrengthConfig:
-    """Optional per-actuator position-servo gain multipliers.
+    """Optional fixed per-actuator position-servo gain multipliers.
 
     This is a gain-based approximation of actuator effectiveness for controlled
     simulation experiments. It does not model a measured torque-limit curve.
@@ -37,6 +37,8 @@ class G1ActuatorStrengthConfig:
     enabled: bool = False
     multipliers: list[float] = field(default_factory=list)
     sampling_mode: str = "fixed"
+    # Read-only legacy metadata: random sampling and its own curriculum were
+    # removed. Keeping these fields lets disabled old checkpoint configs load.
     candidate_actuator_indices: list[int] = field(default_factory=list)
     multiplier_range: list[float] = field(default_factory=lambda: [1.0, 1.0])
     nominal_probability: float = 0.0
@@ -76,6 +78,29 @@ class G1DomainRandConfig(DomainRandConfig):
     com_offset_z: list[float] = field(default_factory=lambda: [-0.05, 0.05])
     fada_push_interval_seconds: float = 7.5
     fada_max_push_velocity: float = 0.8
+
+    def validate(self) -> None:
+        ranges = (
+            (self.randomize_kp, "kp_multiplier_range", True),
+            (self.randomize_kd, "kd_multiplier_range", True),
+            (self.randomize_ground_friction, "ground_friction_multiplier_range", True),
+            (self.randomize_body_mass, "body_mass_multiplier_range", True),
+            (self.randomize_base_mass, "added_mass_range", False),
+            (self.randomize_dof_armature, "dof_armature_multiplier_range", True),
+            (self.randomize_dof_position_bias, "dof_position_bias_range", False),
+            *((self.random_com, f"com_offset_{axis}", False) for axis in "xyz"),
+        )
+        for enabled, name, positive in ranges:
+            if not enabled:
+                continue
+            bounds = np.asarray(getattr(self, name), dtype=np.float64)
+            if (bounds.shape != (2,) or not np.isfinite(bounds).all()
+                    or bounds[0] > bounds[1] or (positive and bounds[0] <= 0.0)):
+                raise ValueError(f"env.domain_rand.{name} requires finite ordered bounds")
+        if self.randomize_gravity:
+            bounds = np.asarray(self.gravity_range, dtype=np.float64)
+            if bounds.shape != (2, 3) or not np.isfinite(bounds).all() or np.any(bounds[0] > bounds[1]):
+                raise ValueError("env.domain_rand.gravity_range requires ordered finite 3D bounds")
 
 
 @dataclass
@@ -156,6 +181,50 @@ class RewardModeConfig:
     walk_scale_overrides: dict[str, float] = field(default_factory=dict)
 
 
+def normalize_g1_gait_reward(config: dict[str, Any]) -> dict[str, Any]:
+    """Resolve historical reward names and signs at the configuration boundary.
+
+    Work on copies: the raw Hydra configuration remains the checkpoint identity.
+    Explicit curriculum membership preserves old positive-weight, signed costs.
+    """
+    result = dict(config)
+    scales = dict(result.get("scales", {}))
+    if result.get("penalty_curriculum_terms") is None:
+        result["penalty_curriculum_terms"] = [name for name, scale in scales.items() if scale < 0]
+    aliases = {
+        "original_command_height_v1": ("relative_command_height", None, 1.0),
+        "command_height_v1": ("filtered_command_height", "feet_phase", -1.0),
+        "command_height_v2": ("command_height", "feet_phase", -0.5),
+        "command_height_v3": ("phase_height", None, 1.0),
+        "phase_contact_v1": ("command_gated_contact", "phase_contact", -1.0),
+        "fixed_phase_contact_v1": ("fixed_contact", "phase_contact", -1.0),
+        "fixed_phase_contact_v2": ("fixed_contact", None, 1.0),
+    }
+    mode = result.get("feet_phase_mode", "legacy")
+    if mode == "fixed_phase_contact_v2":
+        result["feet_orientation_stance_only"] = True
+    canonical, term, multiplier = aliases.get(mode, (mode, None, 1.0))
+    result["feet_phase_mode"] = canonical
+    if term is not None:
+        if term in scales:
+            scales[term] *= multiplier
+        # Mode dispatch has its own weights; normalize those at the same boundary.
+        mode_cfg = result.get("mode")
+        if isinstance(mode_cfg, dict):
+            mode_cfg = dict(mode_cfg)
+            for key in (
+                "stand_scale_overrides", "stand_recovery_scale_overrides", "walk_scale_overrides"
+            ):
+                if key in mode_cfg:
+                    overrides = dict(mode_cfg[key])
+                    if term in overrides:
+                        overrides[term] *= multiplier
+                    mode_cfg[key] = overrides
+            result["mode"] = mode_cfg
+    result["scales"] = scales
+    return result
+
+
 @dataclass
 class G1RewardConfig:
     scales: dict[str, float]
@@ -168,6 +237,11 @@ class G1RewardConfig:
     max_tilt_deg: float
     min_forward_speed_for_gait_reward: float = 0.0
     feet_phase_mode: str = "legacy"
+    feet_orientation_stance_only: bool = False
+    penalty_curriculum_terms: list[str] | None = None
+    tracking_lin_error_scale: float | None = None
+    under_speed_mode: str = "forward"
+    under_speed_min_command: float = 0.05
     feet_phase_command_speed_scale: float = 0.3
     feet_phase_turn_length: float = 0.3
     feet_phase_settling_tau: float = 0.15
@@ -222,24 +296,31 @@ class G1RewardConfig:
     )
 
     def __post_init__(self) -> None:
+        # Normalize once, before reward dispatch or curriculum sees the weights.
+        normalized = normalize_g1_gait_reward({
+            "feet_phase_mode": self.feet_phase_mode,
+            "feet_orientation_stance_only": self.feet_orientation_stance_only,
+            "penalty_curriculum_terms": self.penalty_curriculum_terms,
+            "scales": self.scales,
+            "mode": asdict(self.mode) if isinstance(self.mode, RewardModeConfig) else self.mode,
+        })
+        for name, value in normalized.items():
+            setattr(self, name, value)
         if isinstance(self.gait_constraint, dict):
             self.gait_constraint = GaitConstraintConfig(**self.gait_constraint)
         if isinstance(self.mode, dict):
             self.mode = RewardModeConfig(**self.mode)
         if self.feet_phase_mode not in {
             "legacy",
-            "original_command_height_v1",
-            "command_height_v1",
-            "command_height_v2",
-            "command_height_v3",
-            "phase_contact_v1",
-            "fixed_phase_contact_v1",
-            "fixed_phase_contact_v2",
+            "relative_command_height",
+            "filtered_command_height",
+            "command_height",
+            "phase_height",
+            "command_gated_contact",
+            "fixed_contact",
         }:
             raise ValueError("unsupported feet_phase_mode")
-        if self.feet_phase_mode == "original_command_height_v1":
-            import math
-
+        if self.feet_phase_mode == "relative_command_height":
             for name in (
                 "feet_phase_swing_height",
                 "feet_phase_command_speed_scale",
@@ -248,9 +329,7 @@ class G1RewardConfig:
             ):
                 if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                     raise ValueError(f"{name} must be finite and positive")
-        if self.feet_phase_mode in {"command_height_v1", "command_height_v2", "command_height_v3"}:
-            import math
-
+        if self.feet_phase_mode in {"filtered_command_height", "command_height", "phase_height"}:
             for name in (
                 "feet_phase_command_speed_scale",
                 "feet_phase_turn_length",
@@ -261,8 +340,28 @@ class G1RewardConfig:
                 value = getattr(self, name)
                 if not math.isfinite(value) or value <= 0:
                     raise ValueError(f"{name} must be finite and positive")
-            if self.scales.get("feet_phase", 0.0) <= 0:
-                raise ValueError("command height cost requires a positive feet_phase weight")
+        for name in ("tracking_sigma", "gait_frequency", "feet_phase_tracking_sigma"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.tracking_lin_error_scale is not None and (
+            not math.isfinite(self.tracking_lin_error_scale) or self.tracking_lin_error_scale <= 0
+        ):
+            raise ValueError("tracking_lin_error_scale must be finite and positive")
+        if self.under_speed_mode not in {"forward", "command_direction"}:
+            raise ValueError("unsupported under_speed_mode")
+        if not math.isfinite(self.under_speed_min_command) or self.under_speed_min_command <= 0:
+            raise ValueError("under_speed_min_command must be finite and positive")
+        if any(not math.isfinite(float(value)) for value in self.scales.values()):
+            raise ValueError("reward scales must be finite")
+        cost_terms = []
+        if self.feet_phase_mode in {"filtered_command_height", "command_height"}:
+            cost_terms.append("feet_phase")
+        if self.feet_phase_mode in {"fixed_contact", "command_gated_contact"}:
+            cost_terms.append("phase_contact")
+        if any(self.scales.get(name, 0.0) > 0.0 for name in cost_terms):
+            raise ValueError("gait costs require non-positive weights")
+        if set(self.penalty_curriculum_terms or ()) - self.scales.keys():
+            raise ValueError("penalty_curriculum_terms must name configured reward terms")
 
 
 @dataclass
@@ -297,6 +396,23 @@ class G1WalkCommandsConfig(Commands):
     dead_zone_xy: float = 0.1
     dead_zone_yaw: float = 0.1
 
+    def validate(self) -> None:
+        ratios = np.asarray([self.rel_standing_envs, self.rel_transition_envs])
+        if not np.isfinite(ratios).all() or np.any(ratios < 0.0) or ratios.sum() > 1.0:
+            raise ValueError("standing and transition command ratios must be non-negative and sum to <= 1")
+        for name in ("resampling_time", "dead_zone_xy", "dead_zone_yaw"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"commands.{name} must be finite and non-negative")
+        for name in ("vel_limit", "transition_vel_limit"):
+            limits = np.asarray(getattr(self, name), dtype=np.float64)
+            if (
+                limits.shape != (2, 3)
+                or not np.isfinite(limits).all()
+                or np.any(limits[0] > limits[1])
+            ):
+                raise ValueError(f"commands.{name} must contain ordered finite 3D bounds")
+
 
 @dataclass
 class G1WalkEnvCfg(G1BaseCfg):
@@ -312,6 +428,7 @@ class G1WalkEnvCfg(G1BaseCfg):
     domain_rand: G1DomainRandConfig = field(default_factory=G1DomainRandConfig)
     gait_phase_enabled: bool = True
     gait_phase_init_mode: str = "offset_phase"
+    gait_clock_mode: str = "continuous"
     command_gated_phase_contact: G1CommandGatedPhaseContactConfig = field(
         default_factory=G1CommandGatedPhaseContactConfig
     )
@@ -330,12 +447,38 @@ class G1WalkEnvCfg(G1BaseCfg):
 
     def validate(self) -> None:
         super().validate()
+        self.commands.validate()
+        self.domain_rand.validate()
         self.command_gated_phase_contact.validate()
+        if self.gait_clock_mode not in {"continuous", "command_fixed"}:
+            raise ValueError("unsupported gait_clock_mode")
+        if self.gait_clock_mode == "command_fixed" and (
+            not self.gait_phase_enabled
+            or self.gait_phase_init_mode != "offset_phase"
+            or self.command_gated_phase_contact.enabled
+        ):
+            raise ValueError("command_fixed requires enabled offset phase and the v024 clock disabled")
+        scales = self.reward_config.scales if self.reward_config is not None else {}
+        phase_terms = ("phase_contact", "feet_phase", "feet_phase_contrast", "feet_phase_contact")
+        if not self.gait_phase_enabled and any(scales.get(name, 0.0) != 0.0 for name in phase_terms):
+            raise ValueError("nonzero phase Reward conflicts with env.gait_phase_enabled=false")
+        if scales.get("phase_contact", 0.0) != 0.0 and self.reward_config.feet_phase_mode not in {
+            "fixed_contact", "command_gated_contact"
+        }:
+            raise ValueError("reward.scales.phase_contact requires fixed_contact or command_gated_contact mode")
+        if scales.get("null_torque_relaxation", 0.0) != 0.0 and not self.command_gated_phase_contact.enabled:
+            raise ValueError("null_torque_relaxation requires command_gated_phase_contact.enabled for torque provenance")
         if (
             self.reward_config is not None
-            and self.reward_config.feet_phase_mode in {
-                "fixed_phase_contact_v1", "fixed_phase_contact_v2"
-            }
+            and self.reward_config.feet_orientation_stance_only
+            and scales.get("penalty_feet_ori", 0.0) != 0.0
+            and not self.gait_phase_enabled
+        ):
+            raise ValueError("stance-only foot orientation requires an enabled gait phase")
+        if (
+            self.reward_config is not None
+            and self.reward_config.feet_phase_mode == "fixed_contact"
+            and scales.get("phase_contact", 0.0) != 0.0
         ):
             if self.command_gated_phase_contact.enabled:
                 raise ValueError("fixed phase contact forbids the command-gated state machine")
@@ -348,10 +491,10 @@ class G1WalkEnvCfg(G1BaseCfg):
                 )
             if (
                 self.reward_config is None
-                or self.reward_config.feet_phase_mode != "phase_contact_v1"
+                or self.reward_config.feet_phase_mode != "command_gated_contact"
             ):
                 raise ValueError(
-                    "command-gated phase contact requires reward feet_phase_mode=phase_contact_v1"
+                    "command-gated phase contact requires reward feet_phase_mode=command_gated_contact"
                 )
         if self.action_execution_fault is not None:
             self.action_execution_fault.validate()

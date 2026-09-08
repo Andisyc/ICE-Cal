@@ -97,15 +97,6 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             expected_actions=int(env._num_action),
         )
 
-    def actuator_strength_curriculum_profile(self, env: Any) -> tuple[int, float, float]:
-        strength_cfg = self._validated_actuator_strength_config(env)
-        if strength_cfg is None or not bool(getattr(strength_cfg, "curriculum_enabled", False)):
-            raise ValueError("actuator strength curriculum is not enabled")
-        lows = list(strength_cfg.curriculum_multiplier_lows)
-        probabilities = list(strength_cfg.curriculum_nominal_probabilities)
-        level = min(self._actuator_strength_curriculum_level, len(lows) - 1)
-        return level, float(lows[level]), float(probabilities[level])
-
     def _validated_curriculum_config(self, env: Any) -> Any | None:
         """Resolve an active DR schedule without requiring an active knee fault."""
 
@@ -117,10 +108,6 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             if bool(getattr(cfg, "enabled", False)):
                 self._validated_actuator_strength_config(env)
             return cfg
-        if bool(getattr(cfg, "enabled", False)) and bool(
-            getattr(cfg, "curriculum_enabled", False)
-        ):
-            return self._validated_actuator_strength_config(env)
         return None
 
     def grouped_domain_rand_curriculum_profile(self, env: Any) -> tuple[int, float]:
@@ -143,12 +130,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
             return False
         self._actuator_strength_curriculum_pending_episodes = 0
         previous = self._actuator_strength_curriculum_level
-        levels = (
-            strength_cfg.group_curriculum_scales
-            if strength_cfg.group_curriculum_enabled
-            else strength_cfg.curriculum_multiplier_lows
-        )
-        last = len(levels) - 1
+        last = len(strength_cfg.group_curriculum_scales) - 1
         if average_episode_length >= float(strength_cfg.curriculum_promote_threshold):
             self._actuator_strength_curriculum_level = min(previous + 1, last)
         elif average_episode_length <= float(strength_cfg.curriculum_demote_threshold):
@@ -261,16 +243,10 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         strength_cfg = self._validated_actuator_strength_config(env)
         if strength_cfg is None:
             return None
-        curriculum_profile = (
-            self.actuator_strength_curriculum_profile(env)
-            if bool(getattr(strength_cfg, "curriculum_enabled", False))
-            else None
-        )
         return sample_actuator_strength_multipliers(
             strength_cfg,
             num_reset=num_reset,
             expected_actions=int(env._num_action),
-            curriculum_profile=curriculum_profile,
         )
 
     def validate(self, env: Any, capabilities: Any) -> None:
@@ -403,6 +379,20 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self, env: Any, num_reset: int, commands: np.ndarray
     ) -> dict[str, np.ndarray]:
         phase_contact_cfg = getattr(env.cfg, "command_gated_phase_contact", None)
+        if env.cfg.gait_clock_mode == "command_fixed":
+            is_null = np.all(commands == 0.0, axis=1)
+            updates = {
+                "gait_phase": reset_command_gait_phase(
+                    is_null,
+                    startup_phase=np.asarray(phase_contact_cfg.startup_phase, dtype=get_global_dtype()),
+                    stand_phase=np.asarray(phase_contact_cfg.stand_phase, dtype=get_global_dtype()),
+                ),
+                "command_is_null": is_null,
+                "gait_enabled": np.asarray(~is_null, dtype=get_global_dtype()),
+            }
+            return G1WalkDomainRandomizationProvider._add_optional_command_updates(
+                env, num_reset, updates
+            )
         if bool(getattr(phase_contact_cfg, "enabled", False)):
             command_state = resolve_g1_command_gait_state(
                 commands,
@@ -435,7 +425,7 @@ class G1WalkDomainRandomizationProvider(LocomotionDRProvider):
         self._apply_standing_reset_phase(env, gait_phase, gait_enabled)
         updates = {"gait_phase": gait_phase, "gait_enabled": gait_enabled}
         reward_cfg = getattr(env.cfg, "reward_config", None)
-        if getattr(reward_cfg, "feet_phase_mode", "legacy") == "command_height_v1":
+        if getattr(reward_cfg, "feet_phase_mode", "legacy") == "filtered_command_height":
             updates["command_phase_amplitude"] = command_phase_amplitude(
                 commands,
                 reward_cfg.feet_phase_command_speed_scale,

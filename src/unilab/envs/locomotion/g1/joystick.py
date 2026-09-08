@@ -145,38 +145,36 @@ class G1WalkEnv(
     def __init__(self, cfg: G1WalkEnvCfg, num_envs=1, backend_type="mujoco"):
         if cfg.reward_config is None:
             raise ValueError("reward_config must be provided via Hydra configuration")
-        if cfg.reward_config.feet_phase_mode in {
-            "command_height_v1",
-            "command_height_v2",
-            "command_height_v3",
+        if cfg.reward_config.scales.get("feet_phase", 0.0) != 0.0 and cfg.reward_config.feet_phase_mode in {
+            "filtered_command_height",
+            "command_height",
+            "phase_height",
         }:
             canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
             if cfg.scene.fragment_files or cfg.scene.terrain is not None:
-                raise ValueError("command_height_v1 forbids terrain or scene fragments")
+                raise ValueError("absolute foot-height targets forbid terrain or scene fragments")
             if (
                 backend_type != "mujoco"
                 or epath.Path(cfg.scene.model_file).resolve() != canonical_scene.resolve()
             ):
-                raise ValueError("command_height_v1 requires the canonical MuJoCo G1 flat scene")
+                raise ValueError("absolute foot-height targets require the canonical MuJoCo G1 flat scene")
             if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != "offset_phase":
-                raise ValueError("command_height_v1 requires enabled offset gait phase")
-        if cfg.reward_config.feet_phase_mode in {
-            "phase_contact_v1", "fixed_phase_contact_v1", "fixed_phase_contact_v2"
+                raise ValueError("absolute foot-height targets require enabled offset gait phase")
+        if cfg.reward_config.scales.get("phase_contact", 0.0) != 0.0 and cfg.reward_config.feet_phase_mode in {
+            "command_gated_contact", "fixed_contact"
         }:
             canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
             phase_contact_cfg = cfg.command_gated_phase_contact
-            fixed_contact = cfg.reward_config.feet_phase_mode in {
-                "fixed_phase_contact_v1", "fixed_phase_contact_v2"
-            }
+            fixed_contact = cfg.reward_config.feet_phase_mode == "fixed_contact"
             if not fixed_contact and not phase_contact_cfg.enabled:
-                raise ValueError("phase_contact_v1 requires command-gated phase contact")
+                raise ValueError("command-gated contact requires its phase clock")
             if cfg.scene.fragment_files or cfg.scene.terrain is not None:
-                raise ValueError("phase_contact_v1 forbids terrain or scene fragments")
+                raise ValueError("phase contact forbids terrain or scene fragments")
             if (
                 backend_type != "mujoco"
                 or epath.Path(cfg.scene.model_file).resolve() != canonical_scene.resolve()
             ):
-                raise ValueError("phase_contact_v1 requires the canonical MuJoCo G1 flat scene")
+                raise ValueError("phase contact requires the canonical MuJoCo G1 flat scene")
             expected_phase_mode = "offset_phase" if fixed_contact else "command_gated"
             if not cfg.gait_phase_enabled or cfg.gait_phase_init_mode != expected_phase_mode:
                 raise ValueError(f"phase contact requires enabled {expected_phase_mode} gait phase")
@@ -219,8 +217,14 @@ class G1WalkEnv(
         self._upper_body_pose_weights = build_upper_body_pose_weights(self._reward_cfg.pose_weights)
         self._episode_tracker: EpisodeLengthTracker | None = None
         self._penalty_curriculum: PenaltyCurriculum | None = None
-        if cfg.curriculum.enabled:
+        strength = cfg.domain_rand.actuator_strength
+        tracks_dr_quality = (
+            strength.group_curriculum_enabled
+            and strength.curriculum_progress_mode == "episode_quality"
+        )
+        if cfg.curriculum.enabled or tracks_dr_quality:
             self._episode_tracker = EpisodeLengthTracker(num_envs)
+        if cfg.curriculum.enabled:
             self._penalty_curriculum = PenaltyCurriculum(
                 self,
                 enabled=True,
@@ -230,6 +234,7 @@ class G1WalkEnv(
                 level_down_threshold=cfg.curriculum.level_down_threshold,
                 level_up_threshold=cfg.curriculum.level_up_threshold,
                 degree=cfg.curriculum.degree,
+                penalty_names=self._reward_cfg.penalty_curriculum_terms,
             )
 
         self._init_reward_functions()

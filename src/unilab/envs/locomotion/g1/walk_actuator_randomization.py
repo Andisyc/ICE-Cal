@@ -1,4 +1,8 @@
-"""Stateless actuator-strength domain-randomization decisions."""
+"""Fixed actuator faults and the independent physical DR curriculum.
+
+Random single-actuator weakening has been removed. Historical disabled config
+fields remain readable, but enabling that sampling mode is an explicit error.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +26,8 @@ def validate_actuator_strength_config(
         validate_grouped_domain_rand_curriculum(strength_cfg)
         return None
 
+    if bool(getattr(strength_cfg, "curriculum_enabled", False)):
+        raise ValueError("actuator-strength randomization curriculum has been removed")
     sampling_mode = str(getattr(strength_cfg, "sampling_mode", "fixed"))
     if sampling_mode == "fixed":
         multipliers = np.asarray(strength_cfg.multipliers, dtype=np.float64)
@@ -40,75 +46,10 @@ def validate_actuator_strength_config(
             raise ValueError("fixed actuator strength cannot define candidate_actuator_indices")
         return strength_cfg
 
-    if sampling_mode != "single_candidate":
-        raise ValueError(
-            "domain_rand.actuator_strength.sampling_mode must be 'fixed' or "
-            f"'single_candidate', got {sampling_mode!r}"
-        )
-    if list(getattr(strength_cfg, "multipliers", [])):
-        raise ValueError("single_candidate actuator strength cannot define fixed multipliers")
-    candidates = np.asarray(strength_cfg.candidate_actuator_indices, dtype=np.int64)
-    if candidates.ndim != 1 or candidates.size == 0:
-        raise ValueError("single_candidate actuator strength requires candidate_actuator_indices")
-    if np.unique(candidates).size != candidates.size:
-        raise ValueError("actuator strength candidate indices must be unique")
-    if np.any(candidates < 0) or np.any(candidates >= expected_actions):
-        raise ValueError(
-            f"actuator strength candidate indices must be in [0, {expected_actions})"
-        )
-    multiplier_range = np.asarray(strength_cfg.multiplier_range, dtype=np.float64)
-    if multiplier_range.shape != (2,) or not np.isfinite(multiplier_range).all():
-        raise ValueError("actuator strength multiplier_range must contain two finite values")
-    low, high = multiplier_range.tolist()
-    if low <= 0.0 or high < low or high > 1.0:
-        raise ValueError("actuator strength multiplier_range must satisfy 0 < low <= high <= 1")
-    nominal_probability = float(strength_cfg.nominal_probability)
-    if not np.isfinite(nominal_probability) or not 0.0 <= nominal_probability <= 1.0:
-        raise ValueError("actuator strength nominal_probability must be in [0, 1]")
-    validate_actuator_strength_curriculum(strength_cfg, low=low, high=high)
-    return strength_cfg
-
-
-def validate_actuator_strength_curriculum(
-    strength_cfg: Any, *, low: float, high: float
-) -> None:
-    if not bool(getattr(strength_cfg, "curriculum_enabled", False)):
-        return
-    nominal_probability = float(strength_cfg.nominal_probability)
-    lows = np.asarray(strength_cfg.curriculum_multiplier_lows, dtype=np.float64)
-    probabilities = np.asarray(
-        strength_cfg.curriculum_nominal_probabilities, dtype=np.float64
+    raise ValueError(
+        "random actuator-strength weakening has been removed; "
+        "only fixed multipliers are supported"
     )
-    if lows.ndim != 1 or lows.size == 0 or probabilities.shape != lows.shape:
-        raise ValueError("actuator strength curriculum schedules must be non-empty and aligned")
-    if not np.isfinite(lows).all() or np.any(lows < low) or np.any(lows > high):
-        raise ValueError("actuator strength curriculum multiplier lows are out of range")
-    if np.any(np.diff(lows) > 0.0) or lows[0] != high or lows[-1] != low:
-        raise ValueError(
-            "actuator strength curriculum multiplier lows must descend from high to low"
-        )
-    if (
-        not np.isfinite(probabilities).all()
-        or np.any(probabilities < nominal_probability)
-        or np.any(probabilities > 1.0)
-        or np.any(np.diff(probabilities) > 0.0)
-        or probabilities[0] != 1.0
-        or probabilities[-1] != nominal_probability
-    ):
-        raise ValueError(
-            "actuator strength curriculum nominal probabilities must descend from 1"
-        )
-    promote = float(strength_cfg.curriculum_promote_threshold)
-    demote = float(strength_cfg.curriculum_demote_threshold)
-    if not np.isfinite([promote, demote]).all() or not demote < promote:
-        raise ValueError("actuator strength curriculum thresholds must satisfy down < up")
-    if int(strength_cfg.curriculum_update_episodes) <= 0:
-        raise ValueError("actuator strength curriculum_update_episodes must be positive")
-    if bool(getattr(strength_cfg, "group_curriculum_enabled", False)):
-        validate_grouped_domain_rand_curriculum(strength_cfg)
-        if len(strength_cfg.group_curriculum_scales) != len(lows):
-            raise ValueError("group curriculum scales must align with actuator strength levels")
-    _validate_curriculum_progress(strength_cfg, num_levels=len(lows))
 
 
 def validate_grouped_domain_rand_curriculum(cfg: Any) -> None:
@@ -177,21 +118,8 @@ def sample_actuator_strength_multipliers(
     *,
     num_reset: int,
     expected_actions: int,
-    curriculum_profile: tuple[int, float, float] | None,
 ) -> np.ndarray:
-    if str(getattr(strength_cfg, "sampling_mode", "fixed")) == "fixed":
-        fixed = np.asarray(strength_cfg.multipliers, dtype=np.float64)
-        return np.broadcast_to(fixed, (num_reset, expected_actions)).copy()
-
-    sampled = np.ones((num_reset, expected_actions), dtype=np.float64)
-    low, high = np.asarray(strength_cfg.multiplier_range, dtype=np.float64).tolist()
-    nominal_probability = float(strength_cfg.nominal_probability)
-    if curriculum_profile is not None:
-        _, low, nominal_probability = curriculum_profile
-    anomaly_rows = np.flatnonzero(np.random.uniform(size=(num_reset,)) >= nominal_probability)
-    if anomaly_rows.size == 0:
-        return sampled
-    candidates = np.asarray(strength_cfg.candidate_actuator_indices, dtype=np.int64)
-    selected = np.random.choice(candidates, size=anomaly_rows.size, replace=True)
-    sampled[anomaly_rows, selected] = np.random.uniform(low, high, size=anomaly_rows.size)
-    return sampled
+    if validate_actuator_strength_config(strength_cfg, expected_actions=expected_actions) is None:
+        raise ValueError("fixed actuator strength is not enabled")
+    fixed = np.asarray(strength_cfg.multipliers, dtype=np.float64)
+    return np.broadcast_to(fixed, (num_reset, expected_actions)).copy()

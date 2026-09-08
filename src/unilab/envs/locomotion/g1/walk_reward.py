@@ -7,6 +7,24 @@ import numpy as np
 from unilab.dtype_config import get_global_dtype
 
 
+def tracking_planar_speed(commands: np.ndarray, velocity: np.ndarray, error_scale: float) -> np.ndarray:
+    """Exponential of planar error magnitude, with a scale in m/s."""
+    error = np.linalg.norm(commands[:, :2] - velocity[:, :2], axis=1)
+    return np.asarray(np.exp(-error / error_scale), dtype=get_global_dtype())
+
+
+def command_direction_speed_deficit(
+    commands: np.ndarray, velocity: np.ndarray, min_command: float
+) -> np.ndarray:
+    """Relative shortfall along commanded translation, retaining reverse speed."""
+    planar = commands[:, :2]
+    speed = np.linalg.norm(planar, axis=1)
+    direction = np.divide(planar, speed[:, None], out=np.zeros_like(planar), where=speed[:, None] > 0)
+    achieved = np.sum(velocity[:, :2] * direction, axis=1)
+    cost = np.maximum(speed - achieved, 0.0) / np.maximum(speed, min_command)
+    return np.asarray(np.where(speed > 0, cost, 0.0), dtype=get_global_dtype())
+
+
 def normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.ndarray:
     tolerance = float(tolerance)
     if tolerance <= 0.0:

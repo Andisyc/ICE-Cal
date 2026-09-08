@@ -267,9 +267,9 @@ def _build_interactive_env_factory(args, cfg, *, algo: str, available_backends):
             env_cfg_override = _apply_checkpoint_env_contract(
                 build_offpolicy_env_cfg_override(algo, cfg), args
             )
-            env_cfg_override = _backend_adapter(
-                cfg, algo_name=algo
-            ).build_play_env_cfg_override(env_cfg_override)
+            adapter = _backend_adapter(cfg, algo_name=algo)
+            env_cfg_override = adapter.build_play_env_cfg_override(env_cfg_override)
+            adapter.report_effective_settings(env_cfg_override, mode="回放")
         else:
             adapter_algo = "distill" if algo == "fada" else algo
             env_cfg_override = _backend_adapter(

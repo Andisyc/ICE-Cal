@@ -185,6 +185,9 @@ def _apply_checkpoint_env_contract(
     run_env = run_cfg.get("env")
     if isinstance(run_env, Mapping):
         merged.update(dict(run_env))
+        if args.task in {"g1_walk_flat", "G1WalkFlat"}:
+            # Old runs predate the fixed command clock; do not inherit today's mode.
+            merged["gait_clock_mode"] = run_env.get("gait_clock_mode", "continuous")
         if (
             args.task in {"g1_walk_flat", "G1WalkFlat"}
             and "mode_observation" not in run_env

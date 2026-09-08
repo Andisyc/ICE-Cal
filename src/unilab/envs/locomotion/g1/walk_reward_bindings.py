@@ -39,6 +39,8 @@ from unilab.envs.locomotion.g1.walk_math import (
     phase_height_targets_v3,
 )
 from unilab.envs.locomotion.g1.walk_reward import (
+    command_direction_speed_deficit,
+    tracking_planar_speed,
     normalized_corridor_violation,
     null_foot_force_balance_l1,
     null_torque_relaxation_l2,
@@ -65,10 +67,10 @@ RIGHT_FOOT_CONTACT_SENSORS = [f"right_foot_contact_{i}" for i in range(4)]
 class G1WalkRewardBindings:
     def _init_reward_functions(self):
         self._reward_fns: dict[str, Any] = {
-            "tracking_lin_vel": rewards.tracking_lin_vel,
+            "tracking_lin_vel": self._reward_tracking_lin_vel,
             "tracking_ang_vel": rewards.tracking_ang_vel,
             "forward_progress": rewards.forward_progress,
-            "under_speed": rewards.under_speed,
+            "under_speed": self._reward_under_speed,
             "lin_vel_z": rewards.lin_vel_z,
             "orientation": rewards.orientation,
             "penalty_orientation": rewards.orientation,
@@ -115,6 +117,22 @@ class G1WalkRewardBindings:
             "feet_air_time": self._reward_feet_air_time,
             "alive": rewards.alive,
         }
+        unknown = self._reward_cfg.scales.keys() - self._reward_fns.keys()
+        if unknown:
+            raise ValueError(f"unknown G1 reward.scales entries: {sorted(unknown)}")
+
+    def _reward_tracking_lin_vel(self, ctx: RewardContext) -> np.ndarray:
+        scale = self._reward_cfg.tracking_lin_error_scale
+        if scale is None:
+            return rewards.tracking_lin_vel(ctx)
+        return tracking_planar_speed(ctx.info["commands"], ctx.linvel, scale)
+
+    def _reward_under_speed(self, ctx: RewardContext) -> np.ndarray:
+        if self._reward_cfg.under_speed_mode == "forward":
+            return rewards.under_speed(ctx)
+        return command_direction_speed_deficit(
+            ctx.info["commands"], ctx.linvel, self._reward_cfg.under_speed_min_command
+        )
 
     def _episode_frame_errors(self, info: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
         try:
@@ -477,11 +495,11 @@ class G1WalkRewardBindings:
         )
         swing_height = self._reward_cfg.feet_phase_swing_height
         if self._reward_cfg.feet_phase_mode in {
-            "command_height_v1",
-            "command_height_v2",
-            "command_height_v3",
+            "filtered_command_height",
+            "command_height",
+            "phase_height",
         }:
-            if self._reward_cfg.feet_phase_mode == "command_height_v3":
+            if self._reward_cfg.feet_phase_mode == "phase_height":
                 target = phase_height_targets_v3(
                     gait_phase,
                     ctx.info["commands"],
@@ -489,7 +507,7 @@ class G1WalkRewardBindings:
                     self._reward_cfg.feet_phase_command_speed_scale,
                     self._reward_cfg.feet_phase_turn_length,
                 )
-            elif self._reward_cfg.feet_phase_mode == "command_height_v2":
+            elif self._reward_cfg.feet_phase_mode == "command_height":
                 commands = ctx.info["commands"]
                 demand = np.sqrt(
                     np.sum(commands[:, :2] ** 2, axis=1)
@@ -513,10 +531,10 @@ class G1WalkRewardBindings:
             cost = command_phase_height_cost(
                 actual, target, self._reward_cfg.feet_phase_height_scale
             )
-            if self._reward_cfg.feet_phase_mode == "command_height_v3":
+            if self._reward_cfg.feet_phase_mode == "phase_height":
                 return np.exp(-0.5 * cost)
-            return -0.5 * cost if self._reward_cfg.feet_phase_mode == "command_height_v2" else -cost
-        if self._reward_cfg.feet_phase_mode == "original_command_height_v1":
+            return cost
+        if self._reward_cfg.feet_phase_mode == "relative_command_height":
             left_target, right_target = original_command_height_targets(
                 gait_phase,
                 ctx.info["commands"],
@@ -604,16 +622,11 @@ class G1WalkRewardBindings:
             contact_force_threshold=float(cfg.contact_force_threshold),
             is_null=(
                 self._exact_null_command_mask(ctx)
-                if self._reward_cfg.feet_phase_mode in {
-                    "fixed_phase_contact_v1", "fixed_phase_contact_v2"
-                }
+                if self._reward_cfg.feet_phase_mode == "fixed_contact"
                 else None
             ),
         )
-        # v2 follows the framework's positive-cost / negative-weight convention.
-        # Keep v1's signed return for historical checkpoint reward reconstruction.
-        sign = 1.0 if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v2" else -1.0
-        return np.asarray(sign * cost, dtype=get_global_dtype())
+        return np.asarray(cost, dtype=get_global_dtype())
 
     def _reward_null_foot_force_balance(self, ctx: RewardContext):
         cfg = self._cfg.command_gated_phase_contact
@@ -651,7 +664,7 @@ class G1WalkRewardBindings:
     def _reward_feet_ori(self, ctx: RewardContext):
         left_foot_quat = self._backend.get_sensor_data("left_foot_quat")
         right_foot_quat = self._backend.get_sensor_data("right_foot_quat")
-        if self._reward_cfg.feet_phase_mode == "fixed_phase_contact_v2":
+        if self._reward_cfg.feet_orientation_stance_only:
             stance = phase_stance_targets(
                 ctx.info["gait_phase"],
                 duty_factor=float(self._cfg.command_gated_phase_contact.duty_factor),

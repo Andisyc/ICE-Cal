@@ -250,23 +250,25 @@ def assert_phase_locomotion_target_environment(
             f"unsupported FADA slope source behavior profile: {behavior_profile!r}"
         )
     spec = fada_oracle_behavior_spec(behavior_profile)
+    # This historical slope benchmark is frozen independently of source training.
+    # New source experiments take numerical settings from their Hydra task only.
     required = {
-        "env.ctrl_dt": spec.ctrl_dt,
+        "env.ctrl_dt": 0.02,
         "env.mode_observation": spec.mode_observation,
         "env.gait_phase_enabled": spec.gait_phase_enabled,
         "env.gait_phase_init_mode": spec.gait_phase_init_mode,
-        "env.commands.rel_standing_envs": spec.rel_standing_envs,
-        "env.commands.rel_transition_envs": spec.rel_transition_envs,
-        "env.commands.resampling_time": spec.command_resampling_time,
-        "env.commands.heading_command": spec.heading_command,
-        "reward.scales.feet_phase": spec.feet_phase,
-        "reward.scales.feet_phase_contrast": spec.feet_phase_contrast,
-        "reward.scales.feet_phase_contact": spec.feet_phase_contact,
-        "reward.gait_frequency": spec.gait_frequency,
-        "reward.feet_phase_swing_height": spec.feet_phase_swing_height,
-        "reward.feet_phase_tracking_sigma": spec.feet_phase_tracking_sigma,
-        "reward.gait_constraint.enabled": spec.gait_constraint_enabled,
-        "reward.gait_constraint.penalty_scale": spec.gait_constraint_penalty_scale,
+        "env.commands.rel_standing_envs": 0.0,
+        "env.commands.rel_transition_envs": 0.0,
+        "env.commands.resampling_time": 0.0,
+        "env.commands.heading_command": False,
+        "reward.scales.feet_phase": 5.0,
+        "reward.scales.feet_phase_contrast": 0.0,
+        "reward.scales.feet_phase_contact": 0.0,
+        "reward.gait_frequency": 1.5,
+        "reward.feet_phase_swing_height": 0.09,
+        "reward.feet_phase_tracking_sigma": 0.04,
+        "reward.gait_constraint.enabled": False,
+        "reward.gait_constraint.penalty_scale": 0.0,
     }
     for path, expected in required.items():
         observed = OmegaConf.select(cfg, path)

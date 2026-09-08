@@ -60,6 +60,26 @@ def publish_walk_termination_provenance(
 
 
 class G1WalkRuntimeBindings:
+    def refresh_state(self) -> NpEnvState:
+        """Refresh playback observations without a reward or curriculum transaction."""
+        if self._state is None:
+            self.init_state()
+        assert self._state is not None
+        self._state = self._observe_state(self._state)
+        return self._state
+
+    def _observe_state(self, state: NpEnvState) -> NpEnvState:
+        self._synchronize_external_command_for_observation(state.info)
+        obs = self._compute_obs(
+            state.info,
+            self.get_local_linvel(),
+            self.get_gyro(),
+            self._backend.get_sensor_data(self._cfg.sensor.upvector),
+            self.get_dof_pos(),
+            self.get_dof_vel(),
+        )
+        return state.replace(obs=obs)
+
     def _command_gated_physics_step_pending(self, info: dict) -> bool:
         if not self._command_gated_phase_contact_enabled():
             return True
@@ -185,21 +205,15 @@ class G1WalkRuntimeBindings:
 
     def update_state(self, state: NpEnvState) -> NpEnvState:
         physics_step_pending = self._command_gated_physics_step_pending(state.info)
-        command_gated = self._command_gated_phase_contact_enabled()
-        if physics_step_pending:
-            self._advance_command_state_for_reward(state.info)
+        if not physics_step_pending:
+            return self._observe_state(state)
+        self._advance_command_state_for_reward(state.info)
         linvel = self.get_local_linvel()
         gyro = self.get_gyro()
         gravity = self._backend.get_sensor_data(self._cfg.sensor.upvector)
         dof_pos = self.get_dof_pos()
         dof_vel = self.get_dof_vel()
-        if physics_step_pending:
-            self._refresh_command_gated_torque(state.info, dof_pos, dof_vel)
-
-        if command_gated and not physics_step_pending:
-            self._synchronize_external_command_for_observation(state.info)
-            obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
-            return state.replace(obs=obs)
+        self._refresh_command_gated_torque(state.info, dof_pos, dof_vel)
 
         max_tilt_rad = np.deg2rad(self._reward_cfg.max_tilt_deg)
         tilt = np.arccos(np.clip(gravity[:, 2], -1, 1))
@@ -226,8 +240,7 @@ class G1WalkRuntimeBindings:
             dof_pos=dof_pos,
             dof_vel=dof_vel,
         )
-        if physics_step_pending:
-            self._commit_command_state_for_next_observation(state.info)
+        self._commit_command_state_for_next_observation(state.info)
         obs = self._compute_obs(state.info, linvel, gyro, gravity, dof_pos, dof_vel)
         state = state.replace(obs=obs, reward=reward, terminated=terminated)
 
@@ -242,10 +255,15 @@ class G1WalkRuntimeBindings:
                 self.step_counter + 1,
                 float(np.mean(terminated.astype(get_global_dtype()))),
             )
+        return state
+
+    def _on_step_completed(self, state: NpEnvState) -> None:
+        strength_cfg = self._cfg.domain_rand.actuator_strength
+        iteration_mode = strength_cfg.curriculum_progress_mode == "iterations"
         done = state.terminated | state.truncated
         if self._episode_tracker is not None and np.any(done):
             done_indices = np.where(done)[0]
-            episode_lengths = state.info["steps"][done_indices] + 1
+            episode_lengths = state.info["steps"][done_indices]
             self._episode_tracker.update(episode_lengths)
             if self._penalty_curriculum is not None:
                 self._penalty_curriculum.update(self._episode_tracker.average_length)
@@ -254,7 +272,6 @@ class G1WalkRuntimeBindings:
                     self, self._episode_tracker.average_length, len(done_indices)
                 )
         self._write_curriculum_log(state.info)
-        return state
 
     def _write_curriculum_log(self, info: dict[str, Any]) -> None:
         log = info.setdefault("log", {})
@@ -263,26 +280,16 @@ class G1WalkRuntimeBindings:
         if self._penalty_curriculum is not None:
             log["curriculum/penalty_scale"] = float(self._penalty_curriculum.current_scale)
         strength_cfg = getattr(self._cfg.domain_rand, "actuator_strength", None)
-        strength_curriculum = bool(getattr(strength_cfg, "enabled", False)) and bool(
-            getattr(strength_cfg, "curriculum_enabled", False)
-        )
         grouped_curriculum = bool(getattr(strength_cfg, "group_curriculum_enabled", False))
-        if strength_curriculum:
-            level, low, nominal_probability = (
-                self._fada_dr_provider.actuator_strength_curriculum_profile(self)
-            )
-            log["curriculum/actuator_strength_level"] = float(level)
-            log["curriculum/actuator_strength_low"] = low
-            log["curriculum/actuator_strength_nominal_probability"] = nominal_probability
         if grouped_curriculum:
             _, scale = self._fada_dr_provider.grouped_domain_rand_curriculum_profile(self)
             log["curriculum/domain_randomization_scale"] = scale
-        if strength_curriculum or grouped_curriculum:
+        if grouped_curriculum:
             if (
                 str(getattr(strength_cfg, "curriculum_progress_mode", "episode_quality"))
                 == "iterations"
             ):
-                log["curriculum/training_iteration"] = float(self.step_counter + 1)
+                log["curriculum/training_iteration"] = float(self.step_counter)
 
     def _capture_task_rollout_state(self) -> dict[str, Any]:
         """Capture G1 curriculum state that may change on a shadow termination."""

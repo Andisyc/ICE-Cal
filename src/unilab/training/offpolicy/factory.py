@@ -19,10 +19,11 @@ from unilab.training import (
 
 def build_offpolicy_env_cfg_override(algo_name: str, cfg: DictConfig) -> dict[str, Any] | None:
     assert_offpolicy_task_choice_matches_algo(cfg, algo_name=algo_name)
-    return cast(
-        dict[str, Any] | None,
-        BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name=algo_name).build_task_env_cfg_override(),
-    )
+    adapter = BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name=algo_name)
+    override = adapter.build_task_env_cfg_override()
+    if not cfg.training.play_only:
+        adapter.report_effective_settings(override, mode="训练")
+    return override
 
 
 def apply_configured_actor_warm_start(

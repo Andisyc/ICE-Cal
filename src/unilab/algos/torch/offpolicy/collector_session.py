@@ -249,7 +249,8 @@ class OffPolicyCollectorSession:
         next_obs_np, next_critic_np = self._split_observations(state.obs)
         rewards_np = np.asarray(state.reward, dtype=np.float32).ravel()
         terminated_np = state.terminated.astype(np.float32, copy=False).ravel()
-        truncated_np = state.truncated.astype(np.float32, copy=False).ravel()
+        # Only a pure time limit permits bootstrap; a simultaneous failure wins.
+        truncated_np = (state.truncated & ~state.terminated).astype(np.float32).ravel()
         combined_dones = (state.terminated | state.truncated).astype(np.float32, copy=False).ravel()
         done_mask_np = combined_dones > 0.5
         timeout_mask_np = truncated_np > 0.5

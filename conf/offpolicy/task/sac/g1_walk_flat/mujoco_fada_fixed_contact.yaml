@@ -3,33 +3,195 @@ defaults:
   - /task/sac/g1_walk_flat/mujoco_fada_source
   - _self_
 
-# Fixed-contact repair: penalty curriculum, low-speed starts, stance-only foot pose.
+# G1 实验主控制表。日常只修改本文件；同名命令行参数具有最终优先级。
+# Reward 权重 0 = 关闭；DR 的 false = 关闭。关闭 Reward 不会自动关闭相位输入。
+# 文件名保留以兼容现有启动命令；新实验不再按 v1/v2 切换 profile。
+
+# 1. 训练：默认保持当前设置，服务器命令仍可覆盖设备、规模和输出目录。
+training:
+  device: null                 # 自动选择；服务器可设 cuda:0
+  no_play: false
+  log_dir: null                # null = 自动生成独立目录
+  play_checkpoint_path: null   # 回放时指定模型路径
 algo:
+  seed: 1
+  num_envs: 2048
+  batch_size: 8192
+  max_iterations: 5000
+  save_interval: 240           # 正整数；最终一轮另外保存
+  updates_per_step: 8
+  gamma: 0.99
+  algo_params:
+    use_compile: true
   actor:
-    oracle_behavior_profile: fixed_phase_contact_v2
+    oracle_behavior_profile: configured_gait  # 固定使用此身份，实验开关在下面设置
+    oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
 
 env:
+  # 2. 命令与相位。启用门控变步频时，三个字段一起设置：
+  # command_gated_phase_contact.enabled=true、gait_phase_init_mode=command_gated、
+  # reward.feet_phase_mode=command_gated_contact。
   gait_phase_enabled: true
   gait_phase_init_mode: offset_phase
+  gait_clock_mode: command_fixed # 精确零指令冻结；起步恢复左右半周期差，步频保持固定
   commands:
     dead_zone_enabled: false
+    dead_zone_xy: 0.1
+    dead_zone_yaw: 0.1
+    small_xy_threshold: 0.0
+    vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     resampling_time: 4.0
-    # Keep 30% standing, add 30% low-speed straight walking; 40% stays unrestricted.
+    rel_standing_envs: 0.3       # 30% 站立 + 30% 低速 + 40% 普通速度
     rel_transition_envs: 0.3
     transition_vel_limit: [[0.05, 0.0, 0.0], [0.25, 0.0, 0.0]]
+    heading_command: false
   command_gated_phase_contact:
-    enabled: false
-    # Only these static contact parameters are consumed; no command state machine.
+    enabled: false              # 仅控制命令门控时钟，不是接触 Reward 总开关
     duty_factor: 0.55
     contact_force_threshold: 1.0
+    command_xy_dead_zone: 0.1
+    command_yaw_dead_zone: 0.1
+    linear_intensity_span: 0.9
+    yaw_intensity_span: 0.7
+    min_frequency: 0.7
+    max_frequency: 1.5
+    startup_phase: [0.0, 3.141592653589793]
+    stand_phase: [3.141592653589793, 3.141592653589793]
+    force_balance_epsilon: 0.000001
 
+  # 3. Reward 惩罚课程：与物理 DR 课程独立。关闭后直接使用完整权重。
+  curriculum:
+    enabled: true
+    initial_scale: 0.5
+    min_scale: 0.5
+    max_scale: 1.0
+    level_down_threshold: 150.0
+    level_up_threshold: 750.0
+    degree: 0.001
+
+  # 4. DR：每个物理扰动独立开关；范围在该开关下方。
+  domain_rand:
+    randomize_reset_pose: true
+    randomize_kp: true
+    kp_multiplier_range: [0.9, 1.1]
+    randomize_kd: true
+    kd_multiplier_range: [0.9, 1.1]
+    randomize_ground_friction: true
+    ground_friction_multiplier_range: [0.8, 1.2]
+    randomize_base_mass: true
+    added_mass_range: [-1.5, 1.5]
+    randomize_body_mass: true
+    body_mass_multiplier_range: [0.9, 1.1]
+    random_com: true
+    com_offset_x: [-0.05, 0.05]
+    com_offset_y: [-0.05, 0.05]
+    com_offset_z: [-0.05, 0.05]
+    randomize_gravity: false
+    gravity_range: [[0.0, 0.0, -9.81], [0.0, 0.0, -9.81]]
+    randomize_dof_armature: false
+    dof_armature_multiplier_range: [0.8, 1.2]
+    randomize_dof_position_bias: true
+    dof_position_bias_range: [-0.025, 0.025]
+    randomize_control_delay: false
+    torque_rfi_fraction: 0.0     # 0 = 关闭
+    push_robots: false
+    push_body_name: null        # 启用推搡时填写有效 body 名称
+    fada_push_interval_seconds: 7.5
+    fada_max_push_velocity: 0.8
+    actuator_strength:
+      # 仅保留固定故障接口的关闭状态；随机单关节削弱代码已删除。
+      enabled: false
+      curriculum_enabled: false
+      curriculum_promote_threshold: 800.0
+      curriculum_demote_threshold: 500.0
+      curriculum_update_episodes: 1024
+      # 其他物理 DR 的课程。因兼容现有配置，字段仍位于此节点。
+      # 关闭此课程 = 直接应用已开启 DR 的完整范围，不是关闭 DR。
+      group_curriculum_enabled: true
+      group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+      curriculum_progress_mode: iterations
+      curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
+      curriculum_max_termination_rate: 0.1
+      curriculum_brake_cooldown_steps: 100
+      curriculum_recovery_hold_steps: 500
+  noise_config:
+    level: 1.0                 # 0 = 关闭所有观测噪声
+    scale_gyro: 0.0
+    scale_gravity: 0.0
+    scale_joint_angle: 0.01
+    scale_joint_vel: 0.1
+    scale_linvel: 0.0
+
+# 5. Reward：权重 0 = 关闭；正数奖励，负数惩罚（当前功能模式）。
 reward:
-  feet_phase_mode: fixed_phase_contact_v2
+  feet_phase_mode: fixed_contact
+  feet_orientation_stance_only: true
   gait_frequency: 1.5
+  tracking_sigma: 0.25
+  tracking_lin_error_scale: 0.2 # m/s；null 恢复旧的平方误差公式，不影响转向项
+  under_speed_mode: command_direction
+  under_speed_min_command: 0.05 # 归一化分母下限，不截断或修改命令
+  feet_phase_swing_height: 0.09
+  feet_phase_tracking_sigma: 0.04
+  base_height_target: 0.754
+  min_base_height: 0.3
+  max_tilt_deg: 65.0
   scales:
-    # v2 returns a positive cost so the existing penalty curriculum owns its scale.
-    phase_contact: -1.0
-    # Existing normalized forward underspeed cost; no change to tracking_sigma.
-    under_speed: -1.0
-    null_foot_force_balance: 0.0
-    null_torque_relaxation: 0.0
+    tracking_lin_vel: 2.0       # 平面速度跟踪
+    tracking_ang_vel: 1.5       # 转向速度跟踪
+    under_speed: -1.0           # 沿平移指令方向的速度不足，反向运动增加惩罚
+    phase_contact: -1.0         # 当前接触时序惩罚
+    penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
+    penalty_orientation: -10.0  # 身体倾斜
+    penalty_action_rate: -2.0   # 相邻动作变化
+    pose: -0.5                 # 偏离默认关节姿态
+    penalty_feet_ori: -20.0     # 脚掌倾斜
+    alive: 10.0
+    feet_phase: 0.0             # 抬脚高度跟踪
+    feet_phase_contrast: 0.0    # 左右脚高度差
+    feet_phase_contact: 0.0     # 旧版接触匹配，区别于 phase_contact
+    null_foot_force_balance: 0.0 # 零指令双脚受力平衡
+    null_torque_relaxation: 0.0  # 零指令力矩；开启需命令门控的力矩来源
+  gait_constraint:
+    enabled: false
+    penalty_scale: 0.0
+  pose_weights: [0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 0.01, 1.0, 5.0, 0.01, 5.0, 5.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+
+# 6. 回放：先恢复模型的训练设置，再逐字段应用这里的显式覆盖。
+# 改这里不会反向修改训练；启用某项回放 DR 时仍使用训练配置中的范围。
+interactive:
+  keyboard: true
+  keyboard_step_lin: 0.1
+play_profile:
+  enabled: true
+  env:
+    commands:
+      rel_standing_envs: 1.0
+      rel_transition_envs: 0.0
+      resampling_time: 0.0
+      heading_command: false
+      random_height_during_walking: false
+    reset_base_qvel_limit: 0.0
+    standing_reset_base_qvel_limit: 0.0
+    curriculum:
+      enabled: false
+    noise_config:
+      level: 0.0
+    domain_rand:
+      randomize_reset_pose: false
+      randomize_kp: false
+      randomize_kd: false
+      randomize_ground_friction: false
+      randomize_base_mass: false
+      randomize_body_mass: false
+      random_com: false
+      randomize_gravity: false
+      randomize_dof_armature: false
+      randomize_dof_position_bias: false
+      randomize_control_delay: false
+      torque_rfi_fraction: 0.0
+      push_robots: false
+      actuator_strength:
+        enabled: false
+        curriculum_enabled: false
+        group_curriculum_enabled: false
