@@ -30,7 +30,7 @@ algo:
 
 env:
   # 2. 基线命令与相位：不输入相位，不冻结或固定起步，不定时切换命令。
-  gait_phase_enabled: false
+  gait_phase_enabled: true
   gait_phase_init_mode: offset_phase
   gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
