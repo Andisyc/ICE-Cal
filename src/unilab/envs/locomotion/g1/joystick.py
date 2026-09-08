@@ -216,6 +216,7 @@ class G1WalkEnv(
             raise ValueError("pose_weights length mismatch")
         self._upper_body_pose_weights = build_upper_body_pose_weights(self._reward_cfg.pose_weights)
         self._episode_tracker: EpisodeLengthTracker | None = None
+        self._penalty_episode_tracker: EpisodeLengthTracker | None = None
         self._penalty_curriculum: PenaltyCurriculum | None = None
         strength = cfg.domain_rand.actuator_strength
         tracks_dr_quality = (
@@ -225,6 +226,7 @@ class G1WalkEnv(
         if cfg.curriculum.enabled or tracks_dr_quality:
             self._episode_tracker = EpisodeLengthTracker(num_envs)
         if cfg.curriculum.enabled:
+            self._penalty_episode_tracker = EpisodeLengthTracker(num_envs)
             self._penalty_curriculum = PenaltyCurriculum(
                 self,
                 enabled=True,

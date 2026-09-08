@@ -265,12 +265,16 @@ class G1WalkRuntimeBindings:
             done_indices = np.where(done)[0]
             episode_lengths = state.info["steps"][done_indices]
             self._episode_tracker.update(episode_lengths)
-            if self._penalty_curriculum is not None:
-                self._penalty_curriculum.update(self._episode_tracker.average_length)
             if not iteration_mode:
                 self._fada_dr_provider.update_actuator_strength_curriculum(
                     self, self._episode_tracker.average_length, len(done_indices)
                 )
+        # Preserve the historical penalty curriculum population explicitly:
+        # pure timeouts remain in general/DR statistics, not penalty updates.
+        if self._penalty_curriculum is not None and np.any(state.terminated):
+            assert self._penalty_episode_tracker is not None
+            self._penalty_episode_tracker.update(state.info["steps"][state.terminated])
+            self._penalty_curriculum.update(self._penalty_episode_tracker.average_length)
         self._write_curriculum_log(state.info)
 
     def _write_curriculum_log(self, info: dict[str, Any]) -> None:
@@ -300,6 +304,11 @@ class G1WalkRuntimeBindings:
                 if self._episode_tracker is None
                 else float(self._episode_tracker.average_length)
             ),
+            "penalty_episode_average_length": (
+                None
+                if self._penalty_episode_tracker is None
+                else float(self._penalty_episode_tracker.average_length)
+            ),
             "penalty_scale": (
                 None
                 if self._penalty_curriculum is None
@@ -318,6 +327,7 @@ class G1WalkRuntimeBindings:
 
         if not isinstance(snapshot, dict) or set(snapshot) != {
             "episode_average_length",
+            "penalty_episode_average_length",
             "penalty_scale",
             "reward_scales",
             "actuator_strength_curriculum",
@@ -328,6 +338,11 @@ class G1WalkRuntimeBindings:
             if average is None:
                 raise ValueError("G1 rollout snapshot is missing episode tracker state")
             self._episode_tracker.average_length = float(average)
+        if self._penalty_episode_tracker is not None:
+            average = snapshot["penalty_episode_average_length"]
+            if average is None:
+                raise ValueError("G1 rollout snapshot is missing penalty episode tracker state")
+            self._penalty_episode_tracker.average_length = float(average)
         if self._penalty_curriculum is not None:
             scale = snapshot["penalty_scale"]
             if scale is None:
