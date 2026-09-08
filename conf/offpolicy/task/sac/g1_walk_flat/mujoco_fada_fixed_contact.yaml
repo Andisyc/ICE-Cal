@@ -34,7 +34,7 @@ env:
   gait_phase_init_mode: offset_phase
   gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
-    dead_zone_enabled: false
+    dead_zone_enabled: true
     dead_zone_xy: 0.1
     dead_zone_yaw: 0.1
     small_xy_threshold: 0.0
