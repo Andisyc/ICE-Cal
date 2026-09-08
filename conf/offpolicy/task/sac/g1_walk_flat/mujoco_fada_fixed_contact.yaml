@@ -128,7 +128,7 @@ reward:
   gait_frequency: 1.5
   tracking_sigma: 0.25
   tracking_lin_error_scale: null # 恢复旧速度跟踪 exp(-平面误差平方 / tracking_sigma)
-  tracking_lin_relative_blend: false
+  tracking_lin_relative_blend: true # 0.25 m/s 以下相对误差，0.25–0.5 m/s 过渡到绝对误差
   under_speed_mode: forward
   under_speed_min_command: 0.05 # forward 模式不使用此参数
   feet_phase_swing_height: 0.09
