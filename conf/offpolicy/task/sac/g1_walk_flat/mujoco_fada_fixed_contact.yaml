@@ -146,7 +146,7 @@ reward:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
     under_speed: -1.0           # 恢复 v2 的前向欠速算法
-    phase_contact: -1.0         # 当前接触时序惩罚
+    phase_contact: 0.0          # 消融：关闭固定触地时序惩罚，保留相位输入与起步时钟
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
     penalty_orientation: -10.0  # 身体倾斜
     penalty_action_rate: -4.0   # 相邻动作变化，恢复 v2 权重

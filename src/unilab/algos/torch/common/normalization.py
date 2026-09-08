@@ -6,6 +6,10 @@ import torch
 import torch.nn as nn
 
 
+# Shared by learner/playback normalizers and NumPy collectors.
+DEFAULT_NORMALIZATION_EPS = 1e-2
+
+
 class EmpiricalNormalization(nn.Module):
     """Normalize mean and variance of observations using running statistics."""
 
@@ -14,7 +18,7 @@ class EmpiricalNormalization(nn.Module):
     _std: torch.Tensor
     count: torch.Tensor
 
-    def __init__(self, shape, device, eps=1e-2):
+    def __init__(self, shape, device, eps=DEFAULT_NORMALIZATION_EPS):
         super().__init__()
         self.eps = eps
         self.device = device

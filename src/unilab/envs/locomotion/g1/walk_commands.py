@@ -8,10 +8,7 @@ from typing import Any
 import numpy as np
 
 from unilab.dtype_config import get_global_dtype
-from unilab.envs.locomotion.common.commands import (
-    sample_velocity_commands,
-    zero_small_xy_commands,
-)
+from unilab.envs.locomotion.common.commands import zero_small_xy_commands
 
 
 @dataclass(frozen=True)
@@ -114,7 +111,11 @@ def resolve_g1_command_gait_state(
 def sample_g1_walk_commands(env: Any, num_samples: int) -> np.ndarray:
     low = np.asarray(env.cfg.commands.vel_limit[0], dtype=get_global_dtype())
     high = np.asarray(env.cfg.commands.vel_limit[1], dtype=get_global_dtype())
-    commands = sample_velocity_commands(np.random.default_rng(), num_samples, low, high)
+    # Use the process RNG seeded by apply_training_seed, including transition draws.
+    commands = np.asarray(
+        np.random.uniform(low=low, high=high, size=(num_samples, 3)),
+        dtype=get_global_dtype(),
+    )
     phase_contact_cfg = getattr(env.cfg, "command_gated_phase_contact", None)
     command_gated = bool(getattr(phase_contact_cfg, "enabled", False))
     if not command_gated and not getattr(env.cfg.commands, "dead_zone_enabled", False):
@@ -136,11 +137,13 @@ def sample_g1_walk_commands(env: Any, num_samples: int) -> np.ndarray:
         )
         transition = (draw >= standing_prob) & (draw < standing_prob + transition_prob)
         if np.any(transition):
-            commands[transition] = sample_velocity_commands(
-                np.random.default_rng(),
-                int(np.sum(transition)),
-                transition_low,
-                transition_high,
+            commands[transition] = np.asarray(
+                np.random.uniform(
+                    low=transition_low,
+                    high=transition_high,
+                    size=(int(np.sum(transition)), 3),
+                ),
+                dtype=get_global_dtype(),
             )
     if command_gated:
         commands = canonicalize_g1_commands(

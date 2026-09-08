@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from unilab.algos.torch.common.actor_factory import build_actor
+from unilab.algos.torch.common.normalization import DEFAULT_NORMALIZATION_EPS
 from unilab.algos.torch.offpolicy.collector_support import (
     COLLECTOR_TIMING_KEYS,
     dashboard_components,
@@ -204,7 +205,7 @@ class OffPolicyCollectorSession:
             stats = spec.shared_obs_normalizer_stats.get()
             if stats is not None:
                 mean, std = stats
-                obs_input = (self.obs_np - mean) / (std + 1e-8)
+                obs_input = (self.obs_np - mean) / (std + DEFAULT_NORMALIZATION_EPS)
         with torch.no_grad():
             start_ns = time.perf_counter_ns()
             priv_info_np = resolve_offpolicy_actor_priv_info(
