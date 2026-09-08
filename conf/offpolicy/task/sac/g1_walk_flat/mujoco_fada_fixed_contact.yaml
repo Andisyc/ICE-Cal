@@ -45,7 +45,7 @@ env:
     transition_vel_limit: [[0.05, 0.0, 0.0], [0.25, 0.0, 0.0]]
     heading_command: false
   command_gated_phase_contact:
-    enabled: false              # 仅控制命令门控时钟，不是接触 Reward 总开关
+    enabled: true               # 仅控制命令门控时钟，不是接触 Reward 总开关
     duty_factor: 0.55
     contact_force_threshold: 1.0
     command_xy_dead_zone: 0.1
@@ -123,7 +123,7 @@ env:
 
 # 5. Reward：权重 0 = 关闭；正数奖励，负数惩罚（当前功能模式）。
 reward:
-  feet_phase_mode: legacy
+  feet_phase_mode: phase_contact_v1
   feet_orientation_stance_only: false # 恢复双脚姿态惩罚，不再按相位选择支撑脚
   gait_frequency: 1.5
   tracking_sigma: 0.25
@@ -140,7 +140,7 @@ reward:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
     under_speed: -1.0           # 恢复正向欠速惩罚
-    phase_contact: 0.0          # 关闭固定触地时序惩罚
+    phase_contact: 1.0          # 命令门控交替接触奖励（低速步态组织）
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
     penalty_orientation: -10.0  # 身体倾斜
     penalty_action_rate: -4.0   # 相邻动作变化，保持基线权重
