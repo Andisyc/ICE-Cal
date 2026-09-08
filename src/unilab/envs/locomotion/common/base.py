@@ -68,9 +68,12 @@ class LocomotionBaseEnv(NpEnv):
         self._spawn: BaseSpawnManager = BaseSpawnManager()
 
     def _init_action_space(self) -> None:
-        ctrl_range = self._backend.get_actuator_ctrl_range()
+        ctrl_range = np.asarray(self._backend.get_actuator_ctrl_range(), dtype=np.float64)
         nu = self._backend.num_actuators
-        self._action_space = gym.spaces.Box(ctrl_range[:, 0], ctrl_range[:, 1], (nu,), dtype=float)  # type: ignore[assignment, arg-type]
+        # Keep bound dtype aligned with the declared space dtype: a float32 bound
+        # against dtype=float64 makes gymnasium cast finfo max under NumPy 2 NEP-50,
+        # emitting a benign "overflow encountered in cast" RuntimeWarning.
+        self._action_space = gym.spaces.Box(ctrl_range[:, 0], ctrl_range[:, 1], (nu,), dtype=np.float64)  # type: ignore[assignment, arg-type]
 
     @property
     def action_space(self) -> gym.spaces.Box:
