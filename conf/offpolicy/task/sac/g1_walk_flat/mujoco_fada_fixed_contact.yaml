@@ -30,7 +30,7 @@ algo:
 
 env:
   # 2. 基线命令与相位：不输入相位，不冻结或固定起步，不定时切换命令。
-  gait_phase_enabled: true
+  gait_phase_enabled: false
   gait_phase_init_mode: offset_phase
   gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
@@ -130,7 +130,7 @@ reward:
   tracking_lin_error_scale: null # 恢复旧速度跟踪 exp(-平面误差平方 / tracking_sigma)
   tracking_lin_relative_blend: false
   under_speed_mode: forward
-  under_speed_min_command: 0.05 # 欠速项已关闭，此参数不生效
+  under_speed_min_command: 0.05 # forward 模式不使用此参数
   feet_phase_swing_height: 0.09
   feet_phase_tracking_sigma: 0.04
   base_height_target: 0.754
@@ -139,7 +139,7 @@ reward:
   scales:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
-    under_speed: 0.0            # 关闭后来增加的欠速惩罚
+    under_speed: -1.0           # 恢复正向欠速惩罚
     phase_contact: 0.0          # 关闭固定触地时序惩罚
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
     penalty_orientation: -10.0  # 身体倾斜
