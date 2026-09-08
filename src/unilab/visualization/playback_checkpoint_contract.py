@@ -90,6 +90,17 @@ def _g1_standing_contract_issues(run_config: Mapping[str, Any]) -> list[str]:
 
 
 def _resolve_play_checkpoint_path(args: PlayInteractiveArgs) -> Path | None:
+    # Match weight loading: an explicit checkpoint owns its adjacent run_config.
+    explicit_path = getattr(args, "checkpoint_path", None)
+    if explicit_path not in (None, ""):
+        path = Path(str(explicit_path))
+        resolved_path = path if path.is_absolute() else ROOT_DIR / path
+        if not resolved_path.is_file():
+            raise FileNotFoundError(
+                f"training.play_checkpoint_path does not exist: {resolved_path}"
+            )
+        return resolved_path
+
     checkpoint_path, _checkpoint_dir = resolve_task_checkpoint_path(
         ROOT_DIR,
         task_name=args.task,

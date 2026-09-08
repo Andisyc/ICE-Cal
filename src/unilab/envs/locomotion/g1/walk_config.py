@@ -240,6 +240,10 @@ class G1RewardConfig:
     feet_orientation_stance_only: bool = False
     penalty_curriculum_terms: list[str] | None = None
     tracking_lin_error_scale: float | None = None
+    tracking_lin_relative_blend: bool = False
+    tracking_lin_min_command: float = 0.05
+    tracking_lin_relative_until: float = 0.25
+    tracking_lin_absolute_from: float = 0.5
     under_speed_mode: str = "forward"
     under_speed_min_command: float = 0.05
     feet_phase_command_speed_scale: float = 0.3
@@ -347,6 +351,12 @@ class G1RewardConfig:
             not math.isfinite(self.tracking_lin_error_scale) or self.tracking_lin_error_scale <= 0
         ):
             raise ValueError("tracking_lin_error_scale must be finite and positive")
+        if self.tracking_lin_relative_blend:
+            bounds = (self.tracking_lin_min_command, self.tracking_lin_relative_until, self.tracking_lin_absolute_from)
+            if not all(math.isfinite(value) for value in bounds) or not 0 < bounds[0] <= bounds[1] < bounds[2]:
+                raise ValueError("tracking blend requires 0 < min_command <= relative_until < absolute_from")
+            if self.tracking_lin_error_scale is not None:
+                raise ValueError("tracking blend requires tracking_lin_error_scale=null")
         if self.under_speed_mode not in {"forward", "command_direction"}:
             raise ValueError("unsupported under_speed_mode")
         if not math.isfinite(self.under_speed_min_command) or self.under_speed_min_command <= 0:

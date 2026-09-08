@@ -13,6 +13,21 @@ def tracking_planar_speed(commands: np.ndarray, velocity: np.ndarray, error_scal
     return np.asarray(np.exp(-error / error_scale), dtype=get_global_dtype())
 
 
+def tracking_planar_speed_blended(
+    commands: np.ndarray, velocity: np.ndarray, sigma: float,
+    min_command: float, relative_until: float, absolute_from: float,
+) -> np.ndarray:
+    """Blend relative low-speed tracking into the original squared-error reward."""
+    error_sq = np.sum(np.square(commands[:, :2] - velocity[:, :2]), axis=1)
+    speed = np.linalg.norm(commands[:, :2], axis=1)
+    absolute = np.exp(-error_sq / sigma)
+    relative = np.exp(-error_sq / np.square(np.maximum(speed, min_command)) / sigma)
+    activation = np.clip(speed / min_command, 0.0, 1.0)
+    transition = np.clip((speed - relative_until) / (absolute_from - relative_until), 0.0, 1.0)
+    weight = activation**2 * (3.0 - 2.0 * activation) * (1.0 - transition**2 * (3.0 - 2.0 * transition))
+    return np.asarray((1.0 - weight) * absolute + weight * relative, dtype=get_global_dtype())
+
+
 def command_direction_speed_deficit(
     commands: np.ndarray, velocity: np.ndarray, min_command: float
 ) -> np.ndarray:

@@ -41,6 +41,7 @@ from unilab.envs.locomotion.g1.walk_math import (
 from unilab.envs.locomotion.g1.walk_reward import (
     command_direction_speed_deficit,
     tracking_planar_speed,
+    tracking_planar_speed_blended,
     normalized_corridor_violation,
     null_foot_force_balance_l1,
     null_torque_relaxation_l2,
@@ -122,6 +123,12 @@ class G1WalkRewardBindings:
             raise ValueError(f"unknown G1 reward.scales entries: {sorted(unknown)}")
 
     def _reward_tracking_lin_vel(self, ctx: RewardContext) -> np.ndarray:
+        cfg = self._reward_cfg
+        if cfg.tracking_lin_relative_blend:
+            return tracking_planar_speed_blended(
+                ctx.info["commands"], ctx.linvel, ctx.tracking_sigma,
+                cfg.tracking_lin_min_command, cfg.tracking_lin_relative_until, cfg.tracking_lin_absolute_from,
+            )
         scale = self._reward_cfg.tracking_lin_error_scale
         if scale is None:
             return rewards.tracking_lin_vel(ctx)

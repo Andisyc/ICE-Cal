@@ -194,12 +194,10 @@ def _force_policy_command_probe_obs(env: Any, command: np.ndarray) -> None:
 
     commands[:, :3] = np.asarray(command, dtype=commands.dtype)
 
-    update_state = getattr(env, "update_state", None)
-    if not callable(update_state):
+    refresh_state = getattr(env, "refresh_state", None)
+    if not callable(refresh_state):
         return
-    refreshed_state = update_state(state)
-    if refreshed_state is not None and refreshed_state is not state:
-        setattr(env, "_state", refreshed_state)
+    refresh_state()
 
 
 def _snapshot_policy_command_probe_state(env: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -228,13 +226,10 @@ def _restore_policy_command_probe_state(
             current_commands[...] = commands
         else:
             info["commands"] = commands.copy()
-        update_state = getattr(env, "update_state", None)
-        if callable(update_state):
-            refreshed_state = update_state(state)
-            if refreshed_state is not None and refreshed_state is not state:
-                setattr(env, "_state", refreshed_state)
-                state = refreshed_state
-                obs = getattr(state, "obs", None)
+        refresh_state = getattr(env, "refresh_state", None)
+        if callable(refresh_state):
+            state = refresh_state()
+            obs = getattr(state, "obs", None)
     if actor_obs is not None and isinstance(obs, dict):
         current_actor_obs = obs.get("obs")
         if isinstance(current_actor_obs, np.ndarray) and current_actor_obs.shape == actor_obs.shape:

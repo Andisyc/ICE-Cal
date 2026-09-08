@@ -56,38 +56,67 @@ class ClockOwner(G1WalkControlBindings, G1WalkRewardBindings):
         return False
 
 
-def test_reward_direction_scale_and_legacy_defaults(config):
+def test_blended_tracking_and_restored_penalties(config):
     owner = ClockOwner(config, 6)
     commands = np.array([[.1, 0, 0], [-.1, 0, 0], [0, .1, 0], [0, 0, .2], [0, 0, 0], [.001, 0, 0]])
     ctx = rewards.RewardContext(info={"commands": commands}, linvel=np.zeros((6, 3)),
                                 gyro=np.zeros((6, 3)), dof_pos=np.zeros((6, 29)),
                                 num_envs=6, tracking_sigma=.25)
-    np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx)[:3], np.exp(-.5))
-    np.testing.assert_allclose(owner._reward_under_speed(ctx), [1, 1, 1, 0, 0, .02])
-    ctx.linvel = -commands.copy()
-    np.testing.assert_allclose(owner._reward_under_speed(ctx)[:3], [2, 2, 2])
-    ctx.linvel = commands.copy()
-    np.testing.assert_allclose(owner._reward_under_speed(ctx), 0)
-    np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx), 1)
-    assert owner._reward_cfg.scales["penalty_action_rate"] == -2
-    np.testing.assert_equal(owner._reward_cfg.pose_weights[12:], [20] * 17)
+    rc = owner._reward_cfg
+    assert rc.scales["tracking_lin_vel"] == 2
+    assert rc.scales["tracking_ang_vel"] == 1.5
+    assert rc.scales["under_speed"] == -1
+    assert rc.under_speed_mode == "forward"
+    assert rc.scales["penalty_action_rate"] == -4
+    assert rc.scales["pose"] == -.5
+    np.testing.assert_equal(rc.pose_weights[:12], [.01, 1, 5, .01, 5, 5] * 2)
+    np.testing.assert_equal(rc.pose_weights[12:], [50] * 17)
 
-    ctx.linvel[:] = 0
-    for c in [.5, 1.]:
-        rc = deepcopy(owner._reward_cfg)
-        PenaltyCurriculum(NS(cfg=NS(reward_config=rc)), initial_scale=c)
-        fns = {"tracking_lin_vel": owner._reward_tracking_lin_vel, "under_speed": owner._reward_under_speed}
-        scales = {name: rc.scales[name] for name in fns}
-        still = rewards.run_reward_dispatch(scales=scales, fns=fns, ctx=ctx, info=ctx.info, enable_log=False, ctrl_dt=.02)
-        ctx.linvel = commands.copy()
-        moving = rewards.run_reward_dispatch(scales=scales, fns=fns, ctx=ctx, info=ctx.info, enable_log=False, ctrl_dt=.02)
-        np.testing.assert_allclose((moving-still)[:3], .02*(2*(1-np.exp(-.5))+c), rtol=1e-5)
-        ctx.linvel[:] = 0
+    # Same relative progress in forward, backward and lateral low-speed commands.
+    for fraction, expected in [(0, .0366312778), (.5, .7357588823), (1, 2.0)]:
+        ctx.linvel = fraction * commands
+        score = owner._reward_tracking_lin_vel(ctx)
+        np.testing.assert_allclose(2 * score[:3], expected, rtol=1e-6)
+        np.testing.assert_allclose(owner._reward_under_speed(ctx), rewards.under_speed(ctx))
+        dispatched = rewards.run_reward_dispatch(
+            scales={"tracking_lin_vel": 2}, fns={"tracking_lin_vel": owner._reward_tracking_lin_vel},
+            ctx=ctx, info=ctx.info, enable_log=False, ctrl_dt=.02,
+        )
+        np.testing.assert_allclose(dispatched[:3], expected * .02, rtol=1e-6)
 
+    # High-speed commands retain the full original curve, including reverse motion.
+    commands[:] = [[.5, 0, 0], [.8, 0, 0], [-.8, 0, 0], [0, .8, 0], [.6, .8, 0], [0, 0, .2]]
+    for fraction in [-1, 0, .5, 1, 1.5]:
+        ctx.linvel = fraction * commands
+        np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx), rewards.tracking_lin_vel(ctx))
+    commands[:] = 0
+    ctx.linvel[:] = [.05, .02, 0]
+    np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx), rewards.tracking_lin_vel(ctx))
+
+    # Continuous transitions and finite near-zero scores; no command mutation.
+    for boundary in [0, .05, .25, .5]:
+        commands[:] = 0
+        commands[:, 0] = [max(0, boundary - 1e-8), boundary, boundary + 1e-8] * 2
+        ctx.linvel[:] = [.02, .01, 0]
+        before = commands.copy()
+        with np.errstate(divide="raise", invalid="raise", over="raise"):
+            score = owner._reward_tracking_lin_vel(ctx)
+        assert np.isfinite(score).all() and ((score >= 0) & (score <= 1)).all()
+        np.testing.assert_allclose(score, score[1], atol=2e-6)
+        np.testing.assert_array_equal(commands, before)
+    commands[:] = [.375, 0, 0]
+    ctx.linvel[:] = [.1875, 0, 0]
+    np.testing.assert_allclose(2 * owner._reward_tracking_lin_vel(ctx), 1.236694498, rtol=1e-6)
+
+    # Old saved configurations still select their original formula.
+    assert G1RewardConfig.__dataclass_fields__["tracking_lin_relative_blend"].default is False
+    rc.tracking_lin_relative_blend = False
     owner._reward_cfg.tracking_lin_error_scale = None
     owner._reward_cfg.under_speed_mode = "forward"
     np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx), rewards.tracking_lin_vel(ctx))
     np.testing.assert_allclose(owner._reward_under_speed(ctx), rewards.under_speed(ctx))
+    rc.tracking_lin_error_scale = .2
+    np.testing.assert_allclose(owner._reward_tracking_lin_vel(ctx), np.exp(-.1875 / .2))
     assert G1WalkFlatCfg().gait_clock_mode == "continuous"
 
 
@@ -123,6 +152,50 @@ def test_fixed_clock_reset_keyboard_resampling_and_advance(config):
     info["commands"].fill(0)
     owner.apply_action(np.zeros((2, 29)), state)
     np.testing.assert_allclose(info["gait_phase"], np.tile([owner._gait_phase_delta, np.pi+owner._gait_phase_delta], (2, 1)))
+
+
+def test_playback_command_probe_synchronizes_null_without_reward(config):
+    from unilab.visualization.playback_controls import _policy_obs_contains_command
+
+    class ProbeOwner(G1WalkRuntimeBindings, ClockOwner):
+        @property
+        def state(self):
+            return self._state
+
+        def get_local_linvel(self):
+            return np.zeros((1, 3))
+
+        get_gyro = get_dof_pos = get_dof_vel = get_local_linvel
+
+        def _compute_obs(self, info, *args):
+            # Exercise the same consistency check that rejected the live probe.
+            self._exact_null_command_mask(NS(info=info))
+            return {"obs": info["commands"].copy()}
+
+        def update_state(self, state):
+            self._exact_null_command_mask(NS(info=state.info))
+            pytest.fail("An observation probe must not run the reward transaction")
+
+    owner = ProbeOwner(config, 1)
+    owner._backend = NS(get_sensor_data=lambda _: np.array([[0., 0., 1.]]))
+    provider = object.__new__(G1WalkDomainRandomizationProvider)
+    commands = np.zeros((1, 3))
+    info = provider._build_extra_info_updates_for_commands(owner, 1, commands)
+    info["commands"] = commands.copy()
+    info["steps"] = np.array([7], dtype=np.uint32)
+    owner._state = NpEnvState(
+        {"obs": commands.copy()}, np.array([.25]), np.zeros(1, bool),
+        np.zeros(1, bool), info,
+    )
+    # External reset callbacks can leave the live command unchanged: the probe
+    # must synchronize both its temporary moving command and the restored zero.
+    assert _policy_obs_contains_command(owner, reset_fn=lambda: None)
+    np.testing.assert_array_equal(owner.state.info["commands"], commands)
+    np.testing.assert_array_equal(owner.state.info["command_is_null"], [True])
+    np.testing.assert_allclose(owner.state.info["gait_phase"], [[np.pi, np.pi]])
+    np.testing.assert_array_equal(owner.state.obs["obs"], commands)
+    np.testing.assert_array_equal(owner.state.reward, [.25])
+    np.testing.assert_array_equal(owner.state.info["steps"], [7])
 
 
 class LifecycleOwner(G1WalkRuntimeBindings):
