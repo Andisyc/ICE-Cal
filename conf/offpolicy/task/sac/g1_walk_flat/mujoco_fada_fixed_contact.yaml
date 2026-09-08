@@ -6,6 +6,7 @@ defaults:
 # G1 实验主控制表。日常只修改本文件；同名命令行参数具有最终优先级。
 # Reward 权重 0 = 关闭；DR 的 false = 关闭。关闭 Reward 不会自动关闭相位输入。
 # 文件名保留以兼容现有启动命令；新实验不再按 v1/v2 切换 profile。
+# 当前恢复为 phase-neutral source 基线：实验行为全部关闭，保留代码修复与 DR 课程。
 
 # 1. 训练：默认保持当前设置，服务器命令仍可覆盖设备、规模和输出目录。
 training:
@@ -28,21 +29,19 @@ algo:
     oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
 
 env:
-  # 2. 命令与相位。启用门控变步频时，三个字段一起设置：
-  # command_gated_phase_contact.enabled=true、gait_phase_init_mode=command_gated、
-  # reward.feet_phase_mode=command_gated_contact。
-  gait_phase_enabled: true
+  # 2. 基线命令与相位：不输入相位，不冻结或固定起步，不定时切换命令。
+  gait_phase_enabled: false
   gait_phase_init_mode: offset_phase
-  gait_clock_mode: command_fixed # 精确零指令冻结；起步恢复左右半周期差，步频保持固定
+  gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
     dead_zone_enabled: false
     dead_zone_xy: 0.1
     dead_zone_yaw: 0.1
     small_xy_threshold: 0.0
     vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
-    resampling_time: 4.0
-    rel_standing_envs: 0.3       # 30% 站立 + 30% 低速 + 40% 普通速度
-    rel_transition_envs: 0.3
+    resampling_time: 0.0
+    rel_standing_envs: 0.3       # 30% 站立 + 70% 普通速度
+    rel_transition_envs: 0.0     # 关闭额外低速采样
     transition_vel_limit: [[0.05, 0.0, 0.0], [0.25, 0.0, 0.0]]
     heading_command: false
   command_gated_phase_contact:
@@ -124,19 +123,14 @@ env:
 
 # 5. Reward：权重 0 = 关闭；正数奖励，负数惩罚（当前功能模式）。
 reward:
-  feet_phase_mode: fixed_contact
-  feet_orientation_stance_only: true
+  feet_phase_mode: legacy
+  feet_orientation_stance_only: false # 恢复双脚姿态惩罚，不再按相位选择支撑脚
   gait_frequency: 1.5
   tracking_sigma: 0.25
   tracking_lin_error_scale: null # 恢复旧速度跟踪 exp(-平面误差平方 / tracking_sigma)
   tracking_lin_relative_blend: false
-  # 暂停混合速度跟踪实验，保留候选设置：
-  # tracking_lin_relative_blend: true
-  # tracking_lin_min_command: 0.05
-  # tracking_lin_relative_until: 0.25
-  # tracking_lin_absolute_from: 0.5
   under_speed_mode: forward
-  under_speed_min_command: 0.05 # 归一化分母下限，不截断或修改命令
+  under_speed_min_command: 0.05 # 欠速项已关闭，此参数不生效
   feet_phase_swing_height: 0.09
   feet_phase_tracking_sigma: 0.04
   base_height_target: 0.754
@@ -145,11 +139,11 @@ reward:
   scales:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
-    under_speed: -1.0           # 恢复 v2 的前向欠速算法
-    phase_contact: 0.0          # 消融：关闭固定触地时序惩罚，保留相位输入与起步时钟
+    under_speed: 0.0            # 关闭后来增加的欠速惩罚
+    phase_contact: 0.0          # 关闭固定触地时序惩罚
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
     penalty_orientation: -10.0  # 身体倾斜
-    penalty_action_rate: -4.0   # 相邻动作变化，恢复 v2 权重
+    penalty_action_rate: -4.0   # 相邻动作变化，保持基线权重
     pose: -0.5                 # 偏离默认关节姿态
     penalty_feet_ori: -20.0     # 脚掌倾斜
     alive: 10.0
