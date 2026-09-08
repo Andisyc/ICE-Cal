@@ -30,8 +30,8 @@ algo:
 
 env:
   # 2. 基线命令与相位：不输入相位，不冻结或固定起步，不定时切换命令。
-  gait_phase_enabled: false
-  gait_phase_init_mode: offset_phase
+  gait_phase_enabled: true      # command_gated_phase_contact 契约要求开启
+  gait_phase_init_mode: command_gated
   gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
     dead_zone_enabled: true
@@ -123,7 +123,7 @@ env:
 
 # 5. Reward：权重 0 = 关闭；正数奖励，负数惩罚（当前功能模式）。
 reward:
-  feet_phase_mode: phase_contact_v1
+  feet_phase_mode: command_gated_contact
   feet_orientation_stance_only: false # 恢复双脚姿态惩罚，不再按相位选择支撑脚
   gait_frequency: 1.5
   tracking_sigma: 0.25
@@ -140,7 +140,7 @@ reward:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
     under_speed: -1.0           # 恢复正向欠速惩罚
-    phase_contact: 1.0          # 命令门控交替接触奖励（低速步态组织）
+    phase_contact: -1.0         # 命令门控交替接触惩罚（mismatch cost，负权重）
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度
     penalty_orientation: -10.0  # 身体倾斜
     penalty_action_rate: -4.0   # 相邻动作变化，保持基线权重
