@@ -40,7 +40,7 @@ env:
     small_xy_threshold: 0.0
     vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     resampling_time: 4.0        # 回合内每 4s 重采样命令：训练起步/降速/停下过渡，消除迟滞
-    rel_standing_envs: 0.15      # 站立已掌握，让出 15% 给全速域，修复 0.4-0.6 中速区退化
+    rel_standing_envs: 0.3       # 30% 站立：存活时间锚点，砍到 0.15 会导致惩罚课程趴在最低档
     rel_transition_envs: 0.2     # 20% 低速桶（0.05-0.25 m/s）：激励已修好，补低速练习量
     transition_vel_limit: [[0.05, 0.0, 0.0], [0.25, 0.0, 0.0]]
     heading_command: false
