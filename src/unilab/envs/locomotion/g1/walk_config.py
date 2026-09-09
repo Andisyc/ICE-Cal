@@ -236,6 +236,7 @@ class G1RewardConfig:
     min_base_height: float
     max_tilt_deg: float
     min_forward_speed_for_gait_reward: float = 0.0
+    min_planar_command_speed_for_gait_reward: float = 0.0
     feet_phase_mode: str = "legacy"
     feet_orientation_stance_only: bool = False
     penalty_curriculum_terms: list[str] | None = None
@@ -320,6 +321,7 @@ class G1RewardConfig:
             "filtered_command_height",
             "command_height",
             "phase_height",
+            "absolute_phase_height",
             "command_gated_contact",
             "fixed_contact",
         }:
@@ -347,6 +349,13 @@ class G1RewardConfig:
         for name in ("tracking_sigma", "gait_frequency", "feet_phase_tracking_sigma"):
             if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be finite and positive")
+        if (
+            not math.isfinite(self.min_planar_command_speed_for_gait_reward)
+            or self.min_planar_command_speed_for_gait_reward < 0
+        ):
+            raise ValueError(
+                "min_planar_command_speed_for_gait_reward must be finite and non-negative"
+            )
         if self.tracking_lin_error_scale is not None and (
             not math.isfinite(self.tracking_lin_error_scale) or self.tracking_lin_error_scale <= 0
         ):

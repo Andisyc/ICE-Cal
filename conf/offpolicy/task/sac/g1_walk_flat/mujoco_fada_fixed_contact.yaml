@@ -31,8 +31,8 @@ algo:
     oracle_lineage_id: ${oc.env:ICE_CAL_ORACLE_LINEAGE_ID,REQUIRED}
 
 env:
-  # 2. 基线命令与相位：不输入相位，不冻结或固定起步，不定时切换命令。
-  gait_phase_enabled: false
+  # 2. 基线命令与相位：输入连续左右错相时钟；不冻结或固定起步，不定时切换命令。
+  gait_phase_enabled: true
   gait_phase_init_mode: offset_phase
   gait_clock_mode: continuous   # 恢复旧路径；相位关闭时输出为零
   commands:
@@ -125,7 +125,7 @@ env:
 
 # 5. Reward：权重 0 = 关闭；正数奖励，负数惩罚（当前功能模式）。
 reward:
-  feet_phase_mode: legacy
+  feet_phase_mode: absolute_phase_height
   feet_orientation_stance_only: false # 恢复双脚姿态惩罚，不再按相位选择支撑脚
   gait_frequency: 1.5
   tracking_sigma: 0.25
@@ -133,8 +133,9 @@ reward:
   tracking_lin_relative_blend: false # 回退：该轮 checkpoint 出现调整两脚趋势
   under_speed_mode: forward
   under_speed_min_command: 0.05 # forward 模式不使用此参数
-  feet_phase_swing_height: 0.09
-  feet_phase_tracking_sigma: 0.04
+  min_planar_command_speed_for_gait_reward: 0.4
+  feet_phase_swing_height: 0.04
+  feet_phase_tracking_sigma: 0.008
   base_height_target: 0.754
   min_base_height: 0.3
   max_tilt_deg: 65.0
@@ -150,7 +151,7 @@ reward:
     pose: -0.5                 # 偏离默认关节姿态
     penalty_feet_ori: -20.0     # 脚掌倾斜
     alive: 10.0
-    feet_phase: 0.0             # 抬脚高度跟踪
+    feet_phase: 5.0             # 命令速度 >=0.4 时跟踪左右绝对脚高相位
     feet_phase_contrast: 0.0    # 左右脚高度差
     feet_phase_contact: 0.0     # 旧版接触匹配，区别于 phase_contact
     null_foot_force_balance: 0.0 # 零指令双脚受力平衡

@@ -149,6 +149,7 @@ class G1WalkEnv(
             "filtered_command_height",
             "command_height",
             "phase_height",
+            "absolute_phase_height",
         }:
             canonical_scene = ASSETS_ROOT_PATH / "robots/g1/scene_flat.xml"
             if cfg.scene.fragment_files or cfg.scene.terrain is not None:

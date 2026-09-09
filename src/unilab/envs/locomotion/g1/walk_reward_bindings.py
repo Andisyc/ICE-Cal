@@ -31,6 +31,7 @@ from unilab.envs.locomotion.g1.walk_math import (
     compute_forward_command_mask,
     compute_forward_progress_failure,
     compute_forward_speed_gate,
+    compute_planar_command_speed_gate,
     compute_gait_phase_contact_violation,
     compute_gait_phase_contrast_violation,
     compute_gait_phase_height_violation,
@@ -506,6 +507,21 @@ class G1WalkRewardBindings:
             "gait_phase", np.zeros((self._num_envs, 2), dtype=get_global_dtype())
         )
         swing_height = self._reward_cfg.feet_phase_swing_height
+        if self._reward_cfg.feet_phase_mode == "absolute_phase_height":
+            left_target, right_target = compute_feet_phase_height_targets(
+                gait_phase, swing_height
+            )
+            left_error = np.square(left_foot[:, 2] - left_target)
+            right_error = np.square(right_foot[:, 2] - right_target)
+            reward = np.exp(
+                -(left_error + right_error)
+                / self._reward_cfg.feet_phase_tracking_sigma
+            )
+            gate = compute_planar_command_speed_gate(
+                ctx.info["commands"],
+                self._reward_cfg.min_planar_command_speed_for_gait_reward,
+            )
+            return np.asarray(reward * gate, dtype=get_global_dtype())
         if self._reward_cfg.feet_phase_mode in {
             "filtered_command_height",
             "command_height",

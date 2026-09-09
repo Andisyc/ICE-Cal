@@ -61,6 +61,20 @@ def compute_feet_phase_height_targets(
     return left_target, right_target
 
 
+def compute_planar_command_speed_gate(
+    commands: np.ndarray, min_speed: float
+) -> np.ndarray:
+    commands = np.asarray(commands)
+    if commands.ndim != 2 or commands.shape[1] != 3 or not np.all(np.isfinite(commands)):
+        raise ValueError("command speed gate requires finite (N, 3) commands")
+    if not np.isfinite(min_speed) or min_speed < 0:
+        raise ValueError("command speed gate threshold must be finite and non-negative")
+    return np.asarray(
+        np.linalg.norm(commands[:, :2], axis=1) >= min_speed,
+        dtype=get_global_dtype(),
+    )
+
+
 def original_command_height_targets(
     phase: np.ndarray,
     commands: np.ndarray,
