@@ -396,6 +396,7 @@ class FastSACLearner:
         amp_dtype: str = "auto",
         use_compile: bool = False,
         symmetry_augmentation: SymmetryAugmentation | None = None,
+        symmetry_mirror_loss_coeff: float = 0.0,
         world_size: int = 1,
     ):
         self.device = device
@@ -498,6 +499,14 @@ class FastSACLearner:
                 "FastSACLearner use_symmetry=True requires a symmetry_augmentation contract"
             )
         self.use_symmetry = use_symmetry
+        self.symmetry_mirror_loss_coeff = float(symmetry_mirror_loss_coeff)
+        if (
+            not math.isfinite(self.symmetry_mirror_loss_coeff)
+            or self.symmetry_mirror_loss_coeff < 0.0
+        ):
+            raise ValueError("symmetry_mirror_loss_coeff must be finite and non-negative")
+        if self.symmetry_mirror_loss_coeff > 0.0 and not self.use_symmetry:
+            raise ValueError("symmetry_mirror_loss_coeff requires use_symmetry=True")
         if self.use_compile:
             self._compile_training_methods()
 
@@ -580,6 +589,16 @@ class FastSACLearner:
         """Sample actor actions for the actor loss update."""
         del critic_obs
         return self.actor.get_actions_and_log_probs(actor_obs)
+
+    def _get_deterministic_actions_for_actor(
+        self,
+        actor_obs: torch.Tensor,
+        critic_obs: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return the policy mean action used by symmetry consistency."""
+        del critic_obs
+        actions, _, _ = self.actor(actor_obs)
+        return actions
 
     def _normalize_critic_obs_for_q(self, critic_obs: torch.Tensor) -> torch.Tensor:
         """Return the Q-network input; specialized runtimes may normalize owned tails."""
@@ -752,17 +771,32 @@ class FastSACLearner:
         """One actor update step."""
         obs = batch["obs"]
         critic_obs = batch["critic"]
+        mirror_loss = torch.zeros((), device=self.device)
 
         # Apply symmetry augmentation
         if self.use_symmetry:
             assert self.symmetry is not None
-            obs = torch.cat([obs, self.symmetry.mirror_obs(obs, obs_group="obs")], dim=0)
-            critic_obs = torch.cat(
-                [critic_obs, self.symmetry.mirror_obs(critic_obs, obs_group="critic")],
-                dim=0,
+            mirrored_obs = self.symmetry.mirror_obs(obs, obs_group="obs")
+            mirrored_critic_obs = self.symmetry.mirror_obs(
+                critic_obs, obs_group="critic"
             )
+            if self.symmetry_mirror_loss_coeff > 0.0:
+                with torch.no_grad():
+                    with self._autocast():
+                        original_actions = self._get_deterministic_actions_for_actor(
+                            obs, critic_obs
+                        )
+                        mirrored_targets = self.symmetry.mirror_action(original_actions)
+                with self._autocast():
+                    mirrored_actions = self._get_deterministic_actions_for_actor(
+                        mirrored_obs, mirrored_critic_obs
+                    )
+                    mirror_loss = F.mse_loss(mirrored_actions, mirrored_targets)
+            obs = torch.cat([obs, mirrored_obs], dim=0)
+            critic_obs = torch.cat([critic_obs, mirrored_critic_obs], dim=0)
 
         actor_loss, policy_entropy, action_std = self._actor_loss_tensors(obs, critic_obs)
+        actor_loss = actor_loss + self.symmetry_mirror_loss_coeff * mirror_loss
 
         # Skip if NaN
         if torch.isfinite(actor_loss):
@@ -797,6 +831,7 @@ class FastSACLearner:
             "actor_grad_norm": actor_grad_norm.item(),
             "policy_entropy": policy_entropy.item(),
             "action_std": action_std.item(),
+            "mirror_loss": mirror_loss.item(),
         }
 
     def soft_update_target(self) -> None:

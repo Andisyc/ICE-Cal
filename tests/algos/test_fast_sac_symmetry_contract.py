@@ -4,6 +4,7 @@ from typing import Any
 
 import gymnasium as gym
 import pytest
+import torch
 
 
 class _FakeSymmetryAugmentation:
@@ -14,6 +15,9 @@ class _FakeSymmetryAugmentation:
 
     def mirror_obs(self, obs, *, obs_group: str = "obs"):
         return obs
+
+    def mirror_action(self, action):
+        return -action
 
 
 class _ForbiddenBackend:
@@ -117,6 +121,87 @@ def test_fast_sac_learner_rejects_symmetry_without_augmentation():
             device="cpu",
             use_symmetry=True,
         )
+
+
+def test_fast_sac_actor_reports_positive_mirror_loss_for_asymmetric_policy():
+    from unilab.algos.torch.fast_sac.learner import FastSACLearner
+
+    learner = FastSACLearner(
+        obs_dim=4,
+        action_dim=2,
+        critic_obs_dim=4,
+        device="cpu",
+        use_symmetry=True,
+        symmetry_augmentation=_FakeSymmetryAugmentation(),
+        symmetry_mirror_loss_coeff=0.1,
+        use_compile=False,
+    )
+    with torch.no_grad():
+        learner.actor.fc_mu.bias.fill_(0.5)
+
+    metrics = learner.update_actor(
+        {
+            "obs": torch.zeros(4, 4),
+            "critic": torch.zeros(4, 4),
+        }
+    )
+
+    assert metrics["mirror_loss"] > 0.0
+
+
+def test_fast_sac_actor_skips_mirror_target_when_coefficient_is_zero():
+    from unilab.algos.torch.fast_sac.learner import FastSACLearner
+
+    class _NoActionMirror(_FakeSymmetryAugmentation):
+        def mirror_action(self, action):
+            raise AssertionError("zero mirror-loss coefficient must preserve the old actor path")
+
+    learner = FastSACLearner(
+        obs_dim=4,
+        action_dim=2,
+        critic_obs_dim=4,
+        device="cpu",
+        use_symmetry=True,
+        symmetry_augmentation=_NoActionMirror(),
+        symmetry_mirror_loss_coeff=0.0,
+        use_compile=False,
+    )
+
+    metrics = learner.update_actor(
+        {
+            "obs": torch.zeros(4, 4),
+            "critic": torch.zeros(4, 4),
+        }
+    )
+
+    assert metrics["mirror_loss"] == pytest.approx(0.0)
+
+
+def test_hora_sac_mirror_loss_uses_privileged_actor_path():
+    from unilab.algos.torch.hora.sac_learner import HoraSACLearner
+
+    learner = HoraSACLearner(
+        obs_dim=4,
+        critic_obs_dim=6,
+        priv_info_dim=2,
+        action_dim=2,
+        device="cpu",
+        use_symmetry=True,
+        symmetry_augmentation=_FakeSymmetryAugmentation(),
+        symmetry_mirror_loss_coeff=0.1,
+        use_compile=False,
+    )
+    with torch.no_grad():
+        learner.actor.action_mean_head.bias.fill_(0.5)
+
+    metrics = learner.update_actor(
+        {
+            "obs": torch.zeros(4, 4),
+            "critic": torch.zeros(4, 6),
+        }
+    )
+
+    assert metrics["mirror_loss"] > 0.0
 
 
 def test_multi_gpu_offpolicy_runner_rejects_sac_symmetry_capability():

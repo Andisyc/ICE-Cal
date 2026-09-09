@@ -55,6 +55,7 @@ class SACConfig(BaseConfig):
     obs_normalization: bool = True
     use_layer_norm: bool = True
     use_symmetry: bool = False
+    symmetry_mirror_loss_coeff: float = 0.0
     actor: dict[str, Any] = field(default_factory=dict)
     algo_params: SACAlgoParams = field(default_factory=SACAlgoParams)
 

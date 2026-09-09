@@ -17,6 +17,7 @@ training:
 algo:
   seed: 1
   use_symmetry: true
+  symmetry_mirror_loss_coeff: 0.1
   num_envs: 2048
   batch_size: 8192
   max_iterations: 5000
@@ -140,7 +141,7 @@ reward:
   scales:
     tracking_lin_vel: 2.0       # 平面速度跟踪
     tracking_ang_vel: 1.5       # 转向速度跟踪
-    penalty_yaw_corridor_violation: -0.5 # 仅直行命令下约束累计航向偏移
+    penalty_yaw_corridor_violation: 0.0  # 关闭：累计 yaw 二次惩罚会抑制前进探索
     under_speed: -1.0           # 恢复正向欠速惩罚（-2 无额外收益，回到已知最佳基线）
     phase_contact: 0.0          # 实验失败回退：策略学会"走两步停下等相位"博弈时钟
     penalty_ang_vel_xy: -1.0    # 身体横滚/俯仰角速度

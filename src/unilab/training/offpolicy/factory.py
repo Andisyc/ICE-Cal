@@ -186,6 +186,7 @@ def build_runner(algo_name: str, cfg: DictConfig):
             amp_dtype=cfg.algo.algo_params.amp_dtype,
             use_compile=cfg.algo.algo_params.use_compile,
             use_symmetry=cfg.algo.use_symmetry,
+            symmetry_mirror_loss_coeff=cfg.algo.symmetry_mirror_loss_coeff,
             symmetry_augmentation=_symmetry_aug,
             critic_obs_dim=_critic_dim,
             **_learner_extra_kwargs,

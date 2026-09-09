@@ -219,3 +219,17 @@ class HoraSACLearner(FastSACLearner):
         )
         actor = cast(HoraSACActor, self.actor)
         return actor.get_actions_and_log_probs(actor_obs, priv_info)
+
+    def _get_deterministic_actions_for_actor(
+        self,
+        actor_obs: torch.Tensor,
+        critic_obs: torch.Tensor,
+    ) -> torch.Tensor:
+        priv_info = derive_priv_info_from_critic_obs(
+            actor_obs,
+            critic_obs,
+            context="symmetry mirror loss",
+        )
+        actor = cast(HoraSACActor, self.actor)
+        actions, _, _ = actor(actor_obs, priv_info)
+        return actions
