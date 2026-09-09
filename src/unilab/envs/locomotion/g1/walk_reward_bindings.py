@@ -190,9 +190,14 @@ class G1WalkRewardBindings:
 
     def _reward_yaw_corridor_violation(self, ctx: RewardContext) -> np.ndarray:
         _, yaw_drift = self._episode_frame_errors(ctx.info)
-        return self._normalized_corridor_violation(
+        violation = self._normalized_corridor_violation(
             yaw_drift, self._reward_cfg.straight_line_yaw_tolerance_rad
         )
+        commands = np.asarray(ctx.info["commands"], dtype=get_global_dtype())
+        straight = (commands[:, 0] > float(self._cfg.commands.small_xy_threshold)) & (
+            np.abs(commands[:, 2]) < float(self._cfg.commands.dead_zone_yaw)
+        )
+        return np.asarray(violation * straight, dtype=get_global_dtype())
 
     def _forward_progress_failure(self, info: dict[str, Any]) -> np.ndarray:
         cfg = self._cfg.forward_progress_termination

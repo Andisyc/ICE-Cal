@@ -494,6 +494,45 @@ def test_trajectory_corridor_penalty_is_zero_inside_and_quadratic_outside() -> N
     )
 
 
+def test_yaw_corridor_penalty_only_applies_to_active_straight_commands() -> None:
+    fixed_cfg = OmegaConf.load(
+        ROOT_DIR / "conf/offpolicy/task/sac/g1_walk_flat/mujoco_fada_fixed_contact.yaml"
+    )
+    assert fixed_cfg.reward.scales.penalty_yaw_corridor_violation == pytest.approx(-0.5)
+
+    env = object.__new__(G1WalkEnv)
+    env._num_envs = 4
+    env._cfg = SimpleNamespace(
+        commands=SimpleNamespace(small_xy_threshold=0.4, dead_zone_yaw=0.1)
+    )
+    env._reward_cfg = SimpleNamespace(straight_line_yaw_tolerance_rad=0.1)
+    initial_yaw = np.zeros(4, dtype=np.float32)
+    current_yaw = np.asarray([0.2, 0.2, 0.2, 0.15], dtype=np.float32)
+    env.get_base_pos = lambda: np.zeros((4, 3), dtype=np.float32)
+    env.get_base_quat = lambda: np_yaw_to_quat(current_yaw)
+    ctx = SimpleNamespace(
+        info={
+            "episode_start_base_pos": np.zeros((4, 3), dtype=np.float32),
+            "episode_start_base_yaw": initial_yaw,
+            "commands": np.asarray(
+                [
+                    [0.5, 0.0, 0.0],
+                    [0.5, 0.0, 0.1],
+                    [0.4, 0.0, 0.0],
+                    [0.5, 0.2, 0.0],
+                ],
+                dtype=np.float32,
+            ),
+        }
+    )
+
+    np.testing.assert_allclose(
+        env._reward_yaw_corridor_violation(ctx),
+        np.asarray([1.0, 0.0, 0.0, 0.25], dtype=np.float32),
+        atol=1e-6,
+    )
+
+
 def test_forward_progress_failure_uses_reset_yaw_and_exact_grace_boundary() -> None:
     from unilab.envs.locomotion.g1.joystick import compute_forward_progress_failure
 
