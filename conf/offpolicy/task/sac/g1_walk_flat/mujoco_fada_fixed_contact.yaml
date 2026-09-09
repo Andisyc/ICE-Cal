@@ -81,9 +81,9 @@ env:
     ground_friction_multiplier_range: [0.8, 1.2]
     randomize_base_mass: true
     added_mass_range: [-1.5, 1.5]
-    randomize_body_mass: true
+    randomize_body_mass: false  # 左右独立 Body 质量 DR 暂停，用于偏航消融
     body_mass_multiplier_range: [0.9, 1.1]
-    random_com: true
+    random_com: false           # 暂停横向 COM 偏移及同组 COM DR
     com_offset_x: [-0.05, 0.05]
     com_offset_y: [-0.05, 0.05]
     com_offset_z: [-0.05, 0.05]
@@ -91,7 +91,7 @@ env:
     gravity_range: [[0.0, 0.0, -9.81], [0.0, 0.0, -9.81]]
     randomize_dof_armature: false
     dof_armature_multiplier_range: [0.8, 1.2]
-    randomize_dof_position_bias: true
+    randomize_dof_position_bias: false # 暂停左右独立关节零偏 DR
     dof_position_bias_range: [-0.025, 0.025]
     randomize_control_delay: false
     torque_rfi_fraction: 0.0     # 0 = 关闭
