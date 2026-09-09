@@ -6,7 +6,7 @@
   "verdict": "READY",
   "scope": {
     "requested": ["replace the active v015 dual-Reward route with the confirmed v016 single-Reward route"],
-    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged/Gain additions", "SAC and 20+1 checkpoint lineage"],
+    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged additions with targeted faults excluded", "SAC and 20+1 checkpoint lineage"],
     "forbidden": ["new runner, backend API, Reward formula, simulator or training", "server, Git, deployment or policy-quality claim"]
   },
   "identities": {
@@ -37,7 +37,7 @@
   "dimensions": [
     {"name": "responsibility-ownership", "disposition": "pass", "evidence": "The nominal Hydra profile owns the Reward and privileged preflight owns admission; shared G1 mode code remains a legacy capability, not active FADA authority."},
     {"name": "public-interface", "disposition": "pass", "evidence": "The plan changes composed configuration and one existing validator surface without adding a wrapper, registry or schema."},
-    {"name": "dependency-direction", "disposition": "pass", "evidence": "Privileged config inherits the nominal profile and adds only runtime, privilege and Gain; nominal config never depends on FADA runtime."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "Privileged config inherits the nominal profile and adds only runtime and privilege; targeted faults remain downstream-only and nominal config never depends on FADA runtime."},
     {"name": "state-lifecycle", "disposition": "pass", "evidence": "No new mutable state is introduced; disabled gait-clock reset/step behavior is verification-only."},
     {"name": "change-surface", "disposition": "pass", "evidence": "The retired active profile/validator are replaced at the existing Pinch Points; generic consumers are preserved rather than broadly deleted."},
     {"name": "evidence-boundary", "disposition": "pass", "evidence": "S0/S1/S3 evidence is separated from formal runtime, simulation, training and policy quality."},

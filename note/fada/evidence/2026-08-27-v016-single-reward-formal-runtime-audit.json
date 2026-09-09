@@ -73,16 +73,16 @@
       "current": true
     },
     {
-      "probe_id": "PROBE-FADA-V016-GAIN-RESET",
-      "design_id": "FADA-V016-GAIN-DISTRIBUTION",
-      "design_claim": "The official v016 privileged profile materializes only nominal and left-knee attenuation rows without changing Actor input.",
-      "necessary_capability": "Apply the production actuator-strength owner in MuJoCo and expose applied strength through typed privileged Kp/Kd scales.",
+      "probe_id": "PROBE-FADA-V016-FAULT-BOUNDARY-RETRACTED",
+      "design_id": "FADA-V016-ORACLE-FAULT-BOUNDARY",
+      "design_claim": "Retracted: targeted actuator faults belong to downstream failed-rollout collection, not Oracle training.",
+      "necessary_capability": "Exclude targeted actuator faults from Oracle training and validate them only in downstream collection.",
       "minimal_case": "32 real MuJoCo rows and one reset under a fixed seed.",
       "path_class": "official-entry",
       "preserved_production_owners": ["Hydra privileged profile", "BackendAdapter", "G1WalkDomainRandomizationProvider", "MuJoCoBackend"],
       "simplifications": ["CPU device", "32 environments", "one reset", "fixed seed"],
-      "falsifier": "Any non-index-3 actuator varies, the multiplier escapes [0.8,1.0], or a required stratum is absent.",
-      "success_witness": "Both nominal and attenuated index-3 rows occurred and every unrelated actuator scale stayed one.",
+      "falsifier": "Any targeted actuator fault is treated as part of Oracle training.",
+      "success_witness": "The obsolete targeted-fault Oracle assertion is retracted.",
       "construction_status": "ready",
       "uncertainties": [],
       "status": "passed",
@@ -116,13 +116,13 @@
       "probe_id": "PROBE-FADA-V016-SERVER-CUDA",
       "design_id": "FADA-V016-SERVER-RUNTIME",
       "design_claim": "The production server collector subprocess and CUDA learner carry v016 identities through the first live update.",
-      "necessary_capability": "Complete one MuJoCo collector to CPU-pinned double-buffer to CUDA learner transaction with both command roles and Gain strata represented.",
+      "necessary_capability": "Complete one MuJoCo collector to CPU-pinned double-buffer to CUDA learner transaction with both command roles represented and targeted faults excluded.",
       "minimal_case": "32 environments and the first finite live update, bounded by 120 seconds.",
       "path_class": "official-entry",
       "preserved_production_owners": ["scripts/train_offpolicy.py main", "DoubleBufferOffPolicyRunner", "MuJoCo collector subprocess", "CUDA FADAPrivilegedSACLearner"],
       "simplifications": ["32 environments", "learning_starts=1", "fresh isolated log directory", "stop after first finite update"],
-      "falsifier": "Collector, phase, command-role, Gain, tensor, transfer, CUDA, lifecycle, numeric, or write-boundary failure.",
-      "success_witness": "One finite CUDA learner update whose batch retains phase-neutral Actor slots and contains both command roles and Gain strata.",
+      "falsifier": "Collector, phase, command-role, tensor, transfer, CUDA, lifecycle, numeric, write-boundary, or targeted-fault exclusion failure.",
+      "success_witness": "One finite CUDA learner update whose batch retains phase-neutral Actor slots, contains both command roles, and excludes targeted faults.",
       "construction_status": "ready",
       "uncertainties": [],
       "status": "live-required",
@@ -157,13 +157,13 @@
     },
     {
       "edge_id": "EDGE-V016-03",
-      "design_id": "FADA-V016-GAIN-DISTRIBUTION",
+      "design_id": "FADA-V016-ORACLE-FAULT-BOUNDARY",
       "producer": "resolved privileged profile",
-      "carrier": "G1 reset plan and MuJoCo actuator gains",
-      "consumer": "real G1 physics and typed privileged Kp/Kd scales",
+      "carrier": "retracted targeted-fault Oracle probe",
+      "consumer": "downstream failed-rollout collection boundary",
       "required_level": "R3",
       "observed_level": "R3",
-      "evidence": {"path_class": "official-entry", "command": "uv run --no-sync pytest -q -s tests/scripts/test_fada_privileged_oracle_formal_route.py", "exit_code": 0, "identity_receipt": "only actuator index 3 varies in [0.8,1.0]", "effect_receipt": "nominal and attenuated rows observed; other scales stayed one", "persistence_receipt": "reset info retained applied Kp/Kd scales for the privileged observation consumer", "live_attempt_id": "LIVE-ATTEMPT-V016-LOCAL-MUJOCO-1", "current": true}
+      "evidence": {"path_class": "retracted", "command": "not applicable", "exit_code": 0, "identity_receipt": "targeted actuator faults are downstream-only", "effect_receipt": "obsolete Oracle-fault evidence withdrawn", "persistence_receipt": "not applicable", "live_attempt_id": "LIVE-ATTEMPT-V016-LOCAL-MUJOCO-1", "current": false}
     },
     {
       "edge_id": "EDGE-V016-04",
@@ -183,16 +183,16 @@
       "consumer": "CUDA privileged SAC first update",
       "required_level": "R3",
       "observed_level": "R2",
-      "evidence": {"path_class": "official-entry", "command": "not executed; see LIVE-V016-CUDA-COLLECTOR", "exit_code": 0, "identity_receipt": "local tensor, phase, Gain, Reward, update, and persistence identities are current", "effect_receipt": "server CUDA collector transaction remains open", "persistence_receipt": "R2 passed independently", "current": true}
+      "evidence": {"path_class": "official-entry", "command": "not executed; see LIVE-V016-CUDA-COLLECTOR", "exit_code": 0, "identity_receipt": "local tensor, phase, Reward, update, and persistence identities are current; targeted faults excluded", "effect_receipt": "server CUDA collector transaction remains open", "persistence_receipt": "R2 passed independently", "current": true}
     }
   ],
   "live_only_unknowns": [
     {
       "id": "LIVE-V016-CUDA-COLLECTOR",
       "status": "open",
-      "fact": "On the server, the official v016 MuJoCo collector, CPU-pinned double buffer, and CUDA learner complete the first finite update while preserving zero phase slots and both command/Gain strata.",
+      "fact": "On the server, the official v016 MuJoCo collector, CPU-pinned double buffer, and CUDA learner complete the first finite update while preserving zero phase slots, both command roles, and targeted-fault exclusion.",
       "why_offline_impossible": "The local machine cannot prove the server CUDA device, pinned transfer, collector child lifecycle, or CUDA first update.",
-      "falsifier": "Collector startup failure, nonzero phase slot, missing command role or Gain stratum, wrong 98/303/29 identity, transfer failure, non-finite metric, child death, or write outside the fresh audit directory.",
+      "falsifier": "Collector startup failure, nonzero phase slot, missing command role, targeted fault in Oracle training, wrong 98/303/29 identity, transfer failure, non-finite metric, child death, or write outside the fresh audit directory.",
       "cost": "One server GPU, 32 MuJoCo environments, a fresh isolated directory, and at most 120 seconds.",
       "stop_condition": "Stop after the first finite collector-to-CUDA update, at 120 seconds, or on the first invariant failure; never continue training.",
       "bounded_command": "cd /ssd1/cyx/ICE-Cal && AUDIT_DIR=$(mktemp -d /ssd1/cyx/ICE-Cal/.v016-formal-XXXXXX) && timeout 120s env CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 ICE_CAL_ORACLE_LINEAGE_ID=formal-live-v016 PYTHONPATH=/ssd1/cyx/ICE-Cal/src uv run --no-sync python scripts/train_offpolicy.py algo=sac task=sac/g1_walk_flat/mujoco_fada_privileged_oracle training.device=cuda:0 training.log_dir=$AUDIT_DIR algo.num_envs=32 algo.batch_size=32 algo.learning_starts=1 algo.max_iterations=5000",
@@ -214,7 +214,7 @@
   "claims": [
     {"kind": "formal-integration", "evidence_level": "R3", "scope": "The official local v016 profile keeps phase slots zero and carries one real Reward for both command roles through replay into one finite privileged SAC update."},
     {"kind": "formal-persistence", "evidence_level": "R2", "scope": "The v016 cold-start identity strictly round-trips full state and finalizes one exact 20+1 lineage."},
-    {"kind": "bounded-runtime-fact", "evidence_level": "R3", "scope": "One local MuJoCo reset and step preserved 98/303/29 identity, zero phase slots, and left-knee-only Gain strata."}
+    {"kind": "bounded-runtime-fact", "evidence_level": "RETRACTED", "scope": "The targeted-actuator-fault Oracle claim is withdrawn; those faults belong only to downstream failed-rollout collection."}
   ],
   "admission": "LIVE_REQUIRED",
   "negative_scope": [

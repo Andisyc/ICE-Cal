@@ -388,10 +388,10 @@
           "fixture": {
             "semantic_roles": [
               "nominal task facts",
-              "privileged/Gain additions"
+              "privileged additions with targeted faults excluded"
             ],
             "units_and_axes": "resolved Hydra profile",
-            "validity_semantics": "phase-neutral Reward inherited; privilege and left-knee Gain added"
+            "validity_semantics": "phase-neutral Reward inherited; privilege added; targeted actuator faults excluded"
           },
           "oracle": {
             "kind": "human-confirmed-golden",

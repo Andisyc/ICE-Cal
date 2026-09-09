@@ -6,7 +6,7 @@
   "admission": "DESIGN-CONFIRMED",
   "scope": {
     "requested": ["retire dual Reward and update active ICE-Cal source-training documentation"],
-    "preserved": ["single G1WalkFlat task, phase-neutral 98-D Actor, 66/29/3 Planner-IDM split, privileged Critic tail, left-knee Gain distribution, and 20+1 lineage"],
+    "preserved": ["single G1WalkFlat task, phase-neutral 98-D Actor, 66/29/3 Planner-IDM split, privileged Critic tail, targeted actuator faults excluded from Oracle training, and 20+1 lineage"],
     "forbidden": ["code changes, simulation, training, server operations, Git mutation, checkpoint mutation, or policy-quality claims"]
   },
   "identities": {

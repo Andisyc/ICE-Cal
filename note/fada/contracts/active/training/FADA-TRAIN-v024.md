@@ -33,8 +33,8 @@ The canonical `task=sac/g1_walk_flat/mujoco_fada_phase_contact` selector express
 - radian-to-cycle phase normalization and `duty_factor=0.55` contact windows;
 - finite negative phase/contact mismatch cost with no height target or constant match bonus;
 - null-command foot-force balance and torque relaxation only;
-- v022 typed privilege and broad physical DR, with the left-knee-only actuator-strength axis and
-  its curriculum disabled while generic all-joint Kp/Kd randomization remains enabled;
+- v022 typed privilege and broad physical DR, with targeted actuator faults excluded from Oracle
+  training and generic all-joint Kp/Kd randomization retained;
 - behavior profile `command_gated_phase_contact_v1`;
 - the sealed 20 intermediate checkpoints at iterations `240..4800` plus `model_5000.pt`.
 

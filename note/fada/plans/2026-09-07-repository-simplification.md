@@ -46,8 +46,8 @@ The characterization pinch points are Hydra composition, `build_runner`,
 | Profile | Purpose | Gait phase | Actor privilege | Domain randomization |
 | --- | --- | --- | --- | --- |
 | `mujoco_clean_baseline` | true comparison baseline | off | off | all off |
-| `mujoco_fada_source` | v022 phase-neutral source teacher | off | on | broad physical DR; left-knee-only strength off |
-| `mujoco_fada_phase_contact` | v024 command-gated source Oracle | on | on | broad physical DR; left-knee-only strength off |
+| `mujoco_fada_source` | v022 phase-neutral source teacher | off | on | broad physical DR; no targeted actuator faults |
+| `mujoco_fada_phase_contact` | v024 command-gated source Oracle | on | on | broad physical DR; no targeted actuator faults |
 | `mujoco_fada_phase` | v023 phase locomotion source | on | on | explicit grouped DR |
 | `mujoco_fada_target` | actuator target rollout | profile-owned | off | selected fault only |
 | `target_domain=slope_10/15` | slope target rollout | target-owned | off | all random DR off |
@@ -82,8 +82,9 @@ Old FADA source checkpoints use `mujoco_fada_source`; v023 checkpoints use
 5. Extract off-policy runner/lifecycle/playback into `unilab.training.offpolicy`, with
    the script re-exporting established helper names during source compatibility.
 6. Add public FADA stage namespaces and route production commands through them.
-7. Remove the privileged runtime's exact left-knee/range/probability selection checks,
-   preserving structural and observation/checkpoint validation.
+7. Remove targeted-fault selection checks from the privileged Oracle runtime, preserving
+   structural and observation/checkpoint validation; fault identity belongs to downstream rollout
+   collection.
 8. Move slope scene/DR ownership into the existing `target_domain` group and remove
    redundant slope task files. Flatten the full-action Context teacher chain.
 9. Run narrow RED/GREEN tests, affected FADA/off-policy/config tests, Ruff, and

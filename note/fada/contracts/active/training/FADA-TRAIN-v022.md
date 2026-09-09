@@ -66,9 +66,10 @@ or the non-v005 uniform replay path.
 
 - Live privileged input and normalization: implemented and exercised.
 - Historical iteration-based grouped DR curriculum: implemented and exercised in the old observed
-  run, but disabled in the current source training profile together with left-knee-only strength DR.
+  run, but disabled in the current source training profile.
 - Current broad physical DR: generic all-joint Kp/Kd and the remaining configured physical axes are
-  enabled without the retired actuator-strength/group curriculum.
+  enabled. Targeted actuator faults are excluded from Oracle training; left-knee gain attenuation
+  belongs only to downstream failed-rollout collection after Oracle freeze.
 - Qualitative v022 policy quality: Reward and episode length observed high; exact metrics not sealed.
 - Sealed current-profile 20+1 lineage: not implemented and not trained.
 - Planner–IDM transition: blocked only on the missing admitted lineage and subsequent runtime audit.

@@ -6,7 +6,7 @@
   "admission": "COMPLETE",
   "scope": {
     "requested": ["disable gait-clock authority while preserving 98-D compatibility and implement the nominal dual-Reward gate"],
-    "preserved": ["gait-enabled base task", "privileged/Gain Oracle additions", "98-D Actor and 66/29/3 split", "Planner-IDM and checkpoint schemas"],
+    "preserved": ["gait-enabled base task", "privileged Oracle additions with targeted faults excluded", "98-D Actor and 66/29/3 split", "Planner-IDM and checkpoint schemas"],
     "forbidden": ["simulation or training", "server or network operation", "Git commit, push or branch mutation", "policy-quality claim"]
   },
   "identities": {

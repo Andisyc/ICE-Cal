@@ -36,7 +36,7 @@ algo:
   save_interval: 240
   updates_per_step: 8
 
-  # Oracle 不使用左右对称增强；其余为折扣、distributional Q 支撑和观测归一化。
+  # canonical Source 保持关闭；具备完整特权镜像契约的下游实验 profile 可显式覆盖。
   use_symmetry: false
   gamma: 0.99
   value_support_min: -30.0

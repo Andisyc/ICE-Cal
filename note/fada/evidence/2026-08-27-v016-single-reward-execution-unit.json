@@ -6,14 +6,14 @@
   "admission": "COMPLETE",
   "scope": {
     "requested": ["implement the confirmed v016 single-Reward migration in one interaction"],
-    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged Critic/Gain semantics", "20+1 lineage"],
+    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged Critic semantics", "targeted faults excluded from Oracle training", "20+1 lineage"],
     "forbidden": ["simulation, training, server or network operation", "Git commit, push or branch mutation", "deployment or policy-quality claim"]
   },
   "identities": {
     "design": "FADA-METHOD-v016/FADA-TRAIN-v016",
     "checkout": "main@6b15cda8ffb4cbed17665d40e02a2e6be8e0b5d7+preserved-user-and-v016-doc-diff",
     "entrypoint": "scripts/train_offpolicy.py with task=sac/g1_walk_flat/mujoco_no_gait_single_reward or mujoco_fada_privileged_oracle",
-    "effective_config": "single phase-neutral locomotion Reward; no mode/stand authority; privileged route adds only typed privilege and left-knee Gain",
+    "effective_config": "single phase-neutral locomotion Reward; no mode/stand authority; privileged route adds only typed privilege; targeted actuator faults are downstream-only",
     "checkpoint": "cold-start; no checkpoint read or write authorized"
   },
   "authority": {

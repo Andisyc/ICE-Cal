@@ -4,7 +4,8 @@
 > plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove gait-clock authority while preserving the 98-D/66-D Planner–IDM tensor contract,
-and provide one nominal dual-Reward SAC profile that can be validated before privileged/Gain work.
+and provide one nominal dual-Reward SAC profile that can be validated before privileged Oracle work.
+Targeted actuator faults remain exclusive to downstream failed-rollout collection.
 
 **Architecture:** `G1WalkEnvCfg` owns one `gait_phase_enabled` switch. Disabled tasks retain two
 constant-zero compatibility slots through reset, observation, and step. A new nominal Hydra profile
@@ -59,7 +60,8 @@ runtime and Gain distribution.
 - Modify: `src/unilab/algos/torch/distill/fada_privileged_oracle_sac.py`
 
 - [ ] Move the shared dual-Reward/command/no-phase facts into the nominal profile.
-- [ ] Make the privileged profile inherit it and retain only privileged/Gain-specific facts.
+- [ ] Make the privileged profile inherit it and retain only privileged facts; keep targeted faults
+  outside Oracle training.
 - [ ] Fail closed when privileged preflight sees `gait_phase_enabled=true`.
 
 ### Task 4: Prove GREEN and close locally

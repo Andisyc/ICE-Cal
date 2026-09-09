@@ -14,6 +14,7 @@ from unilab.envs.locomotion.common.commands import (
     apply_heading_yaw_feedback,
     sample_heading_commands,
     sample_height_commands,
+    zero_small_xy_commands,
 )
 from unilab.envs.locomotion.common.rewards import RewardContext
 from unilab.envs.locomotion.g1.calibration_fault import (
@@ -360,6 +361,12 @@ class G1WalkControlBindings:
 
     def _publish_ungated_commands(self, info: dict, commands_arr: np.ndarray) -> None:
         commands_arr = apply_g1_command_dead_zone(commands_arr, self._cfg.commands)
+        small_xy_threshold = float(getattr(self._cfg.commands, "small_xy_threshold", 0.0))
+        if small_xy_threshold > 0.0:
+            # Single chokepoint: training samples are already snapped (idempotent);
+            # this covers external writers (keyboard teleop, deployment command nodes).
+            commands_arr = np.array(commands_arr, copy=True)
+            zero_small_xy_commands(commands_arr, threshold=small_xy_threshold)
         if self._fixed_command_clock_enabled():
             is_null = np.all(commands_arr == 0.0, axis=1)
             was_null = np.asarray(

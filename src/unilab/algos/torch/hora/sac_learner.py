@@ -58,8 +58,6 @@ class HoraSACLearner(FastSACLearner):
         symmetry_augmentation: Any | None = None,
         **kwargs: Any,
     ) -> None:
-        if use_symmetry or symmetry_augmentation is not None:
-            raise ValueError("HORA-SAC does not support symmetry augmentation.")
         if int(priv_info_dim) <= 0:
             raise ValueError(f"HORA-SAC requires positive priv_info_dim, got {priv_info_dim}.")
 
@@ -75,8 +73,8 @@ class HoraSACLearner(FastSACLearner):
             use_layer_norm=use_layer_norm,
             actor_lr=actor_lr,
             weight_decay=weight_decay,
-            use_symmetry=False,
-            symmetry_augmentation=None,
+            use_symmetry=use_symmetry,
+            symmetry_augmentation=symmetry_augmentation,
             **kwargs,
         )
         self.priv_info_dim = int(priv_info_dim)
@@ -123,7 +121,16 @@ class HoraSACLearner(FastSACLearner):
         if include_next:
             next_obs = batch["next_obs"]
             combined = torch.cat([obs, next_obs], dim=0)
-            current, following = self.obs_normalizer(combined, update=update).split(
+            if update and self.use_symmetry:
+                assert self.symmetry is not None
+                mirrored = self.symmetry.mirror_obs(combined, obs_group="obs")
+                normalized_combined = self.obs_normalizer(
+                    torch.cat([combined, mirrored], dim=0),
+                    update=True,
+                )[: combined.shape[0]]
+            else:
+                normalized_combined = self.obs_normalizer(combined, update=update)
+            current, following = normalized_combined.split(
                 (obs.shape[0], next_obs.shape[0]), dim=0
             )
             normalized["obs"] = current
@@ -134,21 +141,24 @@ class HoraSACLearner(FastSACLearner):
 
     def update_critic(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
         actor = cast(HoraSACActor, self.actor)
-        actor.update_privileged_normalizer(
-            torch.cat(
-                [
-                    derive_priv_info_from_critic_obs(
-                        batch["obs"], batch["critic"], context="normalizer update"
-                    ),
-                    derive_priv_info_from_critic_obs(
-                        batch["next_obs"],
-                        batch["next_critic"],
-                        context="normalizer update",
-                    ),
-                ],
-                dim=0,
-            )
+        actor_obs = torch.cat([batch["obs"], batch["next_obs"]], dim=0)
+        critic_obs = torch.cat([batch["critic"], batch["next_critic"]], dim=0)
+        privileged = derive_priv_info_from_critic_obs(
+            actor_obs,
+            critic_obs,
+            context="normalizer update",
         )
+        if self.use_symmetry:
+            assert self.symmetry is not None
+            mirrored_actor = self.symmetry.mirror_obs(actor_obs, obs_group="obs")
+            mirrored_critic = self.symmetry.mirror_obs(critic_obs, obs_group="critic")
+            mirrored_privileged = derive_priv_info_from_critic_obs(
+                mirrored_actor,
+                mirrored_critic,
+                context="mirrored normalizer update",
+            )
+            privileged = torch.cat([privileged, mirrored_privileged], dim=0)
+        actor.update_privileged_normalizer(privileged)
         return super().update_critic(
             self._normalize_actor_batch(batch, update=True, include_next=True)
         )

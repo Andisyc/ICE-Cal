@@ -50,7 +50,7 @@
   "residual_risks": [
     "A bounded MuJoCo reset/step smoke establishes initial live reachability but not the full update and persistence route.",
     "No training establishes Reward learnability or policy quality.",
-    "The source and v024 selectors disable left-knee-only actuator-strength DR while retaining generic all-joint Kp/Kd and broad physical DR."
+    "The source and v024 selectors exclude targeted actuator faults while retaining generic all-joint Kp/Kd and broad physical DR; targeted faults belong to downstream failed-rollout collection."
   ],
   "blockers": [],
   "claims": {

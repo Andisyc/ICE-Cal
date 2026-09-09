@@ -4,7 +4,7 @@ status: superseded
 effective_date: 2026-08-27
 supersedes: FADA-METHOD-v015
 superseded_by: FADA-METHOD-v017
-scope: historical single-Reward phase-neutral gain-targeted privileged-Oracle Planner-IDM source training
+scope: historical single-Reward phase-neutral privileged-Oracle Planner-IDM source training
 ---
 
 # FADA Planner–IDM Method Contract v016 — Historical
@@ -24,10 +24,9 @@ legacy phase positions remain constant-zero compatibility placeholders so the de
 
 ## Source distribution and Oracle
 
-The privileged Oracle adds only the existing typed privileged Critic tail and left-knee actuator
-attenuation at action index `3`: non-nominal `g` is sampled uniformly from `[0.8,1.0]` and nominal
-probability is `0.3`. Actor receives no Gain value. Friction, mass, COM, independent Kp/Kd,
-observation noise, external push, delay, bias, and other unrelated randomization remain disabled.
+Targeted actuator faults are excluded from Oracle training and are introduced only during
+downstream failed-rollout collection after Oracle freeze. The privileged Oracle adds the existing
+typed privileged Critic tail without exposing a targeted fault value to the Actor.
 
 A nominal standard-SAC gate must first validate the exact same single-Reward task without privileged
 observation or physical randomization. Its checkpoint is validation-only and never joins the final
@@ -41,6 +40,5 @@ privileged-Oracle lineage remain unchanged.
 
 ## Supersession reason
 
-v016 incorrectly allowed the downstream left-knee Gain calibration variable to own the upstream
-Oracle training distribution. This context pollution invalidated the meaning of a perfect nominal
-Oracle. v017 separates nominal teacher construction from later failed-rollout perturbation.
+Targeted actuator faults are downstream collection conditions, never Source Oracle training
+conditions. v017 records this boundary explicitly.

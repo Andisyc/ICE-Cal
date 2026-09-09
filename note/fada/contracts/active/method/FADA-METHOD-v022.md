@@ -27,8 +27,8 @@ that the teacher Actor is privilege-free.
 
 ## Physical perturbation profile
 
-Current source training disables the historical left-knee-only actuator-strength axis and both its
-actuator-strength and grouped-curriculum switches. Generic all-joint Kp/Kd multipliers
+Source Oracle training excludes targeted actuator faults. Left-knee gain attenuation is reserved
+for downstream failed-rollout collection after the Oracle is frozen. Generic all-joint Kp/Kd multipliers
 `[0.9,1.1]`, friction `[0.8,1.2]`, added base mass `[-1.5,1.5]`, body-mass scale `[0.9,1.1]`, COM
 offsets `[-0.05,0.05]`, and DoF position bias `[-0.025,0.025]` remain active at their configured
 ranges. Control delay and external pushes remain disabled.

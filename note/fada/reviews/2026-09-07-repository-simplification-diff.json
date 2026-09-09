@@ -37,7 +37,7 @@
       "src/unilab/algos/torch/distill/fada/planner_idm",
       "src/unilab/algos/torch/distill/fada/target"
     ],
-    "runtime_value_ownership": "Privileged oracle runtime validates structure; Hydra profiles own gain indices, multipliers and probability values"
+    "runtime_value_ownership": "Privileged Oracle runtime validates that targeted actuator faults are absent; downstream Hydra fault profiles own fault indices and multipliers"
   },
   "behavior_preservation": [
     "Old grouped source effective configuration equals mujoco_fada_source after runtime-resolver path normalization",

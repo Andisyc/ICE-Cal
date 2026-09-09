@@ -1,18 +1,18 @@
 # FADA v016 Single-Reward Migration Plan
 
-> Status: SUPERSEDED / HISTORICAL. v017 removes Gain from Oracle training.
+> Status: SUPERSEDED / HISTORICAL. Targeted actuator faults are downstream collection only.
 
 ## Objective
 
 Retire v015 command-conditioned dual Reward and restore one phase-neutral locomotion Reward shared
 by zero and nonzero commands. Preserve 98-D Actor compatibility, Planner–IDM semantics, the
-privileged Critic tail, left-knee Gain distribution, and 20+1 lineage.
+privileged Critic tail and 20+1 lineage. Targeted actuator faults remain outside Oracle training.
 
 ## Affected engineering boundary
 
 1. Replace the nominal dual-Reward profile with a single-Reward, no-phase profile derived from the
    successful basic locomotion configuration.
-2. Make the privileged profile inherit that nominal profile and add only privilege/Gain.
+2. Make the privileged profile inherit that nominal profile and add only privilege.
 3. Make privileged preflight reject mode dispatch and every `stand_*` Reward term or override.
 4. Replace v015 Reward-routing tests with configuration-absence, tensor-preservation, and temporal
    preference tests: survival must outrank early termination under matched commands.
@@ -24,10 +24,11 @@ privileged Critic tail, left-knee Gain distribution, and 20+1 lineage.
 - **Accepted behavior:** one phase-neutral locomotion Reward is evaluated for every command; command
   changes only the velocity-tracking target.
 - **Preserved behavior:** the shared G1 environment may retain its legacy Reward-mode implementation
-  for other tasks; Actor 98-D, state66/previous-action29/command3, privileged Critic tail, left-knee
-  Gain distribution, SAC optimizer, and 20+1 checkpoint lineage do not change.
+  for other tasks; Actor 98-D, state66/previous-action29/command3, privileged Critic tail, SAC
+  optimizer, and 20+1 checkpoint lineage do not change. Targeted actuator faults belong to
+  downstream failed-rollout collection.
 - **Semantic owner:** the nominal Hydra task profile owns the effective Reward; the privileged
-  profile may only inherit it and add privilege/Gain; privileged runtime preflight owns admission.
+  profile may only inherit it and add privilege; privileged runtime preflight owns admission.
 - **Public boundaries:** Hydra compose output, `validate_fada_single_reward`, and
   `FADAPrivilegedSACRuntime.validate_training_config`.
 - **Forbidden dependencies:** no Reward decision in `scripts/`, no new runner/backend interface, no

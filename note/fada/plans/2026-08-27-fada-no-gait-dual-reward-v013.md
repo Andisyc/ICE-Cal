@@ -1,6 +1,6 @@
 # FADA v013 No-Gait Dual-Reward Oracle Plan
 
-> Status: SUPERSEDED by the v014 gain-targeted Oracle plan. Retained as historical v013 evidence.
+> Status: SUPERSEDED by later Source Oracle contracts. Retained as historical v013 evidence.
 
 ## Outcome
 

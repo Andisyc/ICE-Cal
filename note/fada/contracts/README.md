@@ -20,8 +20,9 @@ a bounded negative contact-mismatch term owns gait timing. Translation and yaw j
 the non-null clock. The confirmed module and Reward ordering specifications are
 `../testing/v024_module_test_cards.md` and `../testing/v024_reward_ordering_card.json`.
 The design preserves v022 privilege, broad physical DR and sealed `240…4800 + 5000` lineage
-requirements. The left-knee-only actuator-strength axis and its curriculum are disabled; generic
-all-joint Kp/Kd randomization remains enabled. The v024 implementation and
+requirements. Oracle training excludes targeted actuator faults; left-knee gain attenuation is
+owned by downstream failed-rollout collection after Oracle freeze. Generic all-joint Kp/Kd
+randomization remains enabled. The v024 implementation and
 `mujoco_fada_phase_contact` selector exist with offline Module Test evidence and a bounded official
 reset/step smoke. There is no full v024 formal runtime receipt, checkpoint, training, or policy
 evidence.
@@ -36,7 +37,7 @@ The superseded analytic-axis v008/v007 pair, fixed-three-axis v007/v006 pair, qu
 v006/v005 pair, and receipts bound to them remain history. They cannot establish correctness for the
 active data-driven Contracts.
 
-Superseded method/training contracts, including v023, FADA-ADAPT v002, v017, v016, v015, v014,
+Superseded method/training contracts, including v023, FADA-ADAPT v002, v017, v016, v015,
 v013, v012, and v011, are retained under `history/` and excluded from default recall.
 
 The 15-degree slope demonstration is an implementation of the active

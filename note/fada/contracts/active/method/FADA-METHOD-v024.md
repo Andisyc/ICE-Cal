@@ -105,9 +105,10 @@ establish the ordering.
 
 ## Observation, source, and persistence
 
-- Actor and Critic retain the v022 typed privileged-input contract and broad physical DR. The
-  historical left-knee-only actuator-strength attenuation and its curriculum are disabled;
-  generic all-joint Kp/Kd randomization remains enabled.
+- Actor and Critic retain the v022 typed privileged-input contract and broad physical DR. Targeted
+  actuator faults are excluded from Oracle training; left-knee gain attenuation is reserved for
+  downstream failed-rollout collection after Oracle freeze. Generic all-joint Kp/Kd randomization
+  remains enabled.
 - The policy and distilled student both observe command and phase.
 - The source behavior identity is `command_gated_phase_contact_v1`.
 - A source lineage must use one behavior identity and one dead-zone/contact/frequency configuration.

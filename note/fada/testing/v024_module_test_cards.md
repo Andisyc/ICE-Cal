@@ -163,8 +163,8 @@ command, phase, contact, standing-quality, privilege, physical-DR, and sealed-li
   command/phase/contact configuration.
 - **Preserved behavior:** v022 typed privilege and normalization, broad physical DR with generic
   all-joint Kp/Kd randomization, 98-D Actor task observation, 66/29/3 Planner-IDM split, schema-3
-  sealed `240..4800 + 5000` lineage, and FADA-ADAPT v003 boundaries. The retired left-knee-only
-  strength axis and its curriculum must remain disabled.
+  sealed `240..4800 + 5000` lineage, and FADA-ADAPT v003 boundaries. Targeted actuator faults must
+  remain outside Oracle training and are owned by downstream failed-rollout collection.
 - **One semantic owner:** the future v024 task YAML owns the effective configuration; structured
   config and checkpoint/run metadata validate and persist it without Python-side hyperparameter
   reinterpretation.
@@ -183,9 +183,9 @@ command, phase, contact, standing-quality, privilege, physical-DR, and sealed-li
 - **Semantic fixture:** canonical profile, historical compatibility profile, same-shape stale
   checkpoint, missing behavior identity, altered dead zone/frequency/contact setting, and preserved
   66/29/3 split.
-- **Independent expected answers:** only the canonical profile composes as v024; its left-knee-only
-  actuator-strength axis and both attached curriculum switches are false while generic all-joint
-  Kp/Kd randomization remains true; every stale or mismatched identity fails before rollout; the
+- **Independent expected answers:** only the canonical profile composes as v024; targeted actuator
+  faults are absent while generic all-joint Kp/Kd randomization remains true; every stale or
+  mismatched identity fails before rollout; the
   policy/student retain command and phase; preserved dimensions and sealed checkpoint set remain
   exact.
 - **Sensitivity counterexample:** relabeling `mujoco_fada_phase` as v024 or deleting one behavior

@@ -14,7 +14,7 @@
   "receipts": {
     "composition": {"runner": "DoubleBufferOffPolicyRunner", "learner": "FADAPrivilegedSACLearner", "actor_obs_dim": 98, "critic_obs_dim": 303, "action_dim": 29, "body_count": 31, "joint_count": 29},
     "single_reward": {"zero_command_rows": 11, "nonzero_command_rows": 21, "mode_log_absent": true, "replay_sample_count": 128, "replay_reward_identity": true},
-    "phase_and_gain": {"phase_slots_zero_at_reset_and_step": true, "gain_actuator_index": 3, "gain_range": [0.8, 1.0], "nominal_and_attenuated_rows_present": true, "other_actuator_scales_one": true},
+    "phase_and_fault_boundary": {"phase_slots_zero_at_reset_and_step": true, "oracle_targeted_actuator_faults": "retracted; targeted faults are downstream collection only"},
     "updates": {"critic_update_count": 1, "actor_update_count": 1, "critic_metric_count": 6, "actor_metric_count": 4, "metrics_finite": true, "actor_parameter_changed": true},
     "persistence": {"full_checkpoint_restored": true, "lineage_checkpoint_count": 21, "final_iteration": 5000, "temporary_storage_only": true}
   },

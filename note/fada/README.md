@@ -13,8 +13,9 @@ radian-normalized contact schedule replaces phase-height tracking; null-command 
 and torque relaxation remain quality terms rather than competing regime owners.
 
 v024 preserves the v022 typed privileged input, broad physical DR and 20+1 lineage requirements.
-The historical left-knee-only actuator-strength attenuation and its curriculum are disabled in
-both source and v024 training; generic all-joint Kp/Kd randomization remains enabled. Its
+Targeted actuator faults are excluded from source and v024 Oracle training. Left-knee gain
+attenuation belongs only to downstream failed-rollout collection after Oracle freeze; generic
+all-joint Kp/Kd randomization remains enabled. Its
 production selector and owner modules are implemented, and the confirmed Module Test Cards pass
 offline. `f_min`, `f_max`, command-intensity spans, contact-force calibration and Reward scales are
 the first engineering values recorded by the v024 selector; policy acceptance remains constrained
@@ -46,8 +47,8 @@ to revive a superseded design.
 ## Active configuration surface
 
 - `mujoco_clean_baseline`: gait-free, privilege-free, and domain-randomization-free SAC baseline.
-- `mujoco_fada_source`: canonical v022 phase-neutral privileged source teacher; left-knee-only
-  actuator-strength DR is disabled while generic all-joint Kp/Kd and broad physical DR remain.
+- `mujoco_fada_source`: canonical v022 phase-neutral privileged source teacher; targeted actuator
+  faults are excluded while generic all-joint Kp/Kd and broad physical DR remain.
 - `mujoco_fada_phase_contact`: canonical v024 command-gated phase/contact Source Oracle.
 - `mujoco_fada_phase`: historical v023 compatibility/comparison profile.
 - `mujoco_fada_target` plus the `fault` or `target_domain` Hydra group: target collection and

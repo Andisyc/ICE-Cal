@@ -9,8 +9,9 @@ Status: `IMPLEMENTED / MODULE-GREEN / BOUNDED-RUNTIME-SMOKE-GREEN / FULL-FORMAL-
 - [x] Non-null phase frequency is monotone, bounded and speed-dependent.
 - [x] Contact scheduling replaces phase-height equality tracking and relative-height references.
 - [x] Null-command foot-force balance and torque relaxation are quality terms, not regime owners.
-- [x] v022 privilege, broad physical DR and sealed 20+1 lineage are preserved; the historical
-  left-knee-only strength axis/curriculum is disabled while generic all-joint Kp/Kd DR remains.
+- [x] v022 privilege, broad physical DR and sealed 20+1 lineage are preserved; targeted actuator
+  faults are reserved for downstream failed-rollout collection while generic all-joint Kp/Kd DR
+  remains in Oracle training.
 - [x] v023 Contracts are historical and `mujoco_fada_phase` is compatibility/comparison only.
 - [x] Method, Training Contract, Registry, Design Inspector and v2 activation receipt are aligned.
 

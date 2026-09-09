@@ -37,9 +37,9 @@ mismatch instead of a phase-height target. Translation and yaw jointly control a
 `0`/`[f_min,f_max]` clock; Reward coefficients remain engineering parameters constrained by the
 confirmed six-relation ordering card. The production selector is
 `task=sac/g1_walk_flat/mujoco_fada_phase_contact`; offline tests do not establish simulator
-reachability or policy quality. Source training no longer applies the historical left-knee-only
-actuator-strength attenuation or its curriculum. Generic all-joint Kp/Kd and the remaining
-physical domain randomization stay enabled.
+reachability or policy quality. Targeted actuator faults are excluded from Source Oracle training;
+left-knee gain attenuation is reserved for downstream failed-rollout collection after the Oracle is
+frozen. Generic all-joint Kp/Kd and the remaining physical domain randomization stay enabled.
 
 No design or documentation status authorizes training, simulation, deployment, or policy-quality
 claims. See the [project governance index](note/governance/README.md) for the current cursor and
@@ -329,7 +329,7 @@ G1WalkEnv
   │     → phase-neutral，feet_phase = 0
   │
   └── Physical DR
-        ├── 左膝 actuator index 3 专用衰减：关闭
+        ├── 定向执行器故障（包括左膝增益衰减）：仅用于 Oracle 冻结后的故障轨迹采集
         ├── 全关节 Kp / Kd：保留
         ├── 摩擦
         ├── base / body mass

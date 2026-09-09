@@ -6,7 +6,7 @@
   "verdict": "FINAL_GATE_PASS",
   "scope": {
     "requested": ["implement the confirmed v016 single-Reward migration as one maintainable local transaction"],
-    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged Critic/Gain additions", "SAC and 20+1 checkpoint lineage"],
+    "preserved": ["shared legacy G1 mode implementation", "98-D Actor and 66/29/3 split", "privileged Critic additions with targeted faults excluded", "SAC and 20+1 checkpoint lineage"],
     "forbidden": ["new runner, backend API or alternate Reward formula", "simulation, training, server, Git, deployment or policy-quality claim"]
   },
   "identities": {
@@ -37,7 +37,7 @@
   "dimensions": [
     {"name": "responsibility-ownership", "disposition": "pass", "evidence": "One nominal Hydra profile owns the effective Reward; one FADA validator owns privileged admission; generic G1 legacy capabilities are not duplicated or re-owned."},
     {"name": "public-interface", "disposition": "pass", "evidence": "The active route exposes one renamed config and one validator; no wrapper, service, schema or caller traversal was added."},
-    {"name": "dependency-direction", "disposition": "pass", "evidence": "Privileged config depends on nominal config and adds only privilege/Gain; scripts, learner and backend remain consumers, not semantic owners."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "Privileged config depends on nominal config and adds only privilege; targeted faults remain downstream-only, and scripts, learner and backend remain consumers, not semantic owners."},
     {"name": "state-lifecycle", "disposition": "pass", "evidence": "No mutable state changed; existing zero phase reset/observation/step lifecycle remains covered."},
     {"name": "change-surface", "disposition": "pass", "evidence": "The v015 active profile and validator were replaced at their Pinch Points; shared mode/stand implementation remains for other repository consumers."},
     {"name": "evidence-boundary", "disposition": "pass", "evidence": "277 focused tests, formal-test collection, Ruff and validated module evidence establish offline semantics only; runtime and policy quality remain unclaimed."},

@@ -182,7 +182,7 @@ def _validate_oracle_noise_profile(noise_config: Any) -> None:
 class FADAPrivilegedSACRuntime(OffPolicyRuntime):
     learner_cls: type[Any] | None = FADAPrivilegedSACLearner
     algo_type: str | None = FADA_PRIVILEGED_SAC_RUNTIME_IMPL
-    supports_symmetry: bool = False
+    supports_symmetry: bool = True
     actor_cfg: dict[str, Any] = field(default_factory=dict)
     checkpoint_mode: str = "sealed"
 
@@ -340,8 +340,6 @@ class FADAPrivilegedSACRuntime(OffPolicyRuntime):
             str(getattr(cfg.algo, "checkpoint_mode", "sealed")) != "sealed"
         ):
             raise ValueError("grouped DR Oracle lineage requires checkpoint_mode=sealed")
-        if bool(getattr(cfg.algo, "use_symmetry", True)):
-            raise ValueError("privileged_locomotion_sac requires use_symmetry=false")
         if configured and not 0.0 < float(cfg.algo.gamma) <= 1.0:
             raise ValueError("algo.gamma must be in (0, 1]")
         if not configured and float(getattr(cfg.algo, "gamma", 0.0)) != 0.99:

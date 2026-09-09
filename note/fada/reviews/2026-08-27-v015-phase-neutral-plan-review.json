@@ -6,7 +6,7 @@
   "verdict": "READY",
   "scope": {
     "requested": ["implement a phase-neutral nominal dual-Reward gate while preserving FADA tensor compatibility"],
-    "preserved": ["gait-enabled base task", "98-D Actor and 66/29/3 split", "privileged/Gain Oracle semantics", "Planner-IDM and checkpoint schemas"],
+    "preserved": ["gait-enabled base task", "98-D Actor and 66/29/3 split", "privileged Oracle semantics with targeted faults excluded", "Planner-IDM and checkpoint schemas"],
     "forbidden": ["new runner, network, adapter or backend API", "simulation, training, server, Git, deployment or policy-quality claim"]
   },
   "identities": {

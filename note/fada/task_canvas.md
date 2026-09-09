@@ -32,8 +32,9 @@ Planner-IDM collection and target-route admission before any production edit.
 
 ## Preserved
 
-v022 typed privilege and broad physical DR, with left-knee-only actuator-strength/curriculum off
-and generic all-joint Kp/Kd DR on; sealed 20+1 lineage; Planner-IDM
+v022 typed privilege and broad physical DR, with targeted actuator faults excluded from Oracle
+training and generic all-joint Kp/Kd DR on; left-knee gain attenuation is downstream failed-rollout
+collection only; sealed 20+1 lineage; Planner-IDM
 H=30/K=6/state66/action29/command3/action-free-future contract; FADA-ADAPT v003; Context v009/v008
 as a separate track; backend and asset-access contracts.
 

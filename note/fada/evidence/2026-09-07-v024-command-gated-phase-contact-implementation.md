@@ -34,10 +34,10 @@ Design identity: `FADA-METHOD-v024/FADA-TRAIN-v024/command_gated_phase_contact_v
 
 ## Domain-randomization delta
 
-Source and v024 training now explicitly disable the historical actuator-index-3 left-knee strength
-axis, its actuator-strength curriculum, and its grouped curriculum. Generic all-joint Kp/Kd
-randomization and the remaining physical DR axes stay enabled. Runtime preflight rejects a disabled
-strength axis that still enables either attached curriculum or a duplicate Critic tail.
+Source and v024 training exclude targeted actuator faults. Left-knee gain attenuation remains a
+downstream failed-rollout collection condition after Oracle freeze. Generic all-joint Kp/Kd
+randomization and the remaining physical DR axes stay enabled. Runtime preflight enforces the
+Oracle/downstream fault boundary without duplicating fault state in the Critic tail.
 
 ## Evidence boundary
 

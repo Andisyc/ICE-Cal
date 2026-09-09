@@ -249,7 +249,7 @@
         "module_id": "PRIVILEGED-ORACLE-CONFIG",
         "relation": "direct",
         "obligation": "modify",
-        "reason": "Must inherit nominal semantics and add only privilege/Gain",
+        "reason": "Must inherit nominal semantics and add only privilege; targeted faults remain downstream-only",
         "proof": "FADA-V015-PRIVILEGED-INHERITANCE module evidence",
         "implementation_status": "changed",
         "proof_status": "verified"

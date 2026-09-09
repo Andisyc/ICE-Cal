@@ -27,7 +27,7 @@ Status: human-confirmed on 2026-08-27; executable evidence pending.
 
 - **Owner:** privileged Oracle Hydra profile and preflight.
 - **Public input/output:** composed privileged profile → v015 admission or fail-closed `ValueError`.
-- **Invariant:** it inherits the nominal phase-neutral task, then adds only privileged runtime and the
-  existing left-knee Gain distribution; 98→66/29/3 stays unchanged.
+- **Invariant:** it inherits the nominal phase-neutral task, then adds only privileged runtime;
+  targeted actuator faults remain downstream-only and 98→66/29/3 stays unchanged.
 - **Sensitivity:** overriding `env.gait_phase_enabled=true` must fail before environment creation.
 - **Profile:** S1/C1-C4 with T-config, T-role, T-shape, and T-diff.

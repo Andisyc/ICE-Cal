@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import torch
 
 from unilab.base.augmentation import SymmetryAugmentation, SymmetryObsLayout
+from unilab.envs.locomotion.g1.fada_privileged import G1FADAPrivilegedLayout
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class G1SymmetryAugmentation(SymmetryAugmentation):
         model,
         obs_layouts: dict[str, SymmetryObsLayout],
         *,
+        fada_privileged_layout: G1FADAPrivilegedLayout | None = None,
         device: str = "cuda",
     ):
         import mujoco
@@ -70,10 +72,91 @@ class G1SymmetryAugmentation(SymmetryAugmentation):
             if any(flip in name for flip in flip_names):
                 sign_mask[i] = -1.0
         self._sign_mask = torch.tensor(sign_mask, device=device)
+        self._fada_privileged_layout = fada_privileged_layout
         self._obs_transforms = {
             group_name: self._build_obs_group_transform(layout, device=device)
             for group_name, layout in obs_layouts.items()
         }
+
+    def _build_fada_privileged_transform(
+        self,
+        layout: G1FADAPrivilegedLayout,
+        *,
+        device: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        permutation = torch.arange(layout.width, device=device, dtype=torch.long)
+        sign = torch.ones(layout.width, device=device)
+
+        def field(name: str) -> slice:
+            return layout.slice_for(name)
+
+        def require_width(name: str, expected: int) -> slice:
+            field_slice = field(name)
+            actual = field_slice.stop - field_slice.start
+            if actual != expected:
+                raise ValueError(
+                    f"FADA privileged symmetry field {name!r} must have width "
+                    f"{expected}, got {actual}"
+                )
+            return field_slice
+
+        base_velocity = require_width("base_linear_velocity", 3)
+        sign[base_velocity.start + 1] = -1.0
+
+        contact_resultants = require_width("foot_contact_resultants", 6)
+        left_force = torch.arange(3, 6, device=device, dtype=torch.long)
+        right_force = torch.arange(0, 3, device=device, dtype=torch.long)
+        permutation[contact_resultants] = (
+            torch.cat([left_force, right_force]) + contact_resultants.start
+        )
+        sign[contact_resultants.start + 1] = -1.0
+        sign[contact_resultants.start + 4] = -1.0
+
+        contact_flags = require_width("foot_contact_flags", 2)
+        permutation[contact_flags] = torch.tensor(
+            [contact_flags.start + 1, contact_flags.start],
+            device=device,
+            dtype=torch.long,
+        )
+
+        for name in ("kp_scale", "kd_scale"):
+            field_slice = require_width(name, int(self._joint_map.numel()))
+            permutation[field_slice] = self._joint_map + field_slice.start
+
+        for name in ("normalized_torque", "dof_position_bias", "torque_rfi"):
+            field_slice = require_width(name, int(self._joint_map.numel()))
+            permutation[field_slice] = self._joint_map + field_slice.start
+            sign[field_slice] = self._sign_mask
+
+        base_com_shift = require_width("base_com_shift", 3)
+        sign[base_com_shift.start + 1] = -1.0
+
+        body_mass_scale = field("body_mass_scale")
+        body_names = layout.body_names
+        if body_mass_scale.stop - body_mass_scale.start != len(body_names):
+            raise ValueError("FADA body-mass field must match the declared body-name layout")
+        body_name_to_index = {name: index for index, name in enumerate(body_names)}
+        body_permutation: list[int] = []
+        for index, name in enumerate(body_names):
+            if name.startswith("left_"):
+                counterpart = f"right_{name.removeprefix('left_')}"
+            elif name.startswith("right_"):
+                counterpart = f"left_{name.removeprefix('right_')}"
+            else:
+                counterpart = name
+            if counterpart not in body_name_to_index:
+                raise ValueError(
+                    f"FADA privileged symmetry body {name!r} has no counterpart "
+                    f"{counterpart!r}"
+                )
+            body_permutation.append(body_name_to_index.get(counterpart, index))
+        permutation[body_mass_scale] = torch.tensor(
+            body_permutation,
+            device=device,
+            dtype=torch.long,
+        ) + body_mass_scale.start
+
+        return permutation, sign
 
     def _build_obs_group_transform(
         self,
@@ -115,6 +198,16 @@ class G1SymmetryAugmentation(SymmetryAugmentation):
                 self._require_dim(key, dim, 2)
                 joint_map[idx] = idx + 1
                 joint_map[idx + 1] = idx
+            elif key == "fada_privileged":
+                if self._fada_privileged_layout is None:
+                    raise ValueError("FADA privileged symmetry requires a typed layout")
+                self._require_dim(key, dim, self._fada_privileged_layout.width)
+                privileged_map, privileged_sign = self._build_fada_privileged_transform(
+                    self._fada_privileged_layout,
+                    device=device,
+                )
+                joint_map[idx : idx + dim] = privileged_map + idx
+                joint_sign[idx : idx + dim] = privileged_sign
 
             idx += dim
 

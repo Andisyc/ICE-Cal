@@ -27,7 +27,7 @@
     "actor_parameter_changed": true,
     "full_checkpoint_restored": true,
     "lineage_checkpoint_count": 21,
-    "only_left_knee_gain_varied": true
+    "oracle_targeted_actuator_faults": "retracted; targeted faults are downstream collection only"
   },
   "first_attempt": {
     "result": "failed",

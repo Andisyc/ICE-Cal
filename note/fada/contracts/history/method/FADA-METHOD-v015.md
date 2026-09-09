@@ -2,9 +2,9 @@
 contract_id: FADA-METHOD-v015
 status: historical
 effective_date: 2026-08-27
-supersedes: FADA-METHOD-v014
+supersedes: FADA-METHOD-v013
 superseded_by: FADA-METHOD-v016
-scope: phase-neutral gain-targeted privileged-Oracle Planner-IDM source training
+scope: historical phase-neutral privileged-Oracle Planner-IDM source training
 ---
 
 # FADA Planner–IDM Method Contract v015 — Historical
@@ -22,13 +22,11 @@ information. Consequently the existing split remains state66 + previous-action29
 
 ## Source distribution and Oracle
 
-The final privileged Oracle preserves the v014 source distribution: nominal rows plus left-knee
-actuator attenuation at action index `3`, with non-nominal `g` sampled uniformly from `[0.8, 1.0]`
-and nominal probability `0.3`. Unrelated physical randomization remains disabled. Actor observes no
-gain value; the typed privileged Critic tail observes applied effectiveness through existing Kp/Kd
-scale fields.
+Targeted actuator faults are not part of Oracle training. They belong only to downstream
+failed-rollout collection after the source Oracle is frozen. The deployable Actor receives no
+explicit fault value; the typed privileged Critic contract remains separate from fault injection.
 
-Before privileged/Gain training is admitted, one nominal standard-SAC profile must prove the same
+Before privileged training is admitted, one nominal standard-SAC profile must prove the same
 phase-neutral dual-Reward task without privileged observation or physical DR. That checkpoint is an
 engineering validation artifact only and cannot label Planner–IDM data or join the final Oracle
 lineage.

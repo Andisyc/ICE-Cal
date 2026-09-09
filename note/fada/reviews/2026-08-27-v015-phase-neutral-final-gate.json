@@ -6,7 +6,7 @@
   "verdict": "FINAL_GATE_PASS",
   "scope": {
     "requested": ["implement the confirmed phase-neutral nominal dual-Reward gate as one maintainable local transaction"],
-    "preserved": ["gait-enabled base task", "98-D Actor and 66/29/3 split", "privileged/Gain Oracle additions", "Planner-IDM and checkpoint schemas"],
+    "preserved": ["gait-enabled base task", "98-D Actor and 66/29/3 split", "privileged Oracle additions with targeted faults excluded", "Planner-IDM and checkpoint schemas"],
     "forbidden": ["new runtime, network, adapter or backend API", "simulation, training, server, Git, deployment or policy-quality claim"]
   },
   "identities": {
@@ -37,7 +37,7 @@
   "dimensions": [
     {"name": "responsibility-ownership", "disposition": "pass", "evidence": "G1WalkEnvCfg owns clock lifecycle, the nominal Hydra profile owns shared task semantics, and privileged preflight only validates its derived configuration."},
     {"name": "public-interface", "disposition": "pass", "evidence": "One typed boolean field controls an existing two-slot state surface; no new public runtime interface was added."},
-    {"name": "dependency-direction", "disposition": "pass", "evidence": "The privileged profile depends on the nominal profile; nominal SAC does not depend on FADA runtime or gain behavior."},
+    {"name": "dependency-direction", "disposition": "pass", "evidence": "The privileged profile depends on the nominal profile; nominal SAC does not depend on FADA runtime or targeted-fault behavior."},
     {"name": "state-lifecycle", "disposition": "pass", "evidence": "Reset creates zeros, observation rejects stale phase, and every action step restores zeros while enabled tasks retain their prior clock."},
     {"name": "change-surface", "disposition": "pass", "evidence": "One config field and one inheritance seam replace duplicated Reward/config ownership without wrappers, services, or schemas."},
     {"name": "evidence-boundary", "disposition": "pass", "evidence": "752 tests, Ruff, Pyright, semantic manifests, and Inspector synchronization prove offline behavior only; formal runtime and policy quality remain unclaimed."},
@@ -50,7 +50,7 @@
   "residual_risks": [
     {"risk_id": "CRE-FADA-V015-INDEPENDENT-REVIEW", "severity": "P2", "status": "open", "description": "No independent sub-agent review was used because this task did not authorize delegation.", "disposition": "Retain the validated self-review and require formal runtime audit before training."},
     {"risk_id": "CRE-FADA-V015-RUNTIME", "severity": "P2", "status": "open", "description": "Offline tests do not prove the official collector sees zero phase slots on the server runtime.", "disposition": "Run a separately authorized formal runtime audit after synchronization."},
-    {"risk_id": "CRE-FADA-V015-POLICY", "severity": "P2", "status": "open", "description": "Correct objective and state semantics do not prove nominal SAC learns stable standing and walking.", "disposition": "Use a separate nominal policy-quality gate before adding privilege or Gain DR."}
+    {"risk_id": "CRE-FADA-V015-POLICY", "severity": "P2", "status": "open", "description": "Correct objective and state semantics do not prove nominal SAC learns stable standing and walking.", "disposition": "Use a separate nominal policy-quality gate before adding privilege; targeted faults remain downstream-only."}
   ],
   "blockers": [],
   "claims": {

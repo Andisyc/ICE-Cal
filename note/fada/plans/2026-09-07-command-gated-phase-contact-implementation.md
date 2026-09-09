@@ -24,8 +24,8 @@ This unit does not start MuJoCo, training, deployment, checkpoint IO, or remote 
 - command resampling: after each completed `4 s` interval, with `30%` forced standing rows;
 - Reward scales: contact mismatch `1.0`, null force imbalance `-1.0`, normalized null torque
   relaxation `-0.1`.
-- domain randomization: disable the historical left-knee-only actuator-strength axis and both of
-  its curriculum switches; retain generic all-joint Kp/Kd and the remaining physical DR axes.
+- domain randomization: keep targeted actuator faults outside Oracle training; retain generic
+  all-joint Kp/Kd and the remaining physical DR axes.
 
 The null force-balance cost is `abs(Fz_left-Fz_right)/max(Fz_left+Fz_right, eps)` with
 both-zero force defined as cost `1`. The torque-relaxation cost is the per-row **mean** across

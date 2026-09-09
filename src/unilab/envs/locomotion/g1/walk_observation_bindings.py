@@ -17,6 +17,7 @@ from unilab.envs.locomotion.g1.fada_privileged import (
     apply_fada_pd_target_perturbation,
     build_fada_reset_info,
     build_g1_fada_checkpoint_layout_identity,
+    build_g1_fada_privileged_layout,
     pack_fada_runtime_observation,
 )
 from unilab.envs.locomotion.g1.walk_observation import (
@@ -271,9 +272,14 @@ class G1WalkObservationBindings:
 
     def get_symmetry_obs_layouts(self) -> dict[str, SymmetryObsLayout]:
         actor_layout = self._actor_symmetry_obs_layout()
+        if self._fada_privileged_enabled():
+            privileged_layout = build_g1_fada_privileged_layout(self._fada_body_names)
+            critic_layout = (*actor_layout, ("fada_privileged", privileged_layout.width))
+        else:
+            critic_layout = (*actor_layout, ("linvel", 3))
         return {
             "obs": actor_layout,
-            "critic": (*actor_layout, ("linvel", 3)),
+            "critic": critic_layout,
         }
 
     def build_symmetry_augmentation(self, *, device: str):
@@ -281,8 +287,14 @@ class G1WalkObservationBindings:
             return None
         from unilab.envs.locomotion.g1.symmetry import G1SymmetryAugmentation
 
+        privileged_layout = (
+            build_g1_fada_privileged_layout(self._fada_body_names)
+            if self._fada_privileged_enabled()
+            else None
+        )
         return G1SymmetryAugmentation(
             self._backend.model,
             self.get_symmetry_obs_layouts(),
+            fada_privileged_layout=privileged_layout,
             device=device,
         )

@@ -5,7 +5,7 @@
   "target_phase": "contract-active",
   "admission": "DESIGN-CONFIRMED",
   "scope": {
-    "requested": ["remove left-knee Gain and every downstream calibration fault from perfect-Oracle training documentation"],
+    "requested": ["record targeted actuator faults as downstream failed-rollout collection conditions only"],
     "preserved": ["single G1WalkFlat task and Reward", "phase-neutral 98-D Actor", "typed privileged Critic", "66/29/3 Planner-IDM split", "20+1 lineage"],
     "forbidden": ["code changes", "simulation", "training", "server operations", "Git mutation", "checkpoint reuse", "formal or policy-quality claims"]
   },
@@ -14,7 +14,7 @@
     "design": "FADA-METHOD-v017:FADA-TRAIN-v017:NOMINAL-ORACLE",
     "contract": "FADA-METHOD-v017+FADA-TRAIN-v017",
     "checkout": "main@1c42d0f186c0630c425e671ded89543e793fe9b3+v017-doc-only",
-    "entrypoint": "not-applicable; current v016 gain-targeted route is stale and forbidden",
+    "entrypoint": "not-applicable; targeted actuator faults are outside Oracle training",
     "effective_config": "not-applicable; v017 implementation pending",
     "checkpoint": "none; v016 model_5000.pt is invalid for v017 authority"
   },
@@ -94,7 +94,7 @@
   "dependencies": [],
   "concept_preflight": {
     "status": "supersession-confirmed",
-    "candidate_statement": "A perfect Oracle is trained under nominal dynamics only; left-knee Gain and every calibration fault belong exclusively to downstream failed-rollout collection after source-backbone freeze.",
+    "candidate_statement": "Targeted actuator faults belong exclusively to downstream failed-rollout collection after source-backbone freeze, never Oracle training.",
     "authority_artifact_ids": ["ICE-CAL-CONCEPT-FIGURE-CURRENT", "ICA-DP-01-FADA-SOURCE-V017", "FADA-V017-METHOD-CONTRACT-PROPOSAL", "FADA-V017-TRAIN-CONTRACT-PROPOSAL"],
     "conflicts": [],
     "read_receipt": {
@@ -119,7 +119,7 @@
   "open_boundaries": [],
   "invalidations": [
     {
-      "id": "V016-GAIN-TARGETED-ORACLE-INVALIDATED",
+      "id": "V016-ORACLE-FAULT-BOUNDARY-CORRECTED",
       "trigger": "human-confirmed separation of nominal perfect-Oracle training from downstream failure injection",
       "affected_artifact_ids": ["FADA-V017-METHOD-CONTRACT-PROPOSAL", "FADA-V017-TRAIN-CONTRACT-PROPOSAL"],
       "status": "resolved",

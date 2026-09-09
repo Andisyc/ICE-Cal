@@ -38,9 +38,10 @@ Do not start a second training process unless concurrent training was explicitly
 The phase-neutral privileged FADA source uses `mujoco_fada_source`:
 live privileged inputs, 30% standing commands, no gait-phase input, no phase
 Reward or height cost. The current v024 Oracle instead selects
-`mujoco_fada_phase_contact`. Both profiles disable the historical left-knee-only
-actuator-strength axis and its curriculum; generic all-joint Kp/Kd and the remaining
-physical domain randomization stay enabled.
+`mujoco_fada_phase_contact`. Targeted actuator faults are not part of either Oracle-training
+profile. Left-knee gain attenuation is applied only when collecting downstream failed rollouts
+after Oracle freeze; generic all-joint Kp/Kd and the remaining physical domain randomization stay
+enabled during Oracle training.
 Superseded command/simple/height experiment tasks are no longer active selectors.
 Do not resume their checkpoints into this source lineage unless their checkpoint
 metadata passes the canonical source contract.

@@ -16,6 +16,7 @@ training:
   play_checkpoint_path: null   # 回放时指定模型路径
 algo:
   seed: 1
+  use_symmetry: true
   num_envs: 2048
   batch_size: 8192
   max_iterations: 5000
