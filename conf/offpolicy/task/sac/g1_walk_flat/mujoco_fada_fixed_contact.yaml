@@ -39,9 +39,9 @@ env:
     dead_zone_yaw: 0.1
     small_xy_threshold: 0.0
     vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
-    resampling_time: 4.0        # 回合内每 4s 重采样命令：训练起步/降速/停下过渡，消除迟滞
+    resampling_time: 0.0        # 回退：重采样切碎回合，稳态步态无法固化
     rel_standing_envs: 0.3       # 30% 站立：存活时间锚点，砍到 0.15 会导致惩罚课程趴在最低档
-    rel_transition_envs: 0.2     # 20% 低速桶（0.05-0.25 m/s）：激励已修好，补低速练习量
+    rel_transition_envs: 0.0     # 回退：低速桶稀释中高速步态练习
     transition_vel_limit: [[0.05, 0.0, 0.0], [0.25, 0.0, 0.0]]
     heading_command: false
   command_gated_phase_contact:
@@ -128,7 +128,7 @@ reward:
   gait_frequency: 1.5
   tracking_sigma: 0.25
   tracking_lin_error_scale: null # 恢复旧速度跟踪 exp(-平面误差平方 / tracking_sigma)
-  tracking_lin_relative_blend: true # 0.25 m/s 以下相对误差，0.25–0.5 m/s 过渡到绝对误差
+  tracking_lin_relative_blend: false # 回退：该轮 checkpoint 出现调整两脚趋势
   under_speed_mode: forward
   under_speed_min_command: 0.05 # forward 模式不使用此参数
   feet_phase_swing_height: 0.09
