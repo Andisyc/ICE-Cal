@@ -75,6 +75,28 @@ def compute_planar_command_speed_gate(
     )
 
 
+def compute_planar_command_progress_ratio(
+    commands: np.ndarray, linvel: np.ndarray
+) -> np.ndarray:
+    """Return achieved speed along the commanded planar direction, clipped to [0, 1]."""
+    commands = np.asarray(commands)
+    linvel = np.asarray(linvel)
+    if commands.ndim != 2 or commands.shape[1] != 3 or not np.all(np.isfinite(commands)):
+        raise ValueError("command progress ratio requires finite (N, 3) commands")
+    if linvel.shape != commands.shape or not np.all(np.isfinite(linvel)):
+        raise ValueError("command progress ratio requires matching finite velocities")
+
+    command_xy = commands[:, :2]
+    command_speed_sq = np.sum(np.square(command_xy), axis=1)
+    progress = np.divide(
+        np.sum(linvel[:, :2] * command_xy, axis=1),
+        command_speed_sq,
+        out=np.zeros_like(command_speed_sq),
+        where=command_speed_sq > 0.0,
+    )
+    return np.asarray(np.clip(progress, 0.0, 1.0), dtype=get_global_dtype())
+
+
 def original_command_height_targets(
     phase: np.ndarray,
     commands: np.ndarray,

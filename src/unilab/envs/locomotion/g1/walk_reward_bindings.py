@@ -31,6 +31,7 @@ from unilab.envs.locomotion.g1.walk_math import (
     compute_forward_command_mask,
     compute_forward_progress_failure,
     compute_forward_speed_gate,
+    compute_planar_command_progress_ratio,
     compute_planar_command_speed_gate,
     compute_gait_phase_contact_violation,
     compute_gait_phase_contrast_violation,
@@ -547,7 +548,11 @@ class G1WalkRewardBindings:
                 ctx.info["commands"],
                 self._reward_cfg.min_planar_command_speed_for_gait_reward,
             )
-            return np.asarray(reward * gate, dtype=get_global_dtype())
+            progress = compute_planar_command_progress_ratio(
+                ctx.info["commands"],
+                ctx.linvel,
+            )
+            return np.asarray(reward * gate * progress, dtype=get_global_dtype())
         if self._reward_cfg.feet_phase_mode in {
             "filtered_command_height",
             "command_height",

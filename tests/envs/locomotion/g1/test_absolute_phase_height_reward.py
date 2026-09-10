@@ -87,12 +87,18 @@ def test_absolute_phase_height_reward_is_gated_and_aggregated(monkeypatch):
     assert "feet_phase" not in reward_cfg.penalty_curriculum_terms
 
     commands = np.asarray(
-        [[0.0, 0.0, 0.0], [0.14, 0.0, 0.0], [0.15, 0.0, 0.0], [0.0, 0.2, 0.0]],
+        [
+            [0.0, 0.0, 0.0],
+            [0.14, 0.0, 0.0],
+            [0.15, 0.0, 0.0],
+            [0.20, 0.0, 0.0],
+            [0.0, 0.20, 0.0],
+        ],
         dtype=get_global_dtype(),
     )
     np.testing.assert_array_equal(
         compute_planar_command_speed_gate(commands, 0.15),
-        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0, 1.0],
     )
 
     # Keep one existing term to prove the new reward is added by the normal
@@ -104,12 +110,22 @@ def test_absolute_phase_height_reward_is_gated_and_aggregated(monkeypatch):
         "commands": commands,
         "gait_phase": np.tile([0.0, np.pi], (len(commands), 1)),
     }
+    linvel = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.14, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.10, 0.0, 0.0],
+            [0.0, 0.20, 0.0],
+        ],
+        dtype=get_global_dtype(),
+    )
     zeros3 = np.zeros((len(commands), 3), dtype=get_global_dtype())
     zeros29 = np.zeros((len(commands), 29), dtype=get_global_dtype())
-    total = owner._compute_reward(info, zeros3, zeros3, zeros3, zeros29, zeros29)
+    total = owner._compute_reward(info, linvel, zeros3, zeros3, zeros29, zeros29)
     np.testing.assert_allclose(
         total,
-        np.asarray([10.0, 10.0, 15.0, 15.0]) * cfg.ctrl_dt,
+        np.asarray([10.0, 10.0, 10.0, 12.5, 15.0]) * cfg.ctrl_dt,
         rtol=1e-6,
     )
 
@@ -117,9 +133,15 @@ def test_absolute_phase_height_reward_is_gated_and_aggregated(monkeypatch):
     # feet upward by 1 cm must reduce the phase score.
     owner._backend.left_foot[:, 2] = 0.05
     owner._backend.right_foot[:, 2] = 0.01
-    translated = owner._compute_reward(info, zeros3, zeros3, zeros3, zeros29, zeros29)
+    translated = owner._compute_reward(info, linvel, zeros3, zeros3, zeros29, zeros29)
     translated_score = np.exp(-2.0 * 0.01**2 / 0.008)
     expected = np.asarray(
-        [10.0, 10.0, 10.0 + 5.0 * translated_score, 10.0 + 5.0 * translated_score]
+        [
+            10.0,
+            10.0,
+            10.0,
+            10.0 + 2.5 * translated_score,
+            10.0 + 5.0 * translated_score,
+        ]
     ) * cfg.ctrl_dt
     np.testing.assert_allclose(translated, expected, rtol=1e-6)
