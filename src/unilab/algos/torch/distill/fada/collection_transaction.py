@@ -317,6 +317,8 @@ class FADACollectionTransaction:
 
     def _admit_windows(self, labels: _FADAStepLabels, step: _FADAEnvironmentStep) -> None:
         for index in range(self.num_envs):
+            if self.windows.window_count >= self.num_windows:
+                break
             if bool(step.done[index]):
                 self._admit_terminal_window(index, labels)
                 self.records[index].clear()

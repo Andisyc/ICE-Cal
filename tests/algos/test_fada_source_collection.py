@@ -435,6 +435,50 @@ def test_ordinary_walking_keeps_terminal_prefall_planner_label() -> None:
     assert bool((result.batch.idm_source_role == 1).all())
 
 
+def test_terminal_window_cannot_overrun_exact_collection_target() -> None:
+    class _TerminalThenSteadyEnv:
+        num_envs = 2
+        action_space = type("ActionSpace", (), {"shape": (2,)})()
+
+        def __init__(self) -> None:
+            self.state = object()
+            self.step_count = 0
+            self.current_obs = np.zeros((2, 3), dtype=np.float32)
+
+        def reset(self, indices: np.ndarray):
+            self.current_obs[indices] = 0.0
+            commands = np.repeat(
+                np.asarray([[0.4, -0.1]], dtype=np.float32), len(indices), axis=0
+            )
+            return {"obs": self.current_obs[indices].copy()}, {"commands": commands}
+
+        def step(self, actions: np.ndarray) -> _State:
+            self.current_obs += np.concatenate(
+                [actions, np.ones((2, 1), dtype=np.float32)], axis=1
+            )
+            self.step_count += 1
+            return _State(
+                obs={"obs": self.current_obs.copy()},
+                info={
+                    "commands": np.repeat(
+                        np.asarray([[0.4, -0.1]], dtype=np.float32), 2, axis=0
+                    )
+                },
+                terminated=np.asarray([self.step_count == 3, False], dtype=np.bool_),
+                truncated=np.zeros((2,), dtype=np.bool_),
+            )
+
+    result = collect_fada_source_windows(
+        _TerminalThenSteadyEnv(),
+        teacher_policy=_Oracle(),
+        config=_config(),
+        num_windows=1,
+    )
+
+    assert result.batch.observation_history.shape[0] == 1
+    assert result.rejected_done_transitions == 1
+
+
 def test_v007_bound_coverage_diagnostic_classifies_all_three_verdicts() -> None:
     config = _curriculum_config()
 
