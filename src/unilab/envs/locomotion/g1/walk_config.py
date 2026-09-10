@@ -420,11 +420,17 @@ class G1WalkCommandsConfig(Commands):
     dead_zone_enabled: bool = False
     dead_zone_xy: float = 0.1
     dead_zone_yaw: float = 0.1
+    rel_straight_envs: float = 0.0
 
     def validate(self) -> None:
-        ratios = np.asarray([self.rel_standing_envs, self.rel_transition_envs])
+        ratios = np.asarray(
+            [self.rel_standing_envs, self.rel_transition_envs, self.rel_straight_envs]
+        )
         if not np.isfinite(ratios).all() or np.any(ratios < 0.0) or ratios.sum() > 1.0:
-            raise ValueError("standing and transition command ratios must be non-negative and sum to <= 1")
+            raise ValueError(
+                "standing, transition, and straight command ratios must be non-negative "
+                "and sum to <= 1"
+            )
         for name in ("resampling_time", "dead_zone_xy", "dead_zone_yaw"):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value < 0.0:

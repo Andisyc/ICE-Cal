@@ -12,6 +12,7 @@ algo:
 env:
   commands:
     heading_command: false
+    rel_straight_envs: 0.10
 
 reward:
   straight_line_lateral_tolerance_m: 0.10
@@ -22,3 +23,8 @@ reward:
     penalty_yaw_drift: 0.0
     penalty_lateral_corridor_violation: -0.2
     penalty_yaw_corridor_violation: -0.2
+
+play_profile:
+  env:
+    commands:
+      rel_straight_envs: 0.0

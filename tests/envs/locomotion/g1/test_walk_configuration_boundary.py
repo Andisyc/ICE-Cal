@@ -25,11 +25,63 @@ from unilab.base.np_env import NpEnvState
 from unilab.base.registry import apply_cfg_overrides
 from unilab.dtype_config import get_global_dtype
 from unilab.envs.locomotion.g1.joystick import G1WalkEnv
+from unilab.envs.locomotion.g1.walk_commands import sample_g1_walk_commands
 from unilab.envs.locomotion.g1.walk_config import G1RewardConfig, G1WalkFlatCfg
 from unilab.envs.locomotion.g1.walk_control_bindings import G1WalkControlBindings
 from unilab.envs.locomotion.g1.walk_runtime_bindings import G1WalkRuntimeBindings
-from unilab.training.offpolicy.factory import build_offpolicy_env_cfg_override
 from unilab.training.backend_adapter import BackendAdapter
+from unilab.training.offpolicy.factory import build_offpolicy_env_cfg_override
+
+
+def test_straight_task_reuses_forward_samples_without_changing_vx(monkeypatch) -> None:
+    monkeypatch.setenv("ICE_CAL_ORACLE_LINEAGE_ID", "straight-sampling")
+    root = Path(__file__).resolve().parents[4]
+    with initialize_config_dir(
+        config_dir=str(root / "conf/offpolicy"), version_base="1.3"
+    ):
+        cfg = compose(
+            "config",
+            overrides=["algo=sac", "task=sac/g1_walk_flat/mujoco_fada_straight"],
+        )
+
+    assert cfg.env.commands.rel_straight_envs == pytest.approx(0.10)
+    assert cfg.env.commands.rel_standing_envs == pytest.approx(0.30)
+    assert cfg.env.commands.rel_transition_envs == pytest.approx(0.0)
+    assert cfg.env.commands.resampling_time == pytest.approx(0.0)
+    assert cfg.play_profile.env.commands.rel_straight_envs == pytest.approx(0.0)
+
+    original = np.column_stack(
+        [
+            np.linspace(0.2, 0.9, 10),
+            np.full(10, 0.25),
+            np.full(10, 0.5),
+        ]
+    ).astype(np.float32)
+
+    def fake_uniform(*, low=0.0, high=1.0, size=None):
+        del low, high
+        if size == (10, 3):
+            return original.copy()
+        if size == (10,):
+            return np.full(10, 0.9)
+        raise AssertionError(f"unexpected uniform sample shape {size}")
+
+    monkeypatch.setattr(np.random, "uniform", fake_uniform)
+    monkeypatch.setattr(
+        np.random,
+        "choice",
+        lambda candidates, *, size, replace: np.asarray([candidates[-1]]),
+    )
+    command_cfg = SimpleNamespace(
+        **OmegaConf.to_container(cfg.env.commands, resolve=True)
+    )
+    sampled = sample_g1_walk_commands(
+        SimpleNamespace(cfg=SimpleNamespace(commands=command_cfg)), len(original)
+    )
+
+    np.testing.assert_allclose(sampled[:, 0], original[:, 0])
+    np.testing.assert_allclose(sampled[:-1], original[:-1])
+    np.testing.assert_allclose(sampled[-1], [original[-1, 0], 0.0, 0.0])
 
 
 def test_yaml_parameters_reach_typed_config_without_weakening_checkpoint_identity(monkeypatch, capsys):
