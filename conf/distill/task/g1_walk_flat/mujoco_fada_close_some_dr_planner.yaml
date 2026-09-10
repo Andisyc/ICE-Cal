@@ -10,6 +10,9 @@ training:
     source_behavior_profile: configured_gait
     async_artifact_dir: logs/fada/planner_idm_close_some_dr_v001/source_batches
     checkpoint_path: logs/fada/planner_idm_close_some_dr_v001.pt
+    stand_transition_curriculum:
+      # The frozen Oracle snaps planar commands with norm <= 0.4 to zero.
+      walk_command: [0.6, 0.0, 0.0]
 
 teacher:
   task: sac/g1_walk_flat/mujoco_fada_fixed_contact

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch
 from omegaconf import OmegaConf
@@ -299,6 +300,7 @@ def test_close_some_dr_planner_selector_matches_frozen_oracle_contract() -> None
     from unilab.envs.locomotion.g1.walk_actuator_randomization import (
         validate_grouped_domain_rand_curriculum,
     )
+    from unilab.envs.locomotion.common.commands import zero_small_xy_commands
 
     conf_dir = Path(__file__).resolve().parents[2] / "conf" / "distill"
     GlobalHydra.instance().clear()
@@ -313,6 +315,14 @@ def test_close_some_dr_planner_selector_matches_frozen_oracle_contract() -> None
         "logs/fada/planner_idm_close_some_dr_v001/source_batches"
     )
     assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_close_some_dr_v001.pt"
+    transition_command = np.asarray(
+        [cfg.training.fada.stand_transition_curriculum.walk_command], dtype=np.float32
+    )
+    zero_small_xy_commands(
+        transition_command,
+        threshold=float(cfg.env.commands.small_xy_threshold),
+    )
+    np.testing.assert_allclose(transition_command, [[0.6, 0.0, 0.0]])
     assert cfg.teacher.task.endswith("mujoco_fada_fixed_contact")
     assert cfg.teacher.behavior_profile == "configured_gait"
     assert cfg.env.gait_phase_enabled is True
