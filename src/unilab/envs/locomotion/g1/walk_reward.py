@@ -40,12 +40,22 @@ def command_direction_speed_deficit(
     return np.asarray(np.where(speed > 0, cost, 0.0), dtype=get_global_dtype())
 
 
-def normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.ndarray:
+def normalized_corridor_violation(
+    error: np.ndarray,
+    tolerance: float,
+    max_violation: float | None = None,
+) -> np.ndarray:
     tolerance = float(tolerance)
     if tolerance <= 0.0:
         raise ValueError("corridor tolerance must be positive")
     excess = np.maximum(np.abs(error) - tolerance, 0.0)
-    return np.square(excess / tolerance)
+    violation = np.square(excess / tolerance)
+    if max_violation is None:
+        return violation
+    max_violation = float(max_violation)
+    if not np.isfinite(max_violation) or max_violation <= 0.0:
+        raise ValueError("corridor max violation must be finite and positive")
+    return np.minimum(violation, max_violation)
 
 
 def phase_stance_targets(

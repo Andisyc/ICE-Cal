@@ -256,6 +256,7 @@ class G1RewardConfig:
     close_feet_threshold: float = 0.15
     straight_line_lateral_tolerance_m: float = 0.10
     straight_line_yaw_tolerance_rad: float = 0.10
+    straight_line_corridor_max_violation: float | None = None
     stand_feet_x_target: float = 0.0
     stand_feet_y_width_target: float = 0.21
     stand_base_feet_center_x_target: float = 0.0
@@ -370,6 +371,11 @@ class G1RewardConfig:
             raise ValueError("unsupported under_speed_mode")
         if not math.isfinite(self.under_speed_min_command) or self.under_speed_min_command <= 0:
             raise ValueError("under_speed_min_command must be finite and positive")
+        if self.straight_line_corridor_max_violation is not None and (
+            not math.isfinite(self.straight_line_corridor_max_violation)
+            or self.straight_line_corridor_max_violation <= 0
+        ):
+            raise ValueError("straight_line_corridor_max_violation must be finite and positive")
         if any(not math.isfinite(float(value)) for value in self.scales.values()):
             raise ValueError("reward scales must be finite")
         cost_terms = []

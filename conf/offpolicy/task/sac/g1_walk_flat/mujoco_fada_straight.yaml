@@ -1,0 +1,24 @@
+# @package _global_
+defaults:
+  - /task/sac/g1_walk_flat/mujoco_fada_fixed_contact
+  - _self_
+
+# Train an unbiased nominal straight gait without exposing episode-frame
+# position or heading errors to the Actor.
+algo:
+  use_symmetry: true
+  symmetry_mirror_loss_coeff: 0.1
+
+env:
+  commands:
+    heading_command: false
+
+reward:
+  straight_line_lateral_tolerance_m: 0.10
+  straight_line_yaw_tolerance_rad: 0.10
+  straight_line_corridor_max_violation: 2.0
+  scales:
+    penalty_lateral_displacement: 0.0
+    penalty_yaw_drift: 0.0
+    penalty_lateral_corridor_violation: -0.2
+    penalty_yaw_corridor_violation: -0.2

@@ -458,6 +458,13 @@ def test_trajectory_precision_reward_records_episode_frame_only_when_enabled() -
 def test_trajectory_precision_rewards_use_episode_start_yaw_frame() -> None:
     env = object.__new__(G1WalkEnv)
     env._num_envs = 2
+    env._cfg = SimpleNamespace(
+        commands=SimpleNamespace(
+            small_xy_threshold=0.4,
+            dead_zone_xy=0.1,
+            dead_zone_yaw=0.1,
+        )
+    )
     initial_position = np.asarray([[1.0, 2.0, 0.75], [-1.0, 3.0, 0.75]], dtype=np.float32)
     initial_yaw = np.asarray([np.pi / 2.0, 0.0], dtype=np.float32)
     current_position = initial_position.copy()
@@ -470,6 +477,7 @@ def test_trajectory_precision_rewards_use_episode_start_yaw_frame() -> None:
         info={
             "episode_start_base_pos": initial_position,
             "episode_start_base_yaw": initial_yaw,
+            "commands": np.asarray([[0.5, 0.0, 0.0], [0.5, 0.0, 0.0]], dtype=np.float32),
         }
     )
 
@@ -492,20 +500,34 @@ def test_trajectory_corridor_penalty_is_zero_inside_and_quadratic_outside() -> N
         np.asarray([1.0, 0.0, 0.0, 0.25, 4.0], dtype=np.float32),
         atol=1e-6,
     )
+    np.testing.assert_allclose(
+        G1WalkEnv._normalized_corridor_violation(error, 0.10, 2.0),
+        np.asarray([1.0, 0.0, 0.0, 0.25, 2.0], dtype=np.float32),
+        atol=1e-6,
+    )
 
 
 def test_yaw_corridor_penalty_only_applies_to_active_straight_commands() -> None:
-    fixed_cfg = OmegaConf.load(
-        ROOT_DIR / "conf/offpolicy/task/sac/g1_walk_flat/mujoco_fada_fixed_contact.yaml"
+    straight_cfg = OmegaConf.load(
+        ROOT_DIR / "conf/offpolicy/task/sac/g1_walk_flat/mujoco_fada_straight.yaml"
     )
-    assert fixed_cfg.reward.scales.penalty_yaw_corridor_violation == pytest.approx(-0.5)
+    assert straight_cfg.reward.straight_line_corridor_max_violation == pytest.approx(2.0)
+    assert straight_cfg.reward.scales.penalty_lateral_corridor_violation == pytest.approx(-0.2)
+    assert straight_cfg.reward.scales.penalty_yaw_corridor_violation == pytest.approx(-0.2)
 
     env = object.__new__(G1WalkEnv)
     env._num_envs = 4
     env._cfg = SimpleNamespace(
-        commands=SimpleNamespace(small_xy_threshold=0.4, dead_zone_yaw=0.1)
+        commands=SimpleNamespace(
+            small_xy_threshold=0.4,
+            dead_zone_xy=0.1,
+            dead_zone_yaw=0.1,
+        )
     )
-    env._reward_cfg = SimpleNamespace(straight_line_yaw_tolerance_rad=0.1)
+    env._reward_cfg = SimpleNamespace(
+        straight_line_yaw_tolerance_rad=0.1,
+        straight_line_corridor_max_violation=2.0,
+    )
     initial_yaw = np.zeros(4, dtype=np.float32)
     current_yaw = np.asarray([0.2, 0.2, 0.2, 0.15], dtype=np.float32)
     env.get_base_pos = lambda: np.zeros((4, 3), dtype=np.float32)
@@ -528,9 +550,13 @@ def test_yaw_corridor_penalty_only_applies_to_active_straight_commands() -> None
 
     np.testing.assert_allclose(
         env._reward_yaw_corridor_violation(ctx),
-        np.asarray([1.0, 0.0, 0.0, 0.25], dtype=np.float32),
+        np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
         atol=1e-6,
     )
+
+    minimum_forward_advantage = 2.0 * (1.0 - np.exp(-(0.15**2) / 0.25)) + 1.0
+    maximum_straight_line_cost = 2.0 * 0.2 * 2.0
+    assert minimum_forward_advantage > maximum_straight_line_cost
 
 
 def test_forward_progress_failure_uses_reset_yaw_and_exact_grace_boundary() -> None:

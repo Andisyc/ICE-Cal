@@ -168,37 +168,63 @@ class G1WalkRewardBindings:
         yaw_drift = np_wrap_to_pi(current_yaw - initial_yaw)
         return lateral, yaw_drift
 
+    def _straight_line_command_mask(self, info: dict[str, Any]) -> np.ndarray:
+        commands = np.asarray(info["commands"], dtype=get_global_dtype())
+        return np.asarray(
+            (commands[:, 0] > float(self._cfg.commands.small_xy_threshold))
+            & (np.abs(commands[:, 1]) < float(self._cfg.commands.dead_zone_xy))
+            & (np.abs(commands[:, 2]) < float(self._cfg.commands.dead_zone_yaw)),
+            dtype=get_global_dtype(),
+        )
+
     def _reward_lateral_displacement(self, ctx: RewardContext) -> np.ndarray:
         lateral, _ = self._episode_frame_errors(ctx.info)
-        return np.asarray(np.square(lateral), dtype=get_global_dtype())
+        return np.asarray(
+            np.square(lateral) * self._straight_line_command_mask(ctx.info),
+            dtype=get_global_dtype(),
+        )
 
     def _reward_yaw_drift(self, ctx: RewardContext) -> np.ndarray:
         _, yaw_drift = self._episode_frame_errors(ctx.info)
-        return np.asarray(np.square(yaw_drift), dtype=get_global_dtype())
+        return np.asarray(
+            np.square(yaw_drift) * self._straight_line_command_mask(ctx.info),
+            dtype=get_global_dtype(),
+        )
 
     @staticmethod
-    def _normalized_corridor_violation(error: np.ndarray, tolerance: float) -> np.ndarray:
+    def _normalized_corridor_violation(
+        error: np.ndarray,
+        tolerance: float,
+        max_violation: float | None = None,
+    ) -> np.ndarray:
         return np.asarray(
-            normalized_corridor_violation(error, tolerance),
+            normalized_corridor_violation(error, tolerance, max_violation),
             dtype=get_global_dtype(),
         )
 
     def _reward_lateral_corridor_violation(self, ctx: RewardContext) -> np.ndarray:
         lateral, _ = self._episode_frame_errors(ctx.info)
-        return self._normalized_corridor_violation(
-            lateral, self._reward_cfg.straight_line_lateral_tolerance_m
+        violation = self._normalized_corridor_violation(
+            lateral,
+            self._reward_cfg.straight_line_lateral_tolerance_m,
+            getattr(self._reward_cfg, "straight_line_corridor_max_violation", None),
+        )
+        return np.asarray(
+            violation * self._straight_line_command_mask(ctx.info),
+            dtype=get_global_dtype(),
         )
 
     def _reward_yaw_corridor_violation(self, ctx: RewardContext) -> np.ndarray:
         _, yaw_drift = self._episode_frame_errors(ctx.info)
         violation = self._normalized_corridor_violation(
-            yaw_drift, self._reward_cfg.straight_line_yaw_tolerance_rad
+            yaw_drift,
+            self._reward_cfg.straight_line_yaw_tolerance_rad,
+            getattr(self._reward_cfg, "straight_line_corridor_max_violation", None),
         )
-        commands = np.asarray(ctx.info["commands"], dtype=get_global_dtype())
-        straight = (commands[:, 0] > float(self._cfg.commands.small_xy_threshold)) & (
-            np.abs(commands[:, 2]) < float(self._cfg.commands.dead_zone_yaw)
+        return np.asarray(
+            violation * self._straight_line_command_mask(ctx.info),
+            dtype=get_global_dtype(),
         )
-        return np.asarray(violation * straight, dtype=get_global_dtype())
 
     def _forward_progress_failure(self, info: dict[str, Any]) -> np.ndarray:
         cfg = self._cfg.forward_progress_termination
