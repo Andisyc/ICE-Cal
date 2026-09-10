@@ -292,6 +292,49 @@ def test_privileged_planner_alias_composes_the_same_alternating_source_route() -
     assert cfg.env.mujoco_num_threads == 1
 
 
+def test_close_some_dr_planner_selector_matches_frozen_oracle_contract() -> None:
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    conf_dir = Path(__file__).resolve().parents[2] / "conf" / "distill"
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["task=g1_walk_flat/mujoco_fada_close_some_dr_planner"],
+        )
+
+    assert cfg.training.fada.source_behavior_profile == "configured_gait"
+    assert cfg.training.fada.async_artifact_dir == (
+        "logs/fada/planner_idm_close_some_dr_v001/source_batches"
+    )
+    assert cfg.training.fada.checkpoint_path == "logs/fada/planner_idm_close_some_dr_v001.pt"
+    assert cfg.teacher.task.endswith("mujoco_fada_fixed_contact")
+    assert cfg.teacher.behavior_profile == "configured_gait"
+    assert cfg.env.gait_phase_enabled is True
+    assert cfg.env.gait_phase_init_mode == "offset_phase"
+    assert cfg.env.gait_clock_mode == "continuous"
+    assert cfg.env.commands.dead_zone_enabled is False
+    assert cfg.env.commands.small_xy_threshold == pytest.approx(0.4)
+    assert cfg.env.commands.rel_standing_envs == pytest.approx(0.3)
+    assert cfg.env.commands.rel_transition_envs == pytest.approx(0.0)
+    assert cfg.env.commands.resampling_time == pytest.approx(0.0)
+    assert cfg.reward.feet_phase_mode == "absolute_phase_height"
+    assert cfg.reward.min_planar_command_speed_for_gait_reward == pytest.approx(0.4)
+    assert cfg.reward.scales.feet_phase == pytest.approx(5.0)
+    assert cfg.reward.scales.under_speed == pytest.approx(-1.0)
+    assert cfg.env.domain_rand.actuator_strength.enabled is False
+    assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
+    assert cfg.env.domain_rand.actuator_strength.curriculum_progress_mode == "episode_quality"
+    assert cfg.env.domain_rand.randomize_kp is True
+    assert cfg.env.domain_rand.randomize_kd is True
+    assert cfg.env.domain_rand.randomize_ground_friction is True
+    assert cfg.env.domain_rand.randomize_base_mass is True
+    assert cfg.env.domain_rand.randomize_body_mass is False
+    assert cfg.env.domain_rand.random_com is False
+    assert cfg.env.domain_rand.randomize_dof_position_bias is False
+
+
 def _privileged_collector_contract_fixture():
     cfg = OmegaConf.create(
         {
