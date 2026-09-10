@@ -39,7 +39,7 @@ env:
     dead_zone_enabled: false     # 关闭：联合判零会放行"低速+转向"命令
     dead_zone_xy: 0.1
     dead_zone_yaw: 0.1
-    small_xy_threshold: 0.4      # 平面速度 <0.4 直接置零（保留 yaw）：低速走→站/原地转
+    small_xy_threshold: 0.15     # 0.1 置零、0.2 起步；低速平移开始参与训练
     vel_limit: [[-0.6, -0.4, -0.8], [1.0, 0.4, 0.8]]
     resampling_time: 0.0        # 回退：重采样切碎回合，稳态步态无法固化
     rel_standing_envs: 0.3       # 30% 站立：存活时间锚点，砍到 0.15 会导致惩罚课程趴在最低档
@@ -133,7 +133,7 @@ reward:
   tracking_lin_relative_blend: false # 回退：该轮 checkpoint 出现调整两脚趋势
   under_speed_mode: forward
   under_speed_min_command: 0.05 # forward 模式不使用此参数
-  min_planar_command_speed_for_gait_reward: 0.4
+  min_planar_command_speed_for_gait_reward: 0.15
   feet_phase_swing_height: 0.04
   feet_phase_tracking_sigma: 0.008
   base_height_target: 0.754

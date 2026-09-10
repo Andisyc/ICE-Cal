@@ -79,7 +79,7 @@ def test_absolute_phase_height_reward_is_gated_and_aggregated(monkeypatch):
     assert reward_cfg.feet_phase_mode == "absolute_phase_height"
     assert reward_cfg.feet_phase_swing_height == 0.04
     assert reward_cfg.feet_phase_tracking_sigma == 0.008
-    assert reward_cfg.min_planar_command_speed_for_gait_reward == 0.4
+    assert reward_cfg.min_planar_command_speed_for_gait_reward == 0.15
     assert reward_cfg.scales["feet_phase"] == 5.0
     assert reward_cfg.scales["phase_contact"] == 0.0
     assert reward_cfg.scales["feet_phase_contact"] == 0.0
@@ -87,11 +87,11 @@ def test_absolute_phase_height_reward_is_gated_and_aggregated(monkeypatch):
     assert "feet_phase" not in reward_cfg.penalty_curriculum_terms
 
     commands = np.asarray(
-        [[0.0, 0.0, 0.0], [0.39, 0.0, 0.0], [0.4, 0.0, 0.0], [0.0, 0.5, 0.0]],
+        [[0.0, 0.0, 0.0], [0.14, 0.0, 0.0], [0.15, 0.0, 0.0], [0.0, 0.2, 0.0]],
         dtype=get_global_dtype(),
     )
     np.testing.assert_array_equal(
-        compute_planar_command_speed_gate(commands, 0.4),
+        compute_planar_command_speed_gate(commands, 0.15),
         [0.0, 0.0, 1.0, 1.0],
     )
 

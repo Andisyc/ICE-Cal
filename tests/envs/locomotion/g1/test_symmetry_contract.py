@@ -176,10 +176,10 @@ def test_fada_fixed_contact_symmetry_mirrors_privileged_contract(
 
     assert source_cfg.algo.use_symmetry is False
     assert cfg.algo.use_symmetry is True
-    assert cfg.env.commands.small_xy_threshold == pytest.approx(0.4)
-    threshold_probe = np.asarray([[0.4, 0.0, 0.3], [0.5, 0.0, 0.3]], dtype=np.float32)
+    assert cfg.env.commands.small_xy_threshold == pytest.approx(0.15)
+    threshold_probe = np.asarray([[0.1, 0.0, 0.3], [0.2, 0.0, 0.3]], dtype=np.float32)
     zero_small_xy_commands(threshold_probe, threshold=cfg.env.commands.small_xy_threshold)
-    np.testing.assert_array_equal(threshold_probe[:, 0], [0.0, 0.5])
+    np.testing.assert_allclose(threshold_probe[:, 0], [0.0, 0.2])
 
     runtime = resolve_privileged_locomotion_sac_runtime(
         OmegaConf.to_container(cfg.algo, resolve=True)
