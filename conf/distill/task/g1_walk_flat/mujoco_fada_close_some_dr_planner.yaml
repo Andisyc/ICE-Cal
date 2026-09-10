@@ -42,8 +42,16 @@ env:
     actuator_strength:
       enabled: false
       curriculum_enabled: false
+      curriculum_promote_threshold: 800.0
+      curriculum_demote_threshold: 500.0
+      curriculum_update_episodes: 1024
       group_curriculum_enabled: true
+      group_curriculum_scales: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
       curriculum_progress_mode: episode_quality
+      curriculum_iteration_boundaries: [0, 500, 1200, 2000, 3000, 4000]
+      curriculum_max_termination_rate: 0.1
+      curriculum_brake_cooldown_steps: 100
+      curriculum_recovery_hold_steps: 500
 
 reward:
   feet_phase_mode: absolute_phase_height

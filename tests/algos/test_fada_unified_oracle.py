@@ -296,6 +296,10 @@ def test_close_some_dr_planner_selector_matches_frozen_oracle_contract() -> None
     from hydra import compose, initialize_config_dir
     from hydra.core.global_hydra import GlobalHydra
 
+    from unilab.envs.locomotion.g1.walk_actuator_randomization import (
+        validate_grouped_domain_rand_curriculum,
+    )
+
     conf_dir = Path(__file__).resolve().parents[2] / "conf" / "distill"
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=str(conf_dir), version_base="1.3"):
@@ -325,7 +329,16 @@ def test_close_some_dr_planner_selector_matches_frozen_oracle_contract() -> None
     assert cfg.reward.scales.under_speed == pytest.approx(-1.0)
     assert cfg.env.domain_rand.actuator_strength.enabled is False
     assert cfg.env.domain_rand.actuator_strength.group_curriculum_enabled is True
+    assert list(cfg.env.domain_rand.actuator_strength.group_curriculum_scales) == [
+        0.0,
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        1.0,
+    ]
     assert cfg.env.domain_rand.actuator_strength.curriculum_progress_mode == "episode_quality"
+    validate_grouped_domain_rand_curriculum(cfg.env.domain_rand.actuator_strength)
     assert cfg.env.domain_rand.randomize_kp is True
     assert cfg.env.domain_rand.randomize_kd is True
     assert cfg.env.domain_rand.randomize_ground_friction is True
