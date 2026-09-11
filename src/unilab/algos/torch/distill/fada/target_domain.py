@@ -29,6 +29,16 @@ def _positive_float(raw: Any, name: str) -> float:
 
 
 def validate_fada_slope_commands(raw: Any) -> tuple[tuple[float, float, float], ...]:
+    commands = validate_fada_commands(raw)
+    for parsed in commands:
+        if parsed[1] != 0.0:
+            raise ValueError("FADA slope command must have zero lateral velocity")
+        if parsed[2] != 0.0:
+            raise ValueError("FADA slope command must have zero yaw velocity")
+    return commands
+
+
+def validate_fada_commands(raw: Any) -> tuple[tuple[float, float, float], ...]:
     if not isinstance(raw, (list, tuple)) or not raw:
         raise ValueError("FADA target command_sequence must be non-empty")
     commands: list[tuple[float, float, float]] = []
@@ -37,10 +47,6 @@ def validate_fada_slope_commands(raw: Any) -> tuple[tuple[float, float, float], 
             raise ValueError("FADA target commands must be 3-D")
         values = tuple(_finite_float(value, "command") for value in command)
         parsed = (values[0], values[1], values[2])
-        if parsed[1] != 0.0:
-            raise ValueError("FADA slope command must have zero lateral velocity")
-        if parsed[2] != 0.0:
-            raise ValueError("FADA slope command must have zero yaw velocity")
         commands.append(parsed)
     return tuple(commands)
 
@@ -171,7 +177,7 @@ FADA_SLOPE_WIDE_SCENE_BY_TARGET_DOMAIN_ID = {
 @dataclass(frozen=True)
 class FADATargetDomainSpec:
     target_domain_id: str
-    kind: Literal["slope", "actuator_gain"]
+    kind: Literal["slope", "actuator_gain", "real_robot_load"]
     task: str
     task_name: str
     backend: str
@@ -181,6 +187,8 @@ class FADATargetDomainSpec:
     actuator_strength: float | None = None
     actuator_count: int | None = None
     legacy_fault_profile: str | None = None
+    robot: str | None = None
+    condition_label: str | None = None
 
 
 _SLOPE_DISABLED_FLAGS = (
@@ -358,6 +366,26 @@ def _resolve_legacy_fault(raw: dict[str, Any]) -> FADATargetDomainSpec:
     )
 
 
+def _resolve_real_robot_load(raw: dict[str, Any]) -> FADATargetDomainSpec:
+    robot = str(_required(raw, "robot")).strip()
+    condition_label = str(_required(raw, "condition_label")).strip()
+    backend = str(_required(raw, "backend")).strip()
+    if not robot or not condition_label:
+        raise ValueError("FADA real-robot target requires robot and condition_label")
+    if backend != "real":
+        raise ValueError("FADA real-robot target backend must be 'real'")
+    return FADATargetDomainSpec(
+        target_domain_id=str(_required(raw, "target_domain_id")),
+        kind="real_robot_load",
+        task=str(_required(raw, "task")),
+        task_name=str(_required(raw, "task_name")),
+        backend=backend,
+        command_sequence=validate_fada_commands(_required(raw, "command_sequence")),
+        robot=robot,
+        condition_label=condition_label,
+    )
+
+
 def resolve_fada_target_domain(cfg: DictConfig) -> FADATargetDomainSpec:
     target = _mapping(cfg, "target_domain")
     fault = _mapping(cfg, "fault")
@@ -372,4 +400,6 @@ def resolve_fada_target_domain(cfg: DictConfig) -> FADATargetDomainSpec:
         return _resolve_slope(target)
     if kind == "actuator_gain":
         return _resolve_legacy_fault(target)
+    if kind == "real_robot_load":
+        return _resolve_real_robot_load(target)
     raise ValueError(f"unsupported FADA target kind: {kind!r}")

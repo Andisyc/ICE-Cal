@@ -98,13 +98,18 @@ def _assert_identity(cfg: DictConfig) -> Any:
             cfg,
             behavior_profile=str(cfg.adaptation.source_behavior_profile),
         )
-    else:
+    elif domain.kind == "actuator_gain":
         if task_choice != domain.task:
             raise ValueError(f"FADA adaptation requires task={domain.task}")
         if str(OmegaConf.select(cfg, "training.task_name")) != domain.task_name:
             raise ValueError(f"FADA adaptation requires task_name={domain.task_name}")
         if str(OmegaConf.select(cfg, "training.sim_backend")) != domain.backend:
             raise ValueError("FADA adaptation identity requires the MuJoCo target owner")
+    else:
+        if task_choice != domain.task:
+            raise ValueError(f"FADA adaptation requires task={domain.task}")
+        if str(OmegaConf.select(cfg, "training.task_name")) != domain.task_name:
+            raise ValueError(f"FADA adaptation requires task_name={domain.task_name}")
     for name, expected in _PAPER_LORA.items():
         observed = OmegaConf.select(cfg, f"adaptation.{name}")
         if isinstance(expected, int):
@@ -221,8 +226,27 @@ def preflight_fada_adaptation(
         if metadata.get("slope_geometry") != asdict(domain.slope):
             raise ValueError("FADA target artifact slope geometry does not match adaptation")
         represented_episodes = _assert_slope_target_coverage(loaded_target.batch)
-    elif metadata.get("fault_profile") != domain.legacy_fault_profile:
+    elif domain.kind == "actuator_gain" and metadata.get(
+        "fault_profile"
+    ) != domain.legacy_fault_profile:
         raise ValueError("FADA target artifact fault profile does not match adaptation")
+    elif domain.kind == "real_robot_load":
+        expected_commands = [list(command) for command in domain.command_sequence]
+        if metadata.get("target_domain_id") != domain.target_domain_id:
+            raise ValueError("FADA real target-domain identity does not match adaptation")
+        if metadata.get("target_domain_kind") != domain.kind:
+            raise ValueError("FADA real target-domain kind does not match adaptation")
+        if metadata.get("robot") != domain.robot:
+            raise ValueError("FADA real target robot identity does not match adaptation")
+        if metadata.get("condition_label") != domain.condition_label:
+            raise ValueError("FADA real target condition identity does not match adaptation")
+        if metadata.get("command_sequence") != expected_commands:
+            raise ValueError("FADA real target command identity does not match adaptation")
+        represented_episodes = int(
+            torch.unique(loaded_target.batch.episode_id.detach().to("cpu")).numel()
+        )
+        if metadata.get("episode_count") != represented_episodes:
+            raise ValueError("FADA real target episode count does not match batch")
     else:
         represented_episodes = int(
             torch.unique(loaded_target.batch.episode_id.detach().to("cpu")).numel()

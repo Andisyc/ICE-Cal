@@ -28,6 +28,7 @@ from unilab.algos.torch.distill.fada.privileged_oracle import (
 )
 from unilab.algos.torch.distill.fada.target_data import (
     FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
+    FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
     FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
 )
 
@@ -193,6 +194,7 @@ def save_fada_adapted_checkpoint(
     if target_artifact_schema_version not in {
         FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
         FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
     }:
         raise ValueError("adapted checkpoint target artifact schema is unsupported")
     torch.save(payload, temporary)

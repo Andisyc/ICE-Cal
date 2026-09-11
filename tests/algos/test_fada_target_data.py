@@ -95,6 +95,37 @@ def _slope_metadata() -> dict[str, object]:
     return metadata
 
 
+def _real_metadata() -> dict[str, object]:
+    return {
+        "policy_checkpoint_sha256": "a" * 64,
+        "config_fingerprint": "b" * 64,
+        "task": "G1WalkFlat",
+        "num_envs": 1,
+        "num_windows": 1,
+        "target_domain_id": "g1_hang_book_real",
+        "target_domain_kind": "real_robot_load",
+        "command_sequence": [[0.6, 0.0, 0.0]],
+        "observation_contract": "legacy_actor_obs_v1",
+        "episode_count": 1,
+        "accepted_steps": 66,
+        "robot": "g1",
+        "condition_label": "shoulder_hanging_book",
+        "control_dt": 0.02,
+        "source_trajectories": [
+            {
+                "name": "episode.msgpack",
+                "sha256": "c" * 64,
+                "num_policy_steps": 66,
+                "rejected_sensor_steps": 0,
+                "num_windows": 1,
+                "phase_offset": 0.25,
+                "phase_action_mse": 0.001,
+                "max_sensor_lag_ms": 1.0,
+            }
+        ],
+    }
+
+
 def _source_batch(config: FADAArchitectureConfig) -> FADASourceBatch:
     size = 1
     return FADASourceBatch(
@@ -207,6 +238,24 @@ def test_v3_slope_artifact_round_trip_owns_target_domain_identity(tmp_path) -> N
     assert module.FADA_TARGET_ARTIFACT_SCHEMA_VERSION == "fada-target-batch/v3"
     assert payload["schema_version"] == "fada-target-batch/v3"
     assert loaded.metadata["target_domain_id"] == "g1_slope_15_mujoco"
+
+
+def test_v4_real_artifact_round_trip_owns_trajectory_identity(tmp_path) -> None:
+    module = _target_module()
+    path = tmp_path / "real-target.pt"
+
+    module.save_fada_target_artifact(
+        path,
+        _target_batch(),
+        config=_config(),
+        metadata=_real_metadata(),
+        schema_version=module.FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
+    )
+    loaded = module.load_fada_target_artifact(path, config=_config())
+
+    assert loaded.source_schema_version == "fada-target-batch/v4"
+    assert loaded.metadata["target_domain_kind"] == "real_robot_load"
+    assert loaded.metadata["source_trajectories"][0]["name"] == "episode.msgpack"
 
 
 def test_v3_slope_artifact_accepts_registered_10_degree_geometry(tmp_path) -> None:

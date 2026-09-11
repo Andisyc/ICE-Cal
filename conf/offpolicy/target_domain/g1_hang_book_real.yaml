@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /task: sac/g1_walk_flat/mujoco_fada_target
+  - _self_
+
+target_domain:
+  target_domain_id: g1_hang_book_real
+  kind: real_robot_load
+  task: sac/g1_walk_flat/mujoco_fada_target
+  task_name: G1WalkFlat
+  backend: real
+  robot: g1
+  condition_label: shoulder_hanging_book
+  command_sequence:
+    - [0.6, 0.0, 0.0]

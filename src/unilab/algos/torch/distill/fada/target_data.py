@@ -14,9 +14,11 @@ from unilab.algos.torch.distill.fada.model import FADAArchitectureConfig
 from unilab.algos.torch.distill.fada.target_domain import (
     FADA_SLOPE_GEOMETRY_BY_TARGET_DOMAIN_ID,
     FADASlopeGeometry,
+    validate_fada_commands,
     validate_fada_slope_commands,
 )
 
+FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION = "fada-target-batch/v4"
 FADA_TARGET_ARTIFACT_SCHEMA_VERSION = "fada-target-batch/v3"
 FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION = "fada-target-batch/v2"
 FADA_LEGACY_TARGET_ARTIFACT_SCHEMA_VERSION = "fada-target-batch/v1"
@@ -39,6 +41,18 @@ _SLOPE_METADATA = {
     "rejected_command_windows",
     "termination_counts",
     "randomization_disabled",
+}
+_REAL_METADATA = {
+    "target_domain_id",
+    "target_domain_kind",
+    "command_sequence",
+    "observation_contract",
+    "episode_count",
+    "accepted_steps",
+    "robot",
+    "condition_label",
+    "control_dt",
+    "source_trajectories",
 }
 # Private compatibility for the retired facade; v2 actuator artifacts use this set.
 _REQUIRED_METADATA = _COMMON_METADATA | {"fault_profile"}
@@ -166,13 +180,21 @@ def _validated_metadata(
 ) -> dict[str, Any]:
     result = dict(metadata)
     required = set(_COMMON_METADATA)
-    if schema_version == FADA_TARGET_ARTIFACT_SCHEMA_VERSION:
-        required.update(_SLOPE_METADATA)
+    if schema_version in {
+        FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
+    }:
+        domain_fields = (
+            _SLOPE_METADATA
+            if schema_version == FADA_TARGET_ARTIFACT_SCHEMA_VERSION
+            else _REAL_METADATA
+        )
+        required.update(domain_fields)
         if "fault_profile" in result:
-            raise ValueError("FADA slope target metadata must not contain fault_profile")
+            raise ValueError("FADA target-domain metadata must not contain fault_profile")
         unknown = sorted(set(result) - required)
         if unknown:
-            raise ValueError(f"FADA slope target metadata contains unknown fields: {unknown}")
+            raise ValueError(f"FADA target metadata contains unknown fields: {unknown}")
     else:
         required.add("fault_profile")
     missing = sorted(required - set(result))
@@ -182,7 +204,10 @@ def _validated_metadata(
         if not isinstance(result[key], str) or _SHA256.fullmatch(result[key]) is None:
             raise ValueError(f"FADA target metadata {key} must be a lowercase SHA-256 hex digest")
     text_keys = ["task"]
-    if schema_version == FADA_TARGET_ARTIFACT_SCHEMA_VERSION:
+    if schema_version in {
+        FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
+    }:
         text_keys.extend(("target_domain_id", "target_domain_kind"))
     else:
         text_keys.append("fault_profile")
@@ -237,12 +262,68 @@ def _validated_metadata(
                 raise ValueError(
                     f"FADA target metadata termination_counts.{name} must be non-negative"
                 )
+    elif schema_version == FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION:
+        if result["target_domain_kind"] != "real_robot_load":
+            raise ValueError("FADA real target metadata target_domain_kind must be real_robot_load")
+        if result["observation_contract"] != observation_contract:
+            raise ValueError("FADA real target metadata observation_contract is incompatible")
+        validate_fada_commands(result["command_sequence"])
+        for key in ("robot", "condition_label"):
+            if not isinstance(result[key], str) or not result[key].strip():
+                raise ValueError(f"FADA real target metadata {key} must be non-empty")
+        control_dt = result["control_dt"]
+        if (
+            isinstance(control_dt, bool)
+            or not isinstance(control_dt, (int, float))
+            or not math.isfinite(float(control_dt))
+            or float(control_dt) <= 0.0
+        ):
+            raise ValueError("FADA real target metadata control_dt must be finite and positive")
+        result["control_dt"] = float(control_dt)
+        trajectories = result["source_trajectories"]
+        trajectory_fields = {
+            "name",
+            "sha256",
+            "num_policy_steps",
+            "rejected_sensor_steps",
+            "num_windows",
+            "phase_offset",
+            "phase_action_mse",
+            "max_sensor_lag_ms",
+        }
+        if not isinstance(trajectories, list) or not trajectories:
+            raise ValueError("FADA real target metadata source_trajectories must be non-empty")
+        for trajectory in trajectories:
+            if not isinstance(trajectory, Mapping) or set(trajectory) != trajectory_fields:
+                raise ValueError("FADA real target source trajectory fields are invalid")
+            if not isinstance(trajectory["name"], str) or not trajectory["name"]:
+                raise ValueError("FADA real target source trajectory name must be non-empty")
+            if not isinstance(trajectory["sha256"], str) or _SHA256.fullmatch(
+                trajectory["sha256"]
+            ) is None:
+                raise ValueError("FADA real target source trajectory sha256 is invalid")
+            for key in ("num_policy_steps", "rejected_sensor_steps", "num_windows"):
+                value = trajectory[key]
+                if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+                    raise ValueError(f"FADA real target source trajectory {key} is invalid")
+            for key in ("phase_offset", "phase_action_mse", "max_sensor_lag_ms"):
+                value = trajectory[key]
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or float(value) < 0.0
+                ):
+                    raise ValueError(f"FADA real target source trajectory {key} is invalid")
     integer_fields = ["num_envs", "num_windows"]
+    if schema_version in {
+        FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
+    }:
+        integer_fields.extend(("episode_count", "accepted_steps"))
     if schema_version == FADA_TARGET_ARTIFACT_SCHEMA_VERSION:
         integer_fields.extend(
             (
-                "episode_count",
-                "accepted_steps",
                 "rejected_pre_entry_steps",
                 "rejected_command_windows",
             )
@@ -271,6 +352,16 @@ def _validated_metadata(
             raise ValueError(
                 "FADA target metadata episode_count must equal termination count plus active episode"
             )
+    elif schema_version == FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION:
+        if result["episode_count"] != len(result["source_trajectories"]):
+            raise ValueError(
+                "FADA real target episode_count must equal source_trajectories length"
+            )
+        if result["accepted_steps"] < result["num_windows"]:
+            raise ValueError("FADA real target accepted_steps cannot be less than num_windows")
+        source_windows = sum(int(item["num_windows"]) for item in result["source_trajectories"])
+        if source_windows != result["num_windows"]:
+            raise ValueError("FADA real target source trajectory windows must sum to num_windows")
     return result
 
 
@@ -289,15 +380,24 @@ def save_fada_target_artifact(
     *,
     config: FADAArchitectureConfig,
     metadata: Mapping[str, Any],
+    schema_version: str | None = None,
 ) -> Path:
     """Atomically persist one strict, CPU-owned Stage-C artifact."""
 
     validated = _batch_to_cpu(batch.validate(config)).validate(config)
-    schema_version = (
-        FADA_TARGET_ARTIFACT_SCHEMA_VERSION
-        if "target_domain_id" in metadata
-        else FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION
-    )
+    if schema_version is None:
+        if metadata.get("target_domain_kind") == "real_robot_load":
+            schema_version = FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION
+        elif "target_domain_id" in metadata:
+            schema_version = FADA_TARGET_ARTIFACT_SCHEMA_VERSION
+        else:
+            schema_version = FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION
+    if schema_version not in {
+        FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
+    }:
+        raise ValueError(f"unsupported FADA target artifact schema for save: {schema_version}")
     validated_metadata = _validated_metadata(
         metadata,
         expected_num_windows=int(validated.observation_history.shape[0]),
@@ -334,6 +434,7 @@ def load_fada_target_artifact(
         FADA_LEGACY_TARGET_ARTIFACT_SCHEMA_VERSION,
         FADA_ACTUATOR_TARGET_ARTIFACT_SCHEMA_VERSION,
         FADA_TARGET_ARTIFACT_SCHEMA_VERSION,
+        FADA_REAL_TARGET_ARTIFACT_SCHEMA_VERSION,
     }:
         raise ValueError("unsupported or malformed FADA target artifact schema")
     architecture = payload.get("architecture")

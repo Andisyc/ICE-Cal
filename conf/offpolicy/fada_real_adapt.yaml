@@ -1,0 +1,15 @@
+defaults:
+  - _self_
+  - algo: sac
+  - target_domain: g1_hang_book_real
+  - adaptation: fada_real_lora
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false
+  job_logging:
+    root:
+      handlers: [console]

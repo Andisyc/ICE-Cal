@@ -1,0 +1,23 @@
+source_checkpoint_path: model/v024_checkpoint/planner_idm_close_some_dr_v001.pt
+source_behavior_profile: configured_gait
+expected_source_checkpoint_sha256: da35a3d2d7f01ccc2237018e548ebff699f0aef852c8d2741ba4735de185496c
+target_artifact_path: artifacts/fada_target_real/${target_domain.target_domain_id}/target.pt
+expected_target_artifact_sha256: 8af89695c005f0ad77b1dac75c04e75932993df4089fa3e388b6313052d69c05
+output_checkpoint_path: artifacts/fada_adaptation_real/${target_domain.target_domain_id}.pt
+
+device: cpu
+confirm_train: false
+
+rank: 8
+alpha: 16.0
+dropout: 0.05
+
+optimizer: adamw
+observation_contract: g1_fada_state_v2
+learning_rate: 3.0e-4
+weight_decay: 0.0
+batch_size: 512
+validation_fraction: 0.1
+seed: 0
+max_updates: 400
+max_grad_norm: 1.0
